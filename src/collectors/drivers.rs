@@ -7,7 +7,13 @@ pub struct DriverData {
     pub bluetooth: Vec<DeviceInfo>,
     pub audio: Vec<DeviceInfo>,
     pub input: Vec<DeviceInfo>,
+    pub display: Vec<DeviceInfo>,
+    pub storage: Vec<DeviceInfo>,
+    pub usb: Vec<DeviceInfo>,
+    pub system: Vec<DeviceInfo>,
+    pub other: Vec<DeviceInfo>,
     pub services: Vec<ServiceInfo>,
+    pub scan_status: DriverScanStatus,
 }
 
 #[derive(Debug, Clone)]
@@ -44,9 +50,9 @@ impl std::fmt::Display for DeviceStatus {
 impl DeviceStatus {
     pub fn icon(&self) -> &'static str {
         match self {
-            Self::Ok => "\u{2713}",      // ✓
-            Self::Disabled => "\u{2014}", // —
-            Self::Error(_) => "\u{2717}", // ✗
+            Self::Ok => "\u{2713}",      // checkmark
+            Self::Disabled => "\u{2014}", // em dash
+            Self::Error(_) => "\u{2717}", // x mark
             Self::NotFound => "?",
             Self::Unknown => "?",
         }
@@ -69,6 +75,35 @@ pub enum DeviceCategory {
     Bluetooth,
     Audio,
     Input,
+    Display,
+    Storage,
+    Usb,
+    System,
+    Other,
+}
+
+impl DeviceCategory {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Network => "Network",
+            Self::Bluetooth => "Bluetooth",
+            Self::Audio => "Audio",
+            Self::Input => "Input",
+            Self::Display => "Display",
+            Self::Storage => "Storage",
+            Self::Usb => "USB",
+            Self::System => "System",
+            Self::Other => "Other",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum DriverScanStatus {
+    #[default]
+    NotScanned,
+    Success,
+    WmiUnavailable(String),
 }
 
 #[derive(Debug, Clone)]

@@ -1,4 +1,4 @@
-use crossterm::event::{Event, KeyCode, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
 use std::time::Duration;
@@ -9,6 +9,14 @@ use crate::error::Result;
 use crate::history::HistoryBuffer;
 use crate::types::{DiagnosticMode, HealthStatus, ProcessSortKey, Section, TempUnit};
 use crate::ui;
+
+// -- Refresh Intervals --
+const REFRESH_FAST: Duration = Duration::from_secs(1);
+const REFRESH_SLOW: Duration = Duration::from_secs(5);
+const REFRESH_MEDIUM: Duration = Duration::from_secs(3);
+const REFRESH_DIAG: Duration = Duration::from_secs(15);
+const REFRESH_HEALTH: Duration = Duration::from_secs(60);
+const HISTORY_SAMPLES: usize = 60;
 
 /// Main application state
 pub struct App {
@@ -46,6 +54,12 @@ pub struct App {
     pub temp_history: HistoryBuffer,
     /// Temperature display unit (Celsius or Fahrenheit)
     pub temp_unit: TempUnit,
+    /// Network connection table scroll offset
+    pub connection_scroll: usize,
+    /// Disk I/O read history
+    pub disk_read_history: HistoryBuffer,
+    /// Disk I/O write history
+    pub disk_write_history: HistoryBuffer,
 }
 
 impl App {
@@ -56,18 +70,21 @@ impl App {
             should_quit: false,
             show_help: false,
             snapshot: SystemSnapshot::default(),
-            cpu_history: HistoryBuffer::new(60),
-            mem_history: HistoryBuffer::new(60),
-            net_down_history: HistoryBuffer::new(60),
-            net_up_history: HistoryBuffer::new(60),
+            cpu_history: HistoryBuffer::new(HISTORY_SAMPLES),
+            mem_history: HistoryBuffer::new(HISTORY_SAMPLES),
+            net_down_history: HistoryBuffer::new(HISTORY_SAMPLES),
+            net_up_history: HistoryBuffer::new(HISTORY_SAMPLES),
             process_scroll: 0,
             process_sort: ProcessSortKey::Cpu,
             too_small: false,
             per_core_history: Vec::new(),
-            swap_history: HistoryBuffer::new(60),
-            gpu_history: HistoryBuffer::new(60),
-            temp_history: HistoryBuffer::new(60),
+            swap_history: HistoryBuffer::new(HISTORY_SAMPLES),
+            gpu_history: HistoryBuffer::new(HISTORY_SAMPLES),
+            temp_history: HistoryBuffer::new(HISTORY_SAMPLES),
             temp_unit: TempUnit::Celsius,
+            connection_scroll: 0,
+            disk_read_history: HistoryBuffer::new(HISTORY_SAMPLES),
+            disk_write_history: HistoryBuffer::new(HISTORY_SAMPLES),
         }
     }
 
@@ -78,9 +95,23 @@ impl App {
         self.snapshot.refresh_fast();
         self.snapshot.refresh_slow();
         self.snapshot.refresh_drivers();
+        self.snapshot.refresh_connections();
+        self.snapshot.refresh_disk_health();
 
-        let mut fast_tick = interval(Duration::from_secs(1));
-        let mut slow_tick = interval(Duration::from_secs(5));
+        // Initial connectivity check in background
+        {
+            let gateway = crate::collectors::network_diag::collect_connectivity();
+            self.snapshot.network_diag.gateway = gateway.0.gateway;
+            self.snapshot.network_diag.dns = gateway.0.dns;
+            self.snapshot.network_diag.internet = gateway.0.internet;
+            self.snapshot.warnings.extend(gateway.1);
+        }
+
+        let mut fast_tick = interval(REFRESH_FAST);
+        let mut slow_tick = interval(REFRESH_SLOW);
+        let mut medium_tick = interval(REFRESH_MEDIUM);
+        let mut diag_tick = interval(REFRESH_DIAG);
+        let mut health_tick = interval(REFRESH_HEALTH);
         let mut event_stream = crossterm::event::EventStream::new();
 
         loop {
@@ -102,6 +133,23 @@ impl App {
                 _ = slow_tick.tick() => {
                     self.snapshot.refresh_slow();
                 }
+                _ = medium_tick.tick() => {
+                    self.snapshot.refresh_connections();
+                }
+                _ = diag_tick.tick() => {
+                    // Run connectivity checks in a blocking task to avoid UI freeze
+                    let (diag_data, diag_warnings) = tokio::task::spawn_blocking(|| {
+                        crate::collectors::network_diag::collect_connectivity()
+                    }).await.unwrap_or_default();
+                    self.snapshot.network_diag.gateway = diag_data.gateway;
+                    self.snapshot.network_diag.dns = diag_data.dns;
+                    self.snapshot.network_diag.internet = diag_data.internet;
+                    self.snapshot.warnings.retain(|w| w.source != "Network");
+                    self.snapshot.warnings.extend(diag_warnings);
+                }
+                _ = health_tick.tick() => {
+                    self.snapshot.refresh_disk_health();
+                }
                 event = event_stream.next() => {
                     if let Some(Ok(evt)) = event {
                         self.handle_event(evt);
@@ -117,7 +165,7 @@ impl App {
 
         // Per-core
         while self.per_core_history.len() < self.snapshot.cpu.per_core_usage.len() {
-            self.per_core_history.push(HistoryBuffer::new(60));
+            self.per_core_history.push(HistoryBuffer::new(HISTORY_SAMPLES));
         }
         for (i, usage) in self.snapshot.cpu.per_core_usage.iter().enumerate() {
             if let Some(buf) = self.per_core_history.get_mut(i) {
@@ -152,11 +200,25 @@ impl App {
         if let Some(cpu_temp) = self.snapshot.thermals.cpu_temp {
             self.temp_history.push(cpu_temp);
         }
+
+        // Disk I/O
+        if let Some(drive) = self.snapshot.disk_health.drives.first() {
+            if let Some(ref io) = drive.io_stats {
+                self.disk_read_history.push(io.read_bytes_per_sec as f64);
+                self.disk_write_history.push(io.write_bytes_per_sec as f64);
+            }
+        }
     }
 
     fn handle_event(&mut self, event: Event) {
         if let Event::Key(key) = event {
             if key.kind != KeyEventKind::Press {
+                return;
+            }
+
+            // Ctrl+C always quits immediately
+            if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                self.should_quit = true;
                 return;
             }
 
@@ -188,19 +250,25 @@ impl App {
                 KeyCode::Char(c @ '1'..='9') => {
                     if let Some(section) = Section::from_number(c as u8 - b'0') {
                         self.current_section = section;
-                        self.process_scroll = 0; // Reset scroll on section change
+                        self.process_scroll = 0;
+                        self.connection_scroll = 0;
                     }
                 }
-                // Process table controls (Section 7 Technician Mode)
+                // Scrollable table controls
                 KeyCode::Char('j') | KeyCode::Down => {
                     if self.current_section == Section::Processes {
                         let max = self.snapshot.processes.list.len().saturating_sub(1);
                         self.process_scroll = (self.process_scroll + 1).min(max);
+                    } else if self.current_section == Section::Network {
+                        let max = self.snapshot.network_diag.active_connections.len().saturating_sub(1);
+                        self.connection_scroll = (self.connection_scroll + 1).min(max);
                     }
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     if self.current_section == Section::Processes {
                         self.process_scroll = self.process_scroll.saturating_sub(1);
+                    } else if self.current_section == Section::Network {
+                        self.connection_scroll = self.connection_scroll.saturating_sub(1);
                     }
                 }
                 KeyCode::Char('c') => {

@@ -64,7 +64,7 @@ Navigate between 9 sections using number keys:
 
 - **Fast metrics** (CPU, memory, network, processes): every 1 second
 - **Slow metrics** (disk, GPU, thermals): every 5 seconds
-- **Drivers**: on demand (press `r`) or every 30 seconds
+- **Drivers**: on demand (press `r`)
 
 ## Usage
 
@@ -82,10 +82,11 @@ sd300 --version    # Show version
 |-----|--------|
 | `1`-`9` | Switch to section |
 | `q` / `Esc` | Quit |
+| `Ctrl+C` | Quit to shell |
 | `m` | Return to mode selection |
 | `?` | Help overlay |
 | `f` | Toggle temperature unit (C/F) |
-| `j` / `k` | Scroll (process list, Technician Mode) |
+| `j` / `k` | Scroll (processes, connections in Tech Mode) |
 | `c` / `n` / `p` | Sort by CPU / Name / PID (Section 7) |
 | `r` | Manual refresh (Section 9 - Drivers) |
 

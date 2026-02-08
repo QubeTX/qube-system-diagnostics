@@ -188,10 +188,3 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(proc_panel, chunks[2]);
 }
 
-fn truncate_str(s: &str, max: usize) -> String {
-    if max < 3 { return s.chars().take(max).collect(); }
-    if s.chars().count() <= max { s.to_string() } else {
-        let truncated: String = s.chars().take(max - 2).collect();
-        format!("{}..", truncated)
-    }
-}

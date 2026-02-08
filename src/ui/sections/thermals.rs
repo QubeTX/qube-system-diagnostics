@@ -36,8 +36,8 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     // CPU temperature
     if let Some(temp) = thermal.cpu_temp {
         let desc = format!("{} ({})", plain_language_temp(temp), format_temp(temp, unit));
-        let status = if temp < 70.0 { HealthStatus::Good }
-            else if temp < 85.0 { HealthStatus::Warning }
+        let status = if temp < TEMP_CPU_WARN { HealthStatus::Good }
+            else if temp < TEMP_CPU_CRIT { HealthStatus::Warning }
             else { HealthStatus::Critical };
         lines.push(status_line(&status, "Processor", &desc));
     } else {
@@ -47,8 +47,8 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     // GPU temperature
     if let Some(temp) = thermal.gpu_temp {
         let desc = format!("{} ({})", plain_language_temp(temp), format_temp(temp, unit));
-        let status = if temp < 75.0 { HealthStatus::Good }
-            else if temp < 90.0 { HealthStatus::Warning }
+        let status = if temp < TEMP_GPU_WARN { HealthStatus::Good }
+            else if temp < TEMP_GPU_CRIT { HealthStatus::Warning }
             else { HealthStatus::Critical };
         lines.push(status_line(&status, "Graphics", &desc));
     }
@@ -140,7 +140,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
         let color = if sensor.temperature > sensor.critical.unwrap_or(100.0) {
             Color::Red
-        } else if sensor.temperature > 80.0 {
+        } else if sensor.temperature > TEMP_CPU_WARN {
             Color::Yellow
         } else {
             Color::White
@@ -207,10 +207,3 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(sparkline, chunks[2]);
 }
 
-fn truncate_str(s: &str, max: usize) -> String {
-    if max < 3 { return s.chars().take(max).collect(); }
-    if s.chars().count() <= max { s.to_string() } else {
-        let truncated: String = s.chars().take(max - 2).collect();
-        format!("{}..", truncated)
-    }
-}

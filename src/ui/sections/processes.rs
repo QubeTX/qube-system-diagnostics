@@ -96,14 +96,13 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         ProcessSortKey::Name => sorted_procs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
     }
 
-    // Visible rows
-    let visible_height = chunks[1].height as usize;
+    // Visible rows (reserve 1 line for scroll indicator)
+    let visible_height = chunks[1].height.saturating_sub(1) as usize;
     let scroll = app.process_scroll.min(sorted_procs.len().saturating_sub(visible_height));
+    let total = sorted_procs.len();
 
     let mut proc_lines = Vec::new();
-    for (i, proc) in sorted_procs.iter().skip(scroll).take(visible_height).enumerate() {
-        let _row_idx = i; // Available for future highlighting
-
+    for proc in sorted_procs.iter().skip(scroll).take(visible_height) {
         let style = if proc.cpu_percent > 50.0 {
             Style::default().fg(Color::Red)
         } else if proc.cpu_percent > 20.0 {
@@ -124,14 +123,14 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         )));
     }
 
+    // Scroll indicator
+    let end = (scroll + visible_height).min(total);
+    proc_lines.push(Line::from(Span::styled(
+        format!("  Showing {}-{} of {}", scroll + 1, end, total),
+        Style::default().fg(COLOR_DIM),
+    )));
+
     let proc_panel = Paragraph::new(proc_lines);
     frame.render_widget(proc_panel, chunks[1]);
 }
 
-fn truncate_str(s: &str, max: usize) -> String {
-    if max < 3 { return s.chars().take(max).collect(); }
-    if s.chars().count() <= max { s.to_string() } else {
-        let truncated: String = s.chars().take(max - 2).collect();
-        format!("{}..", truncated)
-    }
-}

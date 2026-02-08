@@ -38,7 +38,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     let unit = app.temp_unit;
     let temp_desc = app.snapshot.thermals.cpu_temp
         .map(|t| format!("{} ({}) \u{2014} {}", plain_language_temp(t), format_temp(t, unit),
-            if t > 70.0 { "This is expected when busy" } else { "Comfortable" }
+            if t > TEMP_CPU_WARN { "This is expected when busy" } else { "Comfortable" }
         ))
         .unwrap_or_else(|| "Sensor data unavailable".into());
 
@@ -49,7 +49,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     let status_lines = vec![
         separator(area.width as usize),
-        status_line(&status, "Status", &format!("{}", plain_language_cpu(cpu.total_usage))),
+        status_line(&status, "Status", plain_language_cpu(cpu.total_usage)),
         health_gauge_line_simple("How busy", cpu.total_usage as f64, 20),
         Line::from(vec![
             Span::styled("  Temperature    ", Style::default().fg(Color::White)),
@@ -201,25 +201,3 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(proc_panel, chunks[2]);
 }
 
-fn health_gauge_line_simple<'a>(label: &str, percent: f64, bar_width: usize) -> Line<'a> {
-    let status = HealthStatus::from_percent(percent);
-    let color = status_color(&status);
-    let filled = ((percent / 100.0) * bar_width as f64).round() as usize;
-    let empty = bar_width.saturating_sub(filled);
-
-    Line::from(vec![
-        Span::styled(format!("  {:<16}", label), Style::default().fg(Color::White)),
-        Span::styled(
-            format!("[{}{}] {:.0}% \u{2014} {}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent, plain_language_cpu(percent as f32)),
-            Style::default().fg(color),
-        ),
-    ])
-}
-
-fn truncate_str(s: &str, max: usize) -> String {
-    if max < 3 { return s.chars().take(max).collect(); }
-    if s.chars().count() <= max { s.to_string() } else {
-        let truncated: String = s.chars().take(max - 2).collect();
-        format!("{}..", truncated)
-    }
-}

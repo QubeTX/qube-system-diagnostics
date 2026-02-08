@@ -6,6 +6,7 @@ use ratatui::Frame;
 
 use crate::app::App;
 use crate::collectors::disk::DiskType;
+use crate::collectors::disk_health::DiskHealthStatus;
 use crate::types::{DiagnosticMode, HealthStatus};
 use crate::ui::common::*;
 
@@ -32,7 +33,8 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(COLOR_DIM),
         )));
     } else {
-        for part in &app.snapshot.disk.partitions {
+        // Map partition index to physical drive health if available
+        for (i, part) in app.snapshot.disk.partitions.iter().enumerate() {
             let pct = part.usage_percent();
             let status = HealthStatus::from_percent(pct);
 
@@ -50,7 +52,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
             lines.push(Line::from(vec![
                 Span::styled(format!("  {} ", status.icon()), Style::default().fg(status_color(&status))),
-                Span::styled(format!("{}", name), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(name.to_string(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
             ]));
             lines.push(Line::from(vec![
                 Span::styled("    Type     ", Style::default().fg(COLOR_DIM)),
@@ -64,9 +66,23 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ]));
             lines.push(gauge_line(&format!("    {}", name), pct, 20));
+
+            // Real health from disk_health collector
+            let drive_health = if app.snapshot.disk_health.drives.len() == 1 {
+                app.snapshot.disk_health.drives.first()
+            } else {
+                app.snapshot.disk_health.drives.get(i)
+                    .or_else(|| app.snapshot.disk_health.drives.first())
+            };
+            let (health_label, health_color) = match drive_health.map(|d| &d.health_status) {
+                Some(DiskHealthStatus::Healthy) => ("Good", COLOR_GOOD),
+                Some(DiskHealthStatus::Warning) => ("Degrading - Back up data", COLOR_WARN),
+                Some(DiskHealthStatus::Critical) => ("FAILING - Back up immediately!", COLOR_CRIT),
+                Some(DiskHealthStatus::Unknown) | None => ("Unknown", COLOR_DIM),
+            };
             lines.push(Line::from(vec![
                 Span::styled("    Health   ", Style::default().fg(COLOR_DIM)),
-                Span::styled("Good", Style::default().fg(COLOR_GOOD)),
+                Span::styled(health_label.to_string(), Style::default().fg(health_color)),
             ]));
             lines.push(Line::from(""));
         }
@@ -114,14 +130,78 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         ]));
     }
 
+    // Physical drives table
+    if !app.snapshot.disk_health.drives.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(section_header("PHYSICAL DRIVES"));
+        lines.push(Line::from(Span::styled(
+            format!("  {:<30} {:<8} {:<10} {:>8} {:>12} {:>12}", "MODEL", "TYPE", "HEALTH", "TEMP", "RD/s", "WR/s"),
+            Style::default().fg(COLOR_DIM),
+        )));
+
+        for drive in &app.snapshot.disk_health.drives {
+            let health_color = match drive.health_status {
+                DiskHealthStatus::Healthy => COLOR_GOOD,
+                DiskHealthStatus::Warning => COLOR_WARN,
+                DiskHealthStatus::Critical => COLOR_CRIT,
+                DiskHealthStatus::Unknown => COLOR_DIM,
+            };
+
+            let temp_str = drive.temperature_celsius
+                .map(|t| format!("{:.0}C", t))
+                .unwrap_or_else(|| "N/A".into());
+
+            let (rd_str, wr_str) = if let Some(ref io) = drive.io_stats {
+                (format_throughput(io.read_bytes_per_sec), format_throughput(io.write_bytes_per_sec))
+            } else {
+                ("N/A".into(), "N/A".into())
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {:<30} {:<8} ", truncate_str(&drive.model, 30), drive.media_type),
+                    Style::default().fg(Color::White),
+                ),
+                Span::styled(format!("{:<10}", drive.health_status.user_label()), Style::default().fg(health_color)),
+                Span::styled(
+                    format!("{:>8} {:>12} {:>12}", temp_str, rd_str, wr_str),
+                    Style::default().fg(COLOR_DIM),
+                ),
+            ]));
+
+            // Detail line: queue depth, latencies, power-on hours
+            if let Some(ref io) = drive.io_stats {
+                let mut detail_parts = vec![
+                    format!("Queue: {:.1}", io.queue_depth),
+                    format!("RdLat: {:.1}ms", io.avg_read_latency_ms),
+                    format!("WrLat: {:.1}ms", io.avg_write_latency_ms),
+                ];
+                if let Some(poh) = drive.power_on_hours {
+                    detail_parts.push(format!("POH: {}", poh));
+                }
+                lines.push(Line::from(Span::styled(
+                    format!("    {}", detail_parts.join("  ")),
+                    Style::default().fg(COLOR_DIM),
+                )));
+            }
+        }
+    }
+
+    // Show disk health warnings
+    let disk_warnings: Vec<_> = app.snapshot.warnings.iter()
+        .filter(|w| w.source == "Disk Health")
+        .collect();
+    if !disk_warnings.is_empty() {
+        lines.push(Line::from(""));
+        for warn in disk_warnings {
+            lines.push(Line::from(Span::styled(
+                format!("  \u{26A0} {}", warn.message),
+                Style::default().fg(COLOR_WARN),
+            )));
+        }
+    }
+
     let panel = Paragraph::new(lines);
     frame.render_widget(panel, area);
 }
 
-fn truncate_str(s: &str, max: usize) -> String {
-    if max < 3 { return s.chars().take(max).collect(); }
-    if s.chars().count() <= max { s.to_string() } else {
-        let truncated: String = s.chars().take(max - 2).collect();
-        format!("{}..", truncated)
-    }
-}

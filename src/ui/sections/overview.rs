@@ -50,8 +50,8 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     let net_connected = !app.snapshot.network.interfaces.is_empty();
     let net_status = if net_connected { HealthStatus::Good } else { HealthStatus::Warning };
     let temp_status = app.snapshot.thermals.cpu_temp.map(|t| {
-        if t < 70.0 { HealthStatus::Good }
-        else if t < 85.0 { HealthStatus::Warning }
+        if t < TEMP_CPU_WARN { HealthStatus::Good }
+        else if t < TEMP_CPU_CRIT { HealthStatus::Warning }
         else { HealthStatus::Critical }
     }).unwrap_or(HealthStatus::Unknown);
 
@@ -59,6 +59,11 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         .chain(app.snapshot.drivers.bluetooth.iter())
         .chain(app.snapshot.drivers.audio.iter())
         .chain(app.snapshot.drivers.input.iter())
+        .chain(app.snapshot.drivers.display.iter())
+        .chain(app.snapshot.drivers.storage.iter())
+        .chain(app.snapshot.drivers.usb.iter())
+        .chain(app.snapshot.drivers.system.iter())
+        .chain(app.snapshot.drivers.other.iter())
         .filter(|d| d.status != crate::collectors::drivers::DeviceStatus::Ok)
         .count();
     let driver_status = if driver_issues == 0 { HealthStatus::Good } else { HealthStatus::Warning };
@@ -209,7 +214,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("  GPU    ", Style::default().fg(COLOR_DIM)),
-            Span::styled(format!("{}", gpu_name), Style::default().fg(Color::White)),
+            Span::styled(gpu_name.to_string(), Style::default().fg(Color::White)),
             Span::styled(format!("{}Driver  ", " ".repeat(4)), Style::default().fg(COLOR_DIM)),
             Span::styled(gpu_driver.to_string(), Style::default().fg(Color::White)),
         ]),
@@ -326,6 +331,11 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .chain(app.snapshot.drivers.bluetooth.iter())
         .chain(app.snapshot.drivers.audio.iter())
         .chain(app.snapshot.drivers.input.iter())
+        .chain(app.snapshot.drivers.display.iter())
+        .chain(app.snapshot.drivers.storage.iter())
+        .chain(app.snapshot.drivers.usb.iter())
+        .chain(app.snapshot.drivers.system.iter())
+        .chain(app.snapshot.drivers.other.iter())
         .all(|d| d.status == crate::collectors::drivers::DeviceStatus::Ok);
 
     let temp_str = app.snapshot.thermals.cpu_temp
@@ -346,22 +356,6 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(proc_panel, chunks[4]);
 }
 
-fn health_gauge_line<'a>(label: &str, status: &HealthStatus, description: &str, percent: f64, bar_width: usize) -> Line<'a> {
-    let color = status_color(status);
-    let filled = ((percent / 100.0) * bar_width as f64).round() as usize;
-    let empty = bar_width.saturating_sub(filled);
-
-    Line::from(vec![
-        Span::styled(format!("  {} ", status.icon()), Style::default().fg(color)),
-        Span::styled(format!("{:<16}", label), Style::default().fg(Color::White)),
-        Span::styled(format!("{:<28}", description), Style::default().fg(COLOR_DIM)),
-        Span::styled(
-            format!("[{}{}] {:.0}%", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent),
-            Style::default().fg(color),
-        ),
-    ])
-}
-
 /// Get current time as HH:MM:SS (without chrono dependency)
 fn chrono_free_time() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -375,16 +369,4 @@ fn chrono_free_time() -> String {
     let m = (secs_of_day % 3600) / 60;
     let s = secs_of_day % 60;
     format!("{:02}:{:02}:{:02} UTC", h, m, s)
-}
-
-fn truncate_str(s: &str, max: usize) -> String {
-    if max < 3 {
-        return s.chars().take(max).collect();
-    }
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max - 2).collect();
-        format!("{}..", truncated)
-    }
 }

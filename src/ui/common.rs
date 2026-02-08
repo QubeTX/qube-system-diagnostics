@@ -2,6 +2,13 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use crate::types::{HealthStatus, TempUnit};
 
+// -- Temperature Thresholds --
+
+pub const TEMP_CPU_WARN: f64 = 70.0;
+pub const TEMP_CPU_CRIT: f64 = 85.0;
+pub const TEMP_GPU_WARN: f64 = 75.0;
+pub const TEMP_GPU_CRIT: f64 = 90.0;
+
 // -- Color Palette (QubeTX) --
 
 pub const COLOR_GOOD: Color = Color::Green;
@@ -97,9 +104,9 @@ pub fn plain_language_percent(pct: f64, resource: &str) -> String {
     } else if pct < 80.0 {
         format!("Using most of the {}", resource)
     } else if pct < 95.0 {
-        format!("{} is getting full", resource.to_string())
+        format!("{} is getting full", resource)
     } else {
-        format!("{} is almost completely used", resource.to_string())
+        format!("{} is almost completely used", resource)
     }
 }
 
@@ -224,4 +231,50 @@ pub fn separator(width: usize) -> Line<'static> {
         format!("  {}", "\u{2500}".repeat(width.saturating_sub(4))),
         Style::default().fg(COLOR_DIM),
     ))
+}
+
+/// Truncate a string to `max` characters, appending ".." if truncated
+pub fn truncate_str(s: &str, max: usize) -> String {
+    if max < 3 {
+        return s.chars().take(max).collect();
+    }
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max - 2).collect();
+        format!("{}..", truncated)
+    }
+}
+
+/// Health gauge line with status icon + label + description + gauge bar (User Mode overview)
+pub fn health_gauge_line<'a>(label: &str, status: &HealthStatus, description: &str, percent: f64, bar_width: usize) -> Line<'a> {
+    let color = status_color(status);
+    let filled = ((percent / 100.0) * bar_width as f64).round() as usize;
+    let empty = bar_width.saturating_sub(filled);
+
+    Line::from(vec![
+        Span::styled(format!("  {} ", status.icon()), Style::default().fg(color)),
+        Span::styled(format!("{:<16}", label), Style::default().fg(Color::White)),
+        Span::styled(format!("{:<28}", description), Style::default().fg(COLOR_DIM)),
+        Span::styled(
+            format!("[{}{}] {:.0}%", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent),
+            Style::default().fg(color),
+        ),
+    ])
+}
+
+/// Simple gauge line with label + gauge + plain language description (User Mode CPU)
+pub fn health_gauge_line_simple<'a>(label: &str, percent: f64, bar_width: usize) -> Line<'a> {
+    let status = HealthStatus::from_percent(percent);
+    let color = status_color(&status);
+    let filled = ((percent / 100.0) * bar_width as f64).round() as usize;
+    let empty = bar_width.saturating_sub(filled);
+
+    Line::from(vec![
+        Span::styled(format!("  {:<16}", label), Style::default().fg(Color::White)),
+        Span::styled(
+            format!("[{}{}] {:.0}% \u{2014} {}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent, plain_language_cpu(percent as f32)),
+            Style::default().fg(color),
+        ),
+    ])
 }
