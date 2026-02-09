@@ -174,39 +174,44 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let swap_used_gib = format_bytes_gib(app.snapshot.memory.swap_used_bytes);
     let swap_total_gib = format_bytes_gib(app.snapshot.memory.swap_total_bytes);
 
+    let freq = app.snapshot.cpu.per_core_frequency.first().unwrap_or(&0);
+
+    // Dynamic column width: left_label(10) + left_value(val_w) + right_label(8) + right_value(~20)
+    // Reserve 10 (label) + 8 (right label) + 20 (right value) = 38 chars for non-value columns
+    let val_w = (inner.width as usize).saturating_sub(38).max(20).min(60);
+
+    let os_val = truncate_str(&format!("{} {} ({})", sys.os_name, sys.os_version, sys.kernel_version), val_w);
+    let cpu_val = truncate_str(&format!("{} ({}) @ {} MHz", sys.cpu_model, sys.cpu_threads, freq), val_w);
+    let gpu_val = truncate_str(gpu_name, val_w);
+    let mem_val = truncate_str(&format!("{} / {} ({:.1}%)", mem_used_gib, mem_total_gib, app.snapshot.memory.usage_percent()), val_w);
+
     let identity_lines = vec![
         Line::from(vec![
-            Span::styled("  OS     ", Style::default().fg(COLOR_DIM)),
-            Span::styled(format!("{} {} ({})", sys.os_name, sys.os_version, sys.kernel_version), Style::default().fg(COLOR_TEXT)),
-            Span::styled(format!("{}Uptime  ", " ".repeat(4)), Style::default().fg(COLOR_DIM)),
+            Span::styled("  OS      ", Style::default().fg(COLOR_DIM)),
+            Span::styled(format!("{:<width$}", os_val, width = val_w), Style::default().fg(COLOR_TEXT)),
+            Span::styled("Uptime  ", Style::default().fg(COLOR_DIM)),
             Span::styled(format_uptime(sys.uptime_seconds), Style::default().fg(COLOR_TEXT)),
         ]),
         Line::from(vec![
-            Span::styled("  Host   ", Style::default().fg(COLOR_DIM)),
-            Span::styled(&sys.hostname, Style::default().fg(COLOR_TEXT)),
+            Span::styled("  Host    ", Style::default().fg(COLOR_DIM)),
+            Span::styled(format!("{:<width$}", truncate_str(&sys.hostname, val_w), width = val_w), Style::default().fg(COLOR_TEXT)),
         ]),
         Line::from(vec![
-            Span::styled("  CPU    ", Style::default().fg(COLOR_DIM)),
-            Span::styled(
-                format!("{} ({}) @ {} MHz", sys.cpu_model, sys.cpu_threads, app.snapshot.cpu.per_core_frequency.first().unwrap_or(&0)),
-                Style::default().fg(COLOR_TEXT),
-            ),
-            Span::styled(format!("{}Arch    ", " ".repeat(4)), Style::default().fg(COLOR_DIM)),
+            Span::styled("  CPU     ", Style::default().fg(COLOR_DIM)),
+            Span::styled(format!("{:<width$}", cpu_val, width = val_w), Style::default().fg(COLOR_TEXT)),
+            Span::styled("Arch    ", Style::default().fg(COLOR_DIM)),
             Span::styled(&sys.architecture, Style::default().fg(COLOR_TEXT)),
         ]),
         Line::from(vec![
-            Span::styled("  GPU    ", Style::default().fg(COLOR_DIM)),
-            Span::styled(gpu_name.to_string(), Style::default().fg(COLOR_TEXT)),
-            Span::styled(format!("{}Driver  ", " ".repeat(4)), Style::default().fg(COLOR_DIM)),
+            Span::styled("  GPU     ", Style::default().fg(COLOR_DIM)),
+            Span::styled(format!("{:<width$}", gpu_val, width = val_w), Style::default().fg(COLOR_TEXT)),
+            Span::styled("Driver  ", Style::default().fg(COLOR_DIM)),
             Span::styled(gpu_driver.to_string(), Style::default().fg(COLOR_TEXT)),
         ]),
         Line::from(vec![
-            Span::styled("  Memory ", Style::default().fg(COLOR_DIM)),
-            Span::styled(
-                format!("{} / {} ({:.1}%)", mem_used_gib, mem_total_gib, app.snapshot.memory.usage_percent()),
-                Style::default().fg(COLOR_TEXT),
-            ),
-            Span::styled(format!("{}Swap    ", " ".repeat(4)), Style::default().fg(COLOR_DIM)),
+            Span::styled("  Memory  ", Style::default().fg(COLOR_DIM)),
+            Span::styled(format!("{:<width$}", mem_val, width = val_w), Style::default().fg(COLOR_TEXT)),
+            Span::styled("Swap    ", Style::default().fg(COLOR_DIM)),
             Span::styled(format!("{} / {}", swap_used_gib, swap_total_gib), Style::default().fg(COLOR_TEXT)),
         ]),
     ];

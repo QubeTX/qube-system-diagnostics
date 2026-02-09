@@ -67,6 +67,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         .block(sparkline_block)
         .data(&spark_data)
         .max(100)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_CPU));
     frame.render_widget(sparkline, chunks[1]);
 
@@ -168,6 +169,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("Load History (60s)"))
         .data(&spark_data)
         .max(100)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_CPU));
     frame.render_widget(sparkline, core_chunks[1]);
 

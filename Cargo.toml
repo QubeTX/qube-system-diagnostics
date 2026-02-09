@@ -1,6 +1,6 @@
 [package]
 name = "sd-300"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2021"
 authors = ["Emmett S <hey@emmetts.dev>"]
 description = "Real-time interactive system diagnostic TUI"
@@ -33,6 +33,13 @@ futures = "0.3"
 wmi = "0.14"
 serde = { version = "1.0", features = ["derive"] }
 winapi = { version = "0.3", features = ["consoleapi", "wincon"] }
+windows = { version = "0.62", features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_System_Services",
+    "Win32_Security",
+] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -101,6 +101,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("Download Speed (last 60 seconds)"))
         .data(&spark_data)
         .max(max_val)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_NET_DOWN));
     frame.render_widget(sparkline, chunks[1]);
 }
@@ -272,6 +273,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("Download"))
         .data(&down_data)
         .max(down_max)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_NET_DOWN));
     frame.render_widget(down_sparkline, spark_chunks[0]);
 
@@ -281,6 +283,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("Upload"))
         .data(&up_data)
         .max(up_max)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_NET_UP));
     frame.render_widget(up_sparkline, spark_chunks[1]);
 }

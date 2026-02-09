@@ -33,6 +33,24 @@ pub const SPARK_NET_UP: Color = Color::Rgb(160, 120, 170);   // Muted purple
 pub const SPARK_GPU: Color = Color::Rgb(130, 170, 120);      // Sage green (good)
 pub const SPARK_TEMP: Color = Color::Rgb(210, 160, 60);      // Warm amber
 
+/// Get the appropriate sparkline bar set for the current platform.
+/// Windows terminals often can't render fractional block chars (U+2581-U+2587),
+/// so we use THREE_LEVELS there and NINE_LEVELS everywhere else.
+pub fn sparkline_bar_set() -> ratatui::symbols::bar::Set<'static> {
+    if cfg!(windows) {
+        ratatui::symbols::bar::THREE_LEVELS
+    } else {
+        ratatui::symbols::bar::NINE_LEVELS
+    }
+}
+
+/// Get the gauge empty character for the current platform.
+/// U+2591 (░ LIGHT SHADE) renders as `?` on some Windows fonts,
+/// so we use U+2500 (─ BOX DRAWINGS LIGHT HORIZONTAL) on Windows.
+pub fn gauge_empty_char() -> &'static str {
+    if cfg!(windows) { "\u{2500}" } else { "\u{2591}" }
+}
+
 pub fn status_color(status: &HealthStatus) -> Color {
     match status {
         HealthStatus::Good => COLOR_GOOD,
@@ -134,15 +152,15 @@ pub fn format_uptime(seconds: u64) -> String {
 /// Plain language for percentage (User Mode)
 pub fn plain_language_percent(pct: f64, resource: &str) -> String {
     if pct < 30.0 {
-        format!("Plenty of {} available", resource)
+        format!("Plenty of {} free", resource)
     } else if pct < 60.0 {
-        format!("Using a moderate amount of {}", resource)
+        format!("Moderate {} use", resource)
     } else if pct < 80.0 {
-        format!("Using most of the {}", resource)
+        format!("Most {} in use", resource)
     } else if pct < 95.0 {
-        format!("{} is getting full", resource)
+        format!("{} getting full", resource)
     } else {
-        format!("{} is almost completely used", resource)
+        format!("{} nearly full", resource)
     }
 }
 
@@ -196,14 +214,14 @@ pub fn plain_language_speed(bytes_per_sec: u64) -> &'static str {
     }
 }
 
-/// Create a text gauge bar like ████████░░  78%
+/// Create a text gauge bar like ████████──  78%
 pub fn gauge_bar(percent: f64, width: usize) -> String {
     let filled = ((percent / 100.0) * width as f64).round() as usize;
     let empty = width.saturating_sub(filled);
     format!(
         "{}{}  {:.0}%",
         "\u{2588}".repeat(filled),
-        "\u{2591}".repeat(empty),
+        gauge_empty_char().repeat(empty),
         percent
     )
 }
@@ -222,7 +240,7 @@ pub fn gauge_line<'a>(label: &str, percent: f64, width: usize) -> Line<'a> {
             Style::default().fg(COLOR_TEXT),
         ),
         Span::styled(
-            format!("{}{}",  "\u{2588}".repeat(filled), "\u{2591}".repeat(empty)),
+            format!("{}{}",  "\u{2588}".repeat(filled), gauge_empty_char().repeat(empty)),
             Style::default().fg(color),
         ),
         Span::styled(
@@ -288,12 +306,13 @@ pub fn health_gauge_line<'a>(label: &str, status: &HealthStatus, description: &s
     let filled = ((percent / 100.0) * bar_width as f64).round() as usize;
     let empty = bar_width.saturating_sub(filled);
 
+    let desc_truncated = truncate_str(description, 26);
     Line::from(vec![
         Span::styled(format!("  {} ", status.icon()), Style::default().fg(color)),
         Span::styled(format!("{:<16}", label), Style::default().fg(COLOR_TEXT)),
-        Span::styled(format!("{:<28}", description), Style::default().fg(COLOR_DIM)),
+        Span::styled(format!("{:<28}", desc_truncated), Style::default().fg(COLOR_DIM)),
         Span::styled(
-            format!("{}{}  {:.0}%", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent),
+            format!("{}{}  {:.0}%", "\u{2588}".repeat(filled), gauge_empty_char().repeat(empty), percent),
             Style::default().fg(color),
         ),
     ])
@@ -309,7 +328,7 @@ pub fn health_gauge_line_simple<'a>(label: &str, percent: f64, bar_width: usize)
     Line::from(vec![
         Span::styled(format!("  {:<16}", label), Style::default().fg(COLOR_TEXT)),
         Span::styled(
-            format!("{}{}  {:.0}% \u{2014} {}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent, plain_language_cpu(percent as f32)),
+            format!("{}{}  {:.0}% \u{2014} {}", "\u{2588}".repeat(filled), gauge_empty_char().repeat(empty), percent, plain_language_cpu(percent as f32)),
             Style::default().fg(color),
         ),
     ])

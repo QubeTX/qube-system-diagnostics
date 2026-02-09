@@ -156,6 +156,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("GPU Utilization (60s)"))
         .data(&spark_data)
         .max(100)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_GPU));
     frame.render_widget(sparkline, chunks[1]);
 }

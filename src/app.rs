@@ -130,7 +130,7 @@ impl App {
                     if let Some(handle) = self.driver_scan_handle.take() {
                         if let Ok(data) = handle.await {
                             self.snapshot.warnings.retain(|w| w.source != "Drivers");
-                            if let DriverScanStatus::WmiUnavailable(ref msg) = data.scan_status {
+                            if let DriverScanStatus::ScanFailed(ref msg) = data.scan_status {
                                 self.snapshot.warnings.push(DiagnosticWarning {
                                     source: "Drivers".into(),
                                     message: msg.clone(),

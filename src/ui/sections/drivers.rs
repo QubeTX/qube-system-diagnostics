@@ -34,12 +34,23 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             )));
             lines.push(Line::from(""));
         }
-        DriverScanStatus::WmiUnavailable(ref msg) => {
+        DriverScanStatus::ScanFailed(ref msg) => {
             lines.push(Line::from(Span::styled(
                 format!("  \u{26A0} {}", msg),
                 Style::default().fg(COLOR_WARN),
             )));
             lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Device information requires administrator privileges or may be temporarily unavailable.",
+                Style::default().fg(COLOR_MUTED),
+            )));
+            lines.push(Line::from(Span::styled(
+                "  Try running SD-300 as Administrator.",
+                Style::default().fg(COLOR_MUTED),
+            )));
+            let panel = Paragraph::new(lines);
+            frame.render_widget(panel, inner);
+            return;
         }
         DriverScanStatus::NotScanned => {
             lines.push(Line::from(Span::styled(
@@ -101,12 +112,23 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             )));
             lines.push(Line::from(""));
         }
-        DriverScanStatus::WmiUnavailable(msg) => {
+        DriverScanStatus::ScanFailed(msg) => {
             lines.push(Line::from(Span::styled(
-                format!("  \u{26A0} Scan status: {}", msg),
+                format!("  \u{26A0} {}", msg),
                 Style::default().fg(COLOR_WARN),
             )));
             lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Device information requires administrator privileges or may be temporarily unavailable.",
+                Style::default().fg(COLOR_MUTED),
+            )));
+            lines.push(Line::from(Span::styled(
+                "  Try running SD-300 as Administrator.",
+                Style::default().fg(COLOR_MUTED),
+            )));
+            let panel = Paragraph::new(lines);
+            frame.render_widget(panel, inner);
+            return;
         }
         DriverScanStatus::NotScanned => {
             lines.push(Line::from(Span::styled(

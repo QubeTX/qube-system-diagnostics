@@ -97,7 +97,7 @@ impl SystemSnapshot {
     pub fn refresh_drivers(&mut self) {
         self.drivers = drivers::collect();
         self.warnings.retain(|w| w.source != "Drivers");
-        if let drivers::DriverScanStatus::WmiUnavailable(ref msg) = self.drivers.scan_status {
+        if let drivers::DriverScanStatus::ScanFailed(ref msg) = self.drivers.scan_status {
             self.warnings.push(DiagnosticWarning {
                 source: "Drivers".into(),
                 message: msg.clone(),

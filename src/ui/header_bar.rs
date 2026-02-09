@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -16,8 +16,8 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 
     // Mode badge
     let (mode_label, mode_fg, mode_bg) = match mode {
-        DiagnosticMode::User => ("User Mode", COLOR_TEXT, COLOR_GOOD),
-        DiagnosticMode::Technician => ("Tech Mode", COLOR_TEXT, COLOR_WARN),
+        DiagnosticMode::User => ("User Mode", Color::Rgb(20, 20, 20), COLOR_GOOD),
+        DiagnosticMode::Technician => ("Tech Mode", Color::Rgb(20, 20, 20), COLOR_WARN),
     };
 
     // Right side: mode badge + clock

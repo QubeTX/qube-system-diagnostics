@@ -104,7 +104,7 @@ pub enum DriverScanStatus {
     NotScanned,
     Scanning,
     Success,
-    WmiUnavailable(String),
+    ScanFailed(String),
 }
 
 #[derive(Debug, Clone)]

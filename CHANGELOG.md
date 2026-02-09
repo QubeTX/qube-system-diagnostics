@@ -2,6 +2,18 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [1.2.1] - 2026-02-09
+
+### Changed
+- **Driver scanning replaced WMI with Windows Setup API**: Device enumeration now uses `SetupDi*` functions and Configuration Manager (`CM_Get_DevNode_Status`) instead of `Win32_PnPSignedDriver` WMI queries — immune to WMI repository corruption
+- **Service status via Service Control Manager**: Replaced `Win32_Service` WMI query with direct SCM API (`OpenSCManager`/`QueryServiceStatus`) for the 13 monitored services
+- Driver version and date now read directly from registry (`HKLM\SYSTEM\CurrentControlSet\Control\Class`) instead of WMI
+- Renamed `DriverScanStatus::WmiUnavailable` to `ScanFailed` to reflect the API-agnostic implementation
+- Updated error messages to remove WMI-specific language
+
+### Added
+- `windows` crate v0.62 dependency with Setup API, Registry, and Services features
+
 ## [1.2.0] - 2026-02-09
 
 ### Added

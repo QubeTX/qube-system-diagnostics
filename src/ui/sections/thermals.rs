@@ -114,6 +114,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("CPU Temperature (60s)"))
         .data(&spark_data)
         .max(100)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_TEMP));
     frame.render_widget(sparkline, chunks[1]);
 }
@@ -219,6 +220,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("CPU Temperature (60s)"))
         .data(&spark_data)
         .max(100)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_TEMP));
     frame.render_widget(sparkline, chunks[2]);
 }

@@ -67,6 +67,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("Usage \u{2014} Last 60 Seconds"))
         .data(&spark_data)
         .max(100)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_MEMORY));
     frame.render_widget(sparkline, chunks[1]);
 
@@ -135,6 +136,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("RAM Usage"))
         .data(&mem_spark)
         .max(100)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_MEMORY));
     frame.render_widget(mem_sparkline, spark_chunks[0]);
 
@@ -143,6 +145,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .block(sub_block("Swap Usage"))
         .data(&swap_spark)
         .max(100)
+        .bar_set(sparkline_bar_set())
         .style(Style::default().fg(COLOR_WARN));
     frame.render_widget(swap_sparkline, spark_chunks[1]);
 
