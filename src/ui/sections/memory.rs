@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Sparkline};
+use ratatui::widgets::{Paragraph, Sparkline};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -16,21 +16,18 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, mode: DiagnosticMode) {
 }
 
 fn render_user(frame: &mut Frame, app: &App, area: Rect) {
+    let outer = content_block("Memory");
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),
-            Constraint::Length(7),
-            Constraint::Length(9),
-            Constraint::Min(6),
+            Constraint::Length(6),
+            Constraint::Length(8),
+            Constraint::Min(5),
         ])
-        .split(area);
-
-    let header = Paragraph::new(Line::from(Span::styled(
-        "  MEMORY",
-        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-    )));
-    frame.render_widget(header, chunks[0]);
+        .split(inner);
 
     let mem = &app.snapshot.memory;
     let pct = mem.usage_percent();
@@ -39,57 +36,52 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     let total_gb = mem.total_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
 
     let mut status_lines = vec![
-        separator(area.width as usize),
+        Line::from(""),
         Line::from(vec![
             Span::styled(format!("  {} ", status.icon()), Style::default().fg(status_color(&status))),
             Span::styled(
                 format!("Using {:.0} of {:.0} GB ({:.0}%)", used_gb, total_gb, pct),
-                Style::default().fg(Color::White),
+                Style::default().fg(COLOR_TEXT),
             ),
         ]),
         gauge_line("Usage", pct, 20),
         Line::from(vec![
-            Span::styled("  Status          ", Style::default().fg(Color::White)),
+            Span::styled("  Status          ", Style::default().fg(COLOR_TEXT)),
             Span::styled(plain_language_percent(pct, "memory"), Style::default().fg(COLOR_DIM)),
         ]),
     ];
 
     if mem.swap_used_bytes > 0 {
         status_lines.push(Line::from(vec![
-            Span::styled("  Swap            ", Style::default().fg(Color::White)),
+            Span::styled("  Swap            ", Style::default().fg(COLOR_TEXT)),
             Span::styled("Your computer is using extra temporary storage", Style::default().fg(COLOR_DIM)),
         ]));
     }
 
     let status_panel = Paragraph::new(status_lines);
-    frame.render_widget(status_panel, chunks[1]);
+    frame.render_widget(status_panel, chunks[0]);
 
     // Sparkline
     let spark_data = app.mem_history.as_u64_vec();
-    let sparkline_block = Block::default()
-        .title("  MEMORY USAGE (last 60 seconds)")
-        .title_style(Style::default().fg(COLOR_HEADER))
-        .borders(Borders::NONE);
     let sparkline = Sparkline::default()
-        .block(sparkline_block)
+        .block(sub_block("Usage \u{2014} Last 60 Seconds"))
         .data(&spark_data)
         .max(100)
-        .style(Style::default().fg(Color::Magenta));
-    frame.render_widget(sparkline, chunks[2]);
+        .style(Style::default().fg(SPARK_MEMORY));
+    frame.render_widget(sparkline, chunks[1]);
 
     // Top consumers
-    let mut consumer_lines = vec![
-        separator(area.width as usize),
-        section_header("WHAT'S USING THE MOST MEMORY"),
-        Line::from(""),
-    ];
+    let consumer_block = sub_block("What's Using the Most Memory");
+    let consumer_inner = consumer_block.inner(chunks[2]);
+    frame.render_widget(consumer_block, chunks[2]);
 
+    let mut consumer_lines = Vec::new();
     let mut mem_sorted: Vec<_> = app.snapshot.processes.list.clone();
     mem_sorted.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes));
 
     for proc in mem_sorted.iter().take(5) {
         consumer_lines.push(Line::from(vec![
-            Span::styled(format!("  {:<24}", proc.friendly_name), Style::default().fg(Color::White)),
+            Span::styled(format!("  {:<24}", proc.friendly_name), Style::default().fg(COLOR_TEXT)),
             Span::styled(format_bytes(proc.memory_bytes), Style::default().fg(COLOR_INFO)),
             Span::styled(
                 format!("  ({:.1}%)", proc.memory_percent),
@@ -99,29 +91,27 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let consumer_panel = Paragraph::new(consumer_lines);
-    frame.render_widget(consumer_panel, chunks[3]);
+    frame.render_widget(consumer_panel, consumer_inner);
 }
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
+    let mem = &app.snapshot.memory;
+    let outer = content_block(&format!("Memory \u{2014} {} / {} ({:.1}%)",
+        format_bytes_gib(mem.used_bytes), format_bytes_gib(mem.total_bytes), mem.usage_percent()));
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(2),
             Constraint::Length(6),
-            Constraint::Min(8),
+            Constraint::Min(6),
         ])
-        .split(area);
+        .split(inner);
 
-    let mem = &app.snapshot.memory;
-
-    // Header
-    let header_lines = vec![
-        Line::from(Span::styled(
-            format!("  MEMORY \u{2014} {} / {} ({:.1}%)",
-                format_bytes_gib(mem.used_bytes), format_bytes_gib(mem.total_bytes), mem.usage_percent()),
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
+    // Gauge row
+    let gauge_lines = vec![
         Line::from(vec![
             Span::styled("  RAM  ", Style::default().fg(COLOR_DIM)),
             Span::styled(gauge_bar(mem.usage_percent(), 20), Style::default().fg(status_color(&HealthStatus::from_percent(mem.usage_percent())))),
@@ -130,8 +120,8 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(gauge_bar(mem.swap_percent(), 20), Style::default().fg(status_color(&HealthStatus::from_percent(mem.swap_percent())))),
         ]),
     ];
-    let header_panel = Paragraph::new(header_lines);
-    frame.render_widget(header_panel, chunks[0]);
+    let gauge_panel = Paragraph::new(gauge_lines);
+    frame.render_widget(gauge_panel, chunks[0]);
 
     // Sparklines side by side
     let spark_area = chunks[1];
@@ -142,33 +132,28 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     let mem_spark = app.mem_history.as_u64_vec();
     let mem_sparkline = Sparkline::default()
-        .block(Block::default()
-            .title(" RAM Usage ")
-            .title_style(Style::default().fg(COLOR_HEADER))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(COLOR_DIM)))
+        .block(sub_block("RAM Usage"))
         .data(&mem_spark)
         .max(100)
-        .style(Style::default().fg(Color::Magenta));
+        .style(Style::default().fg(SPARK_MEMORY));
     frame.render_widget(mem_sparkline, spark_chunks[0]);
 
     let swap_spark = app.swap_history.as_u64_vec();
     let swap_sparkline = Sparkline::default()
-        .block(Block::default()
-            .title(" Swap Usage ")
-            .title_style(Style::default().fg(COLOR_HEADER))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(COLOR_DIM)))
+        .block(sub_block("Swap Usage"))
         .data(&swap_spark)
         .max(100)
-        .style(Style::default().fg(Color::Yellow));
+        .style(Style::default().fg(COLOR_WARN));
     frame.render_widget(swap_sparkline, spark_chunks[1]);
 
     // Process table
+    let proc_block = sub_block("Top Memory Consumers");
+    let proc_inner = proc_block.inner(chunks[2]);
+    frame.render_widget(proc_block, chunks[2]);
+
     let mut proc_lines = vec![
-        separator(area.width as usize),
         Line::from(Span::styled(
-            format!("  {:<28} {:>6} {:>8} {:>10} {:>10}", "TOP MEMORY CONSUMERS", "PID", "MEM%", "RSS", "CPU%"),
+            format!("  {:<28} {:>6} {:>8} {:>10} {:>10}", "PROCESS", "PID", "MEM%", "RSS", "CPU%"),
             Style::default().fg(COLOR_DIM),
         )),
     ];
@@ -180,11 +165,10 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         proc_lines.push(Line::from(Span::styled(
             format!("  {:<28} {:>6} {:>7.1}% {:>10} {:>9.1}%",
                 truncate_str(&proc.name, 28), proc.pid, proc.memory_percent, format_bytes(proc.memory_bytes), proc.cpu_percent),
-            Style::default().fg(Color::White),
+            Style::default().fg(COLOR_TEXT),
         )));
     }
 
     let proc_panel = Paragraph::new(proc_lines);
-    frame.render_widget(proc_panel, chunks[2]);
+    frame.render_widget(proc_panel, proc_inner);
 }
-

@@ -4,7 +4,8 @@ use ratatui::DefaultTerminal;
 use std::time::Duration;
 use tokio::time::interval;
 
-use crate::collectors::SystemSnapshot;
+use crate::collectors::drivers::{DriverData, DriverScanStatus};
+use crate::collectors::{DiagnosticWarning, WarningSeverity, SystemSnapshot};
 use crate::error::Result;
 use crate::history::HistoryBuffer;
 use crate::types::{DiagnosticMode, HealthStatus, ProcessSortKey, Section, TempUnit};
@@ -60,6 +61,8 @@ pub struct App {
     pub disk_read_history: HistoryBuffer,
     /// Disk I/O write history
     pub disk_write_history: HistoryBuffer,
+    /// Async driver scan handle
+    driver_scan_handle: Option<tokio::task::JoinHandle<DriverData>>,
 }
 
 impl App {
@@ -85,6 +88,7 @@ impl App {
             connection_scroll: 0,
             disk_read_history: HistoryBuffer::new(HISTORY_SAMPLES),
             disk_write_history: HistoryBuffer::new(HISTORY_SAMPLES),
+            driver_scan_handle: None,
         }
     }
 
@@ -94,9 +98,14 @@ impl App {
         self.snapshot.refresh_static();
         self.snapshot.refresh_fast();
         self.snapshot.refresh_slow();
-        self.snapshot.refresh_drivers();
         self.snapshot.refresh_connections();
         self.snapshot.refresh_disk_health();
+
+        // Initial driver scan — async to avoid blocking UI
+        self.snapshot.drivers.scan_status = DriverScanStatus::Scanning;
+        self.driver_scan_handle = Some(tokio::task::spawn_blocking(|| {
+            crate::collectors::drivers::collect()
+        }));
 
         // Initial connectivity check in background
         {
@@ -115,6 +124,25 @@ impl App {
         let mut event_stream = crossterm::event::EventStream::new();
 
         loop {
+            // Check if async driver scan completed
+            if let Some(ref handle) = self.driver_scan_handle {
+                if handle.is_finished() {
+                    if let Some(handle) = self.driver_scan_handle.take() {
+                        if let Ok(data) = handle.await {
+                            self.snapshot.warnings.retain(|w| w.source != "Drivers");
+                            if let DriverScanStatus::WmiUnavailable(ref msg) = data.scan_status {
+                                self.snapshot.warnings.push(DiagnosticWarning {
+                                    source: "Drivers".into(),
+                                    message: msg.clone(),
+                                    severity: WarningSeverity::Warning,
+                                });
+                            }
+                            self.snapshot.drivers = data;
+                        }
+                    }
+                }
+            }
+
             // Draw
             let size = terminal.size()?;
             self.too_small = size.width < 80 || size.height < 24;
@@ -290,10 +318,13 @@ impl App {
                 KeyCode::Char('f') => {
                     self.temp_unit = self.temp_unit.toggle();
                 }
-                // Manual refresh for drivers section
+                // Manual refresh for drivers section (non-blocking)
                 KeyCode::Char('r') => {
-                    if self.current_section == Section::Drivers {
-                        self.snapshot.refresh_drivers();
+                    if self.current_section == Section::Drivers && self.driver_scan_handle.is_none() {
+                        self.snapshot.drivers.scan_status = DriverScanStatus::Scanning;
+                        self.driver_scan_handle = Some(tokio::task::spawn_blocking(|| {
+                            crate::collectors::drivers::collect()
+                        }));
                     }
                 }
                 _ => {}

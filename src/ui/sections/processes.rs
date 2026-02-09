@@ -1,5 +1,5 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -16,49 +16,46 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, mode: DiagnosticMode) {
 }
 
 fn render_user(frame: &mut Frame, app: &App, area: Rect) {
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "  RUNNING APPS",
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
-        Line::from(""),
-        Line::from(Span::styled(
-            format!("  {} things running on your computer", app.snapshot.processes.total_count),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(""),
-    ];
+    let outer = content_block(&format!("Running Apps \u{2014} {} total", app.snapshot.processes.total_count));
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
 
-    for proc in app.snapshot.processes.list.iter().take(10) {
-        let descriptor = if proc.cpu_percent > 20.0 {
-            "Using a lot of processor"
+    let mut lines = vec![Line::from("")];
+
+    for proc in app.snapshot.processes.list.iter().take(15) {
+        let (dot_color, descriptor) = if proc.cpu_percent > 20.0 {
+            (COLOR_CRIT, "Using a lot of processor")
         } else if proc.memory_percent > 5.0 {
-            "Using a lot of memory"
+            (COLOR_WARN, "Using a lot of memory")
         } else if proc.cpu_percent > 5.0 {
-            "Using some processor"
+            (COLOR_WARN, "Using some processor")
         } else {
-            "Running quietly"
+            (COLOR_GOOD, "Running quietly")
         };
 
         lines.push(Line::from(vec![
-            Span::styled(format!("  {:<24}", proc.friendly_name), Style::default().fg(Color::White)),
+            Span::styled("  \u{2022} ", Style::default().fg(dot_color)),
+            Span::styled(format!("{:<22}", proc.friendly_name), Style::default().fg(COLOR_TEXT)),
             Span::styled(descriptor.to_string(), Style::default().fg(COLOR_DIM)),
         ]));
     }
 
     let panel = Paragraph::new(lines);
-    frame.render_widget(panel, area);
+    frame.render_widget(panel, inner);
 }
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
+    let outer = content_block(&format!("Processes \u{2014} {} total", app.snapshot.processes.total_count));
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4),
+            Constraint::Length(3),
             Constraint::Min(6),
         ])
-        .split(area);
+        .split(inner);
 
     // Header with sort indicator
     let sort_indicator = match app.process_sort {
@@ -70,15 +67,10 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     let header_lines = vec![
         Line::from(Span::styled(
-            format!("  PROCESSES \u{2014} {} processes  (sorted by {})",
-                app.snapshot.processes.total_count, sort_indicator),
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
+            format!("  Sorted by {}    Sort: [c]pu  [m]emory  [p]id  [n]ame    Scroll: j/k or arrows", sort_indicator),
+            Style::default().fg(COLOR_MUTED),
         )),
-        separator(area.width as usize),
-        Line::from(Span::styled(
-            "  Sort: [c]pu  [m]emory  [p]id  [n]ame    Scroll: j/k or arrows",
-            Style::default().fg(COLOR_DIM),
-        )),
+        Line::from(""),
         Line::from(Span::styled(
             format!("  {:<28} {:>6} {:>8} {:>8} {:>10} {:>8}", "NAME", "PID", "CPU%", "MEM%", "MEMORY", "STATUS"),
             Style::default().fg(COLOR_DIM).add_modifier(Modifier::BOLD),
@@ -104,11 +96,11 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let mut proc_lines = Vec::new();
     for proc in sorted_procs.iter().skip(scroll).take(visible_height) {
         let style = if proc.cpu_percent > 50.0 {
-            Style::default().fg(Color::Red)
+            Style::default().fg(COLOR_CRIT)
         } else if proc.cpu_percent > 20.0 {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(COLOR_WARN)
         } else {
-            Style::default().fg(Color::White)
+            Style::default().fg(COLOR_TEXT)
         };
 
         proc_lines.push(Line::from(Span::styled(
@@ -133,4 +125,3 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let proc_panel = Paragraph::new(proc_lines);
     frame.render_widget(proc_panel, chunks[1]);
 }
-

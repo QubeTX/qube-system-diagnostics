@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Sparkline};
+use ratatui::widgets::{Paragraph, Sparkline};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -21,47 +21,48 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, mode: DiagnosticMode) {
 }
 
 fn render_unavailable(frame: &mut Frame, area: Rect, mode: DiagnosticMode) {
-    let title = if mode == DiagnosticMode::User { "GRAPHICS" } else { "GPU" };
-    let mut lines = vec![
-        Line::from(Span::styled(
-            format!("  {}", title),
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
-        Line::from(""),
-    ];
+    let title = if mode == DiagnosticMode::User { "Graphics" } else { "GPU" };
+    let outer = content_block(title);
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
+    let mut lines = vec![Line::from(""), Line::from("")];
 
     if mode == DiagnosticMode::User {
         lines.push(Line::from(Span::styled(
             "  Detailed graphics card data is not available.",
-            Style::default().fg(COLOR_DIM),
+            Style::default().fg(COLOR_MUTED),
         )));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "  Your computer may have an integrated graphics chip that works fine",
-            Style::default().fg(COLOR_DIM),
+            Style::default().fg(COLOR_MUTED),
         )));
         lines.push(Line::from(Span::styled(
             "  but doesn't provide detailed monitoring data.",
-            Style::default().fg(COLOR_DIM),
+            Style::default().fg(COLOR_MUTED),
         )));
     } else {
         lines.push(Line::from(Span::styled(
             "  GPU telemetry not available (no supported GPU detected or driver not installed)",
-            Style::default().fg(COLOR_DIM),
+            Style::default().fg(COLOR_MUTED),
         )));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "  Install NVIDIA drivers for NVIDIA GPU metrics via nvidia-smi",
-            Style::default().fg(COLOR_DIM),
+            Style::default().fg(COLOR_MUTED),
         )));
     }
 
     let panel = Paragraph::new(lines);
-    frame.render_widget(panel, area);
+    frame.render_widget(panel, inner);
 }
 
 fn render_user(frame: &mut Frame, app: &App, area: Rect) {
+    let outer = content_block("Graphics");
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
     let gpu = &app.snapshot.gpu;
     let util = gpu.utilization_percent;
     let status = HealthStatus::from_percent(util as f64);
@@ -80,64 +81,60 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         .map(|t| format!("{} ({})", plain_language_temp(t), format_temp(t, app.temp_unit)))
         .unwrap_or_else(|| "Unknown".into());
 
-    // Simplify GPU name for user mode
     let simple_name = simplify_gpu_name(&gpu.name);
 
     let lines = vec![
-        Line::from(Span::styled("  GRAPHICS", Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD))),
-        separator(area.width as usize),
         Line::from(""),
         status_line(&status, "Card", &simple_name),
         Line::from(vec![
-            Span::styled("  Utilization    ", Style::default().fg(Color::White)),
+            Span::styled("  Utilization    ", Style::default().fg(COLOR_TEXT)),
             Span::styled(format!("{} ({:.0}%)", util_desc, util), Style::default().fg(COLOR_DIM)),
         ]),
         gauge_line("GPU", util as f64, 20),
         Line::from(vec![
-            Span::styled("  Memory         ", Style::default().fg(Color::White)),
+            Span::styled("  Memory         ", Style::default().fg(COLOR_TEXT)),
             Span::styled(format!("Graphics memory: {}", mem_desc), Style::default().fg(COLOR_DIM)),
         ]),
         Line::from(vec![
-            Span::styled("  Temperature    ", Style::default().fg(Color::White)),
+            Span::styled("  Temperature    ", Style::default().fg(COLOR_TEXT)),
             Span::styled(temp_desc, Style::default().fg(COLOR_DIM)),
         ]),
     ];
 
     let panel = Paragraph::new(lines);
-    frame.render_widget(panel, area);
+    frame.render_widget(panel, inner);
 }
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
+    let gpu = &app.snapshot.gpu;
+    let outer = content_block(&format!("GPU \u{2014} {}", gpu.name));
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(8),
+            Constraint::Length(6),
             Constraint::Min(6),
         ])
-        .split(area);
+        .split(inner);
 
-    let gpu = &app.snapshot.gpu;
     let temp_str = gpu.temperature
         .map(|t| format_temp(t, app.temp_unit))
         .unwrap_or_else(|| "N/A".into());
 
     let lines = vec![
-        Line::from(Span::styled(
-            format!("  GPU \u{2014} {}", gpu.name),
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
         Line::from(vec![
             Span::styled("  Driver     ", Style::default().fg(COLOR_DIM)),
-            Span::styled(&gpu.driver_version, Style::default().fg(Color::White)),
+            Span::styled(&gpu.driver_version, Style::default().fg(COLOR_TEXT)),
             Span::styled("    Temp  ", Style::default().fg(COLOR_DIM)),
-            Span::styled(&temp_str, Style::default().fg(Color::White)),
+            Span::styled(&temp_str, Style::default().fg(COLOR_TEXT)),
         ]),
         Line::from(vec![
             Span::styled("  VRAM       ", Style::default().fg(COLOR_DIM)),
             Span::styled(
                 format!("{} / {} MB ({:.1}%)", gpu.memory_used_mb, gpu.memory_total_mb, gpu.memory_percent()),
-                Style::default().fg(Color::White),
+                Style::default().fg(COLOR_TEXT),
             ),
         ]),
         Line::from(vec![
@@ -156,14 +153,10 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     // GPU history sparkline
     let spark_data = app.gpu_history.as_u64_vec();
     let sparkline = Sparkline::default()
-        .block(Block::default()
-            .title(" GPU Utilization (60s) ")
-            .title_style(Style::default().fg(COLOR_HEADER))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(COLOR_DIM)))
+        .block(sub_block("GPU Utilization (60s)"))
         .data(&spark_data)
         .max(100)
-        .style(Style::default().fg(Color::Green));
+        .style(Style::default().fg(SPARK_GPU));
     frame.render_widget(sparkline, chunks[1]);
 }
 

@@ -32,7 +32,7 @@ pub fn collect() -> DriverData {
     let com = match COMLibrary::new() {
         Ok(c) => c,
         Err(e) => {
-            data.scan_status = DriverScanStatus::WmiUnavailable(format!("COM init failed: {}", e));
+            data.scan_status = DriverScanStatus::WmiUnavailable(format!("COM init failed: {} \u{2014} Try running as Administrator", e));
             return data;
         }
     };
@@ -40,7 +40,7 @@ pub fn collect() -> DriverData {
     let wmi = match WMIConnection::new(com) {
         Ok(w) => w,
         Err(e) => {
-            data.scan_status = DriverScanStatus::WmiUnavailable(format!("WMI connection failed: {}", e));
+            data.scan_status = DriverScanStatus::WmiUnavailable(format!("WMI connection failed: {} \u{2014} Try running as Administrator", e));
             return data;
         }
     };

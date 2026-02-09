@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Sparkline};
+use ratatui::widgets::{Paragraph, Sparkline};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -17,18 +17,25 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, mode: DiagnosticMode) {
 }
 
 fn render_user(frame: &mut Frame, app: &App, area: Rect) {
+    let outer = content_block("Thermals & Power");
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(10),
+            Constraint::Length(7),
+        ])
+        .split(inner);
+
     let thermal = &app.snapshot.thermals;
     let unit = app.temp_unit;
 
     let mut lines = vec![
         Line::from(Span::styled(
-            "  THERMALS & POWER",
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
-        Line::from(Span::styled(
             "  Press f to toggle \u{00B0}C / \u{00B0}F",
-            Style::default().fg(COLOR_DIM),
+            Style::default().fg(COLOR_MUTED),
         )),
         Line::from(""),
     ];
@@ -56,15 +63,19 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     // Fans
     if thermal.fans.is_empty() {
         lines.push(Line::from(vec![
-            Span::styled("  Fans            ", Style::default().fg(Color::White)),
+            Span::styled("  Fans            ", Style::default().fg(COLOR_TEXT)),
             Span::styled("Quiet / not detected", Style::default().fg(COLOR_DIM)),
         ]));
     } else {
         for fan in &thermal.fans {
-            let desc = if fan.rpm == 0 { "Off" } else { "Running" };
+            let desc = if fan.rpm == 0 {
+                "Off".to_string()
+            } else {
+                format!("Running ({} RPM)", fan.rpm)
+            };
             lines.push(Line::from(vec![
-                Span::styled(format!("  {:<16}", fan.label), Style::default().fg(Color::White)),
-                Span::styled(desc.to_string(), Style::default().fg(COLOR_DIM)),
+                Span::styled(format!("  {:<16}", fan.label), Style::default().fg(COLOR_TEXT)),
+                Span::styled(desc, Style::default().fg(COLOR_DIM)),
             ]));
         }
     }
@@ -74,10 +85,10 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         let charge_str = if bat.is_charging { "Charging" } else { "On battery" };
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
-            Span::styled("  Battery         ", Style::default().fg(Color::White)),
+            Span::styled("  Battery         ", Style::default().fg(COLOR_TEXT)),
             Span::styled(
                 format!("{:.0}%, {}", bat.percent, charge_str),
-                Style::default().fg(Color::White),
+                Style::default().fg(COLOR_TEXT),
             ),
         ]));
         lines.push(gauge_line("Battery", bat.percent, 20));
@@ -90,39 +101,48 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         PowerSource::Unknown => "Unknown",
     };
     lines.push(Line::from(vec![
-        Span::styled("  Power           ", Style::default().fg(Color::White)),
+        Span::styled("  Power           ", Style::default().fg(COLOR_TEXT)),
         Span::styled(power_desc.to_string(), Style::default().fg(COLOR_DIM)),
     ]));
 
     let panel = Paragraph::new(lines);
-    frame.render_widget(panel, area);
+    frame.render_widget(panel, chunks[0]);
+
+    // Temperature history sparkline (now in user mode too)
+    let spark_data = app.temp_history.as_u64_vec();
+    let sparkline = Sparkline::default()
+        .block(sub_block("CPU Temperature (60s)"))
+        .data(&spark_data)
+        .max(100)
+        .style(Style::default().fg(SPARK_TEMP));
+    frame.render_widget(sparkline, chunks[1]);
 }
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
+    let thermal = &app.snapshot.thermals;
+    let unit = app.temp_unit;
+    let cpu_temp_str = thermal.cpu_temp.map(|t| format_temp(t, unit)).unwrap_or("N/A".into());
+
+    let outer = content_block(&format!("Thermals & Power \u{2014} CPU: {}", cpu_temp_str));
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4),
+            Constraint::Length(3),
             Constraint::Min(6),
-            Constraint::Length(8),
+            Constraint::Length(7),
         ])
-        .split(area);
-
-    let thermal = &app.snapshot.thermals;
-    let unit = app.temp_unit;
+        .split(inner);
 
     // Header
-    let cpu_temp_str = thermal.cpu_temp.map(|t| format_temp(t, unit)).unwrap_or("N/A".into());
     let header_lines = vec![
         Line::from(Span::styled(
-            format!("  THERMALS & POWER \u{2014} CPU: {}", cpu_temp_str),
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
-        Line::from(Span::styled(
             "  Press f to toggle \u{00B0}C / \u{00B0}F",
-            Style::default().fg(COLOR_DIM),
+            Style::default().fg(COLOR_MUTED),
         )),
+        Line::from(""),
         Line::from(Span::styled(
             format!("  {:<24} {:>10} {:>10}", "SENSOR", "TEMP", "CRITICAL"),
             Style::default().fg(COLOR_DIM),
@@ -139,11 +159,11 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or_else(|| "N/A".into());
 
         let color = if sensor.temperature > sensor.critical.unwrap_or(100.0) {
-            Color::Red
+            COLOR_CRIT
         } else if sensor.temperature > TEMP_CPU_WARN {
-            Color::Yellow
+            COLOR_WARN
         } else {
-            Color::White
+            COLOR_TEXT
         };
 
         sensor_lines.push(Line::from(Span::styled(
@@ -171,7 +191,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         for fan in &thermal.fans {
             sensor_lines.push(Line::from(Span::styled(
                 format!("  Fan: {} \u{2014} {} RPM", fan.label, fan.rpm),
-                Style::default().fg(Color::White),
+                Style::default().fg(COLOR_TEXT),
             )));
         }
     }
@@ -185,7 +205,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 format!("{:.1}%  {}",
                     bat.percent,
                     if bat.is_charging { "AC (charging)" } else { "Discharging" }),
-                Style::default().fg(Color::White),
+                Style::default().fg(COLOR_TEXT),
             ),
         ]));
     }
@@ -196,14 +216,9 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     // Temperature history sparkline
     let spark_data = app.temp_history.as_u64_vec();
     let sparkline = Sparkline::default()
-        .block(Block::default()
-            .title(" CPU Temperature (60s) ")
-            .title_style(Style::default().fg(COLOR_HEADER))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(COLOR_DIM)))
+        .block(sub_block("CPU Temperature (60s)"))
         .data(&spark_data)
         .max(100)
-        .style(Style::default().fg(Color::Red));
+        .style(Style::default().fg(SPARK_TEMP));
     frame.render_widget(sparkline, chunks[2]);
 }
-

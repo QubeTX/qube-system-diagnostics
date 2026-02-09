@@ -1,5 +1,6 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, BorderType, Borders};
 use crate::types::{HealthStatus, TempUnit};
 
 // -- Temperature Thresholds --
@@ -9,15 +10,28 @@ pub const TEMP_CPU_CRIT: f64 = 85.0;
 pub const TEMP_GPU_WARN: f64 = 75.0;
 pub const TEMP_GPU_CRIT: f64 = 90.0;
 
-// -- Color Palette (QubeTX) --
+// -- Color Palette (Warm Earth) --
 
-pub const COLOR_GOOD: Color = Color::Green;
-pub const COLOR_WARN: Color = Color::Yellow;
-pub const COLOR_CRIT: Color = Color::Red;
-pub const COLOR_INFO: Color = Color::Cyan;
-pub const COLOR_ACCENT: Color = Color::Cyan;
-pub const COLOR_DIM: Color = Color::DarkGray;
-pub const COLOR_HEADER: Color = Color::Cyan;
+pub const COLOR_GOOD: Color = Color::Rgb(130, 170, 120);     // Sage green
+pub const COLOR_WARN: Color = Color::Rgb(210, 160, 60);      // Warm amber
+pub const COLOR_CRIT: Color = Color::Rgb(190, 85, 75);       // Terracotta red
+pub const COLOR_INFO: Color = Color::Rgb(140, 170, 200);     // Slate blue
+pub const COLOR_ACCENT: Color = Color::Rgb(200, 160, 100);   // Warm gold
+pub const COLOR_DIM: Color = Color::Rgb(110, 105, 100);      // Warm gray
+pub const COLOR_HEADER: Color = Color::Rgb(200, 160, 100);   // Warm gold (same as accent)
+pub const COLOR_TEXT: Color = Color::Rgb(210, 205, 200);      // Warm white
+pub const COLOR_MUTED: Color = Color::Rgb(150, 145, 140);    // Medium warm gray
+pub const COLOR_BORDER: Color = Color::Rgb(80, 75, 70);      // Dark warm gray for borders
+pub const COLOR_HIGHLIGHT_BG: Color = Color::Rgb(50, 48, 45); // Subtle dark bg for active elements
+
+// -- Sparkline Colors --
+
+pub const SPARK_CPU: Color = Color::Rgb(200, 160, 100);      // Warm gold (accent)
+pub const SPARK_MEMORY: Color = Color::Rgb(160, 120, 170);   // Muted purple
+pub const SPARK_NET_DOWN: Color = Color::Rgb(140, 170, 200); // Slate blue (info)
+pub const SPARK_NET_UP: Color = Color::Rgb(160, 120, 170);   // Muted purple
+pub const SPARK_GPU: Color = Color::Rgb(130, 170, 120);      // Sage green (good)
+pub const SPARK_TEMP: Color = Color::Rgb(210, 160, 60);      // Warm amber
 
 pub fn status_color(status: &HealthStatus) -> Color {
     match status {
@@ -26,6 +40,28 @@ pub fn status_color(status: &HealthStatus) -> Color {
         HealthStatus::Critical => COLOR_CRIT,
         HealthStatus::Unknown => COLOR_DIM,
     }
+}
+
+// -- Block Helpers --
+
+/// Create a content block with warm border and title
+pub fn content_block(title: &str) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(COLOR_BORDER))
+        .title(format!(" {} ", title))
+        .title_style(Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD))
+}
+
+/// Create a sub-panel block (for sparklines, tables within a section)
+pub fn sub_block(title: &str) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(COLOR_BORDER))
+        .title(format!(" {} ", title))
+        .title_style(Style::default().fg(COLOR_MUTED))
 }
 
 // -- Formatters --
@@ -160,12 +196,12 @@ pub fn plain_language_speed(bytes_per_sec: u64) -> &'static str {
     }
 }
 
-/// Create a text gauge bar like [████████░░] 78%
+/// Create a text gauge bar like ████████░░  78%
 pub fn gauge_bar(percent: f64, width: usize) -> String {
     let filled = ((percent / 100.0) * width as f64).round() as usize;
     let empty = width.saturating_sub(filled);
     format!(
-        "[{}{}] {:.0}%",
+        "{}{}  {:.0}%",
         "\u{2588}".repeat(filled),
         "\u{2591}".repeat(empty),
         percent
@@ -183,14 +219,14 @@ pub fn gauge_line<'a>(label: &str, percent: f64, width: usize) -> Line<'a> {
     Line::from(vec![
         Span::styled(
             format!("  {:<14}", label),
-            Style::default().fg(Color::White),
+            Style::default().fg(COLOR_TEXT),
         ),
         Span::styled(
-            format!("[{}{}]", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty)),
+            format!("{}{}",  "\u{2588}".repeat(filled), "\u{2591}".repeat(empty)),
             Style::default().fg(color),
         ),
         Span::styled(
-            format!(" {:.0}%", percent),
+            format!("  {:.0}%", percent),
             Style::default().fg(color).add_modifier(Modifier::BOLD),
         ),
     ])
@@ -206,11 +242,11 @@ pub fn status_line<'a>(status: &HealthStatus, label: &str, description: &str) ->
         ),
         Span::styled(
             format!("{:<16}", label),
-            Style::default().fg(Color::White),
+            Style::default().fg(COLOR_TEXT),
         ),
         Span::styled(
             description.to_string(),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(COLOR_DIM),
         ),
     ])
 }
@@ -254,10 +290,10 @@ pub fn health_gauge_line<'a>(label: &str, status: &HealthStatus, description: &s
 
     Line::from(vec![
         Span::styled(format!("  {} ", status.icon()), Style::default().fg(color)),
-        Span::styled(format!("{:<16}", label), Style::default().fg(Color::White)),
+        Span::styled(format!("{:<16}", label), Style::default().fg(COLOR_TEXT)),
         Span::styled(format!("{:<28}", description), Style::default().fg(COLOR_DIM)),
         Span::styled(
-            format!("[{}{}] {:.0}%", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent),
+            format!("{}{}  {:.0}%", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent),
             Style::default().fg(color),
         ),
     ])
@@ -271,9 +307,9 @@ pub fn health_gauge_line_simple<'a>(label: &str, percent: f64, bar_width: usize)
     let empty = bar_width.saturating_sub(filled);
 
     Line::from(vec![
-        Span::styled(format!("  {:<16}", label), Style::default().fg(Color::White)),
+        Span::styled(format!("  {:<16}", label), Style::default().fg(COLOR_TEXT)),
         Span::styled(
-            format!("[{}{}] {:.0}% \u{2014} {}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent, plain_language_cpu(percent as f32)),
+            format!("{}{}  {:.0}% \u{2014} {}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty), percent, plain_language_cpu(percent as f32)),
             Style::default().fg(color),
         ),
     ])

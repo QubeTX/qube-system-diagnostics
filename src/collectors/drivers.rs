@@ -102,6 +102,7 @@ impl DeviceCategory {
 pub enum DriverScanStatus {
     #[default]
     NotScanned,
+    Scanning,
     Success,
     WmiUnavailable(String),
 }

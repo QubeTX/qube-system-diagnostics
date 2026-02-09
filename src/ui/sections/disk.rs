@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -18,14 +18,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, mode: DiagnosticMode) {
 }
 
 fn render_user(frame: &mut Frame, app: &App, area: Rect) {
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "  STORAGE",
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
-        Line::from(""),
-    ];
+    let outer = content_block("Storage");
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
+    let mut lines = vec![Line::from("")];
 
     if app.snapshot.disk.partitions.is_empty() {
         lines.push(Line::from(Span::styled(
@@ -33,7 +30,6 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(COLOR_DIM),
         )));
     } else {
-        // Map partition index to physical drive health if available
         for (i, part) in app.snapshot.disk.partitions.iter().enumerate() {
             let pct = part.usage_percent();
             let status = HealthStatus::from_percent(pct);
@@ -52,17 +48,17 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
             lines.push(Line::from(vec![
                 Span::styled(format!("  {} ", status.icon()), Style::default().fg(status_color(&status))),
-                Span::styled(name.to_string(), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(name.to_string(), Style::default().fg(COLOR_TEXT).add_modifier(Modifier::BOLD)),
             ]));
             lines.push(Line::from(vec![
                 Span::styled("    Type     ", Style::default().fg(COLOR_DIM)),
-                Span::styled(type_desc.to_string(), Style::default().fg(Color::White)),
+                Span::styled(type_desc.to_string(), Style::default().fg(COLOR_TEXT)),
             ]));
             lines.push(Line::from(vec![
                 Span::styled("    Space    ", Style::default().fg(COLOR_DIM)),
                 Span::styled(
                     format!("Using {} of {} ({:.0}%)", format_bytes(part.used_bytes), format_bytes(part.total_bytes), pct),
-                    Style::default().fg(Color::White),
+                    Style::default().fg(COLOR_TEXT),
                 ),
             ]));
             lines.push(gauge_line(&format!("    {}", name), pct, 20));
@@ -89,16 +85,15 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let panel = Paragraph::new(lines);
-    frame.render_widget(panel, area);
+    frame.render_widget(panel, inner);
 }
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
+    let outer = content_block("Disk / Storage");
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
     let mut lines = vec![
-        Line::from(Span::styled(
-            "  DISK / STORAGE",
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
         Line::from(Span::styled(
             format!("  {:<20} {:<10} {:>12} {:>12} {:>8} {}", "MOUNT", "FS", "USED", "TOTAL", "USE%", "TYPE"),
             Style::default().fg(COLOR_DIM),
@@ -117,7 +112,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                     format_bytes_gib(part.used_bytes),
                     format_bytes_gib(part.total_bytes),
                 ),
-                Style::default().fg(Color::White),
+                Style::default().fg(COLOR_TEXT),
             ),
             Span::styled(format!("{:>7.1}%", pct), Style::default().fg(color)),
             Span::styled(format!(" {}", part.disk_type), Style::default().fg(COLOR_DIM)),
@@ -126,7 +121,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         // Gauge bar
         lines.push(Line::from(vec![
             Span::styled("    ", Style::default()),
-            Span::styled(gauge_bar(pct, 30), Style::default().fg(color)),
+            Span::styled(gauge_bar(pct, 20), Style::default().fg(color)),
         ]));
     }
 
@@ -160,7 +155,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("  {:<30} {:<8} ", truncate_str(&drive.model, 30), drive.media_type),
-                    Style::default().fg(Color::White),
+                    Style::default().fg(COLOR_TEXT),
                 ),
                 Span::styled(format!("{:<10}", drive.health_status.user_label()), Style::default().fg(health_color)),
                 Span::styled(
@@ -169,7 +164,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ]));
 
-            // Detail line: queue depth, latencies, power-on hours
+            // Detail line
             if let Some(ref io) = drive.io_stats {
                 let mut detail_parts = vec![
                     format!("Queue: {:.1}", io.queue_depth),
@@ -202,6 +197,5 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let panel = Paragraph::new(lines);
-    frame.render_widget(panel, area);
+    frame.render_widget(panel, inner);
 }
-

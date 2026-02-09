@@ -2,6 +2,34 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [1.2.0] - 2026-02-09
+
+### Added
+- Header bar with mode badge (User/Tech) and UTC clock across all screens
+- `content_block()` and `sub_block()` helpers for consistent bordered panels (rounded borders)
+- Temperature sparkline now visible in User Mode thermals (was Tech-only)
+- Fan RPM display in User Mode thermals (was Tech-only)
+- "Scanning..." animated state for driver tab during WMI scans
+- Pipe separators (`|`) and right-aligned "? Help" hint in bottom navigation bar
+
+### Changed
+- **Complete UI overhaul**: Warm earth color palette replacing neon terminal colors
+  - Sage green (good), warm amber (warnings), terracotta red (critical), warm gold (accent)
+  - Slate blue (info), warm gray (dim/muted), warm white (text)
+- All 9 tabs x 2 modes now use bordered content panels with rounded corners
+- Gauge bars standardized to 20-character width across all sections, cleaner Unicode blocks
+- Bottom bar: active tab uses warm gold on dark background, inactive tabs in muted gray
+- Mode select screen: rounded borders, warm palette (sage for User, amber for Tech)
+- Help overlay: warm palette with gold accent keys
+- Overview User Mode: shows 5 top processes (was 3), wrapped in sub-panels
+- Sparkline colors updated: warm gold (CPU), muted purple (memory), slate blue (network), sage (GPU), amber (temp)
+
+### Fixed
+- **Driver tab UI freeze (CRITICAL)**: WMI device scanning now runs asynchronously via `tokio::spawn_blocking` with `JoinHandle` polling, preventing 2-10s UI freezes
+- Manual driver refresh ('r' key) no longer blocks the event loop
+- WMI error messages now suggest running as Administrator
+- Removed unused `Modifier` imports in cpu.rs and overview.rs
+
 ## [1.1.0] - 2026-02-08
 
 ### Added

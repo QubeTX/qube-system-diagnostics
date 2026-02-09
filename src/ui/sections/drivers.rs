@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -19,47 +19,49 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, mode: DiagnosticMode) {
 fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     let drivers = &app.snapshot.drivers;
 
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "  DEVICE HEALTH",
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
-        Line::from(""),
-    ];
+    let outer = content_block("Device Health");
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
 
-    // Scan status warning
-    if let DriverScanStatus::WmiUnavailable(ref msg) = drivers.scan_status {
-        lines.push(Line::from(Span::styled(
-            format!("  \u{26A0} {}", msg),
-            Style::default().fg(COLOR_WARN),
-        )));
-        lines.push(Line::from(""));
+    let mut lines = vec![Line::from("")];
+
+    // Scan status
+    match &drivers.scan_status {
+        DriverScanStatus::Scanning => {
+            lines.push(Line::from(Span::styled(
+                "  \u{27F3} Scanning devices...",
+                Style::default().fg(COLOR_ACCENT),
+            )));
+            lines.push(Line::from(""));
+        }
+        DriverScanStatus::WmiUnavailable(ref msg) => {
+            lines.push(Line::from(Span::styled(
+                format!("  \u{26A0} {}", msg),
+                Style::default().fg(COLOR_WARN),
+            )));
+            lines.push(Line::from(""));
+        }
+        DriverScanStatus::NotScanned => {
+            lines.push(Line::from(Span::styled(
+                "  Waiting for scan...",
+                Style::default().fg(COLOR_MUTED),
+            )));
+            lines.push(Line::from(""));
+        }
+        DriverScanStatus::Success => {}
     }
 
-    // Network
+    // Categories
     render_user_category(&mut lines, "NETWORK", &drivers.network);
-
-    // Bluetooth
     render_user_category(&mut lines, "BLUETOOTH", &drivers.bluetooth);
-
-    // Audio
     render_user_category(&mut lines, "AUDIO", &drivers.audio);
-
-    // Input
     render_user_category(&mut lines, "KEYBOARD & MOUSE", &drivers.input);
-
-    // Display
     render_user_category(&mut lines, "DISPLAY", &drivers.display);
-
-    // Storage
     render_user_category(&mut lines, "STORAGE", &drivers.storage);
-
-    // USB
     render_user_category(&mut lines, "USB", &drivers.usb);
 
     let panel = Paragraph::new(lines);
-    frame.render_widget(panel, area);
+    frame.render_widget(panel, inner);
 }
 
 fn render_user_category(lines: &mut Vec<Line<'_>>, title: &str, devices: &[crate::collectors::drivers::DeviceInfo]) {
@@ -84,16 +86,21 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let drivers = &app.snapshot.drivers;
     let os_name = &app.snapshot.system.os_name;
 
-    let mut lines = vec![
-        Line::from(Span::styled(
-            format!("  DRIVERS & DEVICES \u{2014} {}    (press r to refresh)", os_name),
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
-    ];
+    let outer = content_block(&format!("Drivers & Devices \u{2014} {}    (press r to refresh)", os_name));
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
+    let mut lines = Vec::new();
 
     // Scan status
     match &drivers.scan_status {
+        DriverScanStatus::Scanning => {
+            lines.push(Line::from(Span::styled(
+                "  \u{27F3} Scanning devices...",
+                Style::default().fg(COLOR_ACCENT),
+            )));
+            lines.push(Line::from(""));
+        }
         DriverScanStatus::WmiUnavailable(msg) => {
             lines.push(Line::from(Span::styled(
                 format!("  \u{26A0} Scan status: {}", msg),
@@ -104,7 +111,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         DriverScanStatus::NotScanned => {
             lines.push(Line::from(Span::styled(
                 "  Scan status: Not scanned yet",
-                Style::default().fg(COLOR_DIM),
+                Style::default().fg(COLOR_MUTED),
             )));
             lines.push(Line::from(""));
         }
@@ -114,7 +121,6 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     // Network Adapters table
     render_tech_category(&mut lines, "NETWORK ADAPTERS", &drivers.network, true);
 
-    // Network services
     let net_services: Vec<&ServiceInfo> = drivers.services.iter()
         .filter(|s| ["Dhcp", "Dnscache", "WlanSvc", "NlaSvc", "NetworkManager", "wpa_supplicant"].contains(&s.name.as_str()))
         .collect();
@@ -207,7 +213,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("  {:<30} {:<16} ", truncate_str(&dev.name, 30), truncate_str(&dev.driver_version, 16)),
-                    Style::default().fg(Color::White),
+                    Style::default().fg(COLOR_TEXT),
                 ),
                 Span::styled(format!("{} {}", dev.status.icon(), dev.status), Style::default().fg(status_color)),
             ]));
@@ -222,7 +228,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let panel = Paragraph::new(lines);
-    frame.render_widget(panel, area);
+    frame.render_widget(panel, inner);
 }
 
 fn render_tech_category(lines: &mut Vec<Line<'_>>, title: &str, devices: &[crate::collectors::drivers::DeviceInfo], show_date: bool) {
@@ -254,7 +260,7 @@ fn render_tech_category(lines: &mut Vec<Line<'_>>, title: &str, devices: &[crate
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("  {:<30} {:<16} ", truncate_str(&dev.name, 30), truncate_str(&dev.driver_version, 16)),
-                    Style::default().fg(Color::White),
+                    Style::default().fg(COLOR_TEXT),
                 ),
                 Span::styled(format!("{} {:<6}", dev.status.icon(), dev.status), Style::default().fg(status_color)),
                 Span::styled(format!(" {}", dev.driver_date), Style::default().fg(COLOR_DIM)),
@@ -263,7 +269,7 @@ fn render_tech_category(lines: &mut Vec<Line<'_>>, title: &str, devices: &[crate
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("  {:<30} {:<16} ", truncate_str(&dev.name, 30), truncate_str(&dev.driver_version, 16)),
-                    Style::default().fg(Color::White),
+                    Style::default().fg(COLOR_TEXT),
                 ),
                 Span::styled(format!("{} {}", dev.status.icon(), dev.status), Style::default().fg(status_color)),
             ]));
@@ -297,4 +303,3 @@ fn render_service_line<'a>(label: &str, services: &[&ServiceInfo]) -> Line<'a> {
 
     Line::from(spans)
 }
-

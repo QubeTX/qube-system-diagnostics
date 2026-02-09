@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Sparkline};
+use ratatui::widgets::{Paragraph, Sparkline};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -17,26 +17,22 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, mode: DiagnosticMode) {
 }
 
 fn render_user(frame: &mut Frame, app: &App, area: Rect) {
+    let outer = content_block("Network");
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),
-            Constraint::Length(12),
+            Constraint::Length(11),
             Constraint::Min(6),
         ])
-        .split(area);
-
-    let header = Paragraph::new(Line::from(Span::styled(
-        "  NETWORK",
-        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-    )));
-    frame.render_widget(header, chunks[0]);
+        .split(inner);
 
     let net = &app.snapshot.network;
     let diag = &app.snapshot.network_diag;
     let connected = !net.interfaces.is_empty();
 
-    // Guess connection type from interface names
     let conn_type = net.interfaces.iter().find_map(|i| {
         let name = i.name.to_lowercase();
         if name.contains("wlan") || name.contains("wi-fi") || name.contains("wifi") || name.contains("wlp") {
@@ -49,14 +45,13 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     }).unwrap_or(if connected { "Connected" } else { "Disconnected" });
 
     let speed_desc = plain_language_speed(net.total_download_rate);
-
     let status = if connected { HealthStatus::Good } else { HealthStatus::Warning };
 
     let mut lines = vec![
-        separator(area.width as usize),
+        Line::from(""),
         status_line(&status, "Connection", conn_type),
         Line::from(vec![
-            Span::styled("  Speed          ", Style::default().fg(Color::White)),
+            Span::styled("  Speed          ", Style::default().fg(COLOR_TEXT)),
             Span::styled(
                 format!("Downloading at {}  \u{2022}  Uploading at {}",
                     format_throughput(net.total_download_rate),
@@ -65,16 +60,13 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
         Line::from(vec![
-            Span::styled("  Quality        ", Style::default().fg(Color::White)),
+            Span::styled("  Quality        ", Style::default().fg(COLOR_TEXT)),
             Span::styled(speed_desc.to_string(), Style::default().fg(COLOR_DIM)),
         ]),
+        Line::from(""),
     ];
 
     // Connectivity diagnostics
-    lines.push(Line::from(""));
-    lines.push(section_header("CONNECTIVITY"));
-
-    // Gateway
     let gw_status = if diag.gateway.reachable { HealthStatus::Good } else { HealthStatus::Critical };
     let gw_desc = if diag.gateway.reachable {
         format!("Reachable ({})", diag.gateway.latency_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_else(|| "N/A".into()))
@@ -83,7 +75,6 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     };
     lines.push(status_line(&gw_status, "Gateway", &gw_desc));
 
-    // DNS
     let dns_status = if diag.dns.resolved { HealthStatus::Good } else { HealthStatus::Critical };
     let dns_desc = if diag.dns.resolved {
         format!("Working ({})", diag.dns.resolution_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_else(|| "N/A".into()))
@@ -92,7 +83,6 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     };
     lines.push(status_line(&dns_status, "DNS", &dns_desc));
 
-    // Internet
     let inet_status = if diag.internet.reachable { HealthStatus::Good } else { HealthStatus::Critical };
     let inet_desc = if diag.internet.reachable {
         format!("Online ({})", diag.internet.latency_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_else(|| "N/A".into()))
@@ -102,48 +92,48 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     lines.push(status_line(&inet_status, "Internet", &inet_desc));
 
     let status_panel = Paragraph::new(lines);
-    frame.render_widget(status_panel, chunks[1]);
+    frame.render_widget(status_panel, chunks[0]);
 
     // Sparkline
     let spark_data = app.net_down_history.as_u64_vec();
     let max_val = spark_data.iter().copied().max().unwrap_or(1).max(1);
     let sparkline = Sparkline::default()
-        .block(Block::default()
-            .title("  DOWNLOAD SPEED (last 60 seconds)")
-            .title_style(Style::default().fg(COLOR_HEADER))
-            .borders(Borders::NONE))
+        .block(sub_block("Download Speed (last 60 seconds)"))
         .data(&spark_data)
         .max(max_val)
-        .style(Style::default().fg(Color::Blue));
-    frame.render_widget(sparkline, chunks[2]);
+        .style(Style::default().fg(SPARK_NET_DOWN));
+    frame.render_widget(sparkline, chunks[1]);
 }
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
+    let net = &app.snapshot.network;
     let diag = &app.snapshot.network_diag;
     let has_connections = !diag.active_connections.is_empty();
+
+    let outer = content_block(&format!("Network \u{2014} {} interfaces", net.interfaces.len()));
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Header
-            Constraint::Length(4),  // Connectivity status
+            Constraint::Length(2),  // Header + throughput
+            Constraint::Length(3),  // Connectivity status
             Constraint::Min(6),    // Interfaces + connections
-            Constraint::Length(8), // Sparklines
+            Constraint::Length(7), // Sparklines
         ])
-        .split(area);
-
-    let net = &app.snapshot.network;
+        .split(inner);
 
     // Header
     let header_lines = vec![
-        Line::from(Span::styled(
-            format!("  NETWORK \u{2014} {} interfaces  \u{2193} {}  \u{2191} {}",
-                net.interfaces.len(),
-                format_throughput(net.total_download_rate),
-                format_throughput(net.total_upload_rate)),
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )),
-        separator(area.width as usize),
+        Line::from(vec![
+            Span::styled(
+                format!("  \u{2193} {}  \u{2191} {}",
+                    format_throughput(net.total_download_rate),
+                    format_throughput(net.total_upload_rate)),
+                Style::default().fg(COLOR_TEXT),
+            ),
+        ]),
         Line::from(Span::styled(
             format!("  {:<20} {:<18} {:<18} {:>12} {:>12}", "INTERFACE", "MAC", "IP", "RX/s", "TX/s"),
             Style::default().fg(COLOR_DIM),
@@ -164,7 +154,6 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let inet_text = if diag.internet.reachable { "INET OK" } else { "INET DOWN" };
 
     let conn_status_lines = vec![
-        separator(area.width as usize),
         Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(gw_text, Style::default().fg(gw_color)),
@@ -202,7 +191,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 truncate_str(ip, 18),
                 format_throughput(iface.download_rate),
                 format_throughput(iface.upload_rate)),
-            Style::default().fg(Color::White),
+            Style::default().fg(COLOR_TEXT),
         )));
     }
     let iface_panel = Paragraph::new(iface_lines);
@@ -210,17 +199,16 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // Active connections table
     if has_connections && mid_chunks.len() > 1 {
+        let conn_block = sub_block(&format!("Active Connections ({})  j/k to scroll", diag.active_connections.len()));
+        let conn_inner = conn_block.inner(mid_chunks[1]);
+        frame.render_widget(conn_block, mid_chunks[1]);
+
         let mut conn_lines = Vec::new();
-        conn_lines.push(Line::from(Span::styled(
-            format!("  ACTIVE CONNECTIONS ({})  j/k to scroll", diag.active_connections.len()),
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
-        )));
         conn_lines.push(Line::from(Span::styled(
             format!("  {:<6} {:<22} {:<22} {:<14} {:>6}", "PROTO", "LOCAL", "REMOTE", "STATE", "PID"),
             Style::default().fg(COLOR_DIM),
         )));
 
-        // Filter to show ESTABLISHED first, then others
         let established: Vec<_> = diag.active_connections.iter()
             .filter(|c| c.state == ConnectionState::Established)
             .collect();
@@ -228,11 +216,10 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             .filter(|c| c.state == ConnectionState::Listening)
             .collect();
 
-        let visible_height = mid_chunks[1].height.saturating_sub(4) as usize;
+        let visible_height = conn_inner.height.saturating_sub(2) as usize;
         let scroll = app.connection_scroll;
         let total_connections = established.len() + listening.len();
 
-        // Show established connections with scroll
         for conn in established.iter().chain(listening.iter()).skip(scroll).take(visible_height) {
             let state_color = match conn.state {
                 ConnectionState::Established => COLOR_GOOD,
@@ -252,7 +239,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             conn_lines.push(Line::from(vec![
                 Span::styled(
                     format!("  {:<6} {:<22} {:<22} ", conn.protocol, truncate_str(&local, 22), truncate_str(&remote, 22)),
-                    Style::default().fg(Color::White),
+                    Style::default().fg(COLOR_TEXT),
                 ),
                 Span::styled(format!("{:<14}", conn.state), Style::default().fg(state_color)),
                 Span::styled(format!("{:>6}", pid_str), Style::default().fg(COLOR_DIM)),
@@ -269,7 +256,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         let conn_panel = Paragraph::new(conn_lines);
-        frame.render_widget(conn_panel, mid_chunks[1]);
+        frame.render_widget(conn_panel, conn_inner);
     }
 
     // Download/Upload sparklines
@@ -282,27 +269,18 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let down_data = app.net_down_history.as_u64_vec();
     let down_max = down_data.iter().copied().max().unwrap_or(1).max(1);
     let down_sparkline = Sparkline::default()
-        .block(Block::default()
-            .title(" Download ")
-            .title_style(Style::default().fg(COLOR_HEADER))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(COLOR_DIM)))
+        .block(sub_block("Download"))
         .data(&down_data)
         .max(down_max)
-        .style(Style::default().fg(Color::Blue));
+        .style(Style::default().fg(SPARK_NET_DOWN));
     frame.render_widget(down_sparkline, spark_chunks[0]);
 
     let up_data = app.net_up_history.as_u64_vec();
     let up_max = up_data.iter().copied().max().unwrap_or(1).max(1);
     let up_sparkline = Sparkline::default()
-        .block(Block::default()
-            .title(" Upload ")
-            .title_style(Style::default().fg(COLOR_HEADER))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(COLOR_DIM)))
+        .block(sub_block("Upload"))
         .data(&up_data)
         .max(up_max)
-        .style(Style::default().fg(Color::Magenta));
+        .style(Style::default().fg(SPARK_NET_UP));
     frame.render_widget(up_sparkline, spark_chunks[1]);
 }
-
