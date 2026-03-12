@@ -2,6 +2,12 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [1.2.2] - 2026-03-12
+
+### Changed
+- Upgraded cargo-dist from v0.30.3 to v0.31.0 (includes bugfixes from v0.30.4 and installation robustness improvements)
+- Updated GitHub Actions: checkout v4→v6, upload-artifact v4→v6, download-artifact v4→v7
+
 ## [1.2.1] - 2026-02-09
 
 ### Changed
