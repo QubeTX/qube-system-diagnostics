@@ -2,6 +2,27 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [1.3.0] - 2026-03-12
+
+### Added
+- Man page generation via `clap_mangen` — `sd300.1` built automatically at compile time
+- Enriched `--help` output with full keybindings table and all 9 diagnostic sections
+- Scroll support for Drivers section (Tech Mode) — `j`/`k` keys with position indicator
+- Scroll support for Disk section (Tech Mode) — `j`/`k` keys with position indicator
+- `SPARK_SWAP` named color constant for swap sparkline consistency
+- `Shift+M` keybinding for sorting processes by memory usage
+
+### Changed
+- Disk Tech Mode now uses bordered `sub_block()` panels for Partitions and Physical Drives (matches CPU/Memory layout)
+- Network Tech Mode caps interface list at 8 entries with "+ N more" indicator (prevents layout overflow on Docker/WSL hosts)
+- Label padding standardized to 18 chars in Memory section (was 20, now matches all other sections)
+- Swap sparkline uses dedicated `SPARK_SWAP` constant instead of reusing `COLOR_WARN`
+- Process sort header updated: `[m]emory` → `[M]emory` to reflect actual keybinding
+- CPU per-core gauge width documented with clarifying comment (16-char fits 50% split at 80-col minimum)
+
+### Fixed
+- **Memory sort keybinding unreachable (BUG)**: `m` was bound to "return to mode selection" globally, making `ProcessSortKey::Memory` impossible to activate — now uses `Shift+M` which doesn't conflict
+
 ## [1.2.2] - 2026-03-12
 
 ### Changed

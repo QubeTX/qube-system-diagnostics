@@ -1,4 +1,4 @@
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -89,11 +89,31 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
+    let has_drives = !app.snapshot.disk_health.drives.is_empty();
     let outer = content_block("Disk / Storage");
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
-    let mut lines = vec![
+    // Layout: partitions panel + physical drives panel (if present)
+    let part_lines_count = app.snapshot.disk.partitions.len() as u16 * 2 + 1;
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(if has_drives {
+            vec![
+                Constraint::Length(part_lines_count + 2), // Partitions sub_block
+                Constraint::Min(6),                       // Physical drives sub_block
+            ]
+        } else {
+            vec![Constraint::Min(1)]
+        })
+        .split(inner);
+
+    // Partitions panel
+    let part_block = sub_block("Partitions");
+    let part_inner = part_block.inner(chunks[0]);
+    frame.render_widget(part_block, chunks[0]);
+
+    let mut part_lines = vec![
         Line::from(Span::styled(
             format!("  {:<20} {:<10} {:>12} {:>12} {:>8} {}", "MOUNT", "FS", "USED", "TOTAL", "USE%", "TYPE"),
             Style::default().fg(COLOR_DIM),
@@ -104,7 +124,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         let pct = part.usage_percent();
         let color = status_color(&HealthStatus::from_percent(pct));
 
-        lines.push(Line::from(vec![
+        part_lines.push(Line::from(vec![
             Span::styled(
                 format!("  {:<20} {:<10} {:>12} {:>12} ",
                     truncate_str(&part.mount_point, 20),
@@ -119,20 +139,27 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         ]));
 
         // Gauge bar
-        lines.push(Line::from(vec![
+        part_lines.push(Line::from(vec![
             Span::styled("    ", Style::default()),
             Span::styled(gauge_bar(pct, 20), Style::default().fg(color)),
         ]));
     }
 
-    // Physical drives table
-    if !app.snapshot.disk_health.drives.is_empty() {
-        lines.push(Line::from(""));
-        lines.push(section_header("PHYSICAL DRIVES"));
-        lines.push(Line::from(Span::styled(
-            format!("  {:<30} {:<8} {:<10} {:>8} {:>12} {:>12}", "MODEL", "TYPE", "HEALTH", "TEMP", "RD/s", "WR/s"),
-            Style::default().fg(COLOR_DIM),
-        )));
+    let part_panel = Paragraph::new(part_lines);
+    frame.render_widget(part_panel, part_inner);
+
+    // Physical drives panel
+    if has_drives && chunks.len() > 1 {
+        let drive_block = sub_block("Physical Drives");
+        let drive_inner = drive_block.inner(chunks[1]);
+        frame.render_widget(drive_block, chunks[1]);
+
+        let mut drive_lines = vec![
+            Line::from(Span::styled(
+                format!("  {:<30} {:<8} {:<10} {:>8} {:>12} {:>12}", "MODEL", "TYPE", "HEALTH", "TEMP", "RD/s", "WR/s"),
+                Style::default().fg(COLOR_DIM),
+            )),
+        ];
 
         for drive in &app.snapshot.disk_health.drives {
             let health_color = match drive.health_status {
@@ -152,7 +179,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 ("N/A".into(), "N/A".into())
             };
 
-            lines.push(Line::from(vec![
+            drive_lines.push(Line::from(vec![
                 Span::styled(
                     format!("  {:<30} {:<8} ", truncate_str(&drive.model, 30), drive.media_type),
                     Style::default().fg(COLOR_TEXT),
@@ -174,28 +201,42 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 if let Some(poh) = drive.power_on_hours {
                     detail_parts.push(format!("POH: {}", poh));
                 }
-                lines.push(Line::from(Span::styled(
+                drive_lines.push(Line::from(Span::styled(
                     format!("    {}", detail_parts.join("  ")),
                     Style::default().fg(COLOR_DIM),
                 )));
             }
         }
-    }
 
-    // Show disk health warnings
-    let disk_warnings: Vec<_> = app.snapshot.warnings.iter()
-        .filter(|w| w.source == "Disk Health")
-        .collect();
-    if !disk_warnings.is_empty() {
-        lines.push(Line::from(""));
-        for warn in disk_warnings {
-            lines.push(Line::from(Span::styled(
-                format!("  \u{26A0} {}", warn.message),
-                Style::default().fg(COLOR_WARN),
+        // Disk health warnings inline in drives panel
+        let disk_warnings: Vec<_> = app.snapshot.warnings.iter()
+            .filter(|w| w.source == "Disk Health")
+            .collect();
+        if !disk_warnings.is_empty() {
+            drive_lines.push(Line::from(""));
+            for warn in &disk_warnings {
+                drive_lines.push(Line::from(Span::styled(
+                    format!("  \u{26A0} {}", warn.message),
+                    Style::default().fg(COLOR_WARN),
+                )));
+            }
+        }
+
+        // Clamp scroll and add indicator
+        let total_lines = drive_lines.len();
+        let visible_height = drive_inner.height as usize;
+        let max_scroll = total_lines.saturating_sub(visible_height);
+        let scroll = app.disk_scroll.min(max_scroll);
+
+        if total_lines > visible_height {
+            drive_lines.push(Line::from(""));
+            drive_lines.push(Line::from(Span::styled(
+                format!("  Scroll: j/k  ({}/{})", scroll + visible_height.min(total_lines), total_lines),
+                Style::default().fg(COLOR_DIM),
             )));
         }
-    }
 
-    let panel = Paragraph::new(lines);
-    frame.render_widget(panel, inner);
+        let drive_panel = Paragraph::new(drive_lines).scroll((scroll as u16, 0));
+        frame.render_widget(drive_panel, drive_inner);
+    }
 }

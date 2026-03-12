@@ -249,7 +249,21 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::from(""));
     }
 
-    let panel = Paragraph::new(lines);
+    // Clamp scroll and add indicator
+    let total_lines = lines.len();
+    let visible_height = inner.height as usize;
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let scroll = app.driver_scroll.min(max_scroll);
+
+    if total_lines > visible_height {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!("  Scroll: j/k  ({}/{})", scroll + visible_height.min(total_lines), total_lines),
+            Style::default().fg(COLOR_DIM),
+        )));
+    }
+
+    let panel = Paragraph::new(lines).scroll((scroll as u16, 0));
     frame.render_widget(panel, inner);
 }
 

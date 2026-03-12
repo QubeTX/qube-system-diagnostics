@@ -46,14 +46,14 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         ]),
         gauge_line("Usage", pct, 20),
         Line::from(vec![
-            Span::styled("  Status          ", Style::default().fg(COLOR_TEXT)),
+            Span::styled("  Status        ", Style::default().fg(COLOR_TEXT)),
             Span::styled(plain_language_percent(pct, "memory"), Style::default().fg(COLOR_DIM)),
         ]),
     ];
 
     if mem.swap_used_bytes > 0 {
         status_lines.push(Line::from(vec![
-            Span::styled("  Swap            ", Style::default().fg(COLOR_TEXT)),
+            Span::styled("  Swap          ", Style::default().fg(COLOR_TEXT)),
             Span::styled("Your computer is using extra temporary storage", Style::default().fg(COLOR_DIM)),
         ]));
     }
@@ -146,7 +146,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .data(&swap_spark)
         .max(100)
         .bar_set(sparkline_bar_set())
-        .style(Style::default().fg(COLOR_WARN));
+        .style(Style::default().fg(SPARK_SWAP));
     frame.render_widget(swap_sparkline, spark_chunks[1]);
 
     // Process table

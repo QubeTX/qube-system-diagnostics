@@ -86,8 +86,8 @@ sd300 --version    # Show version
 | `m` | Return to mode selection |
 | `?` | Help overlay |
 | `f` | Toggle temperature unit (C/F) |
-| `j` / `k` | Scroll (processes, connections in Tech Mode) |
-| `c` / `n` / `p` | Sort by CPU / Name / PID (Section 7) |
+| `j` / `k` | Scroll (processes, connections, drivers, disk in Tech Mode) |
+| `c` / `M` / `n` / `p` | Sort by CPU / Memory / Name / PID (Section 7) |
 | `r` | Manual refresh (Section 9 - Drivers) |
 
 ## Platform Support
@@ -103,7 +103,7 @@ sd300 --version    # Show version
 
 ### Platform-Specific Features
 
-- **Windows**: WMI-based driver scanning, battery info via PowerShell, GPU via nvidia-smi
+- **Windows**: Setup API driver scanning, battery info via PowerShell, GPU via nvidia-smi
 - **Linux**: sysfs-based driver scanning, PCI device enumeration, ALSA audio detection
 - **macOS**: IOKit-based driver scanning, system_profiler integration
 

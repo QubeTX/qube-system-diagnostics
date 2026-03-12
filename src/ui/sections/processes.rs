@@ -67,7 +67,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     let header_lines = vec![
         Line::from(Span::styled(
-            format!("  Sorted by {}    Sort: [c]pu  [m]emory  [p]id  [n]ame    Scroll: j/k or arrows", sort_indicator),
+            format!("  Sorted by {}    Sort: [c]pu  [M]emory  [p]id  [n]ame    Scroll: j/k or arrows", sort_indicator),
             Style::default().fg(COLOR_MUTED),
         )),
         Line::from(""),

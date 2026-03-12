@@ -169,11 +169,12 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(conn_status_panel, chunks[1]);
 
     // Interfaces + connections
+    let iface_display_count = net.interfaces.len().min(8);
     let mid_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(if has_connections {
             vec![
-                Constraint::Length(net.interfaces.len() as u16 + 1),
+                Constraint::Length(iface_display_count as u16 + if net.interfaces.len() > 8 { 2 } else { 1 }),
                 Constraint::Min(4),
             ]
         } else {
@@ -181,9 +182,9 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         })
         .split(chunks[2]);
 
-    // Interface table
+    // Interface table (capped at 8 to prevent layout overflow)
     let mut iface_lines = Vec::new();
-    for iface in &net.interfaces {
+    for iface in net.interfaces.iter().take(8) {
         let ip = iface.ip_addresses.first().map(|s| s.as_str()).unwrap_or("N/A");
         iface_lines.push(Line::from(Span::styled(
             format!("  {:<20} {:<18} {:<18} {:>12} {:>12}",
@@ -193,6 +194,12 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 format_throughput(iface.download_rate),
                 format_throughput(iface.upload_rate)),
             Style::default().fg(COLOR_TEXT),
+        )));
+    }
+    if net.interfaces.len() > 8 {
+        iface_lines.push(Line::from(Span::styled(
+            format!("  + {} more interfaces", net.interfaces.len() - 8),
+            Style::default().fg(COLOR_DIM),
         )));
     }
     let iface_panel = Paragraph::new(iface_lines);

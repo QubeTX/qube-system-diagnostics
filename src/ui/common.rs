@@ -32,6 +32,7 @@ pub const SPARK_NET_DOWN: Color = Color::Rgb(140, 170, 200); // Slate blue (info
 pub const SPARK_NET_UP: Color = Color::Rgb(160, 120, 170);   // Muted purple
 pub const SPARK_GPU: Color = Color::Rgb(130, 170, 120);      // Sage green (good)
 pub const SPARK_TEMP: Color = Color::Rgb(210, 160, 60);      // Warm amber
+pub const SPARK_SWAP: Color = Color::Rgb(210, 160, 60);      // Warm amber (swap)
 
 /// Get the appropriate sparkline bar set for the current platform.
 /// Windows terminals often can't render fractional block chars (U+2581-U+2587),

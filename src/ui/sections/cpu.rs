@@ -151,6 +151,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         let freq_val = cpu.per_core_frequency.get(i).unwrap_or(&0);
         core_lines.push(Line::from(vec![
             Span::styled(format!("  Core {:>2} ", i), Style::default().fg(COLOR_DIM)),
+            // 16-char gauge: fits 50% horizontal split at 80-col minimum
             Span::styled(gauge_bar(*usage as f64, 16), Style::default().fg(status_color(&HealthStatus::from_percent(*usage as f64)))),
             Span::styled(format!("  {} MHz", freq_val), Style::default().fg(COLOR_TEXT)),
         ]));

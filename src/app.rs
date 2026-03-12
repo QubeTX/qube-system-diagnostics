@@ -61,6 +61,10 @@ pub struct App {
     pub disk_read_history: HistoryBuffer,
     /// Disk I/O write history
     pub disk_write_history: HistoryBuffer,
+    /// Drivers section scroll offset (tech mode)
+    pub driver_scroll: usize,
+    /// Disk section scroll offset (tech mode)
+    pub disk_scroll: usize,
     /// Async driver scan handle
     driver_scan_handle: Option<tokio::task::JoinHandle<DriverData>>,
 }
@@ -88,6 +92,8 @@ impl App {
             connection_scroll: 0,
             disk_read_history: HistoryBuffer::new(HISTORY_SAMPLES),
             disk_write_history: HistoryBuffer::new(HISTORY_SAMPLES),
+            driver_scroll: 0,
+            disk_scroll: 0,
             driver_scan_handle: None,
         }
     }
@@ -280,28 +286,56 @@ impl App {
                         self.current_section = section;
                         self.process_scroll = 0;
                         self.connection_scroll = 0;
+                        self.driver_scroll = 0;
+                        self.disk_scroll = 0;
                     }
                 }
                 // Scrollable table controls
                 KeyCode::Char('j') | KeyCode::Down => {
-                    if self.current_section == Section::Processes {
-                        let max = self.snapshot.processes.list.len().saturating_sub(1);
-                        self.process_scroll = (self.process_scroll + 1).min(max);
-                    } else if self.current_section == Section::Network {
-                        let max = self.snapshot.network_diag.active_connections.len().saturating_sub(1);
-                        self.connection_scroll = (self.connection_scroll + 1).min(max);
+                    match self.current_section {
+                        Section::Processes => {
+                            let max = self.snapshot.processes.list.len().saturating_sub(1);
+                            self.process_scroll = (self.process_scroll + 1).min(max);
+                        }
+                        Section::Network => {
+                            let max = self.snapshot.network_diag.active_connections.len().saturating_sub(1);
+                            self.connection_scroll = (self.connection_scroll + 1).min(max);
+                        }
+                        Section::Drivers => {
+                            // Upper bound clamped in render; just increment here
+                            self.driver_scroll = self.driver_scroll.saturating_add(1);
+                        }
+                        Section::Disk => {
+                            self.disk_scroll = self.disk_scroll.saturating_add(1);
+                        }
+                        _ => {}
                     }
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
-                    if self.current_section == Section::Processes {
-                        self.process_scroll = self.process_scroll.saturating_sub(1);
-                    } else if self.current_section == Section::Network {
-                        self.connection_scroll = self.connection_scroll.saturating_sub(1);
+                    match self.current_section {
+                        Section::Processes => {
+                            self.process_scroll = self.process_scroll.saturating_sub(1);
+                        }
+                        Section::Network => {
+                            self.connection_scroll = self.connection_scroll.saturating_sub(1);
+                        }
+                        Section::Drivers => {
+                            self.driver_scroll = self.driver_scroll.saturating_sub(1);
+                        }
+                        Section::Disk => {
+                            self.disk_scroll = self.disk_scroll.saturating_sub(1);
+                        }
+                        _ => {}
                     }
                 }
                 KeyCode::Char('c') => {
                     if self.current_section == Section::Processes {
                         self.process_sort = ProcessSortKey::Cpu;
+                    }
+                }
+                KeyCode::Char('M') => {
+                    if self.current_section == Section::Processes {
+                        self.process_sort = ProcessSortKey::Memory;
                     }
                 }
                 KeyCode::Char('n') => {
