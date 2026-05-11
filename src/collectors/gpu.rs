@@ -1,3 +1,5 @@
+use super::command::{run_output, CommandTimeout};
+
 /// GPU data — gracefully degrades when no GPU info is available
 #[derive(Debug, Clone, Default)]
 pub struct GpuData {
@@ -27,13 +29,14 @@ pub fn collect() -> GpuData {
 
 fn collect_nvidia() -> Option<GpuData> {
     // Try to run nvidia-smi for basic GPU info
-    let output = std::process::Command::new("nvidia-smi")
-        .args([
+    let output = run_output(
+        "nvidia-smi",
+        [
             "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,driver_version",
             "--format=csv,noheader,nounits",
-        ])
-        .output()
-        .ok()?;
+        ],
+        CommandTimeout::Normal,
+    )?;
 
     if !output.status.success() {
         return None;

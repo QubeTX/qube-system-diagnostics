@@ -1,3 +1,4 @@
+pub mod command;
 pub mod cpu;
 pub mod disk;
 pub mod disk_health;
@@ -11,13 +12,60 @@ pub mod processes;
 pub mod system_info;
 pub mod thermals;
 
-use sysinfo::System;
+use sysinfo::{Components, Disks, Networks, ProcessesToUpdate, System};
 
 #[derive(Debug, Clone)]
 pub struct DiagnosticWarning {
     pub source: String,
     pub message: String,
     pub severity: WarningSeverity,
+}
+
+#[cfg(test)]
+mod command_tests {
+    use std::time::{Duration, Instant};
+
+    use super::command::{run_output, CommandTimeout};
+
+    #[test]
+    fn command_helper_returns_successful_output() {
+        #[cfg(unix)]
+        let output = run_output("sh", ["-c", "printf ok"], CommandTimeout::Normal)
+            .expect("command should produce output");
+
+        #[cfg(windows)]
+        let output = run_output("cmd", ["/C", "echo ok"], CommandTimeout::Normal)
+            .expect("command should produce output");
+
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains("ok"));
+    }
+
+    #[test]
+    fn command_helper_times_out_and_kills_child() {
+        let started = Instant::now();
+
+        #[cfg(unix)]
+        let output = run_output(
+            "sh",
+            ["-c", "sleep 2; printf late"],
+            CommandTimeout::Custom(Duration::from_millis(75)),
+        );
+
+        #[cfg(windows)]
+        let output = run_output(
+            "powershell",
+            [
+                "-NoProfile",
+                "-Command",
+                "Start-Sleep -Seconds 2; Write-Output late",
+            ],
+            CommandTimeout::Custom(Duration::from_millis(75)),
+        );
+
+        assert!(output.is_none());
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -43,6 +91,9 @@ pub struct SystemSnapshot {
     pub warnings: Vec<DiagnosticWarning>,
     /// Internal sysinfo handle
     sys: System,
+    networks: Networks,
+    disks: Disks,
+    components: Components,
 }
 
 impl Default for SystemSnapshot {
@@ -61,6 +112,9 @@ impl Default for SystemSnapshot {
             drivers: drivers::DriverData::default(),
             warnings: Vec::new(),
             sys: System::new_all(),
+            networks: Networks::new_with_refreshed_list(),
+            disks: Disks::new_with_refreshed_list(),
+            components: Components::new_with_refreshed_list(),
         }
     }
 }
@@ -73,21 +127,22 @@ impl SystemSnapshot {
 
     /// Refresh fast metrics (every 1s): CPU, memory, network, processes
     pub fn refresh_fast(&mut self) {
-        self.sys.refresh_all();
+        self.sys.refresh_cpu_all();
+        self.sys.refresh_memory();
+        self.sys.refresh_processes(ProcessesToUpdate::All, true);
 
         self.cpu = cpu::collect(&self.sys);
         self.memory = memory::collect(&self.sys);
-        let prev_network = std::mem::take(&mut self.network);
-        self.network = network::collect(&self.sys, &prev_network);
+        self.network = network::collect(&mut self.networks);
         self.processes = processes::collect(&self.sys);
     }
 
     /// Refresh slow metrics (every 5s): disk, GPU, thermals
     pub fn refresh_slow(&mut self) {
-        self.disk = disk::collect(&self.sys);
+        self.disk = disk::collect(&mut self.disks);
         self.gpu = gpu::collect();
 
-        let (thermal_data, thermal_warnings) = thermals::collect(&self.sys);
+        let (thermal_data, thermal_warnings) = thermals::collect(&mut self.components);
         self.thermals = thermal_data;
         self.warnings.retain(|w| w.source != "Thermals");
         self.warnings.extend(thermal_warnings);

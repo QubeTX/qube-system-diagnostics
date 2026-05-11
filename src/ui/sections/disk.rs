@@ -47,8 +47,14 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             lines.push(Line::from(vec![
-                Span::styled(format!("  {} ", status.icon()), Style::default().fg(status_color(&status))),
-                Span::styled(name.to_string(), Style::default().fg(COLOR_TEXT).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("  {} ", status.icon()),
+                    Style::default().fg(status_color(&status)),
+                ),
+                Span::styled(
+                    name.to_string(),
+                    Style::default().fg(COLOR_TEXT).add_modifier(Modifier::BOLD),
+                ),
             ]));
             lines.push(Line::from(vec![
                 Span::styled("    Type     ", Style::default().fg(COLOR_DIM)),
@@ -57,7 +63,12 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(vec![
                 Span::styled("    Space    ", Style::default().fg(COLOR_DIM)),
                 Span::styled(
-                    format!("Using {} of {} ({:.0}%)", format_bytes(part.used_bytes), format_bytes(part.total_bytes), pct),
+                    format!(
+                        "Using {} of {} ({:.0}%)",
+                        format_bytes(part.used_bytes),
+                        format_bytes(part.total_bytes),
+                        pct
+                    ),
                     Style::default().fg(COLOR_TEXT),
                 ),
             ]));
@@ -67,7 +78,10 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             let drive_health = if app.snapshot.disk_health.drives.len() == 1 {
                 app.snapshot.disk_health.drives.first()
             } else {
-                app.snapshot.disk_health.drives.get(i)
+                app.snapshot
+                    .disk_health
+                    .drives
+                    .get(i)
                     .or_else(|| app.snapshot.disk_health.drives.first())
             };
             let (health_label, health_color) = match drive_health.map(|d| &d.health_status) {
@@ -113,12 +127,13 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let part_inner = part_block.inner(chunks[0]);
     frame.render_widget(part_block, chunks[0]);
 
-    let mut part_lines = vec![
-        Line::from(Span::styled(
-            format!("  {:<20} {:<10} {:>12} {:>12} {:>8} {}", "MOUNT", "FS", "USED", "TOTAL", "USE%", "TYPE"),
-            Style::default().fg(COLOR_DIM),
-        )),
-    ];
+    let mut part_lines = vec![Line::from(Span::styled(
+        format!(
+            "  {:<20} {:<10} {:>12} {:>12} {:>8} {}",
+            "MOUNT", "FS", "USED", "TOTAL", "USE%", "TYPE"
+        ),
+        Style::default().fg(COLOR_DIM),
+    ))];
 
     for part in &app.snapshot.disk.partitions {
         let pct = part.usage_percent();
@@ -126,7 +141,8 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
         part_lines.push(Line::from(vec![
             Span::styled(
-                format!("  {:<20} {:<10} {:>12} {:>12} ",
+                format!(
+                    "  {:<20} {:<10} {:>12} {:>12} ",
                     truncate_str(&part.mount_point, 20),
                     truncate_str(&part.filesystem, 10),
                     format_bytes_gib(part.used_bytes),
@@ -135,7 +151,10 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(COLOR_TEXT),
             ),
             Span::styled(format!("{:>7.1}%", pct), Style::default().fg(color)),
-            Span::styled(format!(" {}", part.disk_type), Style::default().fg(COLOR_DIM)),
+            Span::styled(
+                format!(" {}", part.disk_type),
+                Style::default().fg(COLOR_DIM),
+            ),
         ]));
 
         // Gauge bar
@@ -154,12 +173,13 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         let drive_inner = drive_block.inner(chunks[1]);
         frame.render_widget(drive_block, chunks[1]);
 
-        let mut drive_lines = vec![
-            Line::from(Span::styled(
-                format!("  {:<30} {:<8} {:<10} {:>8} {:>12} {:>12}", "MODEL", "TYPE", "HEALTH", "TEMP", "RD/s", "WR/s"),
-                Style::default().fg(COLOR_DIM),
-            )),
-        ];
+        let mut drive_lines = vec![Line::from(Span::styled(
+            format!(
+                "  {:<30} {:<8} {:<10} {:>8} {:>12} {:>12}",
+                "MODEL", "TYPE", "HEALTH", "TEMP", "RD/s", "WR/s"
+            ),
+            Style::default().fg(COLOR_DIM),
+        ))];
 
         for drive in &app.snapshot.disk_health.drives {
             let health_color = match drive.health_status {
@@ -169,22 +189,33 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 DiskHealthStatus::Unknown => COLOR_DIM,
             };
 
-            let temp_str = drive.temperature_celsius
+            let temp_str = drive
+                .temperature_celsius
                 .map(|t| format!("{:.0}C", t))
                 .unwrap_or_else(|| "N/A".into());
 
             let (rd_str, wr_str) = if let Some(ref io) = drive.io_stats {
-                (format_throughput(io.read_bytes_per_sec), format_throughput(io.write_bytes_per_sec))
+                (
+                    format_throughput(io.read_bytes_per_sec),
+                    format_throughput(io.write_bytes_per_sec),
+                )
             } else {
                 ("N/A".into(), "N/A".into())
             };
 
             drive_lines.push(Line::from(vec![
                 Span::styled(
-                    format!("  {:<30} {:<8} ", truncate_str(&drive.model, 30), drive.media_type),
+                    format!(
+                        "  {:<30} {:<8} ",
+                        truncate_str(&drive.model, 30),
+                        drive.media_type
+                    ),
                     Style::default().fg(COLOR_TEXT),
                 ),
-                Span::styled(format!("{:<10}", drive.health_status.user_label()), Style::default().fg(health_color)),
+                Span::styled(
+                    format!("{:<10}", drive.health_status.user_label()),
+                    Style::default().fg(health_color),
+                ),
                 Span::styled(
                     format!("{:>8} {:>12} {:>12}", temp_str, rd_str, wr_str),
                     Style::default().fg(COLOR_DIM),
@@ -209,7 +240,10 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         }
 
         // Disk health warnings inline in drives panel
-        let disk_warnings: Vec<_> = app.snapshot.warnings.iter()
+        let disk_warnings: Vec<_> = app
+            .snapshot
+            .warnings
+            .iter()
             .filter(|w| w.source == "Disk Health")
             .collect();
         if !disk_warnings.is_empty() {
@@ -231,7 +265,11 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         if total_lines > visible_height {
             drive_lines.push(Line::from(""));
             drive_lines.push(Line::from(Span::styled(
-                format!("  Scroll: j/k  ({}/{})", scroll + visible_height.min(total_lines), total_lines),
+                format!(
+                    "  Scroll: j/k  ({}/{})",
+                    scroll + visible_height.min(total_lines),
+                    total_lines
+                ),
                 Style::default().fg(COLOR_DIM),
             )));
         }

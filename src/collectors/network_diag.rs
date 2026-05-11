@@ -1,7 +1,7 @@
 use std::net::ToSocketAddrs;
-use std::process::Command;
 use std::time::Instant;
 
+use super::command::{run_output, run_stdout, CommandTimeout};
 use super::DiagnosticWarning;
 
 #[derive(Debug, Clone, Default)]
@@ -138,7 +138,8 @@ pub fn collect_connectivity() -> (NetworkDiagData, Vec<DiagnosticWarning>) {
 /// Refresh only active connections (fast, every 3s)
 pub fn refresh_connections(data: &mut NetworkDiagData) {
     let connections = collect_connections();
-    data.listening_ports = connections.iter()
+    data.listening_ports = connections
+        .iter()
         .filter(|c| c.state == ConnectionState::Listening)
         .cloned()
         .collect();
@@ -168,15 +169,14 @@ fn detect_gateway() -> Option<String> {
 
 #[cfg(windows)]
 fn detect_gateway_windows() -> Option<String> {
-    let output = Command::new("route")
-        .args(["print", "0.0.0.0"])
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Parse "route print 0.0.0.0" output: find lines with 0.0.0.0
+    let stdout = run_stdout("route", ["print", "0.0.0.0"], CommandTimeout::Normal)?;
+    parse_windows_gateway(&stdout)
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_windows_gateway(stdout: &str) -> Option<String> {
     for line in stdout.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        // Format: Network Destination, Netmask, Gateway, Interface, Metric
         if parts.len() >= 4 && parts[0] == "0.0.0.0" && parts[1] == "0.0.0.0" {
             let gw = parts[2];
             if gw != "0.0.0.0" {
@@ -189,12 +189,12 @@ fn detect_gateway_windows() -> Option<String> {
 
 #[cfg(target_os = "linux")]
 fn detect_gateway_linux() -> Option<String> {
-    let output = Command::new("ip")
-        .args(["route", "show", "default"])
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // "default via 192.168.1.1 dev eth0"
+    let stdout = run_stdout("ip", ["route", "show", "default"], CommandTimeout::Normal)?;
+    parse_linux_default_gateway(&stdout)
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn parse_linux_default_gateway(stdout: &str) -> Option<String> {
     for line in stdout.lines() {
         if line.starts_with("default") {
             if let Some(idx) = line.find("via ") {
@@ -208,11 +208,12 @@ fn detect_gateway_linux() -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn detect_gateway_macos() -> Option<String> {
-    let output = Command::new("route")
-        .args(["-n", "get", "default"])
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = run_stdout("route", ["-n", "get", "default"], CommandTimeout::Normal)?;
+    parse_macos_gateway(&stdout)
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn parse_macos_gateway(stdout: &str) -> Option<String> {
     for line in stdout.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("gateway:") {
@@ -228,21 +229,25 @@ fn ping_host(host: &str) -> ConnectivityResult {
     let start = Instant::now();
 
     #[cfg(windows)]
-    let result = Command::new("ping")
-        .args(["-n", "1", "-w", "3000", host])
-        .output();
+    let result = run_output(
+        "ping",
+        ["-n", "1", "-w", "3000", host],
+        CommandTimeout::Slow,
+    );
 
     #[cfg(not(windows))]
-    let result = Command::new("ping")
-        .args(["-c", "1", "-W", "3", host])
-        .output();
+    let result = run_output("ping", ["-c", "1", "-W", "3", host], CommandTimeout::Slow);
 
     match result {
-        Ok(output) => {
+        Some(output) => {
             let elapsed = start.elapsed().as_secs_f64() * 1000.0;
             ConnectivityResult {
                 reachable: output.status.success(),
-                latency_ms: if output.status.success() { Some(elapsed) } else { None },
+                latency_ms: if output.status.success() {
+                    Some(elapsed)
+                } else {
+                    None
+                },
                 target: host.into(),
                 error: if !output.status.success() {
                     Some("Host unreachable".into())
@@ -251,11 +256,11 @@ fn ping_host(host: &str) -> ConnectivityResult {
                 },
             }
         }
-        Err(e) => ConnectivityResult {
+        None => ConnectivityResult {
             reachable: false,
             latency_ms: None,
             target: host.into(),
-            error: Some(format!("Ping failed: {}", e)),
+            error: Some("Ping failed or timed out".into()),
         },
     }
 }
@@ -316,12 +321,8 @@ fn collect_connections() -> Vec<ConnectionInfo> {
 fn collect_connections_windows() -> Vec<ConnectionInfo> {
     let mut connections = Vec::new();
 
-    let output = match Command::new("netstat")
-        .args(["-ano"])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return connections,
+    let Some(output) = run_output("netstat", ["-ano"], CommandTimeout::Normal) else {
+        return connections;
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -380,12 +381,8 @@ fn collect_connections_windows() -> Vec<ConnectionInfo> {
 fn collect_connections_linux() -> Vec<ConnectionInfo> {
     let mut connections = Vec::new();
 
-    let output = match Command::new("ss")
-        .args(["-tunap"])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return connections,
+    let Some(output) = run_output("ss", ["-tunap"], CommandTimeout::Normal) else {
+        return connections;
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -412,7 +409,12 @@ fn collect_connections_linux() -> Vec<ConnectionInfo> {
         // Try to extract PID from the users: column
         let pid = parts.iter().find_map(|p| {
             if p.contains("pid=") {
-                p.split("pid=").nth(1)?.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
+                p.split("pid=")
+                    .nth(1)?
+                    .split(|c: char| !c.is_ascii_digit())
+                    .next()?
+                    .parse()
+                    .ok()
             } else {
                 None
             }
@@ -437,12 +439,8 @@ fn collect_connections_linux() -> Vec<ConnectionInfo> {
 fn collect_connections_macos() -> Vec<ConnectionInfo> {
     let mut connections = Vec::new();
 
-    let output = match Command::new("netstat")
-        .args(["-anp", "tcp"])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return connections,
+    let Some(output) = run_output("netstat", ["-anp", "tcp"], CommandTimeout::Normal) else {
+        return connections;
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -500,7 +498,7 @@ fn parse_addr_port(addr_str: &str) -> (String, u16) {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg_attr(windows, allow(dead_code))]
 fn parse_addr_port_unix(addr_str: &str) -> (String, u16) {
     // Unix format: "192.168.1.1:443" or ":::443" or "[::]:443" or "*:*"
     if addr_str == "*:*" || addr_str == "*.*" {
@@ -527,5 +525,48 @@ fn parse_addr_port_unix(addr_str: &str) -> (String, u16) {
         }
     } else {
         parse_addr_port(addr_str)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_linux_default_gateway_fixture() {
+        let fixture =
+            "default via 192.168.86.1 dev wlan0 proto dhcp src 192.168.86.25 metric 600\n";
+        assert_eq!(
+            parse_linux_default_gateway(fixture),
+            Some("192.168.86.1".into())
+        );
+    }
+
+    #[test]
+    fn parses_macos_gateway_fixture() {
+        let fixture = "   route to: default\n   destination: default\n       gateway: 10.0.0.1\n";
+        assert_eq!(parse_macos_gateway(fixture), Some("10.0.0.1".into()));
+    }
+
+    #[test]
+    fn parses_windows_route_fixture() {
+        let fixture = "\
+Network Destination        Netmask          Gateway       Interface  Metric
+          0.0.0.0          0.0.0.0       172.16.0.1     172.16.0.50     25
+";
+        assert_eq!(parse_windows_gateway(fixture), Some("172.16.0.1".into()));
+    }
+
+    #[test]
+    fn parses_windows_ipv6_socket_with_port() {
+        assert_eq!(parse_addr_port("[fe80::1]:443"), ("fe80::1".into(), 443));
+    }
+
+    #[test]
+    fn parses_macos_dotted_socket_with_port() {
+        assert_eq!(
+            parse_addr_port_unix("192.168.1.20.5353"),
+            ("192.168.1.20".into(), 5353)
+        );
     }
 }

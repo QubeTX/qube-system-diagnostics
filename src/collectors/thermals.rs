@@ -1,5 +1,7 @@
-use sysinfo::{Components, System};
+use sysinfo::Components;
 
+#[cfg(windows)]
+use super::command::{run_output, CommandTimeout};
 use super::{DiagnosticWarning, WarningSeverity};
 
 #[derive(Debug, Clone, Default)]
@@ -40,27 +42,34 @@ pub enum PowerSource {
     Battery,
 }
 
-pub fn collect(_sys: &System) -> (ThermalData, Vec<DiagnosticWarning>) {
-    let components = Components::new_with_refreshed_list();
+pub fn collect(components: &mut Components) -> (ThermalData, Vec<DiagnosticWarning>) {
+    components.refresh(true);
     let mut warnings = Vec::new();
 
     let mut cpu_temp: Option<f64> = None;
     let mut gpu_temp: Option<f64> = None;
     let mut sensors = Vec::new();
 
-    for component in &components {
+    for component in components.iter() {
         let label = component.label().to_string();
-        let temp = component.temperature() as f64;
+        let Some(temp) = component.temperature().map(|value| value as f64) else {
+            continue;
+        };
         let critical = component.critical().map(|t| t as f64);
 
         // Identify CPU and GPU temps
         let label_lower = label.to_lowercase();
-        if (label_lower.contains("cpu") || label_lower.contains("tctl") || label_lower.contains("coretemp") || label_lower.contains("package"))
+        if (label_lower.contains("cpu")
+            || label_lower.contains("tctl")
+            || label_lower.contains("coretemp")
+            || label_lower.contains("package"))
             && cpu_temp.is_none_or(|current| temp > current)
         {
             cpu_temp = Some(temp);
         }
-        if (label_lower.contains("gpu") || label_lower.contains("nvidia") || label_lower.contains("radeon"))
+        if (label_lower.contains("gpu")
+            || label_lower.contains("nvidia")
+            || label_lower.contains("radeon"))
             && gpu_temp.is_none_or(|current| temp > current)
         {
             gpu_temp = Some(temp);
@@ -73,7 +82,10 @@ pub fn collect(_sys: &System) -> (ThermalData, Vec<DiagnosticWarning>) {
         });
     }
 
+    #[cfg(windows)]
     let mut fans = Vec::new();
+    #[cfg(not(windows))]
+    let fans = Vec::new();
 
     // WMI fallback on Windows when sysinfo returns empty
     #[cfg(windows)]
@@ -87,7 +99,9 @@ pub fn collect(_sys: &System) -> (ThermalData, Vec<DiagnosticWarning>) {
             // Extract CPU temp from WMI sensors
             for sensor in &sensors {
                 let label_lower = sensor.label.to_lowercase();
-                if (label_lower.contains("thermal zone") || label_lower.contains("cpu") || label_lower.contains("acpi"))
+                if (label_lower.contains("thermal zone")
+                    || label_lower.contains("cpu")
+                    || label_lower.contains("acpi"))
                     && cpu_temp.is_none_or(|current| sensor.temperature > current)
                 {
                     cpu_temp = Some(sensor.temperature);
@@ -97,7 +111,8 @@ pub fn collect(_sys: &System) -> (ThermalData, Vec<DiagnosticWarning>) {
             if sensors.is_empty() {
                 warnings.push(DiagnosticWarning {
                     source: "Thermals".into(),
-                    message: "No temperature sensors detected. Try running as Administrator.".into(),
+                    message: "No temperature sensors detected. Try running as Administrator."
+                        .into(),
                     severity: WarningSeverity::Warning,
                 });
             }
@@ -230,9 +245,9 @@ fn collect_wmi_thermals() -> (Vec<SensorInfo>, Vec<FanInfo>, Vec<DiagnosticWarni
     // Query fans from root\cimv2 (needs a separate COM init)
     if let Ok(com2) = wmi::COMLibrary::new() {
         if let Ok(wmi_conn) = WMIConnection::new(com2) {
-            if let Ok(wmi_fans) = wmi_conn.raw_query::<WmiFan>(
-                "SELECT Name, DesiredSpeed FROM Win32_Fan"
-            ) {
+            if let Ok(wmi_fans) =
+                wmi_conn.raw_query::<WmiFan>("SELECT Name, DesiredSpeed FROM Win32_Fan")
+            {
                 for fan in wmi_fans {
                     fans.push(FanInfo {
                         label: fan.name.unwrap_or_else(|| "Fan".into()),
@@ -261,14 +276,16 @@ fn collect_battery() -> Option<BatteryInfo> {
 
 #[cfg(windows)]
 fn collect_battery_windows() -> Option<BatteryInfo> {
-    let output = std::process::Command::new("powershell")
-        .args([
+    let output = run_output(
+        "powershell",
+        [
             "-NoProfile",
+            "-NonInteractive",
             "-Command",
             "(Get-WmiObject Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json)",
-        ])
-        .output()
-        .ok()?;
+        ],
+        CommandTimeout::Normal,
+    )?;
 
     if !output.status.success() {
         return None;
@@ -297,6 +314,8 @@ fn extract_json_number(json: &str, key: &str) -> Option<f64> {
     let rest = &json[idx + pattern.len()..];
     let rest = rest.trim_start().strip_prefix(':')?;
     let rest = rest.trim_start();
-    let end = rest.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }

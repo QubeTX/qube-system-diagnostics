@@ -38,7 +38,10 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     let mut status_lines = vec![
         Line::from(""),
         Line::from(vec![
-            Span::styled(format!("  {} ", status.icon()), Style::default().fg(status_color(&status))),
+            Span::styled(
+                format!("  {} ", status.icon()),
+                Style::default().fg(status_color(&status)),
+            ),
             Span::styled(
                 format!("Using {:.0} of {:.0} GB ({:.0}%)", used_gb, total_gb, pct),
                 Style::default().fg(COLOR_TEXT),
@@ -47,14 +50,20 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         gauge_line("Usage", pct, 20),
         Line::from(vec![
             Span::styled("  Status        ", Style::default().fg(COLOR_TEXT)),
-            Span::styled(plain_language_percent(pct, "memory"), Style::default().fg(COLOR_DIM)),
+            Span::styled(
+                plain_language_percent(pct, "memory"),
+                Style::default().fg(COLOR_DIM),
+            ),
         ]),
     ];
 
     if mem.swap_used_bytes > 0 {
         status_lines.push(Line::from(vec![
             Span::styled("  Swap          ", Style::default().fg(COLOR_TEXT)),
-            Span::styled("Your computer is using extra temporary storage", Style::default().fg(COLOR_DIM)),
+            Span::styled(
+                "Your computer is using extra temporary storage",
+                Style::default().fg(COLOR_DIM),
+            ),
         ]));
     }
 
@@ -78,12 +87,18 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     let mut consumer_lines = Vec::new();
     let mut mem_sorted: Vec<_> = app.snapshot.processes.list.clone();
-    mem_sorted.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes));
+    mem_sorted.sort_by_key(|proc| std::cmp::Reverse(proc.memory_bytes));
 
     for proc in mem_sorted.iter().take(5) {
         consumer_lines.push(Line::from(vec![
-            Span::styled(format!("  {:<24}", proc.friendly_name), Style::default().fg(COLOR_TEXT)),
-            Span::styled(format_bytes(proc.memory_bytes), Style::default().fg(COLOR_INFO)),
+            Span::styled(
+                format!("  {:<24}", proc.friendly_name),
+                Style::default().fg(COLOR_TEXT),
+            ),
+            Span::styled(
+                format_bytes(proc.memory_bytes),
+                Style::default().fg(COLOR_INFO),
+            ),
             Span::styled(
                 format!("  ({:.1}%)", proc.memory_percent),
                 Style::default().fg(COLOR_DIM),
@@ -97,8 +112,12 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let mem = &app.snapshot.memory;
-    let outer = content_block(&format!("Memory \u{2014} {} / {} ({:.1}%)",
-        format_bytes_gib(mem.used_bytes), format_bytes_gib(mem.total_bytes), mem.usage_percent()));
+    let outer = content_block(&format!(
+        "Memory \u{2014} {} / {} ({:.1}%)",
+        format_bytes_gib(mem.used_bytes),
+        format_bytes_gib(mem.total_bytes),
+        mem.usage_percent()
+    ));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
@@ -112,15 +131,23 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .split(inner);
 
     // Gauge row
-    let gauge_lines = vec![
-        Line::from(vec![
-            Span::styled("  RAM  ", Style::default().fg(COLOR_DIM)),
-            Span::styled(gauge_bar(mem.usage_percent(), 20), Style::default().fg(status_color(&HealthStatus::from_percent(mem.usage_percent())))),
-            Span::raw("    "),
-            Span::styled("Swap ", Style::default().fg(COLOR_DIM)),
-            Span::styled(gauge_bar(mem.swap_percent(), 20), Style::default().fg(status_color(&HealthStatus::from_percent(mem.swap_percent())))),
-        ]),
-    ];
+    let gauge_lines = vec![Line::from(vec![
+        Span::styled("  RAM  ", Style::default().fg(COLOR_DIM)),
+        Span::styled(
+            gauge_bar(mem.usage_percent(), 20),
+            Style::default().fg(status_color(&HealthStatus::from_percent(
+                mem.usage_percent(),
+            ))),
+        ),
+        Span::raw("    "),
+        Span::styled("Swap ", Style::default().fg(COLOR_DIM)),
+        Span::styled(
+            gauge_bar(mem.swap_percent(), 20),
+            Style::default().fg(status_color(&HealthStatus::from_percent(
+                mem.swap_percent(),
+            ))),
+        ),
+    ])];
     let gauge_panel = Paragraph::new(gauge_lines);
     frame.render_widget(gauge_panel, chunks[0]);
 
@@ -154,20 +181,27 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let proc_inner = proc_block.inner(chunks[2]);
     frame.render_widget(proc_block, chunks[2]);
 
-    let mut proc_lines = vec![
-        Line::from(Span::styled(
-            format!("  {:<28} {:>6} {:>8} {:>10} {:>10}", "PROCESS", "PID", "MEM%", "RSS", "CPU%"),
-            Style::default().fg(COLOR_DIM),
-        )),
-    ];
+    let mut proc_lines = vec![Line::from(Span::styled(
+        format!(
+            "  {:<28} {:>6} {:>8} {:>10} {:>10}",
+            "PROCESS", "PID", "MEM%", "RSS", "CPU%"
+        ),
+        Style::default().fg(COLOR_DIM),
+    ))];
 
     let mut mem_sorted: Vec<_> = app.snapshot.processes.list.clone();
-    mem_sorted.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes));
+    mem_sorted.sort_by_key(|proc| std::cmp::Reverse(proc.memory_bytes));
 
     for proc in mem_sorted.iter().take(8) {
         proc_lines.push(Line::from(Span::styled(
-            format!("  {:<28} {:>6} {:>7.1}% {:>10} {:>9.1}%",
-                truncate_str(&proc.name, 28), proc.pid, proc.memory_percent, format_bytes(proc.memory_bytes), proc.cpu_percent),
+            format!(
+                "  {:<28} {:>6} {:>7.1}% {:>10} {:>9.1}%",
+                truncate_str(&proc.name, 28),
+                proc.pid,
+                proc.memory_percent,
+                format_bytes(proc.memory_bytes),
+                proc.cpu_percent
+            ),
             Style::default().fg(COLOR_TEXT),
         )));
     }

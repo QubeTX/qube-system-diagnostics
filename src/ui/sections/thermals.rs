@@ -23,10 +23,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(10),
-            Constraint::Length(7),
-        ])
+        .constraints([Constraint::Min(10), Constraint::Length(7)])
         .split(inner);
 
     let thermal = &app.snapshot.thermals;
@@ -42,21 +39,41 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     // CPU temperature
     if let Some(temp) = thermal.cpu_temp {
-        let desc = format!("{} ({})", plain_language_temp(temp), format_temp(temp, unit));
-        let status = if temp < TEMP_CPU_WARN { HealthStatus::Good }
-            else if temp < TEMP_CPU_CRIT { HealthStatus::Warning }
-            else { HealthStatus::Critical };
+        let desc = format!(
+            "{} ({})",
+            plain_language_temp(temp),
+            format_temp(temp, unit)
+        );
+        let status = if temp < TEMP_CPU_WARN {
+            HealthStatus::Good
+        } else if temp < TEMP_CPU_CRIT {
+            HealthStatus::Warning
+        } else {
+            HealthStatus::Critical
+        };
         lines.push(status_line(&status, "Processor", &desc));
     } else {
-        lines.push(status_line(&HealthStatus::Unknown, "Processor", "Temperature data unavailable"));
+        lines.push(status_line(
+            &HealthStatus::Unknown,
+            "Processor",
+            "Temperature data unavailable",
+        ));
     }
 
     // GPU temperature
     if let Some(temp) = thermal.gpu_temp {
-        let desc = format!("{} ({})", plain_language_temp(temp), format_temp(temp, unit));
-        let status = if temp < TEMP_GPU_WARN { HealthStatus::Good }
-            else if temp < TEMP_GPU_CRIT { HealthStatus::Warning }
-            else { HealthStatus::Critical };
+        let desc = format!(
+            "{} ({})",
+            plain_language_temp(temp),
+            format_temp(temp, unit)
+        );
+        let status = if temp < TEMP_GPU_WARN {
+            HealthStatus::Good
+        } else if temp < TEMP_GPU_CRIT {
+            HealthStatus::Warning
+        } else {
+            HealthStatus::Critical
+        };
         lines.push(status_line(&status, "Graphics", &desc));
     }
 
@@ -74,7 +91,10 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
                 format!("Running ({} RPM)", fan.rpm)
             };
             lines.push(Line::from(vec![
-                Span::styled(format!("  {:<16}", fan.label), Style::default().fg(COLOR_TEXT)),
+                Span::styled(
+                    format!("  {:<16}", fan.label),
+                    Style::default().fg(COLOR_TEXT),
+                ),
                 Span::styled(desc, Style::default().fg(COLOR_DIM)),
             ]));
         }
@@ -82,7 +102,11 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     // Battery
     if let Some(ref bat) = thermal.battery {
-        let charge_str = if bat.is_charging { "Charging" } else { "On battery" };
+        let charge_str = if bat.is_charging {
+            "Charging"
+        } else {
+            "On battery"
+        };
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled("  Battery         ", Style::default().fg(COLOR_TEXT)),
@@ -122,7 +146,10 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let thermal = &app.snapshot.thermals;
     let unit = app.temp_unit;
-    let cpu_temp_str = thermal.cpu_temp.map(|t| format_temp(t, unit)).unwrap_or("N/A".into());
+    let cpu_temp_str = thermal
+        .cpu_temp
+        .map(|t| format_temp(t, unit))
+        .unwrap_or("N/A".into());
 
     let outer = content_block(&format!("Thermals & Power \u{2014} CPU: {}", cpu_temp_str));
     let inner = outer.inner(area);
@@ -155,7 +182,8 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     // Sensor table
     let mut sensor_lines = Vec::new();
     for sensor in &thermal.sensors {
-        let crit_str = sensor.critical
+        let crit_str = sensor
+            .critical
             .map(|c| format_temp(c, unit))
             .unwrap_or_else(|| "N/A".into());
 
@@ -168,8 +196,12 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         sensor_lines.push(Line::from(Span::styled(
-            format!("  {:<24} {:>10} {:>10}",
-                truncate_str(&sensor.label, 24), format_temp(sensor.temperature, unit), crit_str),
+            format!(
+                "  {:<24} {:>10} {:>10}",
+                truncate_str(&sensor.label, 24),
+                format_temp(sensor.temperature, unit),
+                crit_str
+            ),
             Style::default().fg(color),
         )));
     }
@@ -203,9 +235,15 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         sensor_lines.push(Line::from(vec![
             Span::styled("  Battery  ", Style::default().fg(COLOR_DIM)),
             Span::styled(
-                format!("{:.1}%  {}",
+                format!(
+                    "{:.1}%  {}",
                     bat.percent,
-                    if bat.is_charging { "AC (charging)" } else { "Discharging" }),
+                    if bat.is_charging {
+                        "AC (charging)"
+                    } else {
+                        "Discharging"
+                    }
+                ),
                 Style::default().fg(COLOR_TEXT),
             ),
         ]));

@@ -1,6 +1,6 @@
-use sysinfo::System;
 use std::collections::HashMap;
 use std::sync::LazyLock;
+use sysinfo::System;
 
 #[derive(Debug, Clone, Default)]
 pub struct ProcessData {
@@ -78,7 +78,8 @@ static FRIENDLY_NAMES: LazyLock<HashMap<&'static str, &'static str>> = LazyLock:
 });
 
 fn get_friendly_name(process_name: &str) -> String {
-    FRIENDLY_NAMES.get(process_name)
+    FRIENDLY_NAMES
+        .get(process_name)
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
             // Strip common extensions for display
@@ -119,7 +120,11 @@ pub fn collect(sys: &System) -> ProcessData {
     let total_count = processes.len();
 
     // Sort by CPU usage descending by default
-    processes.sort_by(|a, b| b.cpu_percent.partial_cmp(&a.cpu_percent).unwrap_or(std::cmp::Ordering::Equal));
+    processes.sort_by(|a, b| {
+        b.cpu_percent
+            .partial_cmp(&a.cpu_percent)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Keep top 100 for display
     processes.truncate(100);

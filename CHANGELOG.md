@@ -2,6 +2,51 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [1.4.0] - 2026-05-11
+
+### Added
+- `sd300 update` command form while preserving the legacy `sd300 --update` flag.
+- Updater dispatch before Ratatui terminal initialization so update failures cannot leave the terminal in an altered TUI state.
+- GitHub release updater that checks `QubeTX/qube-system-diagnostics` latest-release JSON, compares semantic version segments, exits `0` when current/successful, and exits `2` on update-check or update-attempt failure.
+- Ordered updater strategies with per-attempt diagnostics:
+  - Cargo first only when `cargo --version` succeeds, using `cargo install SD300 --force`.
+  - macOS/Linux fallback through the cargo-dist shell installer with hardened `curl`, then `wget`.
+  - Windows fallback through the cargo-dist PowerShell installer with `powershell.exe`, then `pwsh.exe`.
+- New install and update documentation covering all supported installation paths: macOS/Linux shell installer (`SD300-installer.sh`), Windows PowerShell installer (`SD300-installer.ps1`), Windows MSI (`SD300-x86_64-pc-windows-msvc.msi`), Cargo (`cargo install SD300` and lowercase `cargo install sd300` lookup), and source builds.
+- Shared bounded command runner for collector subprocesses with timeout and kill behavior.
+- Background startup and refresh jobs for connectivity, disk health, and driver scans so the TUI can render while slower probes run.
+- CI workflow covering Ubuntu, macOS, and Windows with format checks, Clippy, tests, release build, target checks, audit, and `cargo-dist` plan.
+- ND-300-style release workflow that can deploy from `main` when the current version is unreleased, while preserving explicit `v*.*.*` tag releases.
+- Release source-check job that reads package metadata from `Cargo.toml`, checks crates.io version state, GitHub Release state, and remote tag state, skips fully published versions, and fails partial-release states before artifacts or crates are published.
+- Crates.io publish job that runs only after cargo-dist artifact builds and GitHub Release hosting succeed, rechecks the crate version, skips already-published versions, and publishes `SD300` with the `CARGO_REGISTRY_TOKEN` Actions secret.
+- Tests for CLI update parsing/help/conflicts, updater strategy ordering and version comparison, bounded command timeout behavior, gateway/socket parser fixtures, and macOS disk/system-profiler parsers.
+- `CODEX_PROJECT.md` project context file with current status and file tree.
+- Local `AGENTS.md`, `CLAUDE.md`, and global Codex agent guidance documenting the SD300 release, publish, installation, and update workflows.
+
+### Changed
+- Bumped package version to `1.4.0` and crate package name to `SD300`; the installed binary remains `sd300`, and the Rust library target is `sd_300`.
+- Added a crates.io package include list so published packages contain source, WiX manifest, Cargo metadata, changelog, license, README, and toolchain files without unrelated workspace files.
+- Set Rust `1.95` as the explicit MSRV via `rust-version` and `rust-toolchain.toml`.
+- Updated `sysinfo` to `0.39.x` and migrated to persistent `Networks`, `Disks`, and `Components` refresh handles.
+- Updated direct `crossterm` to `0.29` to align with the Ratatui dependency tree.
+- Removed the Rust HTTP client dependency from updater code; release metadata is fetched through bounded platform-native command helpers to avoid extra TLS/native build surface.
+- Updated cargo-dist metadata for `SD300-*` release artifacts, shell/PowerShell/MSI installers, `CARGO_HOME` install path, and `allow-dirty = ["ci"]` because `.github/workflows/release.yml` is intentionally customized.
+- Updated WiX packaging names, prompts, and install folder names from the old `sd-300` package identity to `SD300`.
+- Network throughput now uses persistent refresh deltas instead of reconstructing network state each tick.
+- Network interface display now includes operational state and uses Ratatui `Table`; bottom navigation now uses Ratatui `Tabs`.
+- TUI sections now use more Ratatui-native composition and shared responsive helpers for bordered panels, gauges, tables, scroll indicators, and compact status rows.
+- macOS audio driver collection now parses `system_profiler -json` instead of scanning JSON as plain text.
+- macOS disk health parsing now has a dedicated `diskutil info` parser for model/media type detection.
+
+### Fixed
+- Update handling now happens before terminal initialization, avoiding dirty terminal state after update failures.
+- Linux network operational states are normalized distinctly instead of treating every non-empty state as equivalent.
+- External collector commands are bounded and degrade to unavailable/unknown data instead of freezing the app.
+- Connectivity and disk-health refreshes no longer block the draw loop; they run as bounded background jobs and update warnings when complete.
+- Windows Setup API driver scanning releases device-info handles through RAII cleanup even on early returns.
+- macOS and Linux driver, disk, GPU, thermal, route, DNS, and socket probes use read-only commands with timeouts instead of unbounded `Command::output()` calls.
+- Clippy warnings blocking `-D warnings` were resolved across sorting, clamps, and key-event matching.
+
 ## [1.3.0] - 2026-03-12
 
 ### Added

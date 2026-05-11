@@ -21,7 +21,7 @@ pub fn collect(sys: &System) -> SystemInfoData {
         .map(|c| c.brand().to_string())
         .unwrap_or_else(|| "Unknown".into());
 
-    let cpu_cores = sys.physical_core_count().unwrap_or(0);
+    let cpu_cores = System::physical_core_count().unwrap_or(0);
     let cpu_threads = sys.cpus().len();
 
     SystemInfoData {

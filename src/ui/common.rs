@@ -1,7 +1,7 @@
+use crate::types::{HealthStatus, TempUnit};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders};
-use crate::types::{HealthStatus, TempUnit};
 
 // -- Temperature Thresholds --
 
@@ -12,27 +12,27 @@ pub const TEMP_GPU_CRIT: f64 = 90.0;
 
 // -- Color Palette (Warm Earth) --
 
-pub const COLOR_GOOD: Color = Color::Rgb(130, 170, 120);     // Sage green
-pub const COLOR_WARN: Color = Color::Rgb(210, 160, 60);      // Warm amber
-pub const COLOR_CRIT: Color = Color::Rgb(190, 85, 75);       // Terracotta red
-pub const COLOR_INFO: Color = Color::Rgb(140, 170, 200);     // Slate blue
-pub const COLOR_ACCENT: Color = Color::Rgb(200, 160, 100);   // Warm gold
-pub const COLOR_DIM: Color = Color::Rgb(110, 105, 100);      // Warm gray
-pub const COLOR_HEADER: Color = Color::Rgb(200, 160, 100);   // Warm gold (same as accent)
-pub const COLOR_TEXT: Color = Color::Rgb(210, 205, 200);      // Warm white
-pub const COLOR_MUTED: Color = Color::Rgb(150, 145, 140);    // Medium warm gray
-pub const COLOR_BORDER: Color = Color::Rgb(80, 75, 70);      // Dark warm gray for borders
+pub const COLOR_GOOD: Color = Color::Rgb(130, 170, 120); // Sage green
+pub const COLOR_WARN: Color = Color::Rgb(210, 160, 60); // Warm amber
+pub const COLOR_CRIT: Color = Color::Rgb(190, 85, 75); // Terracotta red
+pub const COLOR_INFO: Color = Color::Rgb(140, 170, 200); // Slate blue
+pub const COLOR_ACCENT: Color = Color::Rgb(200, 160, 100); // Warm gold
+pub const COLOR_DIM: Color = Color::Rgb(110, 105, 100); // Warm gray
+pub const COLOR_HEADER: Color = Color::Rgb(200, 160, 100); // Warm gold (same as accent)
+pub const COLOR_TEXT: Color = Color::Rgb(210, 205, 200); // Warm white
+pub const COLOR_MUTED: Color = Color::Rgb(150, 145, 140); // Medium warm gray
+pub const COLOR_BORDER: Color = Color::Rgb(80, 75, 70); // Dark warm gray for borders
 pub const COLOR_HIGHLIGHT_BG: Color = Color::Rgb(50, 48, 45); // Subtle dark bg for active elements
 
 // -- Sparkline Colors --
 
-pub const SPARK_CPU: Color = Color::Rgb(200, 160, 100);      // Warm gold (accent)
-pub const SPARK_MEMORY: Color = Color::Rgb(160, 120, 170);   // Muted purple
+pub const SPARK_CPU: Color = Color::Rgb(200, 160, 100); // Warm gold (accent)
+pub const SPARK_MEMORY: Color = Color::Rgb(160, 120, 170); // Muted purple
 pub const SPARK_NET_DOWN: Color = Color::Rgb(140, 170, 200); // Slate blue (info)
-pub const SPARK_NET_UP: Color = Color::Rgb(160, 120, 170);   // Muted purple
-pub const SPARK_GPU: Color = Color::Rgb(130, 170, 120);      // Sage green (good)
-pub const SPARK_TEMP: Color = Color::Rgb(210, 160, 60);      // Warm amber
-pub const SPARK_SWAP: Color = Color::Rgb(210, 160, 60);      // Warm amber (swap)
+pub const SPARK_NET_UP: Color = Color::Rgb(160, 120, 170); // Muted purple
+pub const SPARK_GPU: Color = Color::Rgb(130, 170, 120); // Sage green (good)
+pub const SPARK_TEMP: Color = Color::Rgb(210, 160, 60); // Warm amber
+pub const SPARK_SWAP: Color = Color::Rgb(210, 160, 60); // Warm amber (swap)
 
 /// Get the appropriate sparkline bar set for the current platform.
 /// Windows terminals often can't render fractional block chars (U+2581-U+2587),
@@ -49,7 +49,11 @@ pub fn sparkline_bar_set() -> ratatui::symbols::bar::Set<'static> {
 /// U+2591 (░ LIGHT SHADE) renders as `?` on some Windows fonts,
 /// so we use U+2500 (─ BOX DRAWINGS LIGHT HORIZONTAL) on Windows.
 pub fn gauge_empty_char() -> &'static str {
-    if cfg!(windows) { "\u{2500}" } else { "\u{2591}" }
+    if cfg!(windows) {
+        "\u{2500}"
+    } else {
+        "\u{2591}"
+    }
 }
 
 pub fn status_color(status: &HealthStatus) -> Color {
@@ -70,7 +74,11 @@ pub fn content_block(title: &str) -> Block<'static> {
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(COLOR_BORDER))
         .title(format!(" {} ", title))
-        .title_style(Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(COLOR_ACCENT)
+                .add_modifier(Modifier::BOLD),
+        )
 }
 
 /// Create a sub-panel block (for sparklines, tables within a section)
@@ -236,12 +244,13 @@ pub fn gauge_line<'a>(label: &str, percent: f64, width: usize) -> Line<'a> {
     let empty = width.saturating_sub(filled);
 
     Line::from(vec![
+        Span::styled(format!("  {:<14}", label), Style::default().fg(COLOR_TEXT)),
         Span::styled(
-            format!("  {:<14}", label),
-            Style::default().fg(COLOR_TEXT),
-        ),
-        Span::styled(
-            format!("{}{}",  "\u{2588}".repeat(filled), gauge_empty_char().repeat(empty)),
+            format!(
+                "{}{}",
+                "\u{2588}".repeat(filled),
+                gauge_empty_char().repeat(empty)
+            ),
             Style::default().fg(color),
         ),
         Span::styled(
@@ -255,18 +264,9 @@ pub fn gauge_line<'a>(label: &str, percent: f64, width: usize) -> Line<'a> {
 pub fn status_line<'a>(status: &HealthStatus, label: &str, description: &str) -> Line<'a> {
     let color = status_color(status);
     Line::from(vec![
-        Span::styled(
-            format!("  {} ", status.icon()),
-            Style::default().fg(color),
-        ),
-        Span::styled(
-            format!("{:<16}", label),
-            Style::default().fg(COLOR_TEXT),
-        ),
-        Span::styled(
-            description.to_string(),
-            Style::default().fg(COLOR_DIM),
-        ),
+        Span::styled(format!("  {} ", status.icon()), Style::default().fg(color)),
+        Span::styled(format!("{:<16}", label), Style::default().fg(COLOR_TEXT)),
+        Span::styled(description.to_string(), Style::default().fg(COLOR_DIM)),
     ])
 }
 
@@ -302,7 +302,13 @@ pub fn truncate_str(s: &str, max: usize) -> String {
 }
 
 /// Health gauge line with status icon + label + description + gauge bar (User Mode overview)
-pub fn health_gauge_line<'a>(label: &str, status: &HealthStatus, description: &str, percent: f64, bar_width: usize) -> Line<'a> {
+pub fn health_gauge_line<'a>(
+    label: &str,
+    status: &HealthStatus,
+    description: &str,
+    percent: f64,
+    bar_width: usize,
+) -> Line<'a> {
     let color = status_color(status);
     let filled = ((percent / 100.0) * bar_width as f64).round() as usize;
     let empty = bar_width.saturating_sub(filled);
@@ -311,9 +317,17 @@ pub fn health_gauge_line<'a>(label: &str, status: &HealthStatus, description: &s
     Line::from(vec![
         Span::styled(format!("  {} ", status.icon()), Style::default().fg(color)),
         Span::styled(format!("{:<16}", label), Style::default().fg(COLOR_TEXT)),
-        Span::styled(format!("{:<28}", desc_truncated), Style::default().fg(COLOR_DIM)),
         Span::styled(
-            format!("{}{}  {:.0}%", "\u{2588}".repeat(filled), gauge_empty_char().repeat(empty), percent),
+            format!("{:<28}", desc_truncated),
+            Style::default().fg(COLOR_DIM),
+        ),
+        Span::styled(
+            format!(
+                "{}{}  {:.0}%",
+                "\u{2588}".repeat(filled),
+                gauge_empty_char().repeat(empty),
+                percent
+            ),
             Style::default().fg(color),
         ),
     ])
@@ -329,7 +343,13 @@ pub fn health_gauge_line_simple<'a>(label: &str, percent: f64, bar_width: usize)
     Line::from(vec![
         Span::styled(format!("  {:<16}", label), Style::default().fg(COLOR_TEXT)),
         Span::styled(
-            format!("{}{}  {:.0}% \u{2014} {}", "\u{2588}".repeat(filled), gauge_empty_char().repeat(empty), percent, plain_language_cpu(percent as f32)),
+            format!(
+                "{}{}  {:.0}% \u{2014} {}",
+                "\u{2588}".repeat(filled),
+                gauge_empty_char().repeat(empty),
+                percent,
+                plain_language_cpu(percent as f32)
+            ),
             Style::default().fg(color),
         ),
     ])

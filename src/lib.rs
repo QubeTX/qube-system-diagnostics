@@ -5,3 +5,4 @@ pub mod error;
 pub mod history;
 pub mod types;
 pub mod ui;
+pub mod update;

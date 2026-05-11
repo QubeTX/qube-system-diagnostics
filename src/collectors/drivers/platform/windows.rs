@@ -1,10 +1,26 @@
 use crate::collectors::drivers::{
     DeviceCategory, DeviceInfo, DeviceStatus, DriverData, DriverScanStatus, ServiceInfo,
 };
+use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Devices::DeviceAndDriverInstallation::*;
 use windows::Win32::System::Registry::*;
 use windows::Win32::System::Services::*;
-use windows::core::{PCWSTR, PWSTR};
+
+struct DeviceInfoSet(HDEVINFO);
+
+impl DeviceInfoSet {
+    fn handle(&self) -> HDEVINFO {
+        self.0
+    }
+}
+
+impl Drop for DeviceInfoSet {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = SetupDiDestroyDeviceInfoList(self.0);
+        }
+    }
+}
 
 pub fn collect() -> DriverData {
     let mut data = DriverData::default();
@@ -21,12 +37,7 @@ pub fn collect() -> DriverData {
 /// Returns false if enumeration completely failed (sets ScanFailed).
 fn enumerate_devices(data: &mut DriverData) -> bool {
     let dev_info = unsafe {
-        SetupDiGetClassDevsW(
-            None,
-            PCWSTR::null(),
-            None,
-            DIGCF_ALLCLASSES | DIGCF_PRESENT,
-        )
+        SetupDiGetClassDevsW(None, PCWSTR::null(), None, DIGCF_ALLCLASSES | DIGCF_PRESENT)
     };
 
     let dev_info = match dev_info {
@@ -38,6 +49,7 @@ fn enumerate_devices(data: &mut DriverData) -> bool {
             return false;
         }
     };
+    let dev_info = DeviceInfoSet(dev_info);
 
     let mut index: u32 = 0;
     loop {
@@ -46,14 +58,14 @@ fn enumerate_devices(data: &mut DriverData) -> bool {
             ..Default::default()
         };
 
-        let ok = unsafe { SetupDiEnumDeviceInfo(dev_info, index, &mut dev_info_data) };
+        let ok = unsafe { SetupDiEnumDeviceInfo(dev_info.handle(), index, &mut dev_info_data) };
         if ok.is_err() {
             break; // No more devices
         }
         index += 1;
 
         // Read device class
-        let class_str = get_device_string_property(dev_info, &dev_info_data, SPDRP_CLASS);
+        let class_str = get_device_string_property(dev_info.handle(), &dev_info_data, SPDRP_CLASS);
         let category = match class_str.as_str() {
             "Net" | "NetClient" | "NetService" | "NetTrans" => DeviceCategory::Network,
             "Bluetooth" => DeviceCategory::Bluetooth,
@@ -69,9 +81,10 @@ fn enumerate_devices(data: &mut DriverData) -> bool {
 
         // Read device name (friendly name, fallback to description)
         let name = {
-            let friendly = get_device_string_property(dev_info, &dev_info_data, SPDRP_FRIENDLYNAME);
+            let friendly =
+                get_device_string_property(dev_info.handle(), &dev_info_data, SPDRP_FRIENDLYNAME);
             if friendly.is_empty() {
-                get_device_string_property(dev_info, &dev_info_data, SPDRP_DEVICEDESC)
+                get_device_string_property(dev_info.handle(), &dev_info_data, SPDRP_DEVICEDESC)
             } else {
                 friendly
             }
@@ -84,7 +97,8 @@ fn enumerate_devices(data: &mut DriverData) -> bool {
         let status = get_device_status(&dev_info_data);
 
         // Read driver version and date from registry
-        let (driver_version, driver_date) = get_driver_registry_info(dev_info, &dev_info_data);
+        let (driver_version, driver_date) =
+            get_driver_registry_info(dev_info.handle(), &dev_info_data);
 
         let info = DeviceInfo {
             name,
@@ -106,10 +120,6 @@ fn enumerate_devices(data: &mut DriverData) -> bool {
             DeviceCategory::System => data.system.push(info),
             DeviceCategory::Other => data.other.push(info),
         }
-    }
-
-    unsafe {
-        let _ = SetupDiDestroyDeviceInfoList(dev_info);
     }
 
     data.scan_status = DriverScanStatus::Success;
@@ -179,7 +189,12 @@ fn get_device_status(dev_info_data: &SP_DEVINFO_DATA) -> DeviceStatus {
     let mut problem_number = CM_PROB(0);
 
     let cr = unsafe {
-        CM_Get_DevNode_Status(&mut status_flags, &mut problem_number, dev_info_data.DevInst, 0)
+        CM_Get_DevNode_Status(
+            &mut status_flags,
+            &mut problem_number,
+            dev_info_data.DevInst,
+            0,
+        )
     };
 
     if cr != CONFIGRET(0) {
@@ -209,10 +224,7 @@ fn get_driver_registry_info(
     }
 
     // Open the registry key: HKLM\SYSTEM\CurrentControlSet\Control\Class\{driver_key}
-    let key_path = format!(
-        "SYSTEM\\CurrentControlSet\\Control\\Class\\{}",
-        driver_key
-    );
+    let key_path = format!("SYSTEM\\CurrentControlSet\\Control\\Class\\{}", driver_key);
     let wide_path: Vec<u16> = key_path.encode_utf16().chain(std::iter::once(0)).collect();
 
     let mut hkey = HKEY::default();
@@ -242,7 +254,10 @@ fn get_driver_registry_info(
 
 /// Read a REG_SZ value from a registry key.
 fn read_reg_string(hkey: HKEY, value_name: &str) -> String {
-    let wide_name: Vec<u16> = value_name.encode_utf16().chain(std::iter::once(0)).collect();
+    let wide_name: Vec<u16> = value_name
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
     let mut buf: Vec<u8> = vec![0u8; 512];
     let mut buf_size = buf.len() as u32;
     let mut reg_type: REG_VALUE_TYPE = REG_VALUE_TYPE(0);
@@ -316,9 +331,7 @@ fn query_services(data: &mut DriverData) {
     for svc_name in &service_names {
         let wide_name: Vec<u16> = svc_name.encode_utf16().chain(std::iter::once(0)).collect();
 
-        let svc = unsafe {
-            OpenServiceW(scm, PCWSTR(wide_name.as_ptr()), SERVICE_QUERY_STATUS)
-        };
+        let svc = unsafe { OpenServiceW(scm, PCWSTR(wide_name.as_ptr()), SERVICE_QUERY_STATUS) };
         let svc = match svc {
             Ok(h) => h,
             Err(_) => continue,
@@ -361,7 +374,10 @@ fn get_service_display_name(scm: SC_HANDLE, wide_name: &[u16]) -> String {
     };
 
     if result.is_ok() {
-        let len = buf.iter().position(|&c| c == 0).unwrap_or(buf_size as usize);
+        let len = buf
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(buf_size as usize);
         String::from_utf16_lossy(&buf[..len])
     } else {
         String::new()

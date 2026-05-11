@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Sparkline};
+use ratatui::widgets::{Cell, Paragraph, Row, Sparkline, Table};
 use ratatui::Frame;
 
 use crate::app::App;
@@ -23,29 +23,42 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(11),
-            Constraint::Min(6),
-        ])
+        .constraints([Constraint::Length(11), Constraint::Min(6)])
         .split(inner);
 
     let net = &app.snapshot.network;
     let diag = &app.snapshot.network_diag;
     let connected = !net.interfaces.is_empty();
 
-    let conn_type = net.interfaces.iter().find_map(|i| {
-        let name = i.name.to_lowercase();
-        if name.contains("wlan") || name.contains("wi-fi") || name.contains("wifi") || name.contains("wlp") {
-            Some("Wi-Fi")
-        } else if name.contains("eth") || name.contains("enp") || name.contains("ethernet") {
-            Some("Wired connection")
+    let conn_type = net
+        .interfaces
+        .iter()
+        .find_map(|i| {
+            let name = i.name.to_lowercase();
+            if name.contains("wlan")
+                || name.contains("wi-fi")
+                || name.contains("wifi")
+                || name.contains("wlp")
+            {
+                Some("Wi-Fi")
+            } else if name.contains("eth") || name.contains("enp") || name.contains("ethernet") {
+                Some("Wired connection")
+            } else {
+                None
+            }
+        })
+        .unwrap_or(if connected {
+            "Connected"
         } else {
-            None
-        }
-    }).unwrap_or(if connected { "Connected" } else { "Disconnected" });
+            "Disconnected"
+        });
 
     let speed_desc = plain_language_speed(net.total_download_rate);
-    let status = if connected { HealthStatus::Good } else { HealthStatus::Warning };
+    let status = if connected {
+        HealthStatus::Good
+    } else {
+        HealthStatus::Warning
+    };
 
     let mut lines = vec![
         Line::from(""),
@@ -53,9 +66,11 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("  Speed          ", Style::default().fg(COLOR_TEXT)),
             Span::styled(
-                format!("Downloading at {}  \u{2022}  Uploading at {}",
+                format!(
+                    "Downloading at {}  \u{2022}  Uploading at {}",
                     format_throughput(net.total_download_rate),
-                    format_throughput(net.total_upload_rate)),
+                    format_throughput(net.total_upload_rate)
+                ),
                 Style::default().fg(COLOR_DIM),
             ),
         ]),
@@ -67,25 +82,58 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     ];
 
     // Connectivity diagnostics
-    let gw_status = if diag.gateway.reachable { HealthStatus::Good } else { HealthStatus::Critical };
-    let gw_desc = if diag.gateway.reachable {
-        format!("Reachable ({})", diag.gateway.latency_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_else(|| "N/A".into()))
+    let gw_status = if diag.gateway.reachable {
+        HealthStatus::Good
     } else {
-        diag.gateway.error.clone().unwrap_or_else(|| "Unreachable".into())
+        HealthStatus::Critical
+    };
+    let gw_desc = if diag.gateway.reachable {
+        format!(
+            "Reachable ({})",
+            diag.gateway
+                .latency_ms
+                .map(|l| format!("{:.0}ms", l))
+                .unwrap_or_else(|| "N/A".into())
+        )
+    } else {
+        diag.gateway
+            .error
+            .clone()
+            .unwrap_or_else(|| "Unreachable".into())
     };
     lines.push(status_line(&gw_status, "Gateway", &gw_desc));
 
-    let dns_status = if diag.dns.resolved { HealthStatus::Good } else { HealthStatus::Critical };
+    let dns_status = if diag.dns.resolved {
+        HealthStatus::Good
+    } else {
+        HealthStatus::Critical
+    };
     let dns_desc = if diag.dns.resolved {
-        format!("Working ({})", diag.dns.resolution_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_else(|| "N/A".into()))
+        format!(
+            "Working ({})",
+            diag.dns
+                .resolution_ms
+                .map(|l| format!("{:.0}ms", l))
+                .unwrap_or_else(|| "N/A".into())
+        )
     } else {
         diag.dns.error.clone().unwrap_or_else(|| "Failed".into())
     };
     lines.push(status_line(&dns_status, "DNS", &dns_desc));
 
-    let inet_status = if diag.internet.reachable { HealthStatus::Good } else { HealthStatus::Critical };
+    let inet_status = if diag.internet.reachable {
+        HealthStatus::Good
+    } else {
+        HealthStatus::Critical
+    };
     let inet_desc = if diag.internet.reachable {
-        format!("Online ({})", diag.internet.latency_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_else(|| "N/A".into()))
+        format!(
+            "Online ({})",
+            diag.internet
+                .latency_ms
+                .map(|l| format!("{:.0}ms", l))
+                .unwrap_or_else(|| "N/A".into())
+        )
     } else {
         "Offline".into()
     };
@@ -111,48 +159,71 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let diag = &app.snapshot.network_diag;
     let has_connections = !diag.active_connections.is_empty();
 
-    let outer = content_block(&format!("Network \u{2014} {} interfaces", net.interfaces.len()));
+    let outer = content_block(&format!(
+        "Network \u{2014} {} interfaces",
+        net.interfaces.len()
+    ));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),  // Header + throughput
-            Constraint::Length(3),  // Connectivity status
+            Constraint::Length(2), // Header + throughput
+            Constraint::Length(3), // Connectivity status
             Constraint::Min(6),    // Interfaces + connections
             Constraint::Length(7), // Sparklines
         ])
         .split(inner);
 
     // Header
-    let header_lines = vec![
-        Line::from(vec![
-            Span::styled(
-                format!("  \u{2193} {}  \u{2191} {}",
-                    format_throughput(net.total_download_rate),
-                    format_throughput(net.total_upload_rate)),
-                Style::default().fg(COLOR_TEXT),
-            ),
-        ]),
-        Line::from(Span::styled(
-            format!("  {:<20} {:<18} {:<18} {:>12} {:>12}", "INTERFACE", "MAC", "IP", "RX/s", "TX/s"),
-            Style::default().fg(COLOR_DIM),
-        )),
-    ];
+    let header_lines = vec![Line::from(vec![Span::styled(
+        format!(
+            "  \u{2193} {}  \u{2191} {}",
+            format_throughput(net.total_download_rate),
+            format_throughput(net.total_upload_rate)
+        ),
+        Style::default().fg(COLOR_TEXT),
+    )])];
     let header_panel = Paragraph::new(header_lines);
     frame.render_widget(header_panel, chunks[0]);
 
     // Connectivity status row
-    let gw_color = if diag.gateway.reachable { COLOR_GOOD } else { COLOR_CRIT };
-    let dns_color = if diag.dns.resolved { COLOR_GOOD } else { COLOR_CRIT };
-    let inet_color = if diag.internet.reachable { COLOR_GOOD } else { COLOR_CRIT };
+    let gw_color = if diag.gateway.reachable {
+        COLOR_GOOD
+    } else {
+        COLOR_CRIT
+    };
+    let dns_color = if diag.dns.resolved {
+        COLOR_GOOD
+    } else {
+        COLOR_CRIT
+    };
+    let inet_color = if diag.internet.reachable {
+        COLOR_GOOD
+    } else {
+        COLOR_CRIT
+    };
 
-    let gw_text = format!("GW {}",
-        diag.gateway.latency_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_else(|| "N/A".into()));
-    let dns_text = format!("DNS {}",
-        diag.dns.resolution_ms.map(|l| format!("{:.0}ms", l)).unwrap_or_else(|| "N/A".into()));
-    let inet_text = if diag.internet.reachable { "INET OK" } else { "INET DOWN" };
+    let gw_text = format!(
+        "GW {}",
+        diag.gateway
+            .latency_ms
+            .map(|l| format!("{:.0}ms", l))
+            .unwrap_or_else(|| "N/A".into())
+    );
+    let dns_text = format!(
+        "DNS {}",
+        diag.dns
+            .resolution_ms
+            .map(|l| format!("{:.0}ms", l))
+            .unwrap_or_else(|| "N/A".into())
+    );
+    let inet_text = if diag.internet.reachable {
+        "INET OK"
+    } else {
+        "INET DOWN"
+    };
 
     let conn_status_lines = vec![
         Line::from(vec![
@@ -174,7 +245,9 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints(if has_connections {
             vec![
-                Constraint::Length(iface_display_count as u16 + if net.interfaces.len() > 8 { 2 } else { 1 }),
+                Constraint::Length(
+                    iface_display_count as u16 + if net.interfaces.len() > 8 { 2 } else { 1 },
+                ),
                 Constraint::Min(4),
             ]
         } else {
@@ -183,44 +256,89 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .split(chunks[2]);
 
     // Interface table (capped at 8 to prevent layout overflow)
-    let mut iface_lines = Vec::new();
-    for iface in net.interfaces.iter().take(8) {
-        let ip = iface.ip_addresses.first().map(|s| s.as_str()).unwrap_or("N/A");
-        iface_lines.push(Line::from(Span::styled(
-            format!("  {:<20} {:<18} {:<18} {:>12} {:>12}",
-                truncate_str(&iface.name, 20),
-                truncate_str(&iface.mac_address, 18),
-                truncate_str(ip, 18),
-                format_throughput(iface.download_rate),
-                format_throughput(iface.upload_rate)),
-            Style::default().fg(COLOR_TEXT),
-        )));
+    let rows = net.interfaces.iter().take(8).map(|iface| {
+        let ip = iface
+            .ip_addresses
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("N/A");
+        let state_color = if iface.is_up { COLOR_GOOD } else { COLOR_DIM };
+
+        Row::new(vec![
+            Cell::from(truncate_str(&iface.name, 18)),
+            Cell::from(Span::styled(
+                truncate_str(&iface.operational_state, 14),
+                Style::default().fg(state_color),
+            )),
+            Cell::from(truncate_str(&iface.mac_address, 17)),
+            Cell::from(truncate_str(ip, 18)),
+            Cell::from(format_throughput(iface.download_rate)),
+            Cell::from(format_throughput(iface.upload_rate)),
+        ])
+        .style(Style::default().fg(COLOR_TEXT))
+    });
+
+    let interface_table = Table::new(
+        rows,
+        [
+            Constraint::Length(18),
+            Constraint::Length(14),
+            Constraint::Length(17),
+            Constraint::Min(12),
+            Constraint::Length(12),
+            Constraint::Length(12),
+        ],
+    )
+    .header(
+        Row::new(vec!["INTERFACE", "STATE", "MAC", "IP", "RX/s", "TX/s"])
+            .style(Style::default().fg(COLOR_DIM).add_modifier(Modifier::BOLD))
+            .bottom_margin(0),
+    )
+    .column_spacing(1);
+
+    frame.render_widget(interface_table, mid_chunks[0]);
+
+    if net.interfaces.len() > 8 && mid_chunks[0].height > iface_display_count as u16 + 1 {
+        let more_area = Rect {
+            y: mid_chunks[0].bottom().saturating_sub(1),
+            height: 1,
+            ..mid_chunks[0]
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                format!("  + {} more interfaces", net.interfaces.len() - 8),
+                Style::default().fg(COLOR_DIM),
+            ))),
+            more_area,
+        );
     }
-    if net.interfaces.len() > 8 {
-        iface_lines.push(Line::from(Span::styled(
-            format!("  + {} more interfaces", net.interfaces.len() - 8),
-            Style::default().fg(COLOR_DIM),
-        )));
-    }
-    let iface_panel = Paragraph::new(iface_lines);
-    frame.render_widget(iface_panel, mid_chunks[0]);
 
     // Active connections table
     if has_connections && mid_chunks.len() > 1 {
-        let conn_block = sub_block(&format!("Active Connections ({})  j/k to scroll", diag.active_connections.len()));
+        let conn_block = sub_block(&format!(
+            "Active Connections ({})  j/k to scroll",
+            diag.active_connections.len()
+        ));
         let conn_inner = conn_block.inner(mid_chunks[1]);
         frame.render_widget(conn_block, mid_chunks[1]);
 
         let mut conn_lines = Vec::new();
         conn_lines.push(Line::from(Span::styled(
-            format!("  {:<6} {:<22} {:<22} {:<14} {:>6}", "PROTO", "LOCAL", "REMOTE", "STATE", "PID"),
+            format!(
+                "  {:<6} {:<22} {:<22} {:<14} {:>6}",
+                "PROTO", "LOCAL", "REMOTE", "STATE", "PID"
+            ),
             Style::default().fg(COLOR_DIM),
         )));
 
-        let established: Vec<_> = diag.active_connections.iter()
+        let established: Vec<_> = diag
+            .active_connections
+            .iter()
             .filter(|c| c.state == ConnectionState::Established)
             .collect();
-        let listening: Vec<_> = diag.active_connections.iter()
+        let listening: Vec<_> = diag
+            .active_connections
+            .iter()
             .filter(|c| c.state == ConnectionState::Listening)
             .collect();
 
@@ -228,7 +346,12 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         let scroll = app.connection_scroll;
         let total_connections = established.len() + listening.len();
 
-        for conn in established.iter().chain(listening.iter()).skip(scroll).take(visible_height) {
+        for conn in established
+            .iter()
+            .chain(listening.iter())
+            .skip(scroll)
+            .take(visible_height)
+        {
             let state_color = match conn.state {
                 ConnectionState::Established => COLOR_GOOD,
                 ConnectionState::Listening => COLOR_INFO,
@@ -240,16 +363,28 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             let remote = if conn.remote_addr == "*" || conn.remote_addr == "0.0.0.0" {
                 "*".to_string()
             } else {
-                format!("{}:{}", truncate_str(&conn.remote_addr, 16), conn.remote_port)
+                format!(
+                    "{}:{}",
+                    truncate_str(&conn.remote_addr, 16),
+                    conn.remote_port
+                )
             };
             let pid_str = conn.pid.map(|p| format!("{}", p)).unwrap_or_default();
 
             conn_lines.push(Line::from(vec![
                 Span::styled(
-                    format!("  {:<6} {:<22} {:<22} ", conn.protocol, truncate_str(&local, 22), truncate_str(&remote, 22)),
+                    format!(
+                        "  {:<6} {:<22} {:<22} ",
+                        conn.protocol,
+                        truncate_str(&local, 22),
+                        truncate_str(&remote, 22)
+                    ),
                     Style::default().fg(COLOR_TEXT),
                 ),
-                Span::styled(format!("{:<14}", conn.state), Style::default().fg(state_color)),
+                Span::styled(
+                    format!("{:<14}", conn.state),
+                    Style::default().fg(state_color),
+                ),
                 Span::styled(format!("{:>6}", pid_str), Style::default().fg(COLOR_DIM)),
             ]));
         }

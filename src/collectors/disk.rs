@@ -1,4 +1,4 @@
-use sysinfo::{Disks, System};
+use sysinfo::Disks;
 
 #[derive(Debug, Clone, Default)]
 pub struct DiskData {
@@ -43,8 +43,8 @@ impl PartitionInfo {
     }
 }
 
-pub fn collect(_sys: &System) -> DiskData {
-    let disks = Disks::new_with_refreshed_list();
+pub fn collect(disks: &mut Disks) -> DiskData {
+    disks.refresh(true);
 
     let partitions = disks
         .iter()

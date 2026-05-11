@@ -1,4 +1,6 @@
-use super::{DiagnosticWarning, WarningSeverity};
+use super::DiagnosticWarning;
+#[cfg(windows)]
+use super::WarningSeverity;
 
 #[derive(Debug, Clone, Default)]
 pub struct DiskHealthData {
@@ -190,14 +192,16 @@ fn collect_windows() -> (DiskHealthData, Vec<DiagnosticWarning>) {
         match WMIConnection::with_namespace_path("root\\WMI", com2) {
             Ok(wmi_root) => {
                 if let Ok(predictions) = wmi_root.raw_query::<WmiFailurePrediction>(
-                    "SELECT PredictFailure, InstanceName FROM MSStorageDriver_FailurePredictStatus"
+                    "SELECT PredictFailure, InstanceName FROM MSStorageDriver_FailurePredictStatus",
                 ) {
                     for pred in predictions {
                         if pred.predict_failure == Some(true) {
                             // Find matching drive and upgrade to Critical
                             if let Some(ref instance) = pred.instance_name {
                                 for drive in &mut data.drives {
-                                    if instance.contains(&drive.device_id) && drive.health_status != DiskHealthStatus::Critical {
+                                    if instance.contains(&drive.device_id)
+                                        && drive.health_status != DiskHealthStatus::Critical
+                                    {
                                         drive.health_status = DiskHealthStatus::Critical;
                                     }
                                 }
@@ -254,8 +258,8 @@ fn collect_windows() -> (DiskHealthData, Vec<DiagnosticWarning>) {
 
 #[cfg(target_os = "linux")]
 fn collect_linux() -> (DiskHealthData, Vec<DiagnosticWarning>) {
+    use super::command::{run_output, CommandTimeout};
     use std::fs;
-    use std::process::Command;
 
     let mut data = DiskHealthData::default();
     let warnings = Vec::new();
@@ -278,7 +282,8 @@ fn collect_linux() -> (DiskHealthData, Vec<DiagnosticWarning>) {
             let rotational_path = format!("/sys/block/{}/queue/rotational", name);
             let is_rotational = fs::read_to_string(&rotational_path)
                 .unwrap_or_default()
-                .trim() == "1";
+                .trim()
+                == "1";
 
             let media_type = if model.to_lowercase().contains("nvme") || name.starts_with("nvme") {
                 MediaType::NVMe
@@ -289,10 +294,11 @@ fn collect_linux() -> (DiskHealthData, Vec<DiagnosticWarning>) {
             };
 
             // Try smartctl for health
-            let health_status = if let Ok(output) = Command::new("smartctl")
-                .args(["-H", &format!("/dev/{}", name)])
-                .output()
-            {
+            let health_status = if let Some(output) = run_output(
+                "smartctl",
+                ["-H", &format!("/dev/{}", name)],
+                CommandTimeout::Normal,
+            ) {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 if stdout.contains("PASSED") || stdout.contains("OK") {
                     DiskHealthStatus::Healthy
@@ -326,44 +332,20 @@ fn collect_linux() -> (DiskHealthData, Vec<DiagnosticWarning>) {
 
 #[cfg(target_os = "macos")]
 fn collect_macos() -> (DiskHealthData, Vec<DiagnosticWarning>) {
-    use std::process::Command;
+    use super::command::{run_output, CommandTimeout};
 
     let mut data = DiskHealthData::default();
     let warnings = Vec::new();
 
     // Use diskutil to list drives
-    if let Ok(output) = Command::new("diskutil")
-        .args(["list", "-plist"])
-        .output()
-    {
+    if let Some(output) = run_output("diskutil", ["list", "-plist"], CommandTimeout::Normal) {
         let stdout = String::from_utf8_lossy(&output.stdout);
         // Basic parsing — look for physical drives
         // macOS diskutil output varies, use simple info
-        if let Ok(info_output) = Command::new("diskutil")
-            .args(["info", "disk0"])
-            .output()
+        if let Some(info_output) = run_output("diskutil", ["info", "disk0"], CommandTimeout::Normal)
         {
             let info = String::from_utf8_lossy(&info_output.stdout);
-            let mut model = String::new();
-            let mut media_type = MediaType::Unknown;
-
-            for line in info.lines() {
-                let trimmed = line.trim();
-                if let Some(rest) = trimmed.strip_prefix("Device / Media Name:") {
-                    model = rest.trim().to_string();
-                }
-                if let Some(rest) = trimmed.strip_prefix("Solid State:") {
-                    if rest.trim() == "Yes" {
-                        media_type = MediaType::Ssd;
-                    } else {
-                        media_type = MediaType::Hdd;
-                    }
-                }
-            }
-
-            if model.to_lowercase().contains("nvme") {
-                media_type = MediaType::NVMe;
-            }
+            let (model, media_type) = parse_diskutil_info(&info);
 
             data.drives.push(DriveHealth {
                 device_id: "disk0".into(),
@@ -383,4 +365,61 @@ fn collect_macos() -> (DiskHealthData, Vec<DiagnosticWarning>) {
     }
 
     (data, warnings)
+}
+
+#[cfg(target_os = "macos")]
+fn parse_diskutil_info(info: &str) -> (String, MediaType) {
+    let mut model = String::new();
+    let mut media_type = MediaType::Unknown;
+
+    for line in info.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("Device / Media Name:") {
+            model = rest.trim().to_string();
+        }
+        if let Some(rest) = trimmed.strip_prefix("Solid State:") {
+            if rest.trim() == "Yes" {
+                media_type = MediaType::Ssd;
+            } else {
+                media_type = MediaType::Hdd;
+            }
+        }
+    }
+
+    if model.to_lowercase().contains("nvme") {
+        media_type = MediaType::NVMe;
+    }
+
+    (model, media_type)
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_tests {
+    use super::{parse_diskutil_info, MediaType};
+
+    #[test]
+    fn parses_diskutil_info_fixture() {
+        let fixture = r#"
+            Device Identifier:         disk0
+            Device / Media Name:       APPLE SSD AP1024N
+            Solid State:               Yes
+        "#;
+
+        let (model, media_type) = parse_diskutil_info(fixture);
+
+        assert_eq!(model, "APPLE SSD AP1024N");
+        assert_eq!(media_type, MediaType::Ssd);
+    }
+
+    #[test]
+    fn diskutil_nvme_model_overrides_solid_state_label() {
+        let fixture = r#"
+            Device / Media Name:       Example NVMe Media
+            Solid State:               Yes
+        "#;
+
+        let (_, media_type) = parse_diskutil_info(fixture);
+
+        assert_eq!(media_type, MediaType::NVMe);
+    }
 }

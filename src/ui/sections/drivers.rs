@@ -75,7 +75,11 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(panel, inner);
 }
 
-fn render_user_category(lines: &mut Vec<Line<'_>>, title: &str, devices: &[crate::collectors::drivers::DeviceInfo]) {
+fn render_user_category(
+    lines: &mut Vec<Line<'_>>,
+    title: &str,
+    devices: &[crate::collectors::drivers::DeviceInfo],
+) {
     if devices.is_empty() {
         return;
     }
@@ -88,7 +92,11 @@ fn render_user_category(lines: &mut Vec<Line<'_>>, title: &str, devices: &[crate
             DeviceStatus::NotFound => HealthStatus::Unknown,
             DeviceStatus::Unknown => HealthStatus::Unknown,
         };
-        lines.push(status_line(&status, &dev.name, dev.status.user_description()));
+        lines.push(status_line(
+            &status,
+            &dev.name,
+            dev.status.user_description(),
+        ));
     }
     lines.push(Line::from(""));
 }
@@ -97,7 +105,10 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let drivers = &app.snapshot.drivers;
     let os_name = &app.snapshot.system.os_name;
 
-    let outer = content_block(&format!("Drivers & Devices \u{2014} {}    (press r to refresh)", os_name));
+    let outer = content_block(&format!(
+        "Drivers & Devices \u{2014} {}    (press r to refresh)",
+        os_name
+    ));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
@@ -143,8 +154,20 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     // Network Adapters table
     render_tech_category(&mut lines, "NETWORK ADAPTERS", &drivers.network, true);
 
-    let net_services: Vec<&ServiceInfo> = drivers.services.iter()
-        .filter(|s| ["Dhcp", "Dnscache", "WlanSvc", "NlaSvc", "NetworkManager", "wpa_supplicant"].contains(&s.name.as_str()))
+    let net_services: Vec<&ServiceInfo> = drivers
+        .services
+        .iter()
+        .filter(|s| {
+            [
+                "Dhcp",
+                "Dnscache",
+                "WlanSvc",
+                "NlaSvc",
+                "NetworkManager",
+                "wpa_supplicant",
+            ]
+            .contains(&s.name.as_str())
+        })
         .collect();
     if !net_services.is_empty() {
         lines.push(render_service_line("Services", &net_services));
@@ -153,7 +176,9 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // Display
     render_tech_category(&mut lines, "DISPLAY", &drivers.display, true);
-    let display_services: Vec<&ServiceInfo> = drivers.services.iter()
+    let display_services: Vec<&ServiceInfo> = drivers
+        .services
+        .iter()
         .filter(|s| ["DisplayEnhancementService"].contains(&s.name.as_str()))
         .collect();
     if !display_services.is_empty() {
@@ -163,7 +188,9 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // Storage
     render_tech_category(&mut lines, "STORAGE", &drivers.storage, true);
-    let storage_services: Vec<&ServiceInfo> = drivers.services.iter()
+    let storage_services: Vec<&ServiceInfo> = drivers
+        .services
+        .iter()
         .filter(|s| ["StorSvc", "VSS"].contains(&s.name.as_str()))
         .collect();
     if !storage_services.is_empty() {
@@ -173,8 +200,12 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // Bluetooth
     render_tech_category(&mut lines, "BLUETOOTH", &drivers.bluetooth, false);
-    let bt_services: Vec<&ServiceInfo> = drivers.services.iter()
-        .filter(|s| ["bthserv", "BthAvctpSvc", "bluetooth", "com.apple.blued"].contains(&s.name.as_str()))
+    let bt_services: Vec<&ServiceInfo> = drivers
+        .services
+        .iter()
+        .filter(|s| {
+            ["bthserv", "BthAvctpSvc", "bluetooth", "com.apple.blued"].contains(&s.name.as_str())
+        })
         .collect();
     if !bt_services.is_empty() {
         lines.push(render_service_line("Services", &bt_services));
@@ -183,8 +214,19 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // Audio
     render_tech_category(&mut lines, "AUDIO", &drivers.audio, true);
-    let audio_services: Vec<&ServiceInfo> = drivers.services.iter()
-        .filter(|s| ["Audiosrv", "AudioEndpointBuilder", "pipewire", "pulseaudio", "com.apple.audio.coreaudiod"].contains(&s.name.as_str()))
+    let audio_services: Vec<&ServiceInfo> = drivers
+        .services
+        .iter()
+        .filter(|s| {
+            [
+                "Audiosrv",
+                "AudioEndpointBuilder",
+                "pipewire",
+                "pulseaudio",
+                "com.apple.audio.coreaudiod",
+            ]
+            .contains(&s.name.as_str())
+        })
         .collect();
     if !audio_services.is_empty() {
         lines.push(render_service_line("Services", &audio_services));
@@ -193,7 +235,9 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // Input
     render_tech_category(&mut lines, "INPUT DEVICES", &drivers.input, false);
-    let input_services: Vec<&ServiceInfo> = drivers.services.iter()
+    let input_services: Vec<&ServiceInfo> = drivers
+        .services
+        .iter()
         .filter(|s| ["hidserv"].contains(&s.name.as_str()))
         .collect();
     if !input_services.is_empty() {
@@ -203,7 +247,9 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // USB
     render_tech_category(&mut lines, "USB", &drivers.usb, false);
-    let usb_services: Vec<&ServiceInfo> = drivers.services.iter()
+    let usb_services: Vec<&ServiceInfo> = drivers
+        .services
+        .iter()
         .filter(|s| ["USBHUB3"].contains(&s.name.as_str()))
         .collect();
     if !usb_services.is_empty() {
@@ -234,10 +280,17 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             };
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("  {:<30} {:<16} ", truncate_str(&dev.name, 30), truncate_str(&dev.driver_version, 16)),
+                    format!(
+                        "  {:<30} {:<16} ",
+                        truncate_str(&dev.name, 30),
+                        truncate_str(&dev.driver_version, 16)
+                    ),
                     Style::default().fg(COLOR_TEXT),
                 ),
-                Span::styled(format!("{} {}", dev.status.icon(), dev.status), Style::default().fg(status_color)),
+                Span::styled(
+                    format!("{} {}", dev.status.icon(), dev.status),
+                    Style::default().fg(status_color),
+                ),
             ]));
         }
         if drivers.other.len() > 20 {
@@ -258,7 +311,11 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     if total_lines > visible_height {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            format!("  Scroll: j/k  ({}/{})", scroll + visible_height.min(total_lines), total_lines),
+            format!(
+                "  Scroll: j/k  ({}/{})",
+                scroll + visible_height.min(total_lines),
+                total_lines
+            ),
             Style::default().fg(COLOR_DIM),
         )));
     }
@@ -267,14 +324,22 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(panel, inner);
 }
 
-fn render_tech_category(lines: &mut Vec<Line<'_>>, title: &str, devices: &[crate::collectors::drivers::DeviceInfo], show_date: bool) {
+fn render_tech_category(
+    lines: &mut Vec<Line<'_>>,
+    title: &str,
+    devices: &[crate::collectors::drivers::DeviceInfo],
+    show_date: bool,
+) {
     if devices.is_empty() {
         return;
     }
     lines.push(section_header(title));
     if show_date {
         lines.push(Line::from(Span::styled(
-            format!("  {:<30} {:<16} {:>8} {}", "DEVICE", "DRIVER VER", "STATUS", "DATE"),
+            format!(
+                "  {:<30} {:<16} {:>8} {}",
+                "DEVICE", "DRIVER VER", "STATUS", "DATE"
+            ),
             Style::default().fg(COLOR_DIM),
         )));
     } else {
@@ -295,32 +360,58 @@ fn render_tech_category(lines: &mut Vec<Line<'_>>, title: &str, devices: &[crate
         if show_date {
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("  {:<30} {:<16} ", truncate_str(&dev.name, 30), truncate_str(&dev.driver_version, 16)),
+                    format!(
+                        "  {:<30} {:<16} ",
+                        truncate_str(&dev.name, 30),
+                        truncate_str(&dev.driver_version, 16)
+                    ),
                     Style::default().fg(COLOR_TEXT),
                 ),
-                Span::styled(format!("{} {:<6}", dev.status.icon(), dev.status), Style::default().fg(status_color)),
-                Span::styled(format!(" {}", dev.driver_date), Style::default().fg(COLOR_DIM)),
+                Span::styled(
+                    format!("{} {:<6}", dev.status.icon(), dev.status),
+                    Style::default().fg(status_color),
+                ),
+                Span::styled(
+                    format!(" {}", dev.driver_date),
+                    Style::default().fg(COLOR_DIM),
+                ),
             ]));
         } else {
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("  {:<30} {:<16} ", truncate_str(&dev.name, 30), truncate_str(&dev.driver_version, 16)),
+                    format!(
+                        "  {:<30} {:<16} ",
+                        truncate_str(&dev.name, 30),
+                        truncate_str(&dev.driver_version, 16)
+                    ),
                     Style::default().fg(COLOR_TEXT),
                 ),
-                Span::styled(format!("{} {}", dev.status.icon(), dev.status), Style::default().fg(status_color)),
+                Span::styled(
+                    format!("{} {}", dev.status.icon(), dev.status),
+                    Style::default().fg(status_color),
+                ),
             ]));
         }
     }
 }
 
 fn render_service_line<'a>(label: &str, services: &[&ServiceInfo]) -> Line<'a> {
-    let mut spans = vec![
-        Span::styled(format!("  {}: ", label), Style::default().fg(COLOR_DIM)),
-    ];
+    let mut spans = vec![Span::styled(
+        format!("  {}: ", label),
+        Style::default().fg(COLOR_DIM),
+    )];
 
     for (i, svc) in services.iter().enumerate() {
-        let icon = if svc.is_running { "\u{2713}" } else { "\u{2717}" };
-        let color = if svc.is_running { COLOR_GOOD } else { COLOR_CRIT };
+        let icon = if svc.is_running {
+            "\u{2713}"
+        } else {
+            "\u{2717}"
+        };
+        let color = if svc.is_running {
+            COLOR_GOOD
+        } else {
+            COLOR_CRIT
+        };
         let name = if svc.display_name.is_empty() {
             &svc.name
         } else {

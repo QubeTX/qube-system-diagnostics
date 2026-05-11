@@ -1,6 +1,8 @@
-use crate::collectors::drivers::{DeviceCategory, DeviceInfo, DeviceStatus, DriverData, ServiceInfo};
+use crate::collectors::command::{run_status, CommandTimeout};
+use crate::collectors::drivers::{
+    DeviceCategory, DeviceInfo, DeviceStatus, DriverData, ServiceInfo,
+};
 use std::fs;
-use std::process::Command;
 
 pub fn collect() -> DriverData {
     let mut data = DriverData::default();
@@ -135,8 +137,10 @@ fn collect_input_devices(data: &mut DriverData) {
             }
             if line.starts_with("H: Handlers=") && !current_name.is_empty() {
                 let name_lower = current_name.to_lowercase();
-                if name_lower.contains("keyboard") || name_lower.contains("mouse")
-                    || name_lower.contains("touchpad") || name_lower.contains("trackpad")
+                if name_lower.contains("keyboard")
+                    || name_lower.contains("mouse")
+                    || name_lower.contains("touchpad")
+                    || name_lower.contains("trackpad")
                 {
                     data.input.push(DeviceInfo {
                         name: current_name.clone(),
@@ -174,11 +178,12 @@ fn collect_services(data: &mut DriverData) {
     ];
 
     for (name, display) in &services {
-        let is_running = Command::new("systemctl")
-            .args(["is-active", "--quiet", name])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+        let is_running = run_status(
+            "systemctl",
+            ["is-active", "--quiet", name],
+            CommandTimeout::Quick,
+        )
+        .unwrap_or(false);
 
         data.services.push(ServiceInfo {
             name: name.to_string(),

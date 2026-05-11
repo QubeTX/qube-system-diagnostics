@@ -29,17 +29,19 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let title_line = Line::from(vec![
         Span::styled(
             " SD-300 System Diagnostic",
-            Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(COLOR_ACCENT)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" ".repeat(pad_len)),
         Span::styled(
             right_text,
-            Style::default().fg(mode_fg).bg(mode_bg).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(mode_fg)
+                .bg(mode_bg)
+                .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            clock_text,
-            Style::default().fg(COLOR_MUTED),
-        ),
+        Span::styled(clock_text, Style::default().fg(COLOR_MUTED)),
     ]);
 
     let separator_line = Line::from(Span::styled(

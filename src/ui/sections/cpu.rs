@@ -23,8 +23,8 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),  // Status
-            Constraint::Length(8),  // Sparkline
+            Constraint::Length(6), // Status
+            Constraint::Length(8), // Sparkline
             Constraint::Min(5),    // Top consumers
         ])
         .split(inner);
@@ -33,16 +33,32 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     let cpu = &app.snapshot.cpu;
     let status = HealthStatus::from_percent(cpu.total_usage as f64);
     let unit = app.temp_unit;
-    let temp_desc = app.snapshot.thermals.cpu_temp
-        .map(|t| format!("{} ({}) \u{2014} {}", plain_language_temp(t), format_temp(t, unit),
-            if t > TEMP_CPU_WARN { "This is expected when busy" } else { "Comfortable" }
-        ))
+    let temp_desc = app
+        .snapshot
+        .thermals
+        .cpu_temp
+        .map(|t| {
+            format!(
+                "{} ({}) \u{2014} {}",
+                plain_language_temp(t),
+                format_temp(t, unit),
+                if t > TEMP_CPU_WARN {
+                    "This is expected when busy"
+                } else {
+                    "Comfortable"
+                }
+            )
+        })
         .unwrap_or_else(|| "Sensor data unavailable".into());
 
     let freq = cpu.per_core_frequency.first().unwrap_or(&0);
-    let speed_desc = if *freq > 3000 { "Running at full speed" }
-        else if *freq > 2000 { "Running at normal speed" }
-        else { "Slowed down" };
+    let speed_desc = if *freq > 3000 {
+        "Running at full speed"
+    } else if *freq > 2000 {
+        "Running at normal speed"
+    } else {
+        "Slowed down"
+    };
 
     let status_lines = vec![
         Line::from(""),
@@ -80,8 +96,14 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     for proc in app.snapshot.processes.list.iter().take(5) {
         if proc.cpu_percent > 0.1 {
             consumer_lines.push(Line::from(vec![
-                Span::styled(format!("  {:<24}", proc.friendly_name), Style::default().fg(COLOR_TEXT)),
-                Span::styled(gauge_bar(proc.cpu_percent as f64, 20), Style::default().fg(COLOR_INFO)),
+                Span::styled(
+                    format!("  {:<24}", proc.friendly_name),
+                    Style::default().fg(COLOR_TEXT),
+                ),
+                Span::styled(
+                    gauge_bar(proc.cpu_percent as f64, 20),
+                    Style::default().fg(COLOR_INFO),
+                ),
             ]));
         }
     }
@@ -100,32 +122,46 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),   // Summary
-            Constraint::Min(8),      // Per-core + history
-            Constraint::Length(8),   // Process table
+            Constraint::Length(2), // Summary
+            Constraint::Min(8),    // Per-core + history
+            Constraint::Length(8), // Process table
         ])
         .split(inner);
 
     let freq = cpu.per_core_frequency.first().unwrap_or(&0);
     let unit = app.temp_unit;
-    let temp_str = app.snapshot.thermals.cpu_temp
+    let temp_str = app
+        .snapshot
+        .thermals
+        .cpu_temp
         .map(|t| format_temp(t, unit))
         .unwrap_or_else(|| "N/A".into());
 
     // Summary
     let header_lines = vec![
-        Line::from(vec![
-            Span::styled(
-                format!("  {} threads / {} cores \u{2014} {}",
-                    cpu.thread_count, cpu.core_count, sys.architecture),
-                Style::default().fg(COLOR_MUTED),
+        Line::from(vec![Span::styled(
+            format!(
+                "  {} threads / {} cores \u{2014} {}",
+                cpu.thread_count, cpu.core_count, sys.architecture
             ),
-        ]),
+            Style::default().fg(COLOR_MUTED),
+        )]),
         Line::from(vec![
             Span::styled("  Total Load  ", Style::default().fg(COLOR_DIM)),
-            Span::styled(gauge_bar(cpu.total_usage as f64, 20), Style::default().fg(status_color(&HealthStatus::from_percent(cpu.total_usage as f64)))),
-            Span::styled(format!("    Freq {} MHz", freq), Style::default().fg(COLOR_TEXT)),
-            Span::styled(format!("    Temp {}", temp_str), Style::default().fg(COLOR_TEXT)),
+            Span::styled(
+                gauge_bar(cpu.total_usage as f64, 20),
+                Style::default().fg(status_color(&HealthStatus::from_percent(
+                    cpu.total_usage as f64,
+                ))),
+            ),
+            Span::styled(
+                format!("    Freq {} MHz", freq),
+                Style::default().fg(COLOR_TEXT),
+            ),
+            Span::styled(
+                format!("    Temp {}", temp_str),
+                Style::default().fg(COLOR_TEXT),
+            ),
         ]),
     ];
     let header_panel = Paragraph::new(header_lines);
@@ -135,10 +171,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let core_area = chunks[1];
     let core_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(core_area);
 
     // Per-core bars
@@ -152,8 +185,14 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         core_lines.push(Line::from(vec![
             Span::styled(format!("  Core {:>2} ", i), Style::default().fg(COLOR_DIM)),
             // 16-char gauge: fits 50% horizontal split at 80-col minimum
-            Span::styled(gauge_bar(*usage as f64, 16), Style::default().fg(status_color(&HealthStatus::from_percent(*usage as f64)))),
-            Span::styled(format!("  {} MHz", freq_val), Style::default().fg(COLOR_TEXT)),
+            Span::styled(
+                gauge_bar(*usage as f64, 16),
+                Style::default().fg(status_color(&HealthStatus::from_percent(*usage as f64))),
+            ),
+            Span::styled(
+                format!("  {} MHz", freq_val),
+                Style::default().fg(COLOR_TEXT),
+            ),
         ]));
 
         if core_lines.len() >= per_core_inner.height as usize {
@@ -179,17 +218,23 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let proc_inner = proc_block.inner(chunks[2]);
     frame.render_widget(proc_block, chunks[2]);
 
-    let mut proc_lines = vec![
-        Line::from(Span::styled(
-            format!("  {:<28} {:>6} {:>8} {:>10}", "PROCESS", "PID", "CPU%", "MEMORY"),
-            Style::default().fg(COLOR_DIM),
-        )),
-    ];
+    let mut proc_lines = vec![Line::from(Span::styled(
+        format!(
+            "  {:<28} {:>6} {:>8} {:>10}",
+            "PROCESS", "PID", "CPU%", "MEMORY"
+        ),
+        Style::default().fg(COLOR_DIM),
+    ))];
 
     for proc in app.snapshot.processes.list.iter().take(5) {
         proc_lines.push(Line::from(Span::styled(
-            format!("  {:<28} {:>6} {:>7.1}% {:>10}",
-                truncate_str(&proc.name, 28), proc.pid, proc.cpu_percent, format_bytes(proc.memory_bytes)),
+            format!(
+                "  {:<28} {:>6} {:>7.1}% {:>10}",
+                truncate_str(&proc.name, 28),
+                proc.pid,
+                proc.cpu_percent,
+                format_bytes(proc.memory_bytes)
+            ),
             Style::default().fg(COLOR_TEXT),
         )));
     }

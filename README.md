@@ -7,24 +7,28 @@ Real-time interactive TUI for system diagnostics and monitoring. Part of the **Q
 ### Shell (macOS/Linux)
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd-300-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/SD300-installer.sh | sh
 ```
 
 ### PowerShell (Windows)
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd-300-installer.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/SD300-installer.ps1 | iex"
 ```
 
 ### Windows Installer (.msi)
 
-Download `sd-300-x86_64-pc-windows-msvc.msi` from the [Releases](https://github.com/QubeTX/qube-system-diagnostics/releases) page.
+Download `SD300-x86_64-pc-windows-msvc.msi` from the [Releases](https://github.com/QubeTX/qube-system-diagnostics/releases) page.
 
 ### Cargo
 
 ```sh
-cargo install sd-300
+cargo install SD300
 ```
+
+Published releases are available as the `SD300` crate. crates.io lookups are
+case-insensitive, so `cargo install sd300` also resolves to the same package.
+The installed binary is `sd300`.
 
 ### From Source
 
@@ -64,7 +68,10 @@ Navigate between 9 sections using number keys:
 
 - **Fast metrics** (CPU, memory, network, processes): every 1 second
 - **Slow metrics** (disk, GPU, thermals): every 5 seconds
-- **Drivers**: on demand (press `r`)
+- **Connections**: every 3 seconds
+- **Connectivity**: background refresh every 15 seconds
+- **Disk health**: background refresh every 60 seconds
+- **Drivers**: background startup scan and on demand (press `r`)
 
 ## Usage
 
@@ -72,6 +79,8 @@ Navigate between 9 sections using number keys:
 sd300              # Interactive mode selection
 sd300 --user       # Launch directly into User Mode
 sd300 --tech       # Launch directly into Technician Mode
+sd300 update       # Check for and install the latest release
+sd300 --update     # Legacy update flag
 sd300 --help       # Show help
 sd300 --version    # Show version
 ```

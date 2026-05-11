@@ -50,7 +50,7 @@ impl std::fmt::Display for DeviceStatus {
 impl DeviceStatus {
     pub fn icon(&self) -> &'static str {
         match self {
-            Self::Ok => "\u{2713}",      // checkmark
+            Self::Ok => "\u{2713}",       // checkmark
             Self::Disabled => "\u{2014}", // em dash
             Self::Error(_) => "\u{2717}", // x mark
             Self::NotFound => "?",

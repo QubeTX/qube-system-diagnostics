@@ -23,7 +23,11 @@ pub fn render(frame: &mut Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(COLOR_BORDER))
-        .title_style(Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD));
+        .title_style(
+            Style::default()
+                .fg(COLOR_ACCENT)
+                .add_modifier(Modifier::BOLD),
+        );
 
     let lines = vec![
         Line::from(""),

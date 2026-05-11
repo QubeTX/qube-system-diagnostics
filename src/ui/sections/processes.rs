@@ -16,7 +16,10 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect, mode: DiagnosticMode) {
 }
 
 fn render_user(frame: &mut Frame, app: &App, area: Rect) {
-    let outer = content_block(&format!("Running Apps \u{2014} {} total", app.snapshot.processes.total_count));
+    let outer = content_block(&format!(
+        "Running Apps \u{2014} {} total",
+        app.snapshot.processes.total_count
+    ));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
@@ -35,7 +38,10 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
         lines.push(Line::from(vec![
             Span::styled("  \u{2022} ", Style::default().fg(dot_color)),
-            Span::styled(format!("{:<22}", proc.friendly_name), Style::default().fg(COLOR_TEXT)),
+            Span::styled(
+                format!("{:<22}", proc.friendly_name),
+                Style::default().fg(COLOR_TEXT),
+            ),
             Span::styled(descriptor.to_string(), Style::default().fg(COLOR_DIM)),
         ]));
     }
@@ -45,16 +51,16 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
-    let outer = content_block(&format!("Processes \u{2014} {} total", app.snapshot.processes.total_count));
+    let outer = content_block(&format!(
+        "Processes \u{2014} {} total",
+        app.snapshot.processes.total_count
+    ));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(6),
-        ])
+        .constraints([Constraint::Length(3), Constraint::Min(6)])
         .split(inner);
 
     // Header with sort indicator
@@ -67,12 +73,18 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     let header_lines = vec![
         Line::from(Span::styled(
-            format!("  Sorted by {}    Sort: [c]pu  [M]emory  [p]id  [n]ame    Scroll: j/k or arrows", sort_indicator),
+            format!(
+                "  Sorted by {}    Sort: [c]pu  [M]emory  [p]id  [n]ame    Scroll: j/k or arrows",
+                sort_indicator
+            ),
             Style::default().fg(COLOR_MUTED),
         )),
         Line::from(""),
         Line::from(Span::styled(
-            format!("  {:<28} {:>6} {:>8} {:>8} {:>10} {:>8}", "NAME", "PID", "CPU%", "MEM%", "MEMORY", "STATUS"),
+            format!(
+                "  {:<28} {:>6} {:>8} {:>8} {:>10} {:>8}",
+                "NAME", "PID", "CPU%", "MEM%", "MEMORY", "STATUS"
+            ),
             Style::default().fg(COLOR_DIM).add_modifier(Modifier::BOLD),
         )),
     ];
@@ -82,15 +94,23 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     // Sort processes
     let mut sorted_procs = app.snapshot.processes.list.clone();
     match app.process_sort {
-        ProcessSortKey::Cpu => sorted_procs.sort_by(|a, b| b.cpu_percent.partial_cmp(&a.cpu_percent).unwrap_or(std::cmp::Ordering::Equal)),
-        ProcessSortKey::Memory => sorted_procs.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes)),
-        ProcessSortKey::Pid => sorted_procs.sort_by(|a, b| a.pid.cmp(&b.pid)),
-        ProcessSortKey::Name => sorted_procs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+        ProcessSortKey::Cpu => sorted_procs.sort_by(|a, b| {
+            b.cpu_percent
+                .partial_cmp(&a.cpu_percent)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }),
+        ProcessSortKey::Memory => {
+            sorted_procs.sort_by_key(|proc| std::cmp::Reverse(proc.memory_bytes))
+        }
+        ProcessSortKey::Pid => sorted_procs.sort_by_key(|proc| proc.pid),
+        ProcessSortKey::Name => sorted_procs.sort_by_key(|proc| proc.name.to_lowercase()),
     }
 
     // Visible rows (reserve 1 line for scroll indicator)
     let visible_height = chunks[1].height.saturating_sub(1) as usize;
-    let scroll = app.process_scroll.min(sorted_procs.len().saturating_sub(visible_height));
+    let scroll = app
+        .process_scroll
+        .min(sorted_procs.len().saturating_sub(visible_height));
     let total = sorted_procs.len();
 
     let mut proc_lines = Vec::new();
@@ -104,13 +124,15 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         proc_lines.push(Line::from(Span::styled(
-            format!("  {:<28} {:>6} {:>7.1}% {:>7.1}% {:>10} {:>8}",
+            format!(
+                "  {:<28} {:>6} {:>7.1}% {:>7.1}% {:>10} {:>8}",
                 truncate_str(&proc.name, 28),
                 proc.pid,
                 proc.cpu_percent,
                 proc.memory_percent,
                 format_bytes(proc.memory_bytes),
-                truncate_str(&proc.status, 8)),
+                truncate_str(&proc.status, 8)
+            ),
             style,
         )));
     }

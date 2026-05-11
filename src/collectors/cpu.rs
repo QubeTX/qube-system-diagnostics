@@ -27,7 +27,7 @@ pub fn collect(sys: &System) -> CpuData {
         per_core_usage,
         per_core_frequency,
         cpu_model,
-        core_count: sys.physical_core_count().unwrap_or(0),
+        core_count: System::physical_core_count().unwrap_or(0),
         thread_count: cpus.len(),
     }
 }

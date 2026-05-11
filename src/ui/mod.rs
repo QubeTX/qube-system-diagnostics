@@ -28,9 +28,9 @@ pub fn render(frame: &mut Frame, app: &App) {
     let chunks = ratatui::layout::Layout::default()
         .direction(ratatui::layout::Direction::Vertical)
         .constraints([
-            ratatui::layout::Constraint::Length(2),  // Header bar
-            ratatui::layout::Constraint::Min(1),     // Content area
-            ratatui::layout::Constraint::Length(1),  // Bottom bar
+            ratatui::layout::Constraint::Length(2), // Header bar
+            ratatui::layout::Constraint::Min(1),    // Content area
+            ratatui::layout::Constraint::Length(1), // Bottom bar
         ])
         .split(area);
 
@@ -50,11 +50,11 @@ pub fn render(frame: &mut Frame, app: &App) {
 }
 
 fn render_too_small(frame: &mut Frame) {
+    use crate::ui::common::{COLOR_MUTED, COLOR_WARN};
     use ratatui::layout::{Alignment, Constraint, Flex, Layout};
     use ratatui::style::Style;
     use ratatui::text::{Line, Span};
     use ratatui::widgets::Paragraph;
-    use crate::ui::common::{COLOR_WARN, COLOR_MUTED};
 
     let area = frame.area();
     let [center_y] = Layout::vertical([Constraint::Length(3)])

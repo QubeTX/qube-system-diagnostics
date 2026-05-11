@@ -1,5 +1,10 @@
 use clap::Parser;
-use sd_300::{app::App, cli::Cli, error::Result, types::DiagnosticMode};
+use sd_300::{
+    app::App,
+    cli::{Cli, Command},
+    error::Result,
+    types::DiagnosticMode,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -9,6 +14,11 @@ async fn main() -> Result<()> {
     #[cfg(windows)]
     {
         enable_utf8_console();
+    }
+
+    if cli.update || cli.command == Some(Command::Update) {
+        let exit_code = sd_300::update::run()?;
+        std::process::exit(exit_code);
     }
 
     // Determine initial mode from CLI flags
