@@ -756,13 +756,13 @@ The TUI must handle varying terminal sizes gracefully. `ratatui` provides a cons
 Consistent with the rest of the 300 Series:
 
 - **GitHub Releases** with prebuilt binaries for Windows x86_64, macOS x86_64/aarch64, Linux x86_64 GNU, Linux x86_64 musl, and Linux aarch64 GNU.
-- **Shell installer:** `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.sh | sh` for macOS/Linux.
-- **PowerShell installer:** `powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.ps1 | iex"` for Windows.
-- **Windows MSI:** `sd300-x86_64-pc-windows-msvc.msi` from GitHub Releases.
+- **Shell installer:** `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/tr300-tui-installer.sh | sh` for macOS/Linux. The installer still installs `sd300`.
+- **PowerShell installer:** `powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/tr300-tui-installer.ps1 | iex"` for Windows. The installer still installs `sd300.exe`.
+- **Windows MSI:** `tr300-tui-x86_64-pc-windows-msvc.msi` from GitHub Releases. The MSI product and installed command remain `sd300`.
 - **Cargo install:** `cargo install tr300-tui`; the installed command remains `sd300`.
 - **Self-update:** `sd300 update` first tries `cargo install tr300-tui --force` when Cargo is available, then falls back to the cargo-dist shell or PowerShell installers.
 - **Release automation:** GitHub Actions verifies source state, builds all cargo-dist artifacts, publishes the `tr300-tui` crate with `CARGO_REGISTRY_TOKEN`, then hosts the GitHub Release and installer assets. Legacy `SD300-installer.sh` and `SD300-installer.ps1` aliases are also uploaded so 1.4.0/1.4.1 updaters can still fall back to installers.
-- **Asset aliases:** cargo-dist's package-derived artifacts are named `tr300-tui-*`; the release workflow also uploads `sd300-*` installer/MSI aliases for user-facing install links and update fallback URLs.
+- **Asset names:** cargo-dist's package-derived artifacts are named `tr300-tui-*`; current install docs and `sd300 update` use those assets. Do not upload lowercase `sd300-*` aliases next to uppercase `SD300-*` aliases because case-equivalent asset names can conflict during GitHub Release upload.
 - **MSI naming:** WiX product naming intentionally stays `sd300` even though the Cargo package is `tr300-tui`.
 - **Single static binary, zero runtime dependencies.** (NVML/GPU features degrade gracefully if the GPU drivers aren't present.)
 

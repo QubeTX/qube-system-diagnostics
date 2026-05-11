@@ -42,7 +42,7 @@ Version tag pushes (`v*.*.*`) remain supported for explicit/manual releases, but
 
 The package was moved to `tr300-tui` so the project can publish while keeping the installed command and product identity as `sd300` / SD-300. After release, verify `cargo install tr300-tui --version {VERSION}` installs `sd300` and that the GitHub Release assets are present.
 
-cargo-dist builds for 6 targets (x86_64/aarch64 across Windows/macOS/Linux) and produces `tr300-tui-*` archives and installers containing the `sd300` binary. The release workflow also uploads `sd300-installer.sh`, `sd300-installer.ps1`, `sd300-x86_64-pc-windows-msvc.msi`, and legacy `SD300-installer.sh` / `SD300-installer.ps1` aliases so install docs and old updaters keep working. `allow-dirty = ["ci", "msi"]` is set in `Cargo.toml` because the release workflow and MSI product naming are deliberately customized.
+cargo-dist builds for 6 targets (x86_64/aarch64 across Windows/macOS/Linux) and produces `tr300-tui-*` archives and installers containing the `sd300` binary. The release workflow also uploads legacy `SD300-installer.sh` / `SD300-installer.ps1` aliases so 1.4.0/1.4.1 installer fallbacks can still update, but current docs and updater code use the package-derived `tr300-tui-installer.*` assets. Do not add lowercase `sd300-*` release aliases alongside uppercase `SD300-*`; GitHub release asset uploads can conflict on case-equivalent names. `allow-dirty = ["ci", "msi"]` is set in `Cargo.toml` because the release workflow and MSI product naming are deliberately customized.
 
 ## Architecture
 

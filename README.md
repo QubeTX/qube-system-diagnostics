@@ -7,18 +7,18 @@ Real-time interactive TUI for system diagnostics and monitoring. Part of the **Q
 ### Shell (macOS/Linux)
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/tr300-tui-installer.sh | sh
 ```
 
 ### PowerShell (Windows)
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/tr300-tui-installer.ps1 | iex"
 ```
 
 ### Windows Installer (.msi)
 
-Download `sd300-x86_64-pc-windows-msvc.msi` from the [Releases](https://github.com/QubeTX/qube-system-diagnostics/releases) page.
+Download `tr300-tui-x86_64-pc-windows-msvc.msi` from the [Releases](https://github.com/QubeTX/qube-system-diagnostics/releases) page. The installer still installs the `sd300` command.
 
 ### Cargo
 
@@ -102,9 +102,10 @@ legacy `sd300 --update` flag is still supported for existing scripts.
 Update checks run before the Ratatui terminal UI is initialized. If Cargo is
 available, SD-300 tries `cargo install tr300-tui --force` first. If Cargo is not
 available or the Cargo update fails, it falls back to the cargo-dist installers:
-`sd300-installer.sh` through `curl`/`wget` on macOS and Linux, and
-`sd300-installer.ps1` through `powershell.exe`/`pwsh.exe` on Windows. Update
-failures report per-attempt diagnostics and exit with status `2`.
+`tr300-tui-installer.sh` through `curl`/`wget` on macOS and Linux, and
+`tr300-tui-installer.ps1` through `powershell.exe`/`pwsh.exe` on Windows.
+Those package-named installers still install the `sd300` binary. Update failures
+report per-attempt diagnostics and exit with status `2`.
 
 ## Keybindings
 

@@ -21,6 +21,8 @@ Current state is version `1.4.3`, Rust `1.95`, `sysinfo` `0.39.x`, and `crosster
 - Packaging:
   - cargo-dist release workflow is intentionally customized like ND-300: `main` pushes verify release state, build artifacts, publish crates.io, then host the GitHub release and installer assets.
   - The workflow can finish hosting if crates.io already has the exact version but the GitHub release is missing.
+  - Release assets use cargo-dist's package-derived `tr300-tui-*` names; the shell, PowerShell, and MSI installers still install the `sd300` command.
+  - Legacy uppercase `SD300-installer.*` aliases are kept only for 1.4.0/1.4.1 updater fallback compatibility. Do not add lowercase `sd300-*` aliases next to those uppercase aliases.
   - `allow-dirty = ["ci", "msi"]` is set in cargo-dist metadata because `.github/workflows/release.yml` and MSI product naming have deliberate deployment customizations.
 
 ## Goals

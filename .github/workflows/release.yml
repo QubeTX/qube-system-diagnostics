@@ -437,20 +437,10 @@ jobs:
       - name: Add legacy installer aliases
         run: |
           if [ -f artifacts/tr300-tui-installer.sh ]; then
-            cp artifacts/tr300-tui-installer.sh artifacts/sd300-installer.sh
+            cp artifacts/tr300-tui-installer.sh artifacts/SD300-installer.sh
           fi
           if [ -f artifacts/tr300-tui-installer.ps1 ]; then
-            cp artifacts/tr300-tui-installer.ps1 artifacts/sd300-installer.ps1
-          fi
-          if [ -f artifacts/tr300-tui-x86_64-pc-windows-msvc.msi ]; then
-            cp artifacts/tr300-tui-x86_64-pc-windows-msvc.msi artifacts/sd300-x86_64-pc-windows-msvc.msi
-            shasum -a 256 artifacts/sd300-x86_64-pc-windows-msvc.msi > artifacts/sd300-x86_64-pc-windows-msvc.msi.sha256
-          fi
-          if [ -f artifacts/sd300-installer.sh ]; then
-            cp artifacts/sd300-installer.sh artifacts/SD300-installer.sh
-          fi
-          if [ -f artifacts/sd300-installer.ps1 ]; then
-            cp artifacts/sd300-installer.ps1 artifacts/SD300-installer.ps1
+            cp artifacts/tr300-tui-installer.ps1 artifacts/SD300-installer.ps1
           fi
       - name: Create GitHub Release
         env:

@@ -10,11 +10,11 @@ const MANUAL_INSTALL_URL: &str = "https://github.com/QubeTX/qube-system-diagnost
 
 #[cfg(not(windows))]
 const SHELL_INSTALLER: &str =
-    "https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.sh";
+    "https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/tr300-tui-installer.sh";
 
 #[cfg(windows)]
 const PS_INSTALLER: &str =
-    "https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.ps1";
+    "https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/tr300-tui-installer.ps1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UpdateStrategy {
@@ -454,5 +454,19 @@ mod tests {
     fn cargo_strategy_uses_publish_package_not_binary_name() {
         assert_eq!(CRATE_NAME, "tr300-tui");
         assert_ne!(CRATE_NAME, "sd300");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn shell_installer_uses_publish_package_asset_name() {
+        assert!(SHELL_INSTALLER.ends_with("/tr300-tui-installer.sh"));
+        assert!(!SHELL_INSTALLER.ends_with("/sd300-installer.sh"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_installer_uses_publish_package_asset_name() {
+        assert!(PS_INSTALLER.ends_with("/tr300-tui-installer.ps1"));
+        assert!(!PS_INSTALLER.ends_with("/sd300-installer.ps1"));
     }
 }
