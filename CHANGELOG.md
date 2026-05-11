@@ -45,6 +45,7 @@ All notable changes to SD-300 will be documented in this file.
 - Connectivity and disk-health refreshes no longer block the draw loop; they run as bounded background jobs and update warnings when complete.
 - Windows Setup API driver scanning releases device-info handles through RAII cleanup even on early returns.
 - macOS and Linux driver, disk, GPU, thermal, route, DNS, and socket probes use read-only commands with timeouts instead of unbounded `Command::output()` calls.
+- Release metadata parsing now works on Ubuntu 22.04 runners without requiring Python `tomllib`.
 - Clippy warnings blocking `-D warnings` were resolved across sorting, clamps, and key-event matching.
 
 ## [1.3.0] - 2026-03-12

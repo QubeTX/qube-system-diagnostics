@@ -77,8 +77,21 @@ jobs:
         run: |
           set -euo pipefail
 
-          package_name=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["name"])')
-          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          package_name=$(awk -F ' *= *' '
+            $0 == "[package]" { in_package=1; next }
+            /^\[/ && in_package { exit }
+            in_package && $1 == "name" { gsub(/"/, "", $2); print $2; exit }
+          ' Cargo.toml)
+          version=$(awk -F ' *= *' '
+            $0 == "[package]" { in_package=1; next }
+            /^\[/ && in_package { exit }
+            in_package && $1 == "version" { gsub(/"/, "", $2); print $2; exit }
+          ' Cargo.toml)
+
+          if [ -z "$package_name" ] || [ -z "$version" ]; then
+            echo "::error::Could not resolve package name/version from Cargo.toml"
+            exit 1
+          fi
 
           publishing=false
           should_deploy=false
@@ -96,7 +109,7 @@ jobs:
             tag="v$version"
             tag_flag="--tag=$tag"
 
-            crate_status=$(curl -sS -o /tmp/crate-version.json -w "%{http_code}" "https://crates.io/api/v1/crates/${package_name}/${version}")
+            crate_status=$(curl -sS -H "User-Agent: sd300-release-workflow (github.com/QubeTX/qube-system-diagnostics)" -o /tmp/crate-version.json -w "%{http_code}" "https://crates.io/api/v1/crates/${package_name}/${version}")
             case "$crate_status" in
               200) crate_exists=true ;;
               404) crate_exists=false ;;
@@ -414,7 +427,7 @@ jobs:
             exit 1
           fi
 
-          status=$(curl -sS -o /tmp/crate-version.json -w "%{http_code}" "https://crates.io/api/v1/crates/${PACKAGE_NAME}/${PACKAGE_VERSION}")
+          status=$(curl -sS -H "User-Agent: sd300-release-workflow (github.com/QubeTX/qube-system-diagnostics)" -o /tmp/crate-version.json -w "%{http_code}" "https://crates.io/api/v1/crates/${PACKAGE_NAME}/${PACKAGE_VERSION}")
           case "$status" in
             200)
               echo "${PACKAGE_NAME} ${PACKAGE_VERSION} is already published on crates.io; skipping."
