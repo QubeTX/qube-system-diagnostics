@@ -2,6 +2,11 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [1.4.1] - 2026-05-11
+
+### Changed
+- Corrected Cargo installation documentation after release verification: the crates.io package is `SD300`, `cargo install` requires that package casing, and the installed command remains lowercase `sd300`.
+
 ## [1.4.0] - 2026-05-11
 
 ### Added
@@ -12,7 +17,7 @@ All notable changes to SD-300 will be documented in this file.
   - Cargo first only when `cargo --version` succeeds, using `cargo install SD300 --force`.
   - macOS/Linux fallback through the cargo-dist shell installer with hardened `curl`, then `wget`.
   - Windows fallback through the cargo-dist PowerShell installer with `powershell.exe`, then `pwsh.exe`.
-- New install and update documentation covering all supported installation paths: macOS/Linux shell installer (`SD300-installer.sh`), Windows PowerShell installer (`SD300-installer.ps1`), Windows MSI (`SD300-x86_64-pc-windows-msvc.msi`), Cargo (`cargo install SD300` and lowercase `cargo install sd300` lookup), and source builds.
+- New install and update documentation covering all supported installation paths: macOS/Linux shell installer (`SD300-installer.sh`), Windows PowerShell installer (`SD300-installer.ps1`), Windows MSI (`SD300-x86_64-pc-windows-msvc.msi`), Cargo (`cargo install SD300`), and source builds.
 - Shared bounded command runner for collector subprocesses with timeout and kill behavior.
 - Background startup and refresh jobs for connectivity, disk health, and driver scans so the TUI can render while slower probes run.
 - CI workflow covering Ubuntu, macOS, and Windows with format checks, Clippy, tests, release build, target checks, audit, and `cargo-dist` plan.

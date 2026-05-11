@@ -17,7 +17,7 @@ cargo clippy                   # Lint
 cargo test                     # Run tests (assert_cmd/predicates available for CLI integration tests)
 ```
 
-The binary is named `sd300` (not `sd-300`). The crates.io package name is `SD300`; Cargo/crates.io install lookup is case-insensitive, so `cargo install sd300` resolves to the same package. The Rust library target is `sd_300`.
+The binary is named `sd300` (not `sd-300`). The crates.io package name is `SD300`; use `cargo install SD300` for Cargo installs. The installed command remains lowercase `sd300`, and the Rust library target is `sd_300`.
 
 ## Release Process (cargo-dist + crates.io)
 

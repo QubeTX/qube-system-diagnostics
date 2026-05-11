@@ -27,8 +27,8 @@ cargo install SD300
 ```
 
 Published releases are available as the `SD300` crate. crates.io lookups are
-case-insensitive, so `cargo install sd300` also resolves to the same package.
-The installed binary is `sd300`.
+case-sensitive for `cargo install`, so use the package casing shown above. The
+installed binary is lowercase: `sd300`.
 
 ### From Source
 
