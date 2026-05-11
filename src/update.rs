@@ -5,7 +5,7 @@ use crate::error::Result;
 
 pub const RELEASES_URL: &str =
     "https://api.github.com/repos/QubeTX/qube-system-diagnostics/releases/latest";
-const CRATE_NAME: &str = "sd300";
+const CRATE_NAME: &str = "tr300-tui";
 const MANUAL_INSTALL_URL: &str = "https://github.com/QubeTX/qube-system-diagnostics#installation";
 
 #[cfg(not(windows))]
@@ -448,5 +448,11 @@ mod tests {
             UpdateStrategy::InstallerPowerShell.json_method(),
             "installer"
         );
+    }
+
+    #[test]
+    fn cargo_strategy_uses_publish_package_not_binary_name() {
+        assert_eq!(CRATE_NAME, "tr300-tui");
+        assert_ne!(CRATE_NAME, "sd300");
     }
 }

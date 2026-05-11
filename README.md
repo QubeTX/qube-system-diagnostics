@@ -23,11 +23,21 @@ Download `sd300-x86_64-pc-windows-msvc.msi` from the [Releases](https://github.c
 ### Cargo
 
 ```sh
-cargo install sd300
+cargo install tr300-tui
 ```
 
-Published releases are available as the lowercase `sd300` crate. The installed
-binary is also lowercase: `sd300`.
+Published releases are available as the `tr300-tui` crate. The installed binary
+is still lowercase: `sd300`.
+
+After installation, the command surface is always `sd300`:
+
+```sh
+sd300
+sd300 --user
+sd300 --tech
+sd300 update
+sd300 --update
+```
 
 ### From Source
 
@@ -90,7 +100,7 @@ Run `sd300 update` to check for and install the latest GitHub release. The
 legacy `sd300 --update` flag is still supported for existing scripts.
 
 Update checks run before the Ratatui terminal UI is initialized. If Cargo is
-available, SD-300 tries `cargo install sd300 --force` first. If Cargo is not
+available, SD-300 tries `cargo install tr300-tui --force` first. If Cargo is not
 available or the Cargo update fails, it falls back to the cargo-dist installers:
 `sd300-installer.sh` through `curl`/`wget` on macOS and Linux, and
 `sd300-installer.ps1` through `powershell.exe`/`pwsh.exe` on Windows. Update

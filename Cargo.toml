@@ -1,6 +1,6 @@
 [package]
-name = "sd300"
-version = "1.4.2"
+name = "tr300-tui"
+version = "1.4.3"
 edition = "2021"
 rust-version = "1.95"
 authors = ["Emmett S <hey@emmetts.dev>"]
@@ -79,9 +79,10 @@ lto = "thin"
 [workspace.metadata.dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.31.0"
-# Release workflow is intentionally customized to deploy from main after
-# checking release/crate state, matching ND-300's deployment gate.
-allow-dirty = ["ci"]
+# Release workflow and MSI product naming are intentionally customized: CI
+# deploys from main after checking release/crate state, and the MSI keeps the
+# SD-300/sd300 product name even though the crates.io package is tr300-tui.
+allow-dirty = ["ci", "msi"]
 # CI backends to support
 ci = "github"
 # The installers to generate for each app

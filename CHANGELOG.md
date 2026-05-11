@@ -2,6 +2,17 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [1.4.3] - 2026-05-11
+
+### Changed
+- Changed the crates.io package name to `tr300-tui` while keeping the product name SD-300 and the installed command `sd300`.
+- Updated `sd300 update` so its Cargo strategy runs `cargo install tr300-tui --force`; release automation keeps `sd300` shell, PowerShell, and MSI aliases for install/update links.
+- Clarified that `sd300`, `sd300 --user`, `sd300 --tech`, `sd300 update`, and legacy `sd300 --update` remain the standard user commands after installing from `tr300-tui`.
+- Updated README, project context, project plan, local agent docs, and global Codex agent guidance to document `cargo install tr300-tui` as the supported Cargo install path.
+- Kept the hand-edited WiX/MSI product name as `sd300` and allowed the MSI customization in cargo-dist config so the package rename does not rebrand the app installer.
+- Added release-asset aliasing from cargo-dist's `tr300-tui-*` installer artifacts back to `sd300-*` and legacy `SD300-*` installer names.
+- Bumped the release version to `1.4.3` for a clean crates.io and GitHub Release publish under the new package name.
+
 ## [1.4.2] - 2026-05-11
 
 ### Changed
@@ -18,7 +29,8 @@ All notable changes to SD-300 will be documented in this file.
 
 The `1.4.0` and `1.4.1` entries below are retained as historical notes for the
 short-lived uppercase crates.io package path. `1.4.2` supersedes that path with
-the canonical lowercase `sd300` package and installer asset names.
+the lowercase `sd300` package metadata, and `1.4.3` supersedes it with the
+publishable `tr300-tui` crates.io package while preserving the `sd300` command.
 
 ## [1.4.1] - 2026-05-11
 

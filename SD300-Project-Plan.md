@@ -759,9 +759,11 @@ Consistent with the rest of the 300 Series:
 - **Shell installer:** `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.sh | sh` for macOS/Linux.
 - **PowerShell installer:** `powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.ps1 | iex"` for Windows.
 - **Windows MSI:** `sd300-x86_64-pc-windows-msvc.msi` from GitHub Releases.
-- **Cargo install:** `cargo install sd300`.
-- **Self-update:** `sd300 update` first tries `cargo install sd300 --force` when Cargo is available, then falls back to the cargo-dist shell or PowerShell installers.
-- **Release automation:** GitHub Actions verifies source state, builds all cargo-dist artifacts, publishes the lowercase `sd300` crate with `CARGO_REGISTRY_TOKEN`, then hosts the GitHub Release and installer assets. Legacy `SD300-installer.sh` and `SD300-installer.ps1` aliases are also uploaded so 1.4.0/1.4.1 updaters can still fall back to installers.
+- **Cargo install:** `cargo install tr300-tui`; the installed command remains `sd300`.
+- **Self-update:** `sd300 update` first tries `cargo install tr300-tui --force` when Cargo is available, then falls back to the cargo-dist shell or PowerShell installers.
+- **Release automation:** GitHub Actions verifies source state, builds all cargo-dist artifacts, publishes the `tr300-tui` crate with `CARGO_REGISTRY_TOKEN`, then hosts the GitHub Release and installer assets. Legacy `SD300-installer.sh` and `SD300-installer.ps1` aliases are also uploaded so 1.4.0/1.4.1 updaters can still fall back to installers.
+- **Asset aliases:** cargo-dist's package-derived artifacts are named `tr300-tui-*`; the release workflow also uploads `sd300-*` installer/MSI aliases for user-facing install links and update fallback URLs.
+- **MSI naming:** WiX product naming intentionally stays `sd300` even though the Cargo package is `tr300-tui`.
 - **Single static binary, zero runtime dependencies.** (NVML/GPU features degrade gracefully if the GPU drivers aren't present.)
 
 ---
@@ -771,7 +773,7 @@ Consistent with the rest of the 300 Series:
 - Application header: `SD-300 SYSTEM DIAGNOSTIC` / `QUBETX DEVELOPER TOOLS`.
 - Color palette: warm earth tones with sage green for good status, warm amber for warning, terracotta red for critical, warm gold accents, warm white text, and dark warm gray borders.
 - Box-drawing and table styling should match TR-300's aesthetic, adapted for the TUI context.
-- User-facing install documentation lives in `README.md`; any future landing page should use the same canonical lowercase `sd300` package and installer names.
+- User-facing install documentation lives in `README.md`; any future landing page should use `tr300-tui` for Cargo installs and `sd300` for the command and installer names.
 
 ---
 
@@ -779,7 +781,7 @@ Consistent with the rest of the 300 Series:
 
 1. **Rust binary** — `sd300` — cross-platform, single static binary.
 2. **GitHub repository** — under the QubeTX organization, with README, LICENSE (PolyForm Noncommercial), changelog, project context, and CI/CD for release builds.
-3. **Installers and package publishing** — cargo-dist shell/PowerShell/MSI installers plus the lowercase `sd300` crates.io package.
+3. **Installers and package publishing** — cargo-dist shell/PowerShell/MSI installers plus the `tr300-tui` crates.io package.
 4. **Update path** — `sd300 update` and legacy `sd300 --update` for CI-built release updates.
 
 ---

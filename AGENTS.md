@@ -17,7 +17,7 @@ cargo clippy                   # Lint
 cargo test                     # Run tests (assert_cmd/predicates available for CLI integration tests)
 ```
 
-The binary is named `sd300` (not `sd-300`). The crates.io package name is lowercase `sd300`; use `cargo install sd300` for Cargo installs. The Rust library target is `sd_300`.
+The binary is named `sd300` (not `sd-300`). The crates.io package name is `tr300-tui`; use `cargo install tr300-tui` for Cargo installs. The Rust library target is `sd_300`.
 
 ## Release Process (cargo-dist + crates.io)
 
@@ -35,14 +35,14 @@ On `main`, the release workflow reads the package name/version, checks crates.io
 - repairs a crates.io-published/GitHub-release-missing state by rebuilding artifacts and finishing release hosting
 - fails other partial-release states so a human can repair or bump forward
 - runs cargo-dist artifact builds for all configured targets before hosting anything
-- publishes the `sd300` crate only after GitHub Actions has built all cargo-dist artifacts
+- publishes the `tr300-tui` crate only after GitHub Actions has built all cargo-dist artifacts
 - creates the `v{VERSION}` GitHub release and installer assets only after the crates.io publish step succeeds or confirms the version is already published
 
 Version tag pushes (`v*.*.*`) remain supported for explicit/manual releases, but the normal automation path is main-branch push. `CARGO_REGISTRY_TOKEN` must exist as a GitHub Actions secret; never commit registry tokens or publish from a local machine unless the user explicitly asks for an emergency manual publish after CI status has been checked.
 
-If crates.io rejects a publish because a recently deleted case-equivalent crate name is still in its reuse cooldown, do not bump or manually publish around it. Rerun the failed Release workflow after the timestamp reported by crates.io, then verify `cargo install sd300 --version {VERSION}` and the GitHub Release assets.
+The package was moved to `tr300-tui` so the project can publish while keeping the installed command and product identity as `sd300` / SD-300. After release, verify `cargo install tr300-tui --version {VERSION}` installs `sd300` and that the GitHub Release assets are present.
 
-cargo-dist builds for 6 targets (x86_64/aarch64 across Windows/macOS/Linux) and produces `sd300-*` archives plus shell, PowerShell, and MSI installers. The release workflow also uploads legacy `SD300-installer.sh` / `SD300-installer.ps1` aliases so old updaters can still self-update. `allow-dirty = ["ci"]` is set in `Cargo.toml` because the release workflow has deliberate deployment-gate customizations.
+cargo-dist builds for 6 targets (x86_64/aarch64 across Windows/macOS/Linux) and produces `tr300-tui-*` archives and installers containing the `sd300` binary. The release workflow also uploads `sd300-installer.sh`, `sd300-installer.ps1`, `sd300-x86_64-pc-windows-msvc.msi`, and legacy `SD300-installer.sh` / `SD300-installer.ps1` aliases so install docs and old updaters keep working. `allow-dirty = ["ci", "msi"]` is set in `Cargo.toml` because the release workflow and MSI product naming are deliberately customized.
 
 ## Architecture
 
