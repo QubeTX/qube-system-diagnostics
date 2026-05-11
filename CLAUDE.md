@@ -32,12 +32,15 @@ The standard deploy path is a push to the repository default branch (`main`) wit
 
 On `main`, the release workflow reads the package name/version, checks crates.io, GitHub Releases, and tags, then:
 - skips deployment if the exact version is already fully published everywhere
-- fails on partial-release states so a human can repair or bump forward
+- repairs a crates.io-published/GitHub-release-missing state by rebuilding artifacts and finishing release hosting
+- fails other partial-release states so a human can repair or bump forward
 - runs cargo-dist artifact builds for all configured targets before hosting anything
-- creates the `v{VERSION}` GitHub release and installer assets
 - publishes the `sd300` crate only after GitHub Actions has built all cargo-dist artifacts
+- creates the `v{VERSION}` GitHub release and installer assets only after the crates.io publish step succeeds or confirms the version is already published
 
 Version tag pushes (`v*.*.*`) remain supported for explicit/manual releases, but the normal automation path is main-branch push. `CARGO_REGISTRY_TOKEN` must exist as a GitHub Actions secret; never commit registry tokens or publish from a local machine unless the user explicitly asks for an emergency manual publish after CI status has been checked.
+
+If crates.io rejects a publish because a recently deleted case-equivalent crate name is still in its reuse cooldown, do not bump or manually publish around it. Rerun the failed Release workflow after the timestamp reported by crates.io, then verify `cargo install sd300 --version {VERSION}` and the GitHub Release assets.
 
 cargo-dist builds for 6 targets (x86_64/aarch64 across Windows/macOS/Linux) and produces `sd300-*` archives plus shell, PowerShell, and MSI installers. The release workflow also uploads legacy `SD300-installer.sh` / `SD300-installer.ps1` aliases so old updaters can still self-update. `allow-dirty = ["ci"]` is set in `Cargo.toml` because the release workflow has deliberate deployment-gate customizations.
 

@@ -731,6 +731,8 @@ The TUI must handle varying terminal sizes gracefully. `ratatui` provides a cons
 | `sd300`             | Launch with mode selection screen                    |
 | `sd300 --user`      | Launch directly into User Mode                       |
 | `sd300 --tech`      | Launch directly into Technician Mode                 |
+| `sd300 update`      | Check for and install the latest release             |
+| `sd300 --update`    | Legacy update flag for existing scripts              |
 | `sd300 --help`      | Show help text                                       |
 | `sd300 --version`   | Show version                                         |
 
@@ -743,7 +745,8 @@ The TUI must handle varying terminal sizes gracefully. `ratatui` provides a cons
 | `m`          | Return to mode selection screen             |
 | `?`          | Show help overlay                           |
 | `j` / `k`    | Scroll (in scrollable views, Technician)    |
-| `c` / `m` / `p` / `n` | Sort processes (Technician, Section 7) |
+| `c` / `M` / `n` / `p` | Sort processes by CPU, memory, name, PID (Section 7) |
+| `f`          | Toggle temperature units between Celsius and Fahrenheit |
 | `r`          | Manual refresh (Section 9 — Drivers & Devices) |
 
 ---
@@ -752,9 +755,13 @@ The TUI must handle varying terminal sizes gracefully. `ratatui` provides a cons
 
 Consistent with the rest of the 300 Series:
 
-- **GitHub Releases** with prebuilt binaries for Windows (x86_64), macOS (x86_64, aarch64), Linux (x86_64, aarch64).
-- **Shell installer:** `curl ... | sh` one-liner for macOS/Linux.
-- **Cargo install:** `cargo install sd-300`.
+- **GitHub Releases** with prebuilt binaries for Windows x86_64, macOS x86_64/aarch64, Linux x86_64 GNU, Linux x86_64 musl, and Linux aarch64 GNU.
+- **Shell installer:** `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.sh | sh` for macOS/Linux.
+- **PowerShell installer:** `powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.ps1 | iex"` for Windows.
+- **Windows MSI:** `sd300-x86_64-pc-windows-msvc.msi` from GitHub Releases.
+- **Cargo install:** `cargo install sd300`.
+- **Self-update:** `sd300 update` first tries `cargo install sd300 --force` when Cargo is available, then falls back to the cargo-dist shell or PowerShell installers.
+- **Release automation:** GitHub Actions verifies source state, builds all cargo-dist artifacts, publishes the lowercase `sd300` crate with `CARGO_REGISTRY_TOKEN`, then hosts the GitHub Release and installer assets. Legacy `SD300-installer.sh` and `SD300-installer.ps1` aliases are also uploaded so 1.4.0/1.4.1 updaters can still fall back to installers.
 - **Single static binary, zero runtime dependencies.** (NVML/GPU features degrade gracefully if the GPU drivers aren't present.)
 
 ---
@@ -762,18 +769,18 @@ Consistent with the rest of the 300 Series:
 ## 10. Branding & Visual Consistency
 
 - Application header: `SD-300 SYSTEM DIAGNOSTIC` / `QUBETX DEVELOPER TOOLS`.
-- Color palette consistent with TR-300: greens, blues, white on dark terminal backgrounds. Accent colors for alerts (yellow warn, red fail).
+- Color palette: warm earth tones with sage green for good status, warm amber for warning, terracotta red for critical, warm gold accents, warm white text, and dark warm gray borders.
 - Box-drawing and table styling should match TR-300's aesthetic, adapted for the TUI context.
-- The landing page (sd300.emmetts.dev or sd300.qubetx.com) follows the same design template as tr300.emmetts.dev.
+- User-facing install documentation lives in `README.md`; any future landing page should use the same canonical lowercase `sd300` package and installer names.
 
 ---
 
 ## 11. Summary of Deliverables
 
 1. **Rust binary** — `sd300` — cross-platform, single static binary.
-2. **GitHub repository** — under the QubeTX organization, with README, LICENSE (PolyForm Noncommercial), CI/CD for release builds.
-3. **Shell installer script** — consistent with TR-300's installation method.
-4. **Landing page** — product page matching the TR-300 site design.
+2. **GitHub repository** — under the QubeTX organization, with README, LICENSE (PolyForm Noncommercial), changelog, project context, and CI/CD for release builds.
+3. **Installers and package publishing** — cargo-dist shell/PowerShell/MSI installers plus the lowercase `sd300` crates.io package.
+4. **Update path** — `sd300 update` and legacy `sd300 --update` for CI-built release updates.
 
 ---
 

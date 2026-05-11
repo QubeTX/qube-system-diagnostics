@@ -84,6 +84,18 @@ sd300 --help       # Show help
 sd300 --version    # Show version
 ```
 
+## Updates
+
+Run `sd300 update` to check for and install the latest GitHub release. The
+legacy `sd300 --update` flag is still supported for existing scripts.
+
+Update checks run before the Ratatui terminal UI is initialized. If Cargo is
+available, SD-300 tries `cargo install sd300 --force` first. If Cargo is not
+available or the Cargo update fails, it falls back to the cargo-dist installers:
+`sd300-installer.sh` through `curl`/`wget` on macOS and Linux, and
+`sd300-installer.ps1` through `powershell.exe`/`pwsh.exe` on Windows. Update
+failures report per-attempt diagnostics and exit with status `2`.
+
 ## Keybindings
 
 | Key | Action |

@@ -4,7 +4,7 @@
 
 SD-300 is a Rust/Ratatui cross-platform system diagnostics and monitoring TUI for Windows, macOS, and Linux. The binary is `sd300`; the crates.io package is lowercase `sd300`, so users should install with `cargo install sd300`.
 
-Current work moves the project to version `1.4.2`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`; adds `sd300 update`; bounds external collector commands; moves slow scans to background jobs; adds CI, cargo-dist deployment, and crates.io publishing automation.
+Current state is version `1.4.2`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`; it includes `sd300 update`, bounded external collector commands, background slow scans, CI, cargo-dist deployment, and crates.io publishing automation.
 
 ## Current Status
 
@@ -19,7 +19,8 @@ Current work moves the project to version `1.4.2`, Rust `1.95`, `sysinfo` `0.39.
   - Medium refresh: active network connections.
   - Background jobs: connectivity, disk health, drivers.
 - Packaging:
-  - cargo-dist release workflow is intentionally customized like ND-300: `main` pushes verify release state, build artifacts, create the GitHub release, then publish crates.io.
+  - cargo-dist release workflow is intentionally customized like ND-300: `main` pushes verify release state, build artifacts, publish crates.io, then host the GitHub release and installer assets.
+  - The workflow can finish hosting if crates.io already has the exact version but the GitHub release is missing.
   - `allow-dirty = ["ci"]` is set in cargo-dist metadata because `.github/workflows/release.yml` has deliberate deployment-gate customizations.
 
 ## Goals

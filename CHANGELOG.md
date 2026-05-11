@@ -5,16 +5,20 @@ All notable changes to SD-300 will be documented in this file.
 ## [1.4.2] - 2026-05-11
 
 ### Changed
-- Switched the canonical crates.io package name to lowercase `sd300` so `cargo install sd300` works while the installed command remains `sd300`.
-- Recreated the crates.io package under lowercase `sd300` after removing the accidental uppercase `SD300` package.
+- Switched the canonical crates.io package metadata to lowercase `sd300` so the supported Cargo install path is `cargo install sd300` while the installed command remains `sd300`.
+- Removed the accidental uppercase `SD300` package from the release path and prepared the package for lowercase `sd300` publication.
 - Updated `sd300 update` to use `cargo install sd300 --force` and lowercase cargo-dist installer asset URLs.
 - Updated WiX/MSI product naming to lowercase `sd300`.
-- Updated README, changelog, project context, local agent docs, and global Codex agent guidance for lowercase package/install/update behavior.
+- Updated README, changelog, project context, project plan, local agent docs, and global Codex agent guidance for lowercase package, install, update, and release behavior.
 - Release automation now publishes the crate after all cargo-dist artifacts build but before hosting the GitHub Release, reducing partial-release risk if crates.io rejects a publish.
 - Release source-check can now repair a crates.io-published/GitHub-release-missing partial state by rebuilding artifacts and finishing release hosting.
 
 ### Added
 - GitHub release uploads legacy `SD300-installer.sh` and `SD300-installer.ps1` aliases alongside lowercase installer assets so already-installed `1.4.0`/`1.4.1` updaters can still fall back to the installer path.
+
+The `1.4.0` and `1.4.1` entries below are retained as historical notes for the
+short-lived uppercase crates.io package path. `1.4.2` supersedes that path with
+the canonical lowercase `sd300` package and installer asset names.
 
 ## [1.4.1] - 2026-05-11
 
@@ -37,7 +41,7 @@ All notable changes to SD-300 will be documented in this file.
 - CI workflow covering Ubuntu, macOS, and Windows with format checks, Clippy, tests, release build, target checks, audit, and `cargo-dist` plan.
 - ND-300-style release workflow that can deploy from `main` when the current version is unreleased, while preserving explicit `v*.*.*` tag releases.
 - Release source-check job that reads package metadata from `Cargo.toml`, checks crates.io version state, GitHub Release state, and remote tag state, skips fully published versions, and fails partial-release states before artifacts or crates are published.
-- Crates.io publish job that runs only after cargo-dist artifact builds and GitHub Release hosting succeed, rechecks the crate version, skips already-published versions, and publishes `SD300` with the `CARGO_REGISTRY_TOKEN` Actions secret.
+- Initial crates.io publish job for the short-lived uppercase `SD300` release path; this was later superseded in `1.4.2` by the lowercase `sd300` package and publish-before-hosting release order.
 - Tests for CLI update parsing/help/conflicts, updater strategy ordering and version comparison, bounded command timeout behavior, gateway/socket parser fixtures, and macOS disk/system-profiler parsers.
 - `CODEX_PROJECT.md` project context file with current status and file tree.
 - Local `AGENTS.md`, `CLAUDE.md`, and global Codex agent guidance documenting the SD300 release, publish, installation, and update workflows.
