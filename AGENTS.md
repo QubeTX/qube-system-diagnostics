@@ -17,7 +17,7 @@ cargo clippy                   # Lint
 cargo test                     # Run tests (assert_cmd/predicates available for CLI integration tests)
 ```
 
-The binary is named `sd300` (not `sd-300`). The crates.io package name is `SD300`; use `cargo install SD300` for Cargo installs. The installed command remains lowercase `sd300`, and the Rust library target is `sd_300`.
+The binary is named `sd300` (not `sd-300`). The crates.io package name is lowercase `sd300`; use `cargo install sd300` for Cargo installs. The Rust library target is `sd_300`.
 
 ## Release Process (cargo-dist + crates.io)
 
@@ -35,11 +35,11 @@ On `main`, the release workflow reads the package name/version, checks crates.io
 - fails on partial-release states so a human can repair or bump forward
 - runs cargo-dist artifact builds for all configured targets before hosting anything
 - creates the `v{VERSION}` GitHub release and installer assets
-- publishes the `SD300` crate only after the cargo-dist host job succeeds
+- publishes the `sd300` crate only after GitHub Actions has built all cargo-dist artifacts
 
 Version tag pushes (`v*.*.*`) remain supported for explicit/manual releases, but the normal automation path is main-branch push. `CARGO_REGISTRY_TOKEN` must exist as a GitHub Actions secret; never commit registry tokens or publish from a local machine unless the user explicitly asks for an emergency manual publish after CI status has been checked.
 
-cargo-dist builds for 6 targets (x86_64/aarch64 across Windows/macOS/Linux) and produces `SD300-*` archives plus shell, PowerShell, and MSI installers. `allow-dirty = ["ci"]` is set in `Cargo.toml` because the release workflow has deliberate deployment-gate customizations.
+cargo-dist builds for 6 targets (x86_64/aarch64 across Windows/macOS/Linux) and produces `sd300-*` archives plus shell, PowerShell, and MSI installers. The release workflow also uploads legacy `SD300-installer.sh` / `SD300-installer.ps1` aliases so old updaters can still self-update. `allow-dirty = ["ci"]` is set in `Cargo.toml` because the release workflow has deliberate deployment-gate customizations.
 
 ## Architecture
 

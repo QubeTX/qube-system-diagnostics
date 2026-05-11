@@ -2,9 +2,9 @@
 
 ## TL;DR
 
-SD-300 is a Rust/Ratatui cross-platform system diagnostics and monitoring TUI for Windows, macOS, and Linux. The binary is `sd300`; the crates.io package is `SD300`, so users should install with `cargo install SD300`.
+SD-300 is a Rust/Ratatui cross-platform system diagnostics and monitoring TUI for Windows, macOS, and Linux. The binary is `sd300`; the crates.io package is lowercase `sd300`, so users should install with `cargo install sd300`.
 
-Current work moves the project to version `1.4.1`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`; adds `sd300 update`; bounds external collector commands; moves slow scans to background jobs; adds CI, cargo-dist deployment, and crates.io publishing automation.
+Current work moves the project to version `1.4.2`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`; adds `sd300 update`; bounds external collector commands; moves slow scans to background jobs; adds CI, cargo-dist deployment, and crates.io publishing automation.
 
 ## Current Status
 

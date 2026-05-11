@@ -7,28 +7,27 @@ Real-time interactive TUI for system diagnostics and monitoring. Part of the **Q
 ### Shell (macOS/Linux)
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/SD300-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.sh | sh
 ```
 
 ### PowerShell (Windows)
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/SD300-installer.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.ps1 | iex"
 ```
 
 ### Windows Installer (.msi)
 
-Download `SD300-x86_64-pc-windows-msvc.msi` from the [Releases](https://github.com/QubeTX/qube-system-diagnostics/releases) page.
+Download `sd300-x86_64-pc-windows-msvc.msi` from the [Releases](https://github.com/QubeTX/qube-system-diagnostics/releases) page.
 
 ### Cargo
 
 ```sh
-cargo install SD300
+cargo install sd300
 ```
 
-Published releases are available as the `SD300` crate. crates.io lookups are
-case-sensitive for `cargo install`, so use the package casing shown above. The
-installed binary is lowercase: `sd300`.
+Published releases are available as the lowercase `sd300` crate. The installed
+binary is also lowercase: `sd300`.
 
 ### From Source
 

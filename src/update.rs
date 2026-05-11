@@ -5,16 +5,16 @@ use crate::error::Result;
 
 pub const RELEASES_URL: &str =
     "https://api.github.com/repos/QubeTX/qube-system-diagnostics/releases/latest";
-const CRATE_NAME: &str = "SD300";
+const CRATE_NAME: &str = "sd300";
 const MANUAL_INSTALL_URL: &str = "https://github.com/QubeTX/qube-system-diagnostics#installation";
 
 #[cfg(not(windows))]
 const SHELL_INSTALLER: &str =
-    "https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/SD300-installer.sh";
+    "https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.sh";
 
 #[cfg(windows)]
 const PS_INSTALLER: &str =
-    "https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/SD300-installer.ps1";
+    "https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-installer.ps1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UpdateStrategy {

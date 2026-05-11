@@ -2,10 +2,24 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [1.4.2] - 2026-05-11
+
+### Changed
+- Switched the canonical crates.io package name to lowercase `sd300` so `cargo install sd300` works while the installed command remains `sd300`.
+- Recreated the crates.io package under lowercase `sd300` after removing the accidental uppercase `SD300` package.
+- Updated `sd300 update` to use `cargo install sd300 --force` and lowercase cargo-dist installer asset URLs.
+- Updated WiX/MSI product naming to lowercase `sd300`.
+- Updated README, changelog, project context, local agent docs, and global Codex agent guidance for lowercase package/install/update behavior.
+- Release automation now publishes the crate after all cargo-dist artifacts build but before hosting the GitHub Release, reducing partial-release risk if crates.io rejects a publish.
+- Release source-check can now repair a crates.io-published/GitHub-release-missing partial state by rebuilding artifacts and finishing release hosting.
+
+### Added
+- GitHub release uploads legacy `SD300-installer.sh` and `SD300-installer.ps1` aliases alongside lowercase installer assets so already-installed `1.4.0`/`1.4.1` updaters can still fall back to the installer path.
+
 ## [1.4.1] - 2026-05-11
 
 ### Changed
-- Corrected Cargo installation documentation after release verification: the crates.io package is `SD300`, `cargo install` requires that package casing, and the installed command remains lowercase `sd300`.
+- Corrected Cargo installation documentation after release verification: the originally published crates.io package was `SD300`, `cargo install` required that package casing, and the installed command remained lowercase `sd300`.
 
 ## [1.4.0] - 2026-05-11
 
