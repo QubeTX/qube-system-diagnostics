@@ -6,6 +6,8 @@ SD-300 is a Rust/Ratatui cross-platform system diagnostics and monitoring TUI fo
 
 Current state is version `1.4.3`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`; it includes `sd300 update`, bounded external collector commands, background slow scans, CI, cargo-dist deployment, and crates.io publishing automation.
 
+The 2026-07-17 M2 MacBook Pro research checkpoint documents the gap between the current macOS baseline and a comprehensive hardware monitor. The implementation-ready report is at [`docs/research/2026-07-17-macos-hardware-monitor-capability-report.md`](docs/research/2026-07-17-macos-hardware-monitor-capability-report.md). No runtime redesign has been applied yet; most implementation is intentionally reserved for the Alienware/Windows phase, with later physical-Mac validation gates.
+
 ## Current Status
 
 - Primary CLI paths:
@@ -18,6 +20,11 @@ Current state is version `1.4.3`, Rust `1.95`, `sysinfo` `0.39.x`, and `crosster
   - Slow refresh: disk, GPU, thermals.
   - Medium refresh: active network connections.
   - Background jobs: connectivity, disk health, drivers.
+- macOS research status:
+  - Live-tested on a native arm64 `Mac14,7` M2 MacBook Pro running macOS 26.3.1.
+  - Current collectors expose only a baseline and misclassify or omit multiple locally available signals.
+  - The research report specifies public and private access tiers, exact Rust/FFI integration guidance, safe cadence/redaction, sanitized real payload examples, the macOS 26 non-guaranteed NVMe SMART-detail route, different-Mac qualification, and optional Vercel Labs Native GUI boundaries.
+  - TUI and CLI remain the canonical product surfaces; the GUI is only a decoupled experiment.
 - Packaging:
   - cargo-dist release workflow is intentionally customized like ND-300: `main` pushes verify release state, build artifacts, publish crates.io, then host the GitHub release and installer assets.
   - The workflow can finish hosting if crates.io already has the exact version but the GitHub release is missing.
@@ -32,6 +39,8 @@ Current state is version `1.4.3`, Rust `1.95`, `sysinfo` `0.39.x`, and `crosster
 - Keep User Mode clear and nontechnical while preserving dense Technician Mode views.
 - Preserve the `sd300` binary name even if package naming changes.
 - Keep GitHub Actions artifact builds as the release gate before any crates.io publish.
+- Build a provenance-first, capability-detected monitor where unsupported, absent, denied, stale, and failed readings are never converted into positive health claims.
+- Preserve platform collectors behind a reusable Rust core so the same observations can serve CLI, TUI, safe exports, and an optional GUI.
 
 ## File Tree
 
@@ -54,6 +63,11 @@ Current state is version `1.4.3`, Rust `1.95`, `sysinfo` `0.39.x`, and `crosster
 ├── README.md
 ├── SD300-Project-Plan.md
 ├── build.rs
+├── docs
+│   ├── research
+│   │   └── 2026-07-17-macos-hardware-monitor-capability-report.md
+│   └── thinking
+│       └── 2026-07-17-macos-hardware-monitor-inquiry.md
 ├── rust-toolchain.toml
 ├── src
 │   ├── app.rs

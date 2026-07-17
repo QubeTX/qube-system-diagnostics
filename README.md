@@ -125,18 +125,20 @@ report per-attempt diagnostics and exit with status `2`.
 
 | Platform | Target | Status |
 |----------|--------|--------|
-| Windows x86_64 | `x86_64-pc-windows-msvc` | Full support |
-| macOS x86_64 | `x86_64-apple-darwin` | Full support |
-| macOS ARM | `aarch64-apple-darwin` | Full support |
-| Linux x86_64 | `x86_64-unknown-linux-gnu` | Full support |
-| Linux x86_64 (musl) | `x86_64-unknown-linux-musl` | Full support |
-| Linux ARM | `aarch64-unknown-linux-gnu` | Full support |
+| Windows x86_64 | `x86_64-pc-windows-msvc` | Supported baseline |
+| macOS x86_64 | `x86_64-apple-darwin` | Supported build target; Intel runtime qualification pending |
+| macOS ARM | `aarch64-apple-darwin` | Supported baseline; M2 capability research complete |
+| Linux x86_64 | `x86_64-unknown-linux-gnu` | Supported baseline |
+| Linux x86_64 (musl) | `x86_64-unknown-linux-musl` | Supported baseline |
+| Linux ARM | `aarch64-unknown-linux-gnu` | Supported baseline |
 
 ### Platform-Specific Features
 
 - **Windows**: Setup API driver scanning, battery info via PowerShell, GPU via nvidia-smi
 - **Linux**: sysfs-based driver scanning, PCI device enumeration, ALSA audio detection
-- **macOS**: IOKit-based driver scanning, system_profiler integration
+- **macOS**: bounded `system_profiler`/`diskutil`/network fallbacks plus `sysinfo`; the current implementation does not yet expose the full native hardware capability discovered on real M2 hardware
+
+The exhaustive [macOS hardware-monitor capability and Rust implementation report](https://github.com/QubeTX/qube-system-diagnostics/blob/main/docs/research/2026-07-17-macos-hardware-monitor-capability-report.md) records what was actually accessible on a `Mac14,7` M2 MacBook Pro, exact private/public API routes, sanitized real request/response payloads, privacy and privilege boundaries, current correctness gaps, different-Mac qualification needs, and the Alienware implementation plan. The report is a research handoff, not a claim that those deeper collectors are already implemented.
 
 ## Screenshots
 

@@ -2,6 +2,26 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [Unreleased] - 2026-07-17
+
+### Added
+
+- Added an exhaustive, privacy-sanitized macOS hardware-monitor capability and implementation report based primarily on live testing of a `Mac14,7` M2 MacBook Pro running macOS 26.3.1.
+- Documented locally proven unprivileged access to 38 IOHID temperature services, read-only AppleSMC fan telemetry, IOReport energy/frequency residency, Metal/AGX data, battery/adapter internals, APFS/NVMe status, block-I/O counters, Wi-Fi radio state, displays, and device inventories.
+- Added implementation-ready Rust guidance covering module boundaries, target dependencies, FFI ownership, exact private-interface call sequences and SMC ABI layout, collector cadence, availability/provenance types, redaction, fixtures, CI, and later Mac qualification.
+- Documented the macOS 26 unprivileged `diskutil` NVMe SMART-detail dictionary, including spare/life-used/temperature/lifecycle/error fields, checked conversion rules, and its explicit non-guaranteed cross-version status.
+- Added sanitized real request/response examples for `system_profiler`, `diskutil`, I/O Registry, IOHID, AppleSMC, and IOReport, with exact command envelopes and typed parser schemas but no stable machine, account, network, or device identifiers.
+- Added a critical-thinking inquiry canvas that separates exact-host observations, public contracts, private/model-specific behavior, and unverified fleet assumptions.
+
+### Changed
+
+- Corrected project documentation so macOS is described as a supported baseline with known telemetry gaps instead of claiming comprehensive IOKit-based/full monitoring.
+- Recorded Vercel Labs Native as an optional pre-1.0 GUI experiment while preserving the Rust CLI and Ratatui TUI as the canonical interfaces.
+
+### Notes
+
+- This research update intentionally makes no runtime, dependency, release, package, or TUI behavior changes.
+
 ## [1.4.3] - 2026-05-11
 
 ### Changed
