@@ -6,14 +6,13 @@
 
 ## Active
 
-- [ ] **Align driver and thermal health reporting** - eliminate Alienware driver false positives and expand truthful thermal provider coverage #dth
+## Done
+
+- [x] **Align driver and thermal health reporting** - Alienware driver parity, truthful thermal provider coverage, and lifecycle fix-forward release are live in v2.0.6 #dth
   - [x] Use authoritative Windows PnP problem-code precedence
   - [x] Show every genuine driver issue counted by the overview
   - [x] Merge available GPU and hardware-monitor thermal readings with provenance
-  - [ ] Prove snapshot and TUI parity on Alienware plus hosted targets
-
-## Done
-
+  - [x] Prove snapshot and TUI parity on Alienware plus hosted targets
 - [x] **Prove complete CLI uninstall and publish the command** - `sd300 uninstall` removes every proven owner and is live on the SD-300 website #unx
   - [x] Verify public managed PowerShell update, uninstall, and reinstall on Alienware
   - [x] Exercise Corporate MSI CLI uninstall on Alienware
