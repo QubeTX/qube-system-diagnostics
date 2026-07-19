@@ -45,7 +45,7 @@ On `main`, the release workflow reads the package name/version, checks crates.io
 - runs cargo-dist artifact builds for all configured targets before hosting anything
 - creates an unpublished `v{VERSION}` draft after all cargo-dist artifacts build
 - renders stable managed wrappers, internal exact-tag cargo-dist installers, and immutable-client compatibility routers with SHA-256 sidecars
-- builds and exercises Global/Corporate MSI and EXE installers on Windows, including synthetic-prior real self-updates and complete CLI uninstalls through all four preserved channels
+- builds and exercises Global/Corporate MSI and EXE installers on Windows, including synthetic-prior real self-updates, complete CLI uninstalls, and deliberate fresh takeovers into the managed PowerShell channel through all four native lanes
 - builds a signed/notarized universal PKG and exercises managed-shell uninstall plus synthetic-prior same-PKG update/uninstall on native Intel and Apple Silicon runners
 - publishes the `tr300-tui` crate only after the complete native asset/checksum/test matrix passes
 - publishes the draft as `latest` immediately after the qualified crate step, then proves public Linux managed-shell and Cargo updates plus fresh install/uninstall

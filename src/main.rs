@@ -63,6 +63,14 @@ async fn main() -> Result<()> {
                 );
                 std::process::exit(exit_code);
             }
+            Command::InstallWorker(args) => {
+                let exit_code = sd_300::update::run_windows_install_worker(
+                    &args.install_channel,
+                    &args.install_version,
+                    &args.install_backup,
+                );
+                std::process::exit(exit_code);
+            }
             Command::UninstallWorker(args) => {
                 let exit_code = sd_300::update::run_windows_uninstall_worker(
                     &args.uninstall_channel,

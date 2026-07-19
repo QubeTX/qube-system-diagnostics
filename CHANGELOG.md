@@ -2,6 +2,14 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [2.0.5] - 2026-07-19
+
+### Fixed
+
+- Added a rollback-capable Windows live-image handoff to `sd300 install`, allowing an intentional managed PowerShell reinstall to replace the currently running managed, Cargo, or Corporate binary without colliding with its open executable.
+- Added a tightly validated elevated worker for deliberate Global MSI/EXE to managed-PowerShell takeovers, with exact release pinning, ownership revalidation, rollback, and bounded trusted cleanup.
+- Expanded Windows release qualification so all four native channels must successfully transfer ownership through `sd300 install --json`, remove their native registration, marker, PATH entry, and payload root, verify the managed receipt/binary, and then uninstall cleanly.
+
 ## [2.0.4] - 2026-07-19
 
 ### Fixed

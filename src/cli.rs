@@ -21,6 +21,9 @@ pub enum Command {
     /// Perform an elevated, pinned, same-channel Global Windows update.
     #[command(hide = true)]
     UpdateWorker(UpdateWorkerArgs),
+    /// Perform an elevated, pinned Global-to-managed Windows takeover.
+    #[command(hide = true)]
+    InstallWorker(InstallWorkerArgs),
     /// Perform an elevated, proven-owner Global Windows uninstall.
     #[command(hide = true)]
     UninstallWorker(UninstallWorkerArgs),
@@ -95,6 +98,21 @@ pub struct UpdateWorkerArgs {
     /// Exact private sibling reserved by the unelevated parent.
     #[arg(long = "update-backup", value_name = "PATH", hide = true)]
     pub update_backup: std::path::PathBuf,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct InstallWorkerArgs {
+    /// Exact Global Windows channel selected by the unelevated parent.
+    #[arg(long = "install-channel", value_name = "CHANNEL", hide = true)]
+    pub install_channel: String,
+
+    /// Exact immutable release version selected by the unelevated parent.
+    #[arg(long = "install-version", value_name = "VERSION", hide = true)]
+    pub install_version: String,
+
+    /// Exact private sibling reserved by the unelevated parent.
+    #[arg(long = "install-backup", value_name = "PATH", hide = true)]
+    pub install_backup: std::path::PathBuf,
 }
 
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
@@ -292,6 +310,22 @@ mod tests {
         ])
         .expect("hidden update worker should parse");
         assert!(matches!(worker.command, Some(Command::UpdateWorker(_))));
+
+        let install_worker = Cli::try_parse_from([
+            "sd300",
+            "install-worker",
+            "--install-channel",
+            "exe-global",
+            "--install-version",
+            "2.0.0",
+            "--install-backup",
+            r"C:\Program Files\sd300\bin\.sd300-update-backup-12-34.exe",
+        ])
+        .expect("hidden install worker should parse");
+        assert!(matches!(
+            install_worker.command,
+            Some(Command::InstallWorker(_))
+        ));
 
         let cleanup = Cli::try_parse_from([
             "sd300",

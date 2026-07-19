@@ -239,12 +239,7 @@ pub fn install(json: bool) -> Result<i32> {
             channel.label()
         );
     }
-    let outcome = execute_managed_wrapper(channel, &release, json).and_then(|()| {
-        let binary = managed_receipt_binary().ok_or_else(|| {
-            "The managed installer finished without a matching receipt and binary".to_string()
-        })?;
-        verify_version(&binary, &release.version)
-    });
+    let outcome = perform_managed_install(channel, &release, json);
     match outcome {
         Ok(()) => emit(
             json,
@@ -416,6 +411,56 @@ fn perform_update(
     }
 }
 
+fn perform_managed_install(
+    channel: InstallChannel,
+    release: &Release,
+    quiet_stdout: bool,
+) -> std::result::Result<(), String> {
+    let attempt = || {
+        execute_managed_wrapper(channel, release, quiet_stdout)?;
+        let binary = managed_receipt_binary().ok_or_else(|| {
+            "The managed installer finished without a matching receipt and binary".to_string()
+        })?;
+        verify_version(&binary, &release.version)
+    };
+
+    #[cfg(windows)]
+    {
+        let current = std::env::current_exe()
+            .map_err(|error| format!("Could not resolve the running executable: {error}"))?;
+        if expected_windows_binary(InstallChannel::MsiGlobal)
+            .is_some_and(|expected| path_eq(&current, &expected))
+        {
+            if let Some(existing) = detect_windows_native_channel(&current)? {
+                if existing.global_worker_id().is_some() {
+                    return with_elevated_windows_managed_install_handoff(existing, release);
+                }
+            }
+            return Err(
+                "The running executable is in the Global install path, but no proven Global installer owns it. No mutation was attempted."
+                    .into(),
+            );
+        }
+        if expected_windows_binary(InstallChannel::MsiCorporate)
+            .is_some_and(|expected| path_eq(&current, &expected))
+        {
+            return with_windows_managed_takeover_handoff(attempt);
+        }
+        if cargo_binary_path().is_some_and(|expected| path_eq(&current, &expected)) {
+            return with_windows_live_image_handoff(attempt);
+        }
+        if managed_receipt_binary().is_some_and(|expected| path_eq(&current, &expected)) {
+            return with_windows_managed_takeover_handoff(attempt);
+        }
+        attempt()
+    }
+
+    #[cfg(not(windows))]
+    {
+        attempt()
+    }
+}
+
 fn execute_managed_wrapper(
     channel: InstallChannel,
     release: &Release,
@@ -548,6 +593,16 @@ where
 }
 
 #[cfg(windows)]
+fn with_windows_managed_takeover_handoff<F>(attempt: F) -> std::result::Result<(), String>
+where
+    F: FnOnce() -> std::result::Result<(), String>,
+{
+    cleanup_stale_windows_update_backups();
+    let handoff = WindowsLiveImageHandoff::begin()?;
+    handoff.finish_managed_takeover(attempt())
+}
+
+#[cfg(windows)]
 fn with_elevated_windows_live_image_handoff(
     installation: &Installation,
     release: &Release,
@@ -565,6 +620,28 @@ fn with_elevated_windows_live_image_handoff(
         ));
     }
     verify_version(&installation.binary_path, &release.version)
+}
+
+#[cfg(windows)]
+fn with_elevated_windows_managed_install_handoff(
+    existing: InstallChannel,
+    release: &Release,
+) -> std::result::Result<(), String> {
+    let handoff = WindowsLiveImageHandoff::plan()?;
+    let channel = existing
+        .global_worker_id()
+        .ok_or_else(|| "Refused a non-Global elevated managed install request".to_string())?;
+    let exit_code =
+        launch_elevated_windows_install_worker(channel, &release.version, &handoff.backup)?;
+    if exit_code != 0 {
+        return Err(format!(
+            "The elevated managed install worker exited with code {exit_code}. It retained or restored the Global executable; verify `sd300 --version` before retrying."
+        ));
+    }
+    let binary = managed_receipt_binary().ok_or_else(|| {
+        "The elevated managed installer finished without a matching receipt and binary".to_string()
+    })?;
+    verify_version(&binary, &release.version)
 }
 
 #[cfg(windows)]
@@ -600,6 +677,55 @@ pub fn run_windows_update_worker(channel: &str, version: &str, backup: &Path) ->
             2
         }
     }
+}
+
+#[cfg(windows)]
+pub fn run_windows_install_worker(channel: &str, version: &str, backup: &Path) -> i32 {
+    let Some(existing) = InstallChannel::from_global_worker_id(channel) else {
+        return 2;
+    };
+    if !is_worker_release_version(version) {
+        return 2;
+    }
+    let current = match std::env::current_exe() {
+        Ok(current) => current,
+        Err(_) => return 2,
+    };
+    match detect_windows_native_channel(&current) {
+        Ok(Some(channel)) if channel == existing => {}
+        _ => return 2,
+    }
+    cleanup_stale_windows_update_backups();
+    let handoff = match WindowsLiveImageHandoff::begin_with_backup(backup) {
+        Ok(handoff) => handoff,
+        Err(message) => {
+            eprintln!("SD-300 install worker refused the handoff: {message}");
+            return 2;
+        }
+    };
+    let release = Release {
+        tag: format!("v{version}"),
+        version: version.to_string(),
+    };
+    let outcome = execute_managed_wrapper(InstallChannel::PowerShellInstaller, &release, true)
+        .and_then(|()| {
+            let binary = managed_receipt_binary().ok_or_else(|| {
+                "The managed installer finished without a matching receipt and binary".to_string()
+            })?;
+            verify_version(&binary, version)
+        });
+    match handoff.finish_managed_takeover(outcome) {
+        Ok(()) => 0,
+        Err(message) => {
+            eprintln!("SD-300 install worker failed safely: {message}");
+            2
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn run_windows_install_worker(_channel: &str, _version: &str, _backup: &Path) -> i32 {
+    2
 }
 
 #[cfg(not(windows))]
@@ -725,6 +851,87 @@ fn launch_elevated_windows_update_worker(
     unsafe { CloseHandle(info.hProcess) };
     if got_exit == 0 {
         return Err("Windows did not return the update-worker exit code".into());
+    }
+    Ok(exit_code)
+}
+
+#[cfg(windows)]
+fn launch_elevated_windows_install_worker(
+    channel: &str,
+    version: &str,
+    backup: &Path,
+) -> std::result::Result<u32, String> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::{null, null_mut};
+    use winapi::um::errhandlingapi::GetLastError;
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::processthreadsapi::GetExitCodeProcess;
+    use winapi::um::shellapi::{
+        ShellExecuteExW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
+    use winapi::um::synchapi::WaitForSingleObject;
+    use winapi::um::winbase::{INFINITE, WAIT_OBJECT_0};
+    use winapi::um::winuser::SW_HIDE;
+
+    if InstallChannel::from_global_worker_id(channel).is_none()
+        || !is_worker_release_version(version)
+    {
+        return Err("Refused an invalid elevated Global managed install request".into());
+    }
+    let current = std::env::current_exe()
+        .map_err(|error| format!("Could not resolve the Global executable: {error}"))?;
+    validate_windows_update_backup(&current, backup)?;
+    let backup = backup.to_str().ok_or_else(|| {
+        "The Global install path cannot be represented safely in the worker command line"
+            .to_string()
+    })?;
+    let parameters = format!(
+        "install-worker --install-channel {channel} --install-version {version} --install-backup {}",
+        windows_quote_command_arg(backup)
+    );
+    let verb: Vec<u16> = std::ffi::OsStr::new("runas")
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let file: Vec<u16> = current.as_os_str().encode_wide().chain(Some(0)).collect();
+    let parameters: Vec<u16> = std::ffi::OsStr::new(&parameters)
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+    info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    info.hwnd = null_mut();
+    info.lpVerb = verb.as_ptr();
+    info.lpFile = file.as_ptr();
+    info.lpParameters = parameters.as_ptr();
+    info.lpDirectory = null();
+    info.nShow = SW_HIDE;
+
+    if unsafe { ShellExecuteExW(&mut info) } == 0 {
+        let code = unsafe { GetLastError() };
+        return if code == 1223 {
+            Err("UAC was cancelled; the Global installation was not changed".into())
+        } else {
+            Err(format!(
+                "Could not start the elevated managed install worker (Windows error {code}: {})",
+                std::io::Error::from_raw_os_error(code as i32)
+            ))
+        };
+    }
+    if info.hProcess.is_null() {
+        return Err("Windows returned no install-worker process handle".into());
+    }
+    let wait = unsafe { WaitForSingleObject(info.hProcess, INFINITE) };
+    if wait != WAIT_OBJECT_0 {
+        unsafe { CloseHandle(info.hProcess) };
+        return Err(format!("Waiting for the install worker failed ({wait})"));
+    }
+    let mut exit_code = 0u32;
+    let got_exit = unsafe { GetExitCodeProcess(info.hProcess, &mut exit_code) };
+    unsafe { CloseHandle(info.hProcess) };
+    if got_exit == 0 {
+        return Err("Windows did not return the install-worker exit code".into());
     }
     Ok(exit_code)
 }
@@ -963,6 +1170,27 @@ impl WindowsLiveImageHandoff {
         }
     }
 
+    fn finish_managed_takeover(
+        self,
+        result: std::result::Result<(), String>,
+    ) -> std::result::Result<(), String> {
+        match result {
+            Ok(()) => schedule_windows_update_takeover_cleanup(&self.backup).map_err(|error| {
+                format!(
+                    "The managed install verified, but final cleanup could not start for {}: {error}",
+                    self.backup.display()
+                )
+            }),
+            Err(message) => match self.rollback() {
+                Ok(()) => Err(format!("{message}; the prior executable was restored")),
+                Err(error) => Err(format!(
+                    "{message}; rollback also failed ({error}); the prior executable remains at {}",
+                    self.backup.display()
+                )),
+            },
+        }
+    }
+
     fn rollback(&self) -> std::io::Result<()> {
         if self.original.exists() {
             std::fs::remove_file(&self.original)?;
@@ -1183,6 +1411,33 @@ fn schedule_windows_uninstall_cleanup(backup: &Path) -> std::result::Result<(), 
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("Could not schedule trusted uninstall cleanup: {error}"))
+}
+
+#[cfg(windows)]
+fn schedule_windows_update_takeover_cleanup(backup: &Path) -> std::result::Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const SCRIPT: &str = "$target=$env:SD300_UPDATE_BACKUP; $bin=[IO.Path]::GetDirectoryName($target); $root=[IO.Path]::GetDirectoryName($bin); for($i=0;$i -lt 600;$i++){try{[IO.File]::Delete($target)}catch{}; if(-not [IO.File]::Exists($target)){try{[IO.Directory]::Delete($bin,$false)}catch{}; try{[IO.Directory]::Delete($root,$false)}catch{}; exit 0}; Start-Sleep -Milliseconds 100}; exit 1";
+    let powershell =
+        trusted_windows_system_executable(Path::new("WindowsPowerShell\\v1.0\\powershell.exe"))?;
+    Command::new(powershell)
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            SCRIPT,
+        ])
+        .env("SD300_UPDATE_BACKUP", backup.as_os_str())
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Could not schedule trusted managed-install cleanup: {error}"))
 }
 
 #[cfg(windows)]

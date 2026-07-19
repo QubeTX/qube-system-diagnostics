@@ -142,6 +142,46 @@ function Assert-NativeUninstall(
     throw "$Channel uninstall left payload, registration, marker, PATH ownership, or an empty managed receipt directory"
 }
 
+function Assert-ManagedTakeover(
+    [string]$Binary,
+    [string]$NativeChannel,
+    [string]$Root,
+    [string]$DisplayName
+) {
+    $binDir = Split-Path -Parent $Binary
+    $lines = @(& $Binary install --json)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -or $lines.Count -ne 1) {
+        throw "$NativeChannel managed takeover did not return one successful JSON object (exit $exitCode, lines $($lines.Count)): $($lines -join ' | ')"
+    }
+    $result = $lines[0] | ConvertFrom-Json
+    if (-not $result.success -or
+        $result.install_channel -ne 'powershell-installer' -or
+        $result.target_version -ne $CandidateVersion) {
+        throw "$NativeChannel managed takeover reported the wrong owner or outcome: $($lines[0])"
+    }
+    for ($attempt = 0; $attempt -lt 1800; $attempt++) {
+        $marker = Get-ItemPropertyValue -Path 'Registry::HKEY_CURRENT_USER\Software\SD300' -Name InstallSource -ErrorAction SilentlyContinue
+        $ownsPath = (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'User')) $binDir) -or
+                    (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'Machine')) $binDir)
+        if (-not (Test-Path -LiteralPath $Root) -and
+            @(Get-Sd300Registrations $DisplayName).Count -eq 0 -and
+            -not $marker -and
+            -not $ownsPath -and
+            (Test-Path -LiteralPath $managedBinary) -and
+            (Test-Path -LiteralPath $managedReceipt)) {
+            $receipt = Get-Content -LiteralPath $managedReceipt -Raw | ConvertFrom-Json
+            $reported = @(& $managedBinary --version) | Select-Object -First 1
+            if ($receipt.version -ne $CandidateVersion -or $reported -ne "sd300 $CandidateVersion") {
+                throw "$NativeChannel takeover installed an unexpected managed version"
+            }
+            return
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    throw "$NativeChannel takeover left native payload, registration, marker, or PATH ownership"
+}
+
 function Assert-Update([string]$Binary, [string]$Channel, [string]$Root) {
     $lines = @(& $Binary update --json)
     $updateExitCode = $LASTEXITCODE
@@ -186,18 +226,30 @@ try {
     Invoke-Checked 'msiexec.exe' @('/i', $priorGlobalMsi, '/qn', '/norestart') @(0, 1641, 3010)
     Assert-Update (Join-Path $globalRoot 'bin\sd300.exe') 'msi-global' $globalRoot
     Assert-NativeUninstall (Join-Path $globalRoot 'bin\sd300.exe') 'msi-global' $globalRoot 'SD-300 Global'
+    Invoke-Checked 'msiexec.exe' @('/i', (Join-Path $CandidateAssets 'sd300-windows-x64-global.msi'), '/qn', '/norestart') @(0, 1641, 3010)
+    Assert-ManagedTakeover (Join-Path $globalRoot 'bin\sd300.exe') 'msi-global' $globalRoot 'SD-300 Global'
+    Assert-ManagedUninstall $managedBinary 'powershell-installer'
 
     Invoke-Checked 'msiexec.exe' @('/i', $priorCorporateMsi, '/qn', '/norestart') @(0, 1641, 3010)
     Assert-Update (Join-Path $corporateRoot 'bin\sd300.exe') 'msi-corporate' $corporateRoot
     Assert-NativeUninstall (Join-Path $corporateRoot 'bin\sd300.exe') 'msi-corporate' $corporateRoot 'SD-300 Corporate'
+    Invoke-Checked 'msiexec.exe' @('/i', (Join-Path $CandidateAssets 'sd300-windows-x64-corporate.msi'), '/qn', '/norestart') @(0, 1641, 3010)
+    Assert-ManagedTakeover (Join-Path $corporateRoot 'bin\sd300.exe') 'msi-corporate' $corporateRoot 'SD-300 Corporate'
+    Assert-ManagedUninstall $managedBinary 'powershell-installer'
 
     Invoke-Checked $priorGlobalExe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
     Assert-Update (Join-Path $globalRoot 'bin\sd300.exe') 'exe-global' $globalRoot
     Assert-NativeUninstall (Join-Path $globalRoot 'bin\sd300.exe') 'exe-global' $globalRoot 'SD-300 Global'
+    Invoke-Checked (Join-Path $CandidateAssets 'sd300-windows-x64-global.exe') @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+    Assert-ManagedTakeover (Join-Path $globalRoot 'bin\sd300.exe') 'exe-global' $globalRoot 'SD-300 Global'
+    Assert-ManagedUninstall $managedBinary 'powershell-installer'
 
     Invoke-Checked $priorCorporateExe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
     Assert-Update (Join-Path $corporateRoot 'bin\sd300.exe') 'exe-corporate' $corporateRoot
     Assert-NativeUninstall (Join-Path $corporateRoot 'bin\sd300.exe') 'exe-corporate' $corporateRoot 'SD-300 Corporate'
+    Invoke-Checked (Join-Path $CandidateAssets 'sd300-windows-x64-corporate.exe') @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+    Assert-ManagedTakeover (Join-Path $corporateRoot 'bin\sd300.exe') 'exe-corporate' $corporateRoot 'SD-300 Corporate'
+    Assert-ManagedUninstall $managedBinary 'powershell-installer'
 } finally {
     Remove-Inno $globalRoot
     Remove-Inno $corporateRoot
