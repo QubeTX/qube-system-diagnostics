@@ -23,6 +23,7 @@ The exact released SHA is green everywhere, public artifacts match the manifest,
 Active. All seven Apple certificate/notary secrets and three non-secret identity variables are configured. Hosted exact-SHA qualification and public-byte verification remain; do not publish the website until every hosted/public gate passes.
 
 ## Activity
+- 2026-07-19 08:26 UTC: Final qualification published v2.0.0 to crates.io and GitHub after the complete asset/hash gate, then failed on the first post-public synthetic Linux managed-shell update before assertions. Added a non-mutating post-public qualification path and explicit updater response/status logging so the released lifecycle can be diagnosed without attempting to republish.
 - 2026-07-18 14:45 - created as the combined release gate.
 - 2026-07-18 16:31 - local Rust, release build, Alienware snapshot, TUI render, workflow, package, cross-target, wrapper-render, and website gates pass. Signing identity/team variables are configured; awaiting the private certificate/notary secrets, then hosted matrices and fresh public-byte audit.
 - 2026-07-18 17:01 - sibling-task convergence rechecked; release matrices now require real synthetic-prior Windows/PKG transitions and public Linux shell/Cargo updates, not already-current origin checks.
