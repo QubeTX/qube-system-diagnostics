@@ -129,7 +129,7 @@ function Assert-NativeUninstall(
         throw "$Channel uninstall reported the wrong owner or outcome: $($lines[0])"
     }
     for ($attempt = 0; $attempt -lt 1800; $attempt++) {
-        $marker = Get-ItemPropertyValue -Path 'Registry::HKEY_CURRENT_USER\Software\SD300' -Name InstallSource -ErrorAction SilentlyContinue
+        $marker = (Get-ItemProperty -LiteralPath 'Registry::HKEY_CURRENT_USER\Software\SD300' -ErrorAction SilentlyContinue).InstallSource
         $ownsPath = (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'User')) $binDir) -or
                     (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'Machine')) $binDir)
         if (-not (Test-Path -LiteralPath $Root) -and
@@ -161,7 +161,7 @@ function Assert-ManagedTakeover(
         throw "$NativeChannel managed takeover reported the wrong owner or outcome: $($lines[0])"
     }
     for ($attempt = 0; $attempt -lt 1800; $attempt++) {
-        $marker = Get-ItemPropertyValue -Path 'Registry::HKEY_CURRENT_USER\Software\SD300' -Name InstallSource -ErrorAction SilentlyContinue
+        $marker = (Get-ItemProperty -LiteralPath 'Registry::HKEY_CURRENT_USER\Software\SD300' -ErrorAction SilentlyContinue).InstallSource
         $ownsPath = (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'User')) $binDir) -or
                     (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'Machine')) $binDir)
         if (-not (Test-Path -LiteralPath $Root) -and

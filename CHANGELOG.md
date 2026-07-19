@@ -2,6 +2,12 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [2.0.6] - 2026-07-19
+
+### Fixed
+
+- Corrected the Windows native-to-managed qualification probe so an intentionally removed `InstallSource` registry property is treated as successful cleanup instead of a terminating PowerShell error. The failed v2.0.5 candidate remained an unpublished draft and was not retagged.
+
 ## [2.0.5] - 2026-07-19
 
 ### Fixed
