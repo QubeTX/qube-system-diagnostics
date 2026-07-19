@@ -27,7 +27,7 @@
 
 | Project | Status |
 |---|---|
-| SD-300 v2.0.0 | Active: Windows accuracy, full updater lifecycle, installers, parity, and release |
+| SD-300 v2.0.2 | Complete: Windows accuracy, full updater lifecycle, installers, parity, release, offline bundle, and website rollout |
 
 ## Preferences
 

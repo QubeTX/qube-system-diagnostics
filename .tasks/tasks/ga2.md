@@ -1,4 +1,4 @@
-TT;DR: Release v2.0.0 only after Windows live evidence, hosted native platform gates, installer matrices, and fresh public artifact verification are all complete.
+TT;DR: Release SD-300 v2 only after Windows live evidence, hosted native platform gates, installer matrices, and fresh public artifact verification are all complete. The qualified fix-forward release is v2.0.2.
 
 ## Why
 The operator selected one combined major release. Local Windows success alone cannot establish all-platform correctness.
@@ -14,15 +14,17 @@ The exact released SHA is green everywhere, public artifacts match the manifest,
 
 ## Verification
 - [x] Local Windows live qualification passes
-- [ ] Hosted Windows, macOS Intel/ARM, and Linux gates pass
-- [ ] Crates package installs the `sd300` command
-- [ ] Public release manifest and assets hash-match
-- [ ] Fresh latest commands install and report v2.0.0
+- [x] Hosted Windows, macOS Intel/ARM, and Linux gates pass
+- [x] Crates package installs the `sd300` command
+- [x] Public release manifest and assets hash-match
+- [x] Fresh latest commands install and report v2.0.2
 
 ## Status
-Active. v2.0.2 is public and its native/checksum gates are green. The corrected post-public Cargo lifecycle rerun remains; do not publish the website until that last hosted gate passes.
+Complete. v2.0.2 is public, crates.io and all 46 release assets are qualified, native and public lifecycle gates pass, Alienware evidence is current, and the gated offline/website rollouts are live.
 
 ## Activity
+- 2026-07-19 09:28 UTC: Closure audit found and fixed post-release native-workflow noise: already-published main pushes now pass a draft-check and skip expensive native jobs instead of failing after the successful no-deploy release guard.
+- 2026-07-19 09:25 UTC: Corrected post-public qualification passed all public managed-shell/Cargo transitions and fresh install/current/uninstall. Alienware independently passed the public `irm | iex` bootstrap, managed receipt/update/uninstall, Windows snapshot/capabilities, and artifact hashes. Offline bundle PR #1 and website PR #13 are merged; production routes pass desktop/mobile checks with SD-300 immediately after ND-300 and Shaughv OS still delisted.
 - 2026-07-19 09:06 UTC: v2.0.2 passed every artifact checksum, both native Mac families, all four Windows installer families, crates publication, and the public managed-shell synthetic update. The final smoke then stopped in its hand-written Cargo fixture before product behavior: Cargo rejected `.crates2.json` because the fixture omitted required install-metadata fields. Aligning that fixture with Cargo's real schema and rerunning post-public qualification against immutable v2.0.2 bytes.
 - 2026-07-19 08:26 UTC: Final qualification published v2.0.0 to crates.io and GitHub after the complete asset/hash gate, then failed on the first post-public synthetic Linux managed-shell update before assertions. Added a non-mutating post-public qualification path and explicit updater response/status logging so the released lifecycle can be diagnosed without attempting to republish.
 - 2026-07-19 08:30 UTC: Post-public logging identified the released Linux failure: the shared command helper did not drain piped output until process exit, so curl deadlocked when the now-46-asset GitHub release JSON exceeded the pipe buffer and both transports timed out. Fixing the shared runner with concurrent stdout/stderr drains and a 1 MiB regression; the immutable repair will ship as v2.0.1 through the full native matrix.

@@ -24,8 +24,56 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  credential-preflight:
+  draft-check:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
+    runs-on: ubuntu-22.04
+    outputs:
+      ready: ${{ steps.meta.outputs.ready }}
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      source_ref: ${{ steps.meta.outputs.source_ref }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - id: meta
+        name: Resolve qualification draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
+          if [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
+            tag='${{ inputs.tag }}'
+          else
+            tag="v${version}"
+          fi
+          [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
+          state=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)
+          if [[ '${{ github.event_name }}' == workflow_dispatch && '${{ inputs.preflight_only }}' == true ]]; then
+            ready=true
+            echo "Running the requested credential-only preflight for $tag."
+          elif [[ $state == true ]]; then
+            ready=true
+          elif [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
+            echo "$tag is not an unpublished qualification draft" >&2
+            exit 1
+          else
+            ready=false
+            echo "$tag is already public or unavailable; skipping native macOS qualification."
+          fi
+          {
+            echo "ready=$ready"
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "source_ref=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+  credential-preflight:
+    needs: draft-check
+    if: ${{ needs.draft-check.outputs.ready == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +87,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.draft-check.outputs.source_ref }}
           persist-credentials: false
       - name: Import Installer identity and sign disposable PKG
         env:
@@ -51,8 +99,8 @@ jobs:
         run: bash scripts/verify-apple-installer-identity.sh
 
   build:
-    needs: credential-preflight
-    if: ${{ needs.credential-preflight.result == 'success' && (github.event_name == 'workflow_run' || inputs.preflight_only == false) }}
+    needs: [draft-check, credential-preflight]
+    if: ${{ needs.draft-check.outputs.ready == 'true' && needs.credential-preflight.result == 'success' && (github.event_name == 'workflow_run' || inputs.preflight_only == false) }}
     runs-on: macos-15-intel
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
@@ -61,30 +109,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.draft-check.outputs.source_ref }}
           persist-credentials: false
       - id: meta
         name: Resolve draft metadata
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
-          if [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
-            tag='${{ inputs.tag }}'
-          else
-            tag="v${version}"
-          fi
-          [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
-          [[ $(gh release view "$tag" --json isDraft --jq .isDraft) == true ]] || {
-            echo "$tag is not an unpublished qualification draft" >&2
-            exit 1
-          }
           {
-            echo "tag=$tag"
-            echo "version=$version"
-            echo "source_ref=$(git rev-parse HEAD)"
+            echo "tag=${{ needs.draft-check.outputs.tag }}"
+            echo "version=${{ needs.draft-check.outputs.version }}"
+            echo "source_ref=${{ needs.draft-check.outputs.source_ref }}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Download exact architecture archives from draft

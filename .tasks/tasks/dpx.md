@@ -17,11 +17,12 @@ Each platform reports the same concepts where supported and a precise reason whe
 - [x] Memory modules, battery health, displays, and storage reliability are represented
 - [x] Windows permissions and unreliable fan/thermal providers never create false alarms or false health
 - [x] macOS/Linux platform-neutral semantic tests compile on Windows
-- [ ] Native hosted jobs exercise platform ABI code
+- [x] Native hosted jobs exercise platform ABI code
 
 ## Status
-Implementation complete and Windows live-proven. Final native macOS/Linux ABI execution is intentionally retained as a hosted #ga2 release gate.
+Complete. Windows is live-proven on the Alienware, and the exact release source passed hosted native Windows, macOS, and Linux execution without claiming identical sensor availability.
 
 ## Activity
+- 2026-07-19 09:25 UTC - v2.0.2 completed hosted native platform qualification; public Windows bytes repeated the redacted Alienware snapshot and capability proof.
 - 2026-07-18 14:45 - created from the original parity request and initial Alienware evidence.
 - 2026-07-18 16:31 - completed Windows parity expansion and cross-target compilation; native hosted platform execution remains pending.

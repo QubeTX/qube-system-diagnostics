@@ -13,16 +13,17 @@ Makes SD-300 discoverable and deploys public install instructions. Shaughv OS re
 Every visible product sequence is TR, ND, SD, WB; CLI is primary; direct PKG and four Windows installers are accurate alternatives; all links resolve to verified v2 assets.
 
 ## Verification
-- [ ] Public v2 release and assets verified before website merge
+- [x] Public v2 release and assets verified before website merge
 - [x] Website lint/build and desktop/mobile route checks pass
 - [x] SD-300 appears immediately after ND-300 everywhere
 - [x] Shaughv OS remains undiscoverable
 - [x] Install commands and filenames are versionless
 
 ## Status
-Prepared and locally verified on `codex/sd300-relist-after-v2`, intentionally unpushed. The sole remaining acceptance item is public v2 verification followed by the production merge.
+Complete. Website PR #13 is merged and the Vercel production deployment is live with v2.0.2 fallback/content, versionless CLI-first commands, native alternatives, and SD-300 immediately after ND-300. Shaughv OS remains separately delisted.
 
 ## Activity
+- 2026-07-19 09:25 UTC - merged website PR #13 only after public v2.0.2 qualification and offline bundle PR #1. Production `/sd300`, `/install-guide`, and `/executables` pass 1440px/390px browser checks, link/order assertions, and console/overflow checks.
 - 2026-07-18 14:45 - created from the website relisting decision.
 - 2026-07-18 16:31 - added direct CLI-first latest commands, PKG and four Windows alternatives, v2 fallback/content, authoritative install copy, and final product ordering; lint/build and 1440px/390px browser checks pass.
 - 2026-07-18 17:01 - fast-forwarded the prepared branch onto ND-300's newly merged v3.7.3 site release, resolved additive guidance conflicts, and assigned the deferred SD-300 rollout its own website v1.17.0; lint/build remain green.

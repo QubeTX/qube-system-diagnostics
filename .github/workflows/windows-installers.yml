@@ -19,28 +19,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-test-upload:
+  draft-check:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
-    runs-on: windows-2022
+    runs-on: ubuntu-22.04
+    outputs:
+      ready: ${{ steps.meta.outputs.ready }}
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      source_ref: ${{ steps.meta.outputs.source_ref }}
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
+      - id: meta
+        name: Resolve qualification draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
+          if [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
+            tag='${{ inputs.tag }}'
+          else
+            tag="v${version}"
+          fi
+          [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
+          state=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)
+          if [[ $state == true ]]; then
+            ready=true
+          elif [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
+            echo "$tag is not an unpublished qualification draft" >&2
+            exit 1
+          else
+            ready=false
+            echo "$tag is already public or unavailable; skipping native Windows qualification."
+          fi
+          {
+            echo "ready=$ready"
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "source_ref=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+  build-test-upload:
+    needs: draft-check
+    if: ${{ needs.draft-check.outputs.ready == 'true' }}
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.draft-check.outputs.source_ref }}
+          persist-credentials: false
 
       - id: meta
         name: Resolve draft metadata
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
-          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { "v$version" }
-          if ($tag -ne "v$version") { throw "tag $tag does not match Cargo.toml version $version" }
-          $draft = gh release view $tag --json isDraft --jq .isDraft
-          if ($draft -ne 'true') { throw "$tag is not an unpublished qualification draft" }
-          Add-Content $env:GITHUB_OUTPUT "tag=$tag"
-          Add-Content $env:GITHUB_OUTPUT "version=$version"
+          Add-Content $env:GITHUB_OUTPUT 'tag=${{ needs.draft-check.outputs.tag }}'
+          Add-Content $env:GITHUB_OUTPUT 'version=${{ needs.draft-check.outputs.version }}'
 
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release binary
