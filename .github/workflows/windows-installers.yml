@@ -93,6 +93,7 @@ jobs:
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SD300_CI_RELEASE_TAG: ${{ steps.meta.outputs.tag }}
         run: scripts\validate-windows-installers.ps1 -ArtifactDirectory target\native -Version '${{ steps.meta.outputs.version }}' -BuiltBinary target\release\sd300.exe
 
       - name: Build synthetic prior-version installers

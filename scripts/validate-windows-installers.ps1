@@ -52,8 +52,9 @@ function Assert-NativeInstall([string]$Binary, [string]$Channel) {
     }
 
     $updateLines = @(& $Binary update --json)
-    if ($LASTEXITCODE -ne 0 -or $updateLines.Count -ne 1) {
-        throw "$Channel update did not emit exactly one successful JSON object"
+    $updateExitCode = $LASTEXITCODE
+    if ($updateExitCode -ne 0 -or $updateLines.Count -ne 1) {
+        throw "$Channel update did not emit exactly one successful JSON object (exit $updateExitCode, lines $($updateLines.Count)): $($updateLines -join ' | ')"
     }
     $update = $updateLines[0] | ConvertFrom-Json
     if (-not $update.success -or $update.install_channel -ne $Channel) {
