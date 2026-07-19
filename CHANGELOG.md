@@ -2,6 +2,13 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [2.0.2] - 2026-07-19
+
+### Fixed
+
+- Normalized cargo-dist's generated managed-install receipt identity and path from the historical package name `tr300-tui` to the product identity `sd300`, so production shell and PowerShell installs can be proven and updated through the managed channel.
+- Added release-assembly assertions for the exact managed receipt identity, directory, and filename in both generated installer formats.
+
 ## [2.0.1] - 2026-07-19
 
 ### Fixed

@@ -414,6 +414,32 @@ jobs:
           mv artifacts/tr300-tui-installer.ps1 artifacts/sd300-dist-installer.ps1
           rm -f artifacts/tr300-tui-installer.sh.sha256 artifacts/tr300-tui-installer.ps1.sha256
 
+          # shellcheck disable=SC2016
+          sed -i \
+            -e 's/^APP_NAME="tr300-tui"$/APP_NAME="sd300"/' \
+            -e 's#RECEIPT_HOME="$LOCALAPPDATA/tr300-tui"#RECEIPT_HOME="$LOCALAPPDATA/sd300"#' \
+            -e 's#RECEIPT_HOME="${XDG_CONFIG_HOME:-$INFERRED_HOME/.config}/tr300-tui"#RECEIPT_HOME="${XDG_CONFIG_HOME:-$INFERRED_HOME/.config}/sd300"#' \
+            -e 's/"app_name":"tr300-tui"/"app_name":"sd300"/' \
+            artifacts/sd300-dist-installer.sh
+          # shellcheck disable=SC2016
+          sed -i \
+            -e "s/^[\$]app_name = 'tr300-tui'$/\$app_name = 'sd300'/" \
+            -e 's#${env:XDG_CONFIG_HOME}\\tr300-tui#${env:XDG_CONFIG_HOME}\\sd300#' \
+            -e 's#${env:LOCALAPPDATA}\\tr300-tui#${env:LOCALAPPDATA}\\sd300#' \
+            -e 's/"app_name":"tr300-tui"/"app_name":"sd300"/' \
+            -e 's#"$receipt_home/tr300-tui-receipt.json"#"$receipt_home/sd300-receipt.json"#' \
+            artifacts/sd300-dist-installer.ps1
+
+          grep -Fq 'APP_NAME="sd300"' artifacts/sd300-dist-installer.sh
+          grep -Fq 'LOCALAPPDATA/sd300' artifacts/sd300-dist-installer.sh
+          grep -Fq '/sd300"' artifacts/sd300-dist-installer.sh
+          grep -Fq '"app_name":"sd300"' artifacts/sd300-dist-installer.sh
+          grep -Fq "app_name = 'sd300'" artifacts/sd300-dist-installer.ps1
+          grep -Fq 'XDG_CONFIG_HOME}\sd300' artifacts/sd300-dist-installer.ps1
+          grep -Fq 'LOCALAPPDATA}\sd300' artifacts/sd300-dist-installer.ps1
+          grep -Fq '"app_name":"sd300"' artifacts/sd300-dist-installer.ps1
+          grep -Fq 'receipt_home/sd300-receipt.json' artifacts/sd300-dist-installer.ps1
+
           render() {
             sed \
               -e "s/@SD300_TAG@/${RELEASE_TAG}/g" \
