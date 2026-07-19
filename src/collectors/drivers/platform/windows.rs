@@ -97,9 +97,10 @@ fn enumerate_devices(data: &mut DriverData) -> bool {
         }
 
         // Read device status via Configuration Manager
+        let device_instance_id = get_device_instance_id(dev_info.handle(), &dev_info_data);
         let status = reconcile_device_status(
             get_device_status(&dev_info_data),
-            wmi_health.get(&name.to_ascii_lowercase()),
+            wmi_health.get(&device_instance_id.to_ascii_lowercase()),
         );
 
         // Read driver version and date from registry
@@ -136,7 +137,8 @@ fn enumerate_devices(data: &mut DriverData) -> bool {
 #[serde(rename = "Win32_PnPEntity")]
 #[serde(rename_all = "PascalCase")]
 struct WmiPnpEntity {
-    name: Option<String>,
+    #[serde(rename = "DeviceID")]
+    device_id: Option<String>,
     status: Option<String>,
     config_manager_error_code: Option<u32>,
 }
@@ -153,22 +155,48 @@ fn query_wmi_pnp_health() -> WmiPnpHealth {
         return HashMap::new();
     };
     let Ok(entities) = connection.raw_query::<WmiPnpEntity>(
-        "SELECT Name, Status, ConfigManagerErrorCode FROM Win32_PnPEntity",
+        "SELECT DeviceID, Status, ConfigManagerErrorCode FROM Win32_PnPEntity",
     ) else {
         return HashMap::new();
     };
 
     let mut health = HashMap::new();
     for entity in entities {
-        let Some(name) = entity.name else {
+        let Some(device_id) = entity.device_id else {
             continue;
         };
+        if device_id.trim().is_empty() {
+            continue;
+        }
         health
-            .entry(name.to_ascii_lowercase())
+            .entry(device_id.to_ascii_lowercase())
             .or_insert_with(Vec::new)
             .push((entity.status, entity.config_manager_error_code));
     }
     health
+}
+
+fn get_device_instance_id(device_info_set: HDEVINFO, device_info_data: &SP_DEVINFO_DATA) -> String {
+    let mut buffer = vec![0_u16; 512];
+    let mut required_size = 0;
+    if unsafe {
+        SetupDiGetDeviceInstanceIdW(
+            device_info_set,
+            device_info_data,
+            Some(&mut buffer),
+            Some(&mut required_size),
+        )
+    }
+    .is_err()
+    {
+        return String::new();
+    }
+    let length = buffer
+        .iter()
+        .position(|character| *character == 0)
+        .unwrap_or_else(|| required_size.saturating_sub(1) as usize)
+        .min(buffer.len());
+    String::from_utf16_lossy(&buffer[..length])
 }
 
 fn reconcile_device_status(
@@ -183,7 +211,7 @@ fn reconcile_device_status(
         return setup_status;
     };
 
-    for (status, code) in rows {
+    for (_, code) in rows {
         if *code == Some(22) {
             return DeviceStatus::Disabled;
         }
@@ -193,7 +221,15 @@ fn reconcile_device_status(
                 code.unwrap_or_default()
             ));
         }
+    }
 
+    // Config Manager is authoritative when it completed successfully. WMI's generic
+    // Status string can say "Degraded" even when ConfigManagerErrorCode is zero.
+    if setup_status == DeviceStatus::Ok {
+        return setup_status;
+    }
+
+    for (status, _) in rows {
         let normalized_status = status.as_deref().unwrap_or_default().to_ascii_lowercase();
         match normalized_status.as_str() {
             "degraded" => {
@@ -467,5 +503,40 @@ fn get_service_display_name(scm: SC_HANDLE, wide_name: &[u16]) -> String {
         String::from_utf16_lossy(&buf[..len])
     } else {
         String::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_manager_ok_overrides_generic_wmi_degraded_status() {
+        let rows = vec![(Some("Degraded".into()), Some(0))];
+        assert_eq!(
+            reconcile_device_status(DeviceStatus::Ok, Some(&rows)),
+            DeviceStatus::Ok
+        );
+    }
+
+    #[test]
+    fn wmi_status_remains_a_fallback_when_setup_status_is_unknown() {
+        let rows = vec![(Some("Degraded".into()), Some(0))];
+        assert_eq!(
+            reconcile_device_status(DeviceStatus::Unknown, Some(&rows)),
+            DeviceStatus::Degraded("Win32_PnPEntity status".into())
+        );
+    }
+
+    #[test]
+    fn any_duplicate_wmi_row_with_a_problem_code_wins() {
+        let rows = vec![
+            (Some("OK".into()), Some(0)),
+            (Some("Error".into()), Some(28)),
+        ];
+        assert_eq!(
+            reconcile_device_status(DeviceStatus::Ok, Some(&rows)),
+            DeviceStatus::Error("WMI configuration problem code 28".into())
+        );
     }
 }

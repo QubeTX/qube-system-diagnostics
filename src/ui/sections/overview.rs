@@ -66,36 +66,34 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         HealthStatus::Warning
     };
-    let temp_status = app
-        .snapshot
-        .thermals
-        .cpu_temp
-        .map(|t| {
-            if t < TEMP_CPU_WARN {
-                HealthStatus::Good
-            } else if t < TEMP_CPU_CRIT {
-                HealthStatus::Warning
-            } else {
-                HealthStatus::Critical
-            }
-        })
-        .unwrap_or(HealthStatus::Unknown);
+    let thermal = &app.snapshot.thermals;
+    let (temp_status, temp_desc) = if let Some(temp) = thermal.cpu_temp {
+        (
+            temperature_health(temp, TEMP_CPU_WARN, TEMP_CPU_CRIT),
+            format!(
+                "Processor {} ({})",
+                plain_language_temp(temp).to_ascii_lowercase(),
+                format_temp(temp, app.temp_unit)
+            ),
+        )
+    } else if let Some(temp) = thermal.gpu_temp {
+        (
+            temperature_health(temp, TEMP_GPU_WARN, TEMP_GPU_CRIT),
+            format!(
+                "Graphics {} ({}); {}",
+                plain_language_temp(temp).to_ascii_lowercase(),
+                format_temp(temp, app.temp_unit),
+                cpu_temperature_gap(thermal)
+            ),
+        )
+    } else {
+        (
+            HealthStatus::Unknown,
+            cpu_temperature_gap(thermal).to_string(),
+        )
+    };
 
-    let driver_issues = app
-        .snapshot
-        .drivers
-        .network
-        .iter()
-        .chain(app.snapshot.drivers.bluetooth.iter())
-        .chain(app.snapshot.drivers.audio.iter())
-        .chain(app.snapshot.drivers.input.iter())
-        .chain(app.snapshot.drivers.display.iter())
-        .chain(app.snapshot.drivers.storage.iter())
-        .chain(app.snapshot.drivers.usb.iter())
-        .chain(app.snapshot.drivers.system.iter())
-        .chain(app.snapshot.drivers.other.iter())
-        .filter(|d| d.status != crate::collectors::drivers::DeviceStatus::Ok)
-        .count();
+    let driver_issues = app.snapshot.drivers.attention_devices().count();
     let driver_status = match app.snapshot.drivers.scan_status {
         crate::collectors::drivers::DriverScanStatus::Success if driver_issues == 0 => {
             HealthStatus::Good
@@ -156,18 +154,6 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     };
     health_lines.push(status_line(&net_status, "Network", net_desc));
 
-    let temp_desc = app
-        .snapshot
-        .thermals
-        .cpu_temp
-        .map(|t| {
-            format!(
-                "{} ({})",
-                plain_language_temp(t),
-                format_temp(t, app.temp_unit)
-            )
-        })
-        .unwrap_or_else(|| "Sensor data unavailable".into());
     health_lines.push(status_line(&temp_status, "Temperature", &temp_desc));
 
     let driver_desc = if driver_issues == 0 {
@@ -506,27 +492,20 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // Driver + Thermal summary
     proc_lines.push(Line::from(""));
-    let driver_ok = app
-        .snapshot
-        .drivers
-        .network
-        .iter()
-        .chain(app.snapshot.drivers.bluetooth.iter())
-        .chain(app.snapshot.drivers.audio.iter())
-        .chain(app.snapshot.drivers.input.iter())
-        .chain(app.snapshot.drivers.display.iter())
-        .chain(app.snapshot.drivers.storage.iter())
-        .chain(app.snapshot.drivers.usb.iter())
-        .chain(app.snapshot.drivers.system.iter())
-        .chain(app.snapshot.drivers.other.iter())
-        .all(|d| d.status == crate::collectors::drivers::DeviceStatus::Ok);
+    let driver_ok = app.snapshot.drivers.attention_devices().next().is_none();
 
     let temp_str = app
         .snapshot
         .thermals
         .cpu_temp
         .map(|t| format!("CPU: {}", format_temp(t, app.temp_unit)))
-        .unwrap_or_else(|| "CPU: N/A".into());
+        .or_else(|| {
+            app.snapshot
+                .thermals
+                .gpu_temp
+                .map(|t| format!("GPU: {}", format_temp(t, app.temp_unit)))
+        })
+        .unwrap_or_else(|| "N/A".into());
 
     proc_lines.push(Line::from(vec![
         Span::styled("  DRVRS  ", Style::default().fg(COLOR_DIM)),
@@ -540,4 +519,26 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     let proc_panel = Paragraph::new(proc_lines);
     frame.render_widget(proc_panel, proc_inner);
+}
+
+fn temperature_health(value: f64, warning: f64, critical: f64) -> HealthStatus {
+    if value < warning {
+        HealthStatus::Good
+    } else if value < critical {
+        HealthStatus::Warning
+    } else {
+        HealthStatus::Critical
+    }
+}
+
+fn cpu_temperature_gap(thermal: &crate::collectors::thermals::ThermalData) -> &'static str {
+    use crate::observation::ObservationStatus;
+
+    match thermal.cpu_temperature_status.status {
+        ObservationStatus::PermissionDenied => "CPU sensor needs Administrator",
+        ObservationStatus::Unsupported => "CPU sensor not exposed by firmware",
+        ObservationStatus::Error => "CPU sensor provider failed",
+        ObservationStatus::Contradictory => "CPU sensor data is contradictory",
+        ObservationStatus::Unavailable | ObservationStatus::Available => "CPU sensor unavailable",
+    }
 }

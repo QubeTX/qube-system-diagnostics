@@ -4,7 +4,7 @@
 
 SD-300 is a Rust/Ratatui cross-platform system diagnostics and monitoring TUI for Windows, macOS, and Linux. The binary is `sd300`; the crates.io package is `tr300-tui`. The recommended install is the stable managed wrapper (`irm | iex` on Windows, `curl | sh` on macOS/Linux); raw Cargo is an advanced unmanaged option.
 
-Current state is version `2.0.3`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`. It includes provenance-aware snapshots/capabilities, channel-preserving install/update/uninstall, expanded Windows diagnostics, stable managed/native artifacts, and draft-gated release qualification.
+Current state is version `2.0.4`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`. It includes provenance-aware snapshots/capabilities, channel-preserving install/update/uninstall, authoritative Windows driver health, layered Windows thermal providers, stable managed/native artifacts, and draft-gated release qualification.
 
 The 2026-07-17 M2 MacBook Pro research checkpoint remains the implementation boundary for deeper private/model-specific macOS telemetry. The v2 release adds explicit observation states and native Intel/Apple Silicon PKG gates without claiming that every research-only private signal is implemented.
 
@@ -23,6 +23,7 @@ The 2026-07-17 M2 MacBook Pro research checkpoint remains the implementation bou
   - Slow refresh: disk, GPU, thermals.
   - Medium refresh: active network connections.
   - Background jobs: connectivity, disk health, drivers.
+  - Windows thermals: native components, Libre/Open Hardware Monitor WMI bridges, guarded read-only Dell AWCC firmware enumeration, ACPI fallback, and independently merged GPU telemetry.
 - macOS research status:
   - Live-tested on a native arm64 `Mac14,7` M2 MacBook Pro running macOS 26.3.1.
   - Current collectors expose only a baseline and misclassify or omit multiple locally available signals.

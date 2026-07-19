@@ -53,6 +53,13 @@ impl std::fmt::Display for DeviceStatus {
 }
 
 impl DeviceStatus {
+    pub fn requires_attention(&self) -> bool {
+        matches!(
+            self,
+            Self::Degraded(_) | Self::Disabled | Self::Error(_) | Self::NotFound
+        )
+    }
+
     pub fn icon(&self) -> &'static str {
         match self {
             Self::Ok => "\u{2713}", // checkmark
@@ -73,6 +80,26 @@ impl DeviceStatus {
             Self::NotFound => "Not detected",
             Self::Unknown => "Unknown status",
         }
+    }
+}
+
+impl DriverData {
+    pub fn devices(&self) -> impl Iterator<Item = &DeviceInfo> {
+        self.network
+            .iter()
+            .chain(self.bluetooth.iter())
+            .chain(self.audio.iter())
+            .chain(self.input.iter())
+            .chain(self.display.iter())
+            .chain(self.storage.iter())
+            .chain(self.usb.iter())
+            .chain(self.system.iter())
+            .chain(self.other.iter())
+    }
+
+    pub fn attention_devices(&self) -> impl Iterator<Item = &DeviceInfo> {
+        self.devices()
+            .filter(|device| device.status.requires_attention())
     }
 }
 
@@ -125,4 +152,48 @@ pub struct ServiceInfo {
 
 pub fn collect() -> DriverData {
     platform::collect_drivers()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(name: &str, status: DeviceStatus, category: DeviceCategory) -> DeviceInfo {
+        DeviceInfo {
+            name: name.into(),
+            driver_version: String::new(),
+            driver_date: String::new(),
+            status,
+            category,
+            extra: String::new(),
+        }
+    }
+
+    #[test]
+    fn attention_iterator_includes_hidden_categories_and_ignores_unknown() {
+        let mut data = DriverData::default();
+        data.network
+            .push(device("healthy", DeviceStatus::Ok, DeviceCategory::Network));
+        data.system.push(device(
+            "system issue",
+            DeviceStatus::Disabled,
+            DeviceCategory::System,
+        ));
+        data.other.push(device(
+            "other issue",
+            DeviceStatus::Degraded("fixture".into()),
+            DeviceCategory::Other,
+        ));
+        data.other.push(device(
+            "unknown capability",
+            DeviceStatus::Unknown,
+            DeviceCategory::Other,
+        ));
+
+        let names = data
+            .attention_devices()
+            .map(|device| device.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["system issue", "other issue"]);
+    }
 }

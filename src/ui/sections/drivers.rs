@@ -5,7 +5,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::app::App;
-use crate::collectors::drivers::{DeviceStatus, DriverScanStatus, ServiceInfo};
+use crate::collectors::drivers::{DeviceInfo, DeviceStatus, DriverScanStatus, ServiceInfo};
 use crate::types::{DiagnosticMode, HealthStatus};
 use crate::ui::common::*;
 
@@ -62,7 +62,32 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         DriverScanStatus::Success => {}
     }
 
-    // Categories
+    let attention = drivers.attention_devices().collect::<Vec<_>>();
+    if attention.is_empty() && matches!(drivers.scan_status, DriverScanStatus::Success) {
+        lines.push(status_line(
+            &HealthStatus::Good,
+            "Drivers",
+            "All detected devices are working",
+        ));
+        lines.push(Line::from(""));
+    } else if !attention.is_empty() {
+        lines.push(section_header("NEEDS ATTENTION"));
+        for device in attention {
+            let status = device_health_status(&device.status);
+            lines.push(status_line(
+                &status,
+                &device.name,
+                &format!(
+                    "{} - {}",
+                    device.category.label(),
+                    device.status.user_description()
+                ),
+            ));
+        }
+        lines.push(Line::from(""));
+    }
+
+    // Healthy and unknown devices stay grouped for scanning; attention items are shown once above.
     render_user_category(&mut lines, "NETWORK", &drivers.network);
     render_user_category(&mut lines, "BLUETOOTH", &drivers.bluetooth);
     render_user_category(&mut lines, "AUDIO", &drivers.audio);
@@ -71,28 +96,27 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     render_user_category(&mut lines, "STORAGE", &drivers.storage);
     render_user_category(&mut lines, "USB", &drivers.usb);
 
-    let panel = Paragraph::new(lines);
+    let total_lines = lines.len();
+    let visible_height = inner.height as usize;
+    let max_scroll = total_lines.saturating_sub(visible_height);
+    let scroll = app.driver_scroll.min(max_scroll);
+    let panel = Paragraph::new(lines).scroll((scroll as u16, 0));
     frame.render_widget(panel, inner);
 }
 
-fn render_user_category(
-    lines: &mut Vec<Line<'_>>,
-    title: &str,
-    devices: &[crate::collectors::drivers::DeviceInfo],
-) {
-    if devices.is_empty() {
+fn render_user_category(lines: &mut Vec<Line<'_>>, title: &str, devices: &[DeviceInfo]) {
+    if !devices
+        .iter()
+        .any(|device| !device.status.requires_attention())
+    {
         return;
     }
     lines.push(section_header(title));
-    for dev in devices {
-        let status = match &dev.status {
-            DeviceStatus::Ok => HealthStatus::Good,
-            DeviceStatus::Degraded(_) => HealthStatus::Warning,
-            DeviceStatus::Disabled => HealthStatus::Warning,
-            DeviceStatus::Error(_) => HealthStatus::Critical,
-            DeviceStatus::NotFound => HealthStatus::Unknown,
-            DeviceStatus::Unknown => HealthStatus::Unknown,
-        };
+    for dev in devices
+        .iter()
+        .filter(|device| !device.status.requires_attention())
+    {
+        let status = device_health_status(&dev.status);
         lines.push(status_line(
             &status,
             &dev.name,
@@ -100,6 +124,15 @@ fn render_user_category(
         ));
     }
     lines.push(Line::from(""));
+}
+
+fn device_health_status(status: &DeviceStatus) -> HealthStatus {
+    match status {
+        DeviceStatus::Ok => HealthStatus::Good,
+        DeviceStatus::Degraded(_) | DeviceStatus::Disabled => HealthStatus::Warning,
+        DeviceStatus::Error(_) => HealthStatus::Critical,
+        DeviceStatus::NotFound | DeviceStatus::Unknown => HealthStatus::Unknown,
+    }
 }
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
@@ -150,6 +183,19 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             lines.push(Line::from(""));
         }
         DriverScanStatus::Success => {}
+    }
+
+    let attention = drivers.attention_devices().collect::<Vec<_>>();
+    if !attention.is_empty() {
+        lines.push(section_header("NEEDS ATTENTION"));
+        for device in attention {
+            lines.push(status_line(
+                &device_health_status(&device.status),
+                &device.name,
+                &format!("{} - {}", device.category.label(), device.status),
+            ));
+        }
+        lines.push(Line::from(""));
     }
 
     // Network Adapters table
@@ -329,7 +375,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 fn render_tech_category(
     lines: &mut Vec<Line<'_>>,
     title: &str,
-    devices: &[crate::collectors::drivers::DeviceInfo],
+    devices: &[DeviceInfo],
     show_date: bool,
 ) {
     if devices.is_empty() {
@@ -432,4 +478,41 @@ fn render_service_line<'a>(label: &str, services: &[&ServiceInfo]) -> Line<'a> {
     }
 
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::collectors::drivers::{DeviceCategory, DeviceInfo};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    #[test]
+    fn user_view_surfaces_attention_items_from_system_category() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = App::new(Some(DiagnosticMode::User));
+        app.snapshot.drivers.scan_status = DriverScanStatus::Success;
+        app.snapshot.drivers.system.push(DeviceInfo {
+            name: "Hidden firmware issue".into(),
+            driver_version: "1.0".into(),
+            driver_date: String::new(),
+            status: DeviceStatus::Disabled,
+            category: DeviceCategory::System,
+            extra: String::new(),
+        });
+
+        terminal
+            .draw(|frame| render(frame, &app, frame.area(), DiagnosticMode::User))
+            .unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("NEEDS ATTENTION"));
+        assert!(rendered.contains("Hidden firmware issue"));
+        assert!(rendered.contains("System - Turned off"));
+    }
 }

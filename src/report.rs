@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use crate::collectors::disk_health::DiskHealthData;
-use crate::collectors::drivers::{DeviceStatus, DriverData, DriverScanStatus};
+use crate::collectors::drivers::{DriverData, DriverScanStatus};
 use crate::collectors::network_diag::NetworkDiagData;
 use crate::collectors::{DiagnosticWarning, SystemSnapshot, WarningSeverity};
 use crate::error::{AppError, Result};
@@ -93,35 +93,18 @@ impl DiagnosticReport {
             }),
         }
 
-        let driver_devices = [
-            &snapshot.drivers.network,
-            &snapshot.drivers.bluetooth,
-            &snapshot.drivers.audio,
-            &snapshot.drivers.input,
-            &snapshot.drivers.display,
-            &snapshot.drivers.storage,
-            &snapshot.drivers.usb,
-            &snapshot.drivers.system,
-            &snapshot.drivers.other,
-        ];
-        let degraded = driver_devices
-            .into_iter()
-            .flatten()
-            .filter(|device| {
-                matches!(
-                    device.status,
-                    DeviceStatus::Degraded(_) | DeviceStatus::Error(_) | DeviceStatus::NotFound
-                )
-            })
+        let attention = snapshot
+            .drivers
+            .attention_devices()
             .map(|device| device.name.as_str())
             .collect::<Vec<_>>();
-        if !degraded.is_empty() {
+        if !attention.is_empty() {
             snapshot.warnings.push(DiagnosticWarning {
                 source: "Drivers".into(),
                 message: format!(
-                    "{} device(s) report degraded or error state: {}",
-                    degraded.len(),
-                    degraded.join(", ")
+                    "{} device(s) need attention: {}",
+                    attention.len(),
+                    attention.join(", ")
                 ),
                 severity: WarningSeverity::Warning,
             });
@@ -268,6 +251,14 @@ fn capabilities_for(snapshot: &SystemSnapshot) -> Vec<CapabilityRecord> {
         capability(
             "thermal.temperature",
             snapshot.thermals.temperature_status.clone(),
+        ),
+        capability(
+            "thermal.cpu_temperature",
+            snapshot.thermals.cpu_temperature_status.clone(),
+        ),
+        capability(
+            "thermal.gpu_temperature",
+            snapshot.thermals.gpu_temperature_status.clone(),
         ),
         capability("thermal.fans", snapshot.thermals.fan_status.clone()),
         capability("battery", snapshot.thermals.battery_status.clone()),

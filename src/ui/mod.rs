@@ -126,4 +126,40 @@ mod tests {
             .collect::<String>();
         assert!(rendered.contains("Terminal too small"));
     }
+
+    #[test]
+    fn thermal_views_keep_gpu_data_when_dell_cpu_access_is_permission_gated() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = App::new(Some(DiagnosticMode::User));
+        app.snapshot.thermals.gpu_temp = Some(53.0);
+        app.snapshot.thermals.temperature_status =
+            crate::observation::Observation::available("nvidia-smi");
+        app.snapshot.thermals.gpu_temperature_status =
+            crate::observation::Observation::available("nvidia-smi");
+        app.snapshot.thermals.cpu_temperature_status =
+            crate::observation::Observation::permission_denied(
+                "Dell AWCC",
+                "Administrator required",
+            );
+        app.snapshot.thermals.fan_status = crate::observation::Observation::permission_denied(
+            "Dell AWCC",
+            "Administrator required",
+        );
+
+        for section in [Section::Overview, Section::Thermals] {
+            app.current_section = section;
+            terminal.draw(|frame| render(frame, &app)).unwrap();
+            let rendered = terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert!(rendered.contains("Graphics"));
+            assert!(rendered.contains("Administrator"));
+            assert!(!rendered.contains("Thermals not supported"));
+        }
+    }
 }

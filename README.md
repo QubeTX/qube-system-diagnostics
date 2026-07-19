@@ -152,7 +152,7 @@ cutover while preserving exact MSI/EXE/PKG ownership when it can be proven.
 | `m` | Return to mode selection |
 | `?` | Help overlay |
 | `f` | Toggle temperature unit (C/F) |
-| `j` / `k` | Scroll (processes, connections, drivers, disk in Tech Mode) |
+| `j` / `k` | Scroll (processes, connections, drivers; disk in Tech Mode) |
 | `c` / `M` / `n` / `p` | Sort by CPU / Memory / Name / PID (Section 7) |
 | `r` | Manual refresh (Section 9 - Drivers) |
 
@@ -169,7 +169,7 @@ cutover while preserving exact MSI/EXE/PKG ownership when it can be proven.
 
 ### Platform-Specific Features
 
-- **Windows**: Setup API plus WMI driver reconciliation, memory-module inventory, multi-GPU inventory, display topology/brightness, physical-disk health and explicit reliability availability, battery/power state, hardware identity, and native network link state/speed
+- **Windows**: authoritative Setup API/Config Manager driver health, memory-module inventory, multi-GPU inventory and NVIDIA telemetry, display topology/brightness, physical-disk health and explicit reliability availability, battery/power state, hardware identity, native network link state/speed, hardware-monitor WMI bridges, and guarded read-only Dell AWCC thermal enumeration
 - **Linux**: sysfs-based driver scanning, PCI device enumeration, ALSA audio detection
 - **macOS**: bounded `system_profiler`/`diskutil`/network fallbacks plus `sysinfo`; the current implementation does not yet expose the full native hardware capability discovered on real M2 hardware
 
@@ -178,6 +178,14 @@ record; `sd300 capabilities --json` distinguishes available, unavailable,
 unsupported, permission-denied, contradictory, and error states instead of
 inventing zero-valued telemetry. Add `--include-sensitive` only when explicitly
 needed for a local JSON snapshot.
+
+Temperature capabilities are reported independently for CPU, GPU, aggregate
+temperature, and fans. Windows first consumes native/component data and supported
+Libre/Open Hardware Monitor WMI bridges, then uses read-only Dell AWCC firmware
+operations when present, with ACPI as a fallback. Some low-level or vendor sensors
+require an elevated provider; SD-300 reports that permission boundary and continues
+showing any independently available GPU temperature instead of treating all thermal
+telemetry as unsupported.
 
 ## Screenshots
 

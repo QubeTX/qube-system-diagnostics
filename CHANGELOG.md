@@ -2,6 +2,16 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [2.0.4] - 2026-07-19
+
+### Fixed
+
+- Made Windows Config Manager problem codes authoritative over generic `Win32_PnPEntity` status text, eliminating false driver warnings when SetupAPI and `ConfigManagerErrorCode=0` agree that a device has no problem.
+- Centralized driver attention semantics across the overview, snapshot warnings, and Drivers page; User Mode now surfaces genuine issues from every counted category instead of hiding System or Other devices.
+- Kept real GPU temperature telemetry available when CPU sensors are absent, and split CPU, GPU, aggregate temperature, and fan capability states so one missing provider no longer marks all thermals unsupported.
+- Added read-only Windows thermal providers for Libre Hardware Monitor/Open Hardware Monitor WMI bridges and guarded Dell AWCC temperature/fan enumeration. Dell firmware access is reported as permission-gated when the process is not elevated; no thermal-control method is invoked.
+- Added sensor kind/source provenance to diagnostic snapshots and the Technician thermal table.
+
 ## [2.0.3] - 2026-07-19
 
 ### Fixed

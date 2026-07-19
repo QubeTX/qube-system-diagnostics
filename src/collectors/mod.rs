@@ -186,7 +186,7 @@ impl SystemSnapshot {
         self.disk = disk::collect(&mut self.disks);
         self.gpu = gpu::collect();
 
-        let (thermal_data, thermal_warnings) = thermals::collect(&mut self.components);
+        let (thermal_data, thermal_warnings) = thermals::collect(&mut self.components, &self.gpu);
         self.thermals = thermal_data;
         self.warnings.retain(|w| w.source != "Thermals");
         self.warnings.extend(thermal_warnings);

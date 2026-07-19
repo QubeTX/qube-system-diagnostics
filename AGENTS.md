@@ -91,6 +91,7 @@ Every section module has a `render(frame, app, area, mode)` function that branch
 - **`app.rs`** — App state, event loop, 5 refresh intervals, async driver scan polling
 - **`collectors/`** — Each collector returns a typed data struct. `SystemSnapshot` owns all of them and has refresh methods that delegate to individual collectors.
 - **`collectors/drivers/platform/`** — Platform-dispatched driver scanning: Windows uses Setup API (`SetupDi*`), Linux uses sysfs, macOS uses IOKit. Selected at compile time via `#[cfg(target_os)]`.
+- **`collectors/thermals.rs`** — Cross-platform component sensors plus Windows Libre/Open Hardware Monitor WMI bridges, guarded read-only Dell AWCC enumeration, ACPI fallback, and independent GPU-temperature merging. Dell control methods must never be called by the collector.
 - **`ui/common.rs`** — Color palette, `content_block()`/`sub_block()` panel helpers, `gauge_bar()`, `format_bytes()`, sparkline bar sets. All UI constants (colors, sparkline colors) are defined here.
 - **`ui/sections/`** — One file per section (9 sections), each rendering User and Tech mode independently.
 - **`types.rs`** — Core enums: `DiagnosticMode`, `Section` (1-9), `HealthStatus`, `ProcessSortKey`, `TempUnit`, `DeviceCategory` (9 variants), `DriverScanStatus` (4 variants).

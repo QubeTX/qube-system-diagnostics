@@ -290,8 +290,13 @@ impl App {
         }
 
         // Temperature
-        if let Some(cpu_temp) = self.snapshot.thermals.cpu_temp {
-            self.temp_history.push(cpu_temp);
+        if let Some(temperature) = self
+            .snapshot
+            .thermals
+            .cpu_temp
+            .or(self.snapshot.thermals.gpu_temp)
+        {
+            self.temp_history.push(temperature);
         }
 
         // Disk I/O

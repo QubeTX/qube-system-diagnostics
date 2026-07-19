@@ -5,7 +5,8 @@ use ratatui::widgets::{Paragraph, Sparkline};
 use ratatui::Frame;
 
 use crate::app::App;
-use crate::collectors::thermals::PowerSource;
+use crate::collectors::thermals::{PowerSource, SensorKind};
+use crate::observation::{Observation, ObservationStatus};
 use crate::types::{DiagnosticMode, HealthStatus};
 use crate::ui::common::*;
 
@@ -56,7 +57,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         lines.push(status_line(
             &HealthStatus::Unknown,
             "Processor",
-            "Temperature data unavailable",
+            observation_gap(&thermal.cpu_temperature_status, "Temperature unavailable"),
         ));
     }
 
@@ -75,6 +76,32 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             HealthStatus::Critical
         };
         lines.push(status_line(&status, "Graphics", &desc));
+    } else {
+        lines.push(status_line(
+            &HealthStatus::Unknown,
+            "Graphics",
+            observation_gap(&thermal.gpu_temperature_status, "Temperature unavailable"),
+        ));
+    }
+
+    for sensor in thermal
+        .sensors
+        .iter()
+        .filter(|sensor| sensor.kind == SensorKind::Other)
+        .take(3)
+    {
+        let status = if sensor.temperature < TEMP_CPU_WARN {
+            HealthStatus::Good
+        } else if sensor.temperature < TEMP_CPU_CRIT {
+            HealthStatus::Warning
+        } else {
+            HealthStatus::Critical
+        };
+        lines.push(status_line(
+            &status,
+            &truncate_str(&sensor.label, 16),
+            &format_temp(sensor.temperature, unit),
+        ));
     }
 
     // Fans
@@ -82,7 +109,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::from(vec![
             Span::styled("  Fans            ", Style::default().fg(COLOR_TEXT)),
             Span::styled(
-                "Speed telemetry unavailable",
+                observation_gap(&thermal.fan_status, "Speed telemetry unavailable"),
                 Style::default().fg(COLOR_DIM),
             ),
         ]));
@@ -139,8 +166,15 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     // Temperature history sparkline (now in user mode too)
     let spark_data = app.temp_history.as_u64_vec();
+    let history_label = if thermal.cpu_temp.is_some() {
+        "CPU Temperature (60s)"
+    } else if thermal.gpu_temp.is_some() {
+        "GPU Temperature (60s)"
+    } else {
+        "Temperature History (60s)"
+    };
     let sparkline = Sparkline::default()
-        .block(sub_block("CPU Temperature (60s)"))
+        .block(sub_block(history_label))
         .data(&spark_data)
         .max(100)
         .bar_set(sparkline_bar_set())
@@ -155,8 +189,15 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .cpu_temp
         .map(|t| format_temp(t, unit))
         .unwrap_or("N/A".into());
+    let gpu_temp_str = thermal
+        .gpu_temp
+        .map(|t| format_temp(t, unit))
+        .unwrap_or("N/A".into());
 
-    let outer = content_block(&format!("Thermals & Power \u{2014} CPU: {}", cpu_temp_str));
+    let outer = content_block(&format!(
+        "Thermals & Power \u{2014} CPU: {}  GPU: {}",
+        cpu_temp_str, gpu_temp_str
+    ));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
@@ -177,7 +218,10 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         )),
         Line::from(""),
         Line::from(Span::styled(
-            format!("  {:<24} {:>10} {:>10}", "SENSOR", "TEMP", "CRITICAL"),
+            format!(
+                "  {:<20} {:>9} {:>9} {:<18}",
+                "SENSOR", "TEMP", "CRITICAL", "SOURCE"
+            ),
             Style::default().fg(COLOR_DIM),
         )),
     ];
@@ -202,10 +246,11 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
         sensor_lines.push(Line::from(Span::styled(
             format!(
-                "  {:<24} {:>10} {:>10}",
-                truncate_str(&sensor.label, 24),
+                "  {:<20} {:>9} {:>9} {:<18}",
+                truncate_str(&sensor.label, 20),
                 format_temp(sensor.temperature, unit),
-                crit_str
+                crit_str,
+                truncate_str(&sensor.source, 18)
             ),
             Style::default().fg(color),
         )));
@@ -213,7 +258,10 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     if sensor_lines.is_empty() {
         sensor_lines.push(Line::from(Span::styled(
-            "  No temperature sensors detected",
+            format!(
+                "  No temperature sensors: {}",
+                observation_gap(&thermal.temperature_status, "No provider returned data")
+            ),
             Style::default().fg(COLOR_DIM),
         )));
     }
@@ -287,11 +335,28 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // Temperature history sparkline
     let spark_data = app.temp_history.as_u64_vec();
+    let history_label = if thermal.cpu_temp.is_some() {
+        "CPU Temperature (60s)"
+    } else if thermal.gpu_temp.is_some() {
+        "GPU Temperature (60s)"
+    } else {
+        "Temperature History (60s)"
+    };
     let sparkline = Sparkline::default()
-        .block(sub_block("CPU Temperature (60s)"))
+        .block(sub_block(history_label))
         .data(&spark_data)
         .max(100)
         .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_TEMP));
     frame.render_widget(sparkline, chunks[2]);
+}
+
+fn observation_gap<'a>(observation: &'a Observation, fallback: &'a str) -> &'a str {
+    match observation.status {
+        ObservationStatus::PermissionDenied => "Requires Administrator access",
+        ObservationStatus::Unsupported => "Not exposed by this firmware provider",
+        ObservationStatus::Error => "Provider failed",
+        ObservationStatus::Contradictory => "Provider returned contradictory data",
+        ObservationStatus::Unavailable | ObservationStatus::Available => fallback,
+    }
 }
