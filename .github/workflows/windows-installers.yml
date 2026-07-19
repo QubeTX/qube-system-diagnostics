@@ -85,7 +85,11 @@ jobs:
         run: |
           Get-ChildItem target\native\sd300-windows-x64-* -File | Where-Object Extension -in '.msi', '.exe' | ForEach-Object {
             $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash *$($_.Name)" | Set-Content -LiteralPath "$($_.FullName).sha256" -Encoding ascii
+            [IO.File]::WriteAllText(
+              "$($_.FullName).sha256",
+              "$hash *$($_.Name)`n",
+              [Text.Encoding]::ASCII
+            )
             if ((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne ((Get-Content "$($_.FullName).sha256") -split '\s+')[0]) { throw "checksum failed for $($_.Name)" }
           }
 
