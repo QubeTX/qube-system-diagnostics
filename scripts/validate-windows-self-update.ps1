@@ -67,6 +67,81 @@ function Wait-ForCleanup([string]$Root) {
     throw "live-image backup cleanup did not converge under $Root"
 }
 
+function Test-PathListContains([string]$Value, [string]$Expected) {
+    if (-not $Value) { return $false }
+    $normalized = [IO.Path]::GetFullPath($Expected).TrimEnd('\')
+    foreach ($entry in $Value -split ';') {
+        if (-not $entry.Trim()) { continue }
+        try { $candidate = [IO.Path]::GetFullPath($entry.Trim()).TrimEnd('\') } catch { continue }
+        if ($candidate.Equals($normalized, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+
+function Get-Sd300Registrations([string]$DisplayName) {
+    $records = @()
+    foreach ($root in @(
+        'Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+        'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+        'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+    )) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        $records += @(Get-ChildItem -LiteralPath $root | Where-Object {
+            (Get-ItemProperty -LiteralPath $_.PSPath).DisplayName -eq $DisplayName
+        })
+    }
+    return @($records)
+}
+
+function Assert-ManagedUninstall([string]$Binary, [string]$Channel) {
+    $lines = @(& $Binary uninstall --json)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -or $lines.Count -ne 1) {
+        throw "$Channel uninstall did not return one successful JSON object (exit $exitCode, lines $($lines.Count)): $($lines -join ' | ')"
+    }
+    $result = $lines[0] | ConvertFrom-Json
+    if (-not $result.success -or $result.install_channel -ne $Channel) {
+        throw "$Channel uninstall reported the wrong owner or outcome: $($lines[0])"
+    }
+    for ($attempt = 0; $attempt -lt 600; $attempt++) {
+        if (-not (Test-Path -LiteralPath $managedBinary) -and
+            -not (Test-Path -LiteralPath $managedReceipt) -and
+            -not (Test-Path -LiteralPath (Split-Path -Parent $managedReceipt))) { return }
+        Start-Sleep -Milliseconds 100
+    }
+    throw "$Channel uninstall left its binary, receipt, or receipt directory"
+}
+
+function Assert-NativeUninstall(
+    [string]$Binary,
+    [string]$Channel,
+    [string]$Root,
+    [string]$DisplayName
+) {
+    $binDir = Split-Path -Parent $Binary
+    $lines = @(& $Binary uninstall --json)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -or $lines.Count -ne 1) {
+        throw "$Channel uninstall did not return one successful JSON object (exit $exitCode, lines $($lines.Count)): $($lines -join ' | ')"
+    }
+    $result = $lines[0] | ConvertFrom-Json
+    if (-not $result.success -or $result.install_channel -ne $Channel) {
+        throw "$Channel uninstall reported the wrong owner or outcome: $($lines[0])"
+    }
+    for ($attempt = 0; $attempt -lt 1800; $attempt++) {
+        $marker = Get-ItemPropertyValue -Path 'Registry::HKEY_CURRENT_USER\Software\SD300' -Name InstallSource -ErrorAction SilentlyContinue
+        $ownsPath = (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'User')) $binDir) -or
+                    (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'Machine')) $binDir)
+        if (-not (Test-Path -LiteralPath $Root) -and
+            @(Get-Sd300Registrations $DisplayName).Count -eq 0 -and
+            -not $marker -and
+            -not $ownsPath -and
+            -not (Test-Path -LiteralPath (Split-Path -Parent $managedReceipt))) { return }
+        Start-Sleep -Milliseconds 100
+    }
+    throw "$Channel uninstall left payload, registration, marker, PATH ownership, or an empty managed receipt directory"
+}
+
 function Assert-Update([string]$Binary, [string]$Channel, [string]$Root) {
     $lines = @(& $Binary update --json)
     $updateExitCode = $LASTEXITCODE
@@ -106,23 +181,23 @@ $priorCorporateExe = Join-Path $PriorArtifacts 'sd300-prior-corporate.exe'
 try {
     Set-ManagedPrior
     Assert-Update $managedBinary 'powershell-installer' $managedRoot
-    & $managedBinary uninstall --json | Out-Null
-    Start-Sleep -Seconds 1
+    Assert-ManagedUninstall $managedBinary 'powershell-installer'
 
     Invoke-Checked 'msiexec.exe' @('/i', $priorGlobalMsi, '/qn', '/norestart') @(0, 1641, 3010)
     Assert-Update (Join-Path $globalRoot 'bin\sd300.exe') 'msi-global' $globalRoot
-    Remove-MsiByName 'SD-300 Global'
+    Assert-NativeUninstall (Join-Path $globalRoot 'bin\sd300.exe') 'msi-global' $globalRoot 'SD-300 Global'
 
     Invoke-Checked 'msiexec.exe' @('/i', $priorCorporateMsi, '/qn', '/norestart') @(0, 1641, 3010)
     Assert-Update (Join-Path $corporateRoot 'bin\sd300.exe') 'msi-corporate' $corporateRoot
-    Remove-MsiByName 'SD-300 Corporate'
+    Assert-NativeUninstall (Join-Path $corporateRoot 'bin\sd300.exe') 'msi-corporate' $corporateRoot 'SD-300 Corporate'
 
     Invoke-Checked $priorGlobalExe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
     Assert-Update (Join-Path $globalRoot 'bin\sd300.exe') 'exe-global' $globalRoot
-    Remove-Inno $globalRoot
+    Assert-NativeUninstall (Join-Path $globalRoot 'bin\sd300.exe') 'exe-global' $globalRoot 'SD-300 Global'
 
     Invoke-Checked $priorCorporateExe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
     Assert-Update (Join-Path $corporateRoot 'bin\sd300.exe') 'exe-corporate' $corporateRoot
+    Assert-NativeUninstall (Join-Path $corporateRoot 'bin\sd300.exe') 'exe-corporate' $corporateRoot 'SD-300 Corporate'
 } finally {
     Remove-Inno $globalRoot
     Remove-Inno $corporateRoot

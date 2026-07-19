@@ -132,8 +132,11 @@ official install is authoritative even when it is the same or an older version:
 it removes only recognized prior SD-300 ownership after the replacement is
 verified, and rolls back on failure. Direct native installers apply the same
 policy within their scope and stop before mutation if an opposite Windows scope
-is registered. `sd300 uninstall` delegates to the proven owner and preserves
-unrelated Cargo/Rust tooling and PATH entries.
+is registered. `sd300 uninstall` delegates to the proven owner, removes its
+binary, receipt or native registration, installer marker, and SD-300-only PATH
+entry, and preserves unrelated Cargo/Rust tooling and shared PATH entries.
+Windows native uninstall first retires the running image so MSI/EXE cleanup
+cannot terminate the command before it reports the final result.
 
 The legacy `sd300 --update` flag remains supported. Immutable 1.4.x fallback
 filenames remain as compatibility routers so existing clients can cross the v2

@@ -607,6 +607,40 @@ pub fn run_windows_update_worker(_channel: &str, _version: &str, _backup: &Path)
     2
 }
 
+#[cfg(windows)]
+pub fn run_windows_uninstall_worker(channel: &str, backup: &Path) -> i32 {
+    let Some(channel) = InstallChannel::from_global_worker_id(channel) else {
+        return 2;
+    };
+    let installation = match detect_installation() {
+        Ok(installation) if installation.channel == channel => installation,
+        Ok(_) => return 2,
+        Err(message) => {
+            eprintln!("SD-300 uninstall worker preflight failed safely: {message}");
+            return 2;
+        }
+    };
+    let handoff = match WindowsUninstallImageHandoff::begin_with_backup(backup) {
+        Ok(handoff) => handoff,
+        Err(message) => {
+            eprintln!("SD-300 uninstall worker failed safely: {message}");
+            return 2;
+        }
+    };
+    match handoff.finish(execute_windows_native_uninstaller(&installation, true)) {
+        Ok(()) => 0,
+        Err(message) => {
+            eprintln!("SD-300 uninstall worker failed safely: {message}");
+            2
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn run_windows_uninstall_worker(_channel: &str, _backup: &Path) -> i32 {
+    2
+}
+
 fn is_worker_release_version(version: &str) -> bool {
     version.len() <= 64
         && version.split('.').count() == 3
@@ -691,6 +725,84 @@ fn launch_elevated_windows_update_worker(
     unsafe { CloseHandle(info.hProcess) };
     if got_exit == 0 {
         return Err("Windows did not return the update-worker exit code".into());
+    }
+    Ok(exit_code)
+}
+
+#[cfg(windows)]
+fn launch_elevated_windows_uninstall_worker(
+    channel: &str,
+    backup: &Path,
+) -> std::result::Result<u32, String> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::{null, null_mut};
+    use winapi::um::errhandlingapi::GetLastError;
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::processthreadsapi::GetExitCodeProcess;
+    use winapi::um::shellapi::{
+        ShellExecuteExW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
+    use winapi::um::synchapi::WaitForSingleObject;
+    use winapi::um::winbase::{INFINITE, WAIT_OBJECT_0};
+    use winapi::um::winuser::SW_HIDE;
+
+    if InstallChannel::from_global_worker_id(channel).is_none() {
+        return Err("Refused an invalid elevated Global uninstall request".into());
+    }
+    let current = std::env::current_exe()
+        .map_err(|error| format!("Could not resolve the Global executable: {error}"))?;
+    validate_windows_uninstall_backup(&current, backup)?;
+    let backup = backup.to_str().ok_or_else(|| {
+        "The Global uninstall path cannot be represented safely in the worker command line"
+            .to_string()
+    })?;
+    let parameters = format!(
+        "uninstall-worker --uninstall-channel {channel} --uninstall-backup {}",
+        windows_quote_command_arg(backup)
+    );
+    let verb: Vec<u16> = std::ffi::OsStr::new("runas")
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let file: Vec<u16> = current.as_os_str().encode_wide().chain(Some(0)).collect();
+    let parameters: Vec<u16> = std::ffi::OsStr::new(&parameters)
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+    info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    info.hwnd = null_mut();
+    info.lpVerb = verb.as_ptr();
+    info.lpFile = file.as_ptr();
+    info.lpParameters = parameters.as_ptr();
+    info.lpDirectory = null();
+    info.nShow = SW_HIDE;
+
+    if unsafe { ShellExecuteExW(&mut info) } == 0 {
+        let code = unsafe { GetLastError() };
+        return if code == 1223 {
+            Err("UAC was cancelled; the Global installation was not changed".into())
+        } else {
+            Err(format!(
+                "Could not start the elevated Global uninstall worker (Windows error {code}: {})",
+                std::io::Error::from_raw_os_error(code as i32)
+            ))
+        };
+    }
+    if info.hProcess.is_null() {
+        return Err("Windows returned no uninstall-worker process handle".into());
+    }
+    let wait = unsafe { WaitForSingleObject(info.hProcess, INFINITE) };
+    if wait != WAIT_OBJECT_0 {
+        unsafe { CloseHandle(info.hProcess) };
+        return Err(format!("Waiting for the uninstall worker failed ({wait})"));
+    }
+    let mut exit_code = 0u32;
+    let got_exit = unsafe { GetExitCodeProcess(info.hProcess, &mut exit_code) };
+    unsafe { CloseHandle(info.hProcess) };
+    if got_exit == 0 {
+        return Err("Windows did not return the uninstall-worker exit code".into());
     }
     Ok(exit_code)
 }
@@ -925,6 +1037,180 @@ fn is_windows_update_backup_name(name: &str) -> bool {
         && !nonce.is_empty()
         && pid.bytes().all(|byte| byte.is_ascii_digit())
         && nonce.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+#[cfg(windows)]
+struct WindowsUninstallImageHandoff {
+    original: PathBuf,
+    backup: PathBuf,
+}
+
+#[cfg(windows)]
+impl WindowsUninstallImageHandoff {
+    fn plan() -> std::result::Result<Self, String> {
+        let original = std::env::current_exe()
+            .map_err(|error| format!("Could not resolve the running executable: {error}"))?;
+        let parent = original
+            .parent()
+            .ok_or_else(|| "Running executable has no parent directory".to_string())?;
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let backup = parent.join(format!(
+            ".sd300-uninstall-backup-{}-{nonce}.exe",
+            std::process::id()
+        ));
+        validate_windows_uninstall_backup(&original, &backup)?;
+        Ok(Self { original, backup })
+    }
+
+    fn begin() -> std::result::Result<Self, String> {
+        Self::plan()?.rename_live_image()
+    }
+
+    fn begin_with_backup(backup: &Path) -> std::result::Result<Self, String> {
+        let original = std::env::current_exe()
+            .map_err(|error| format!("Could not resolve the uninstall worker: {error}"))?;
+        validate_windows_uninstall_backup(&original, backup)?;
+        Self {
+            original,
+            backup: backup.to_path_buf(),
+        }
+        .rename_live_image()
+    }
+
+    fn rename_live_image(self) -> std::result::Result<Self, String> {
+        std::fs::rename(&self.original, &self.backup).map_err(|error| {
+            format!(
+                "Could not retire the running executable before uninstall ({} -> {}): {error}",
+                self.original.display(),
+                self.backup.display()
+            )
+        })?;
+        Ok(self)
+    }
+
+    fn finish(self, result: std::result::Result<(), String>) -> std::result::Result<(), String> {
+        match result {
+            Ok(()) => schedule_windows_uninstall_cleanup(&self.backup).map_err(|error| {
+                format!(
+                    "The registered uninstall completed, but final cleanup could not start for {}: {error}",
+                    self.backup.display()
+                )
+            }),
+            Err(message) => match self.rollback() {
+                Ok(()) => Err(format!("{message}; the installed executable was restored")),
+                Err(error) => Err(format!(
+                    "{message}; rollback also failed ({error}); the executable remains at {}",
+                    self.backup.display()
+                )),
+            },
+        }
+    }
+
+    fn rollback(&self) -> std::io::Result<()> {
+        if self.original.exists() {
+            std::fs::remove_file(&self.original)?;
+        }
+        std::fs::rename(&self.backup, &self.original)
+    }
+}
+
+#[cfg(windows)]
+fn validate_windows_uninstall_backup(
+    original: &Path,
+    backup: &Path,
+) -> std::result::Result<(), String> {
+    let original_is_product = original
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("sd300.exe"));
+    let same_parent = original
+        .parent()
+        .zip(backup.parent())
+        .is_some_and(|(left, right)| path_eq(left, right));
+    let valid_name = backup
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(is_windows_uninstall_backup_name);
+    if original_is_product && same_parent && valid_name && backup.is_absolute() {
+        Ok(())
+    } else {
+        Err("Refused an invalid Windows uninstall live-image path".into())
+    }
+}
+
+#[cfg(any(windows, test))]
+fn is_windows_uninstall_backup_name(name: &str) -> bool {
+    let Some(body) = name
+        .strip_prefix(".sd300-uninstall-backup-")
+        .and_then(|name| name.strip_suffix(".exe"))
+    else {
+        return false;
+    };
+    let Some((pid, nonce)) = body.split_once('-') else {
+        return false;
+    };
+    !pid.is_empty()
+        && !nonce.is_empty()
+        && pid.bytes().all(|byte| byte.is_ascii_digit())
+        && nonce.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+#[cfg(windows)]
+fn schedule_windows_uninstall_cleanup(backup: &Path) -> std::result::Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const SCRIPT: &str = "$target=$env:SD300_UNINSTALL_BACKUP; $bin=[IO.Path]::GetDirectoryName($target); $root=[IO.Path]::GetDirectoryName($bin); for($i=0;$i -lt 600;$i++){try{[IO.File]::Delete($target)}catch{}; if(-not [IO.File]::Exists($target)){try{[IO.Directory]::Delete($bin,$false)}catch{}; try{[IO.Directory]::Delete($root,$false)}catch{}; exit 0}; Start-Sleep -Milliseconds 100}; exit 1";
+    let powershell =
+        trusted_windows_system_executable(Path::new("WindowsPowerShell\\v1.0\\powershell.exe"))?;
+    Command::new(powershell)
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            SCRIPT,
+        ])
+        .env("SD300_UNINSTALL_BACKUP", backup.as_os_str())
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Could not schedule trusted uninstall cleanup: {error}"))
+}
+
+#[cfg(windows)]
+fn trusted_windows_system_executable(relative: &Path) -> std::result::Result<PathBuf, String> {
+    use std::os::windows::ffi::OsStringExt;
+    use winapi::um::sysinfoapi::GetSystemDirectoryW;
+
+    let mut buffer = vec![0_u16; 32_768];
+    let length = unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) };
+    if length == 0 {
+        return Err(format!(
+            "Could not resolve the trusted Windows system directory: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let length = length as usize;
+    if length >= buffer.len() {
+        return Err("Windows system directory exceeded the trusted path buffer".into());
+    }
+    let system = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..length]));
+    let executable = system.join(relative);
+    if !system.is_absolute() || !executable.is_file() {
+        return Err(format!(
+            "Trusted Windows system executable was not found at {}",
+            executable.display()
+        ));
+    }
+    Ok(executable)
 }
 
 struct StagedAsset {
@@ -1754,6 +2040,7 @@ fn uninstall_cargo(
         Command::new("cargo").args(["uninstall", CRATE_NAME]),
         quiet_stdout,
     )?;
+    remove_empty_managed_receipt_directory()?;
     Ok("Cargo-owned SD-300 was removed; the Rust toolchain was preserved".into())
 }
 
@@ -1767,10 +2054,42 @@ fn uninstall_managed(installation: &Installation) -> std::result::Result<String,
 fn uninstall_managed(installation: &Installation) -> std::result::Result<String, String> {
     std::fs::remove_file(&installation.binary_path)
         .map_err(|error| format!("Could not remove managed binary: {error}"))?;
-    if let Some(receipt) = receipt_path() {
-        let _ = std::fs::remove_file(receipt);
-    }
+    remove_managed_receipt()?;
     Ok("Managed SD-300 binary and receipt were removed".into())
+}
+
+#[cfg(not(windows))]
+fn remove_managed_receipt() -> std::result::Result<(), String> {
+    let Some(receipt) = receipt_path() else {
+        return Ok(());
+    };
+    match std::fs::remove_file(&receipt) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("Could not remove managed receipt: {error}")),
+    }
+    remove_empty_managed_receipt_directory()
+}
+
+fn remove_empty_managed_receipt_directory() -> std::result::Result<(), String> {
+    let Some(parent) = receipt_path().and_then(|receipt| receipt.parent().map(Path::to_path_buf))
+    else {
+        return Ok(());
+    };
+    match std::fs::remove_dir(parent) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(format!(
+            "Could not remove the empty managed receipt directory: {error}"
+        )),
+    }
 }
 
 #[cfg(windows)]
@@ -1795,6 +2114,12 @@ fn schedule_windows_file_cleanup(
             "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
             powershell_escape(&receipt.to_string_lossy())
         ));
+        if let Some(parent) = receipt.parent() {
+            commands.push_str(&format!(
+                "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
+                powershell_escape(&parent.to_string_lossy())
+            ));
+        }
     }
     Command::new("powershell.exe")
         .args([
@@ -1820,6 +2145,40 @@ fn uninstall_windows_native(
     installation: &Installation,
     quiet_stdout: bool,
 ) -> std::result::Result<String, String> {
+    remove_empty_managed_receipt_directory()?;
+    if installation.channel.global_worker_id().is_some() {
+        let handoff = WindowsUninstallImageHandoff::plan()?;
+        let channel = installation
+            .channel
+            .global_worker_id()
+            .ok_or_else(|| "Refused a non-Global elevated uninstall request".to_string())?;
+        let exit_code = launch_elevated_windows_uninstall_worker(channel, &handoff.backup)?;
+        if exit_code != 0 {
+            return Err(format!(
+                "The elevated {} uninstaller exited with code {exit_code}; verify the installed command before retrying",
+                installation.channel.label()
+            ));
+        }
+        return Ok(format!(
+            "{} uninstall completed; final running-image cleanup was scheduled",
+            installation.channel.label()
+        ));
+    }
+
+    let handoff = WindowsUninstallImageHandoff::begin()?;
+    let result = execute_windows_native_uninstaller(installation, quiet_stdout);
+    handoff.finish(result)?;
+    Ok(format!(
+        "{} uninstall completed; final running-image cleanup was scheduled",
+        installation.channel.label()
+    ))
+}
+
+#[cfg(windows)]
+fn execute_windows_native_uninstaller(
+    installation: &Installation,
+    quiet_stdout: bool,
+) -> std::result::Result<(), String> {
     let registrations = native_registrations();
     let registration = registrations
         .iter()
@@ -1827,8 +2186,9 @@ fn uninstall_windows_native(
         .ok_or_else(|| "The proven native registration disappeared before uninstall".to_string())?;
     match installation.channel {
         InstallChannel::MsiGlobal | InstallChannel::MsiCorporate => {
+            let msiexec = trusted_windows_system_executable(Path::new("msiexec.exe"))?;
             run_status(
-                Command::new("msiexec.exe").args([
+                Command::new(msiexec).args([
                     "/x",
                     &registration.key_name,
                     "/passive",
@@ -1862,10 +2222,13 @@ fn uninstall_windows_native(
         }
         _ => return Err("The detected channel is not a Windows native installer".into()),
     }
-    Ok(format!(
-        "{} uninstall completed",
-        installation.channel.label()
-    ))
+    if native_registrations()
+        .iter()
+        .any(|candidate| candidate.channel == installation.channel)
+    {
+        return Err("The proven native registration remained after its uninstaller exited".into());
+    }
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -1887,8 +2250,9 @@ fn parse_quoted_executable(command_line: &str) -> Option<PathBuf> {
 
 #[cfg(target_os = "macos")]
 fn uninstall_macos_pkg(quiet_stdout: bool) -> std::result::Result<String, String> {
+    remove_empty_managed_receipt_directory()?;
     let script = format!(
-        "rm -f /usr/local/bin/sd300 '/Library/Application Support/SD300/install-receipt.json'; pkgutil --forget {MAC_PKG_ID} >/dev/null"
+        "rm -f /usr/local/bin/sd300 '/Library/Application Support/SD300/install-receipt.json'; rmdir '/Library/Application Support/SD300' 2>/dev/null || true; pkgutil --forget {MAC_PKG_ID} >/dev/null"
     );
     run_status(
         Command::new("sudo").args(["sh", "-c", &script]),
@@ -2144,6 +2508,12 @@ mod tests {
             ".sd300-update-backup-12-345.exe"
         ));
         assert!(!is_windows_update_backup_name("sd300.exe"));
+        assert!(is_windows_uninstall_backup_name(
+            ".sd300-uninstall-backup-12-345.exe"
+        ));
+        assert!(!is_windows_uninstall_backup_name(
+            ".sd300-uninstall-backup-owner-nonce.exe"
+        ));
         assert_eq!(
             windows_quote_command_arg(r"C:\Program Files\sd300\backup.exe"),
             r#""C:\Program Files\sd300\backup.exe""#

@@ -219,6 +219,25 @@ jobs:
 
           fixture_binary=$(find fixture/extracted -type f -name sd300 -perm -111 -print -quit)
           test -n "$fixture_binary"
+          managed_home="$RUNNER_TEMP/sd300-managed-uninstall"
+          (
+            export HOME="$managed_home"
+            export CARGO_HOME="$managed_home/.cargo"
+            export XDG_CONFIG_HOME="$managed_home/.config"
+            mkdir -p "$CARGO_HOME/bin" "$XDG_CONFIG_HOME/sd300"
+            cp "$fixture_binary" "$CARGO_HOME/bin/sd300"
+            chmod 755 "$CARGO_HOME/bin/sd300"
+            jq -n --arg prefix "$CARGO_HOME" --arg version '${{ needs.build.outputs.version }}' '{
+              provider: {source: "cargo-dist"}, source: {app_name: "sd300"},
+              install_prefix: $prefix, version: $version
+            }' > "$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
+            uninstall=$("$CARGO_HOME/bin/sd300" uninstall --json)
+            test "$(printf '%s\n' "$uninstall" | wc -l | tr -d ' ')" -eq 1
+            jq -e '.success == true and .install_channel == "shell-installer"' <<< "$uninstall"
+            test ! -e "$CARGO_HOME/bin/sd300"
+            test ! -e "$XDG_CONFIG_HOME/sd300"
+          )
+
           mkdir -p "$HOME/.cargo/bin" "$HOME/.config/sd300"
           cp "$fixture_binary" "$HOME/.cargo/bin/sd300"
           chmod 755 "$HOME/.cargo/bin/sd300"
@@ -257,6 +276,7 @@ jobs:
           test "$(printf '%s\n' "$uninstall" | wc -l | tr -d ' ')" -eq 1
           jq -e '.success == true and .install_channel == "mac-pkg"' <<< "$uninstall"
           test ! -e /usr/local/bin/sd300
+          test ! -e '/Library/Application Support/SD300'
           ! pkgutil --pkg-info com.qubetx.sd300.pkg >/dev/null 2>&1
 
   attach:

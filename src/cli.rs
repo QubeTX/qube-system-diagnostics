@@ -21,6 +21,9 @@ pub enum Command {
     /// Perform an elevated, pinned, same-channel Global Windows update.
     #[command(hide = true)]
     UpdateWorker(UpdateWorkerArgs),
+    /// Perform an elevated, proven-owner Global Windows uninstall.
+    #[command(hide = true)]
+    UninstallWorker(UninstallWorkerArgs),
 }
 
 #[derive(Args, Debug, Clone, Default, PartialEq, Eq)]
@@ -92,6 +95,17 @@ pub struct UpdateWorkerArgs {
     /// Exact private sibling reserved by the unelevated parent.
     #[arg(long = "update-backup", value_name = "PATH", hide = true)]
     pub update_backup: std::path::PathBuf,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct UninstallWorkerArgs {
+    /// Exact Global Windows channel selected by the unelevated parent.
+    #[arg(long = "uninstall-channel", value_name = "CHANNEL", hide = true)]
+    pub uninstall_channel: String,
+
+    /// Exact private sibling reserved for the running installed image.
+    #[arg(long = "uninstall-backup", value_name = "PATH", hide = true)]
+    pub uninstall_backup: std::path::PathBuf,
 }
 
 /// SD-300 System Diagnostic — Real-time interactive system diagnostics TUI
@@ -287,6 +301,20 @@ mod tests {
         ])
         .expect("hidden update cleanup should parse");
         assert!(matches!(cleanup.command, Some(Command::UpdateCleanup(_))));
+
+        let uninstall_worker = Cli::try_parse_from([
+            "sd300",
+            "uninstall-worker",
+            "--uninstall-channel",
+            "msi-global",
+            "--uninstall-backup",
+            r"C:\Program Files\sd300\bin\.sd300-uninstall-backup-12-34.exe",
+        ])
+        .expect("hidden uninstall worker should parse");
+        assert!(matches!(
+            uninstall_worker.command,
+            Some(Command::UninstallWorker(_))
+        ));
     }
 
     #[test]

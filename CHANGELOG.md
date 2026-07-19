@@ -2,6 +2,15 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [2.0.3] - 2026-07-19
+
+### Fixed
+
+- Added a rollback-capable Windows native-uninstall live-image handoff so `sd300 uninstall` can return its final result instead of being terminated by MSI or EXE Restart Manager while removing the running binary.
+- Removed empty SD-300 receipt directories after managed shell, managed PowerShell, and macOS PKG uninstall while preserving shared Cargo/Rust tooling and non-empty shared directories.
+- Changed Windows native uninstall to resolve `msiexec.exe` from the trusted Windows system directory rather than executable-search `PATH`.
+- Expanded release qualification so the CLI itself must completely remove all four Windows MSI/EXE channels, macOS managed shell and PKG channels, and Linux managed shell/Cargo channels, including registrations, markers, owned PATH entries, receipts, and payload roots.
+
 ## [2.0.2] - 2026-07-19
 
 ### Fixed

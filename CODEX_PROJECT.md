@@ -4,7 +4,7 @@
 
 SD-300 is a Rust/Ratatui cross-platform system diagnostics and monitoring TUI for Windows, macOS, and Linux. The binary is `sd300`; the crates.io package is `tr300-tui`. The recommended install is the stable managed wrapper (`irm | iex` on Windows, `curl | sh` on macOS/Linux); raw Cargo is an advanced unmanaged option.
 
-Current state is version `2.0.0`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`. It includes provenance-aware snapshots/capabilities, channel-preserving install/update/uninstall, expanded Windows diagnostics, stable managed/native artifacts, and draft-gated release qualification.
+Current state is version `2.0.3`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`. It includes provenance-aware snapshots/capabilities, channel-preserving install/update/uninstall, expanded Windows diagnostics, stable managed/native artifacts, and draft-gated release qualification.
 
 The 2026-07-17 M2 MacBook Pro research checkpoint remains the implementation boundary for deeper private/model-specific macOS telemetry. The v2 release adds explicit observation states and native Intel/Apple Silicon PKG gates without claiming that every research-only private signal is implemented.
 
@@ -31,7 +31,7 @@ The 2026-07-17 M2 MacBook Pro research checkpoint remains the implementation bou
 - Packaging:
   - `release.yml` builds cargo-dist artifacts and creates an unpublished draft with stable managed wrappers and legacy compatibility routers.
   - Windows qualification builds/tests Global/Corporate MSI and EXE assets; macOS qualification signs, notarizes, and tests the universal PKG on native Intel and Apple Silicon runners.
-  - Windows and macOS qualification compile a synthetic prior-version binary and prove real same-channel replacement, rollback cleanup, and final version verification rather than only checking an already-current install.
+  - Windows and macOS qualification compile a synthetic prior-version binary and prove real same-channel replacement, rollback cleanup, complete proven-owner CLI uninstall, and final version verification rather than only checking an already-current install.
   - `release-qualify.yml` verifies every updater-facing checksum, publishes the crate only after the native test matrix passes, publishes the draft as `latest`, and proves public Linux managed-shell and Cargo version transitions plus fresh install/uninstall.
   - Public native and wrapper filenames are stable and versionless. Internal exact-tag downloads remain immutable.
   - `sd300-cli-installer.*` is the advertised managed wrapper. `tr300-tui-installer.*` and `SD300-installer.*` are compatibility routers for immutable 1.4.x clients.

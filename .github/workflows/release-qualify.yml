@@ -201,6 +201,7 @@ jobs:
           jq -e '.success == true and .install_channel == "shell-installer"' <<< "$uninstall"
           test ! -e "$CARGO_HOME/bin/sd300"
           test ! -e "$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
+          test ! -e "$XDG_CONFIG_HOME/sd300"
 
           mkdir -p "$CARGO_HOME/bin"
           cp "$smoke_home/prior-build/release/sd300" "$CARGO_HOME/bin/sd300"
@@ -241,6 +242,8 @@ jobs:
           test "$("$CARGO_HOME/bin/sd300" --version)" = 'sd300 ${{ steps.meta.outputs.version }}'
           cargo_uninstall=$("$CARGO_HOME/bin/sd300" uninstall --json)
           jq -e '.success == true and .install_channel == "cargo"' <<< "$cargo_uninstall"
+          test ! -e "$CARGO_HOME/bin/sd300"
+          ! jq -e '.installs | keys[] | startswith("tr300-tui ")' "$CARGO_HOME/.crates2.json"
 
           curl --proto '=https' --tlsv1.2 -fLsS \
             'https://github.com/${{ github.repository }}/releases/latest/download/sd300-cli-installer.sh' | sh -s -- --no-modify-path
@@ -264,3 +267,4 @@ jobs:
           jq -e '.success == true and .install_channel == "shell-installer"' <<< "$uninstall"
           test ! -e "$CARGO_HOME/bin/sd300"
           test ! -e "$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
+          test ! -e "$XDG_CONFIG_HOME/sd300"
