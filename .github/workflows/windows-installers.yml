@@ -150,7 +150,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $prefix = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
           $binary = Join-Path $prefix 'bin\sd300.exe'
-          $receipt = Join-Path $env:LOCALAPPDATA 'sd300\sd300-receipt.json'
+          $configRoot = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { $env:LOCALAPPDATA }
+          $receipt = Join-Path $configRoot 'sd300\sd300-receipt.json'
           $null = New-Item -ItemType Directory -Path (Split-Path -Parent $binary), (Split-Path -Parent $receipt) -Force
           Copy-Item -LiteralPath $env:SD300_CI_MANAGED_BINARY -Destination $binary -Force
           @{

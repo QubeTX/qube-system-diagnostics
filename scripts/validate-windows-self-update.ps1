@@ -24,7 +24,8 @@ $globalRoot = Join-Path $env:ProgramFiles 'sd300'
 $corporateRoot = Join-Path $env:LOCALAPPDATA 'Programs\sd300'
 $managedRoot = Join-Path $env:USERPROFILE '.cargo'
 $managedBinary = Join-Path $managedRoot 'bin\sd300.exe'
-$managedReceipt = Join-Path $env:LOCALAPPDATA 'sd300\sd300-receipt.json'
+$managedConfigRoot = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { $env:LOCALAPPDATA }
+$managedReceipt = Join-Path $managedConfigRoot 'sd300\sd300-receipt.json'
 
 function Invoke-Checked([string]$FilePath, [string[]]$Arguments, [int[]]$Allowed = @(0)) {
     $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
@@ -68,15 +69,18 @@ function Wait-ForCleanup([string]$Root) {
 
 function Assert-Update([string]$Binary, [string]$Channel, [string]$Root) {
     $lines = @(& $Binary update --json)
-    if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 1) {
-        throw "$Channel update did not return exactly one successful JSON object: $($lines -join ' | ')"
+    $updateExitCode = $LASTEXITCODE
+    if ($updateExitCode -ne 0 -or $lines.Count -ne 1) {
+        throw "$Channel update did not return exactly one successful JSON object (exit $updateExitCode, lines $($lines.Count)): $($lines -join ' | ')"
     }
     $result = $lines[0] | ConvertFrom-Json
     if (-not $result.success -or $result.install_channel -ne $Channel -or $result.target_version -ne $CandidateVersion) {
         throw "$Channel update changed ownership or version unexpectedly: $($lines[0])"
     }
-    $reported = (& $Binary --version | Select-Object -First 1)
-    if ($reported -ne "sd300 $CandidateVersion") {
+    $reportedLines = @(& $Binary --version)
+    $versionExitCode = $LASTEXITCODE
+    $reported = $reportedLines | Select-Object -First 1
+    if ($versionExitCode -ne 0 -or $reported -ne "sd300 $CandidateVersion") {
         throw "$Channel replacement reports an unexpected version: $reported"
     }
     Wait-ForCleanup $Root
