@@ -225,12 +225,13 @@ fn resolve_receipt_path(args: &MigrateArgs) -> Option<PathBuf> {
     }
     #[cfg(not(windows))]
     {
-        std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
+        args.user_profile
+            .clone()
+            .map(|home| home.join(".config"))
+            .or_else(|| std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from))
             .or_else(|| {
-                args.user_profile
-                    .clone()
-                    .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+                std::env::var_os("HOME")
+                    .map(PathBuf::from)
                     .map(|home| home.join(".config"))
             })
             .map(|root| root.join(APP_NAME).join("sd300-receipt.json"))
@@ -485,12 +486,36 @@ mod tests {
             cargo_copy: true,
             dry_run: true,
             cargo_home: Some(cargo_home),
+            user_profile: Some(temp.path().to_path_buf()),
             ..MigrateArgs::default()
         });
-        assert!(results
-            .iter()
-            .any(|result| result.status == CleanupStatus::WouldRemove));
+        assert!(
+            results
+                .iter()
+                .any(|result| result.status == CleanupStatus::WouldRemove),
+            "unexpected cleanup results: {results:?}"
+        );
         assert!(binary.exists());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn explicit_user_profile_controls_unix_receipt_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let profile = temp.path().join("explicit-user");
+        let receipt = resolve_receipt_path(&MigrateArgs {
+            user_profile: Some(profile.clone()),
+            ..MigrateArgs::default()
+        });
+        assert_eq!(
+            receipt,
+            Some(
+                profile
+                    .join(".config")
+                    .join(APP_NAME)
+                    .join("sd300-receipt.json")
+            )
+        );
     }
 
     #[test]
