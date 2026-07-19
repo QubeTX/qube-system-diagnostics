@@ -6,14 +6,13 @@
 
 ## Active
 
-- [ ] **Prove complete CLI uninstall and publish the command** - require `sd300 uninstall` to remove every owned channel and list it on the SD-300 website #unx
-  - [ ] Verify the public managed PowerShell uninstall on Alienware
-  - [ ] Exercise Corporate MSI and EXE CLI uninstall on Alienware
-  - [ ] Make hosted Windows qualification invoke CLI uninstall for all four native channels
-  - [ ] Publish and verify the website command surfaces
-
 ## Done
 
+- [x] **Prove complete CLI uninstall and publish the command** - `sd300 uninstall` removes every proven owner and is live on the SD-300 website #unx
+  - [x] Verify public managed PowerShell update, uninstall, and reinstall on Alienware
+  - [x] Exercise Corporate MSI CLI uninstall on Alienware
+  - [x] Make hosted Windows qualification invoke CLI uninstall for all four native channels
+  - [x] Publish and verify the website command surfaces
 - [x] **Qualify and release SD-300 v2** - v2.0.2 is the qualified fix-forward release with all hosted/public gates green (needs #rel) (ms #v20) #ga2
   - [x] Qualify the release Windows binary on Alienware hardware
   - [x] Pass Rust, workflow, package, cross-target, and website local gates
