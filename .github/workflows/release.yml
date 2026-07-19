@@ -433,8 +433,12 @@ jobs:
             echo 'installer placeholder was not rendered' >&2
             exit 1
           fi
-          grep -Fq "releases/download/${RELEASE_TAG}/sd300-dist-installer.sh" artifacts/sd300-cli-installer.sh
-          grep -Fq "releases/download/\$Sd300Tag/sd300-dist-installer.ps1" artifacts/sd300-cli-installer.ps1
+          grep -Fq "sd300_tag='${RELEASE_TAG}'" artifacts/sd300-cli-installer.sh
+          grep -Fq "releases/download/\${sd300_tag}" artifacts/sd300-cli-installer.sh
+          grep -Fq "sd300_stage_release_asset 'sd300-dist-installer.sh'" artifacts/sd300-cli-installer.sh
+          grep -Fq "\$Sd300Tag = '${RELEASE_TAG}'" artifacts/sd300-cli-installer.ps1
+          grep -Fq "releases/download/\$Sd300Tag" artifacts/sd300-cli-installer.ps1
+          grep -Fq "Get-Sd300ReleaseFile 'sd300-dist-installer.ps1'" artifacts/sd300-cli-installer.ps1
           grep -Fq "sd300-macos-universal.pkg" artifacts/tr300-tui-installer.sh
           grep -Fq "sd300-windows-x64-" artifacts/tr300-tui-installer.ps1
 
