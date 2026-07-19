@@ -81,6 +81,7 @@ struct WmiPhysicalMemory {
     manufacturer: Option<String>,
     part_number: Option<String>,
     device_locator: Option<String>,
+    #[serde(rename = "SMBIOSMemoryType")]
     smbios_memory_type: Option<u16>,
 }
 
@@ -168,5 +169,18 @@ fn smbios_memory_type(value: u16) -> String {
         26 => "DDR4".into(),
         34 => "DDR5".into(),
         _ => format!("SMBIOS {value}"),
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserializes_exact_smbios_memory_type_property() {
+        let row: WmiPhysicalMemory =
+            serde_json::from_value(serde_json::json!({ "SMBIOSMemoryType": 34 })).unwrap();
+
+        assert_eq!(row.smbios_memory_type, Some(34));
     }
 }

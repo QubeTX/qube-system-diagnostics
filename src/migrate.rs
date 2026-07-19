@@ -112,6 +112,41 @@ fn clean_cargo_pair(args: &MigrateArgs) -> Vec<CleanupResult> {
                 "receipt exists but its owned binary is missing",
             )];
         }
+    } else if binary_exists {
+        let manifest_path = cargo_home.join(".crates2.json");
+        let manifest = match std::fs::read_to_string(&manifest_path) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                return vec![preserved(
+                    "cargo_copy",
+                    Some(binary),
+                    &format!(
+                        "receipt-less Cargo-path binary has unproven ownership because {} could not be read: {error}",
+                        manifest_path.display()
+                    ),
+                )];
+            }
+        };
+        match crate::update::cargo_manifest_version(&manifest) {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return vec![preserved(
+                    "cargo_copy",
+                    Some(binary),
+                    &format!(
+                        "receipt-less Cargo-path binary is not owned by tr300-tui in {}",
+                        manifest_path.display()
+                    ),
+                )];
+            }
+            Err(error) => {
+                return vec![preserved(
+                    "cargo_copy",
+                    Some(binary),
+                    &format!("receipt-less Cargo ownership is ambiguous: {error}"),
+                )];
+            }
+        }
     }
 
     if args.dry_run {
@@ -474,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn dry_run_preserves_allowlisted_binary() {
+    fn dry_run_preserves_proven_cargo_binary() {
         let temp = tempfile::tempdir().unwrap();
         let cargo_home = temp.path().join("cargo");
         let binary = cargo_home
@@ -482,6 +517,19 @@ mod tests {
             .join(if cfg!(windows) { "sd300.exe" } else { "sd300" });
         std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
         std::fs::write(&binary, b"owned").unwrap();
+        let binary_name = if cfg!(windows) { "sd300.exe" } else { "sd300" };
+        std::fs::write(
+            cargo_home.join(".crates2.json"),
+            serde_json::json!({
+                "installs": {
+                    "tr300-tui 1.4.3 (registry+https://example.invalid/index)": {
+                        "bins": [binary_name]
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
         let results = clean_cargo_pair(&MigrateArgs {
             cargo_copy: true,
             dry_run: true,
@@ -496,6 +544,30 @@ mod tests {
             "unexpected cleanup results: {results:?}"
         );
         assert!(binary.exists());
+    }
+
+    #[test]
+    fn receipt_less_unproven_cargo_binary_is_preserved() {
+        let temp = tempfile::tempdir().unwrap();
+        let cargo_home = temp.path().join("cargo");
+        let binary = cargo_home
+            .join("bin")
+            .join(if cfg!(windows) { "sd300.exe" } else { "sd300" });
+        std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        std::fs::write(&binary, b"foreign").unwrap();
+
+        let results = clean_cargo_pair(&MigrateArgs {
+            cargo_copy: true,
+            strict: true,
+            cargo_home: Some(cargo_home),
+            user_profile: Some(temp.path().to_path_buf()),
+            ..MigrateArgs::default()
+        });
+
+        assert!(results
+            .iter()
+            .any(|result| result.status == CleanupStatus::Preserved));
+        assert_eq!(std::fs::read(binary).unwrap(), b"foreign");
     }
 
     #[cfg(not(windows))]

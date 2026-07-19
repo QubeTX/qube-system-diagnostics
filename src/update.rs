@@ -1466,7 +1466,9 @@ fn cargo_install_is_current(
     Ok(true)
 }
 
-fn cargo_manifest_version(manifest: &str) -> std::result::Result<Option<String>, String> {
+pub(crate) fn cargo_manifest_version(
+    manifest: &str,
+) -> std::result::Result<Option<String>, String> {
     let json: serde_json::Value = serde_json::from_str(manifest).map_err(|error| {
         format!("Cargo's .crates2.json is invalid: {error}. No mutation was attempted.")
     })?;

@@ -114,11 +114,12 @@ fn collect_windows() -> DisplayData {
             Some((key, row))
         })
         .collect::<HashMap<_, _>>();
-    let brightness_rows = connection
-        .raw_query::<WmiMonitorBrightness>(
-            "SELECT InstanceName, Active, CurrentBrightness FROM WmiMonitorBrightness",
-        )
-        .unwrap_or_default();
+    let (brightness_rows, brightness_error) = match connection.raw_query::<WmiMonitorBrightness>(
+        "SELECT InstanceName, Active, CurrentBrightness FROM WmiMonitorBrightness",
+    ) {
+        Ok(rows) => (rows, None),
+        Err(error) => (Vec::new(), Some(format!("WMI query failed: {error}"))),
+    };
     let brightness = brightness_rows
         .iter()
         .filter_map(|row| {
@@ -138,7 +139,10 @@ fn collect_windows() -> DisplayData {
                     "WmiMonitorConnectionParams",
                     format!("WMI query failed: {error}"),
                 ),
-                brightness_status: brightness_observation(&brightness_rows),
+                brightness_status: brightness_observation(
+                    &brightness_rows,
+                    brightness_error.as_deref(),
+                ),
             };
         }
     };
@@ -173,13 +177,15 @@ fn collect_windows() -> DisplayData {
     DisplayData {
         displays,
         inventory_status,
-        brightness_status: brightness_observation(&brightness_rows),
+        brightness_status: brightness_observation(&brightness_rows, brightness_error.as_deref()),
     }
 }
 
 #[cfg(windows)]
-fn brightness_observation(rows: &[WmiMonitorBrightness]) -> Observation {
-    if rows
+fn brightness_observation(rows: &[WmiMonitorBrightness], query_error: Option<&str>) -> Observation {
+    if let Some(error) = query_error {
+        Observation::error("WmiMonitorBrightness", error)
+    } else if rows
         .iter()
         .any(|row| row.active != Some(false) && row.current_brightness.is_some())
     {
@@ -234,5 +240,19 @@ mod tests {
     #[test]
     fn monitor_key_removes_provider_instance_suffix() {
         assert_eq!(monitor_key("DISPLAY\\ABC\\1_0"), "DISPLAY\\ABC\\1");
+    }
+
+    #[test]
+    fn brightness_query_errors_remain_errors() {
+        let observation = brightness_observation(&[], Some("WMI query failed: provider error"));
+
+        assert_eq!(
+            observation.status,
+            crate::observation::ObservationStatus::Error
+        );
+        assert_eq!(
+            observation.detail.as_deref(),
+            Some("WMI query failed: provider error")
+        );
     }
 }
