@@ -204,9 +204,29 @@ jobs:
 
           mkdir -p "$CARGO_HOME/bin"
           cp "$smoke_home/prior-build/release/sd300" "$CARGO_HOME/bin/sd300"
-          jq -n '{
-            installs: {"tr300-tui 1.9.9 (registry+https://github.com/rust-lang/crates.io-index)": {bins: ["sd300"]}}
+          rustc_metadata=$(rustc -vV)
+          jq -n --arg rustc "$rustc_metadata" '{
+            installs: {
+              "tr300-tui 1.9.9 (registry+https://github.com/rust-lang/crates.io-index)": {
+                version_req: null,
+                bins: ["sd300"],
+                features: [],
+                all_features: false,
+                no_default_features: false,
+                profile: "release",
+                target: "x86_64-unknown-linux-gnu",
+                rustc: $rustc
+              }
+            }
           }' > "$CARGO_HOME/.crates2.json"
+          jq -e '.installs[] |
+            .bins == ["sd300"] and
+            .features == [] and
+            .all_features == false and
+            .no_default_features == false and
+            .profile == "release" and
+            (.rustc | length > 0)
+          ' "$CARGO_HOME/.crates2.json"
           echo '::group::Synthetic Cargo update'
           set +e
           cargo_update=$("$CARGO_HOME/bin/sd300" update --json)
