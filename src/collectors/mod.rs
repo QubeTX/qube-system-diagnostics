@@ -68,6 +68,34 @@ mod command_tests {
         assert!(output.is_none());
         assert!(started.elapsed() < Duration::from_secs(1));
     }
+
+    #[test]
+    fn command_helper_drains_output_larger_than_a_pipe_buffer() {
+        const OUTPUT_SIZE: usize = 1024 * 1024;
+
+        #[cfg(unix)]
+        let output = run_output(
+            "sh",
+            ["-c", "head -c 1048576 /dev/zero"],
+            CommandTimeout::Normal,
+        )
+        .expect("large-output command should complete");
+
+        #[cfg(windows)]
+        let output = run_output(
+            "powershell",
+            [
+                "-NoProfile",
+                "-Command",
+                "[Console]::OpenStandardOutput().Write((New-Object byte[] 1048576), 0, 1048576)",
+            ],
+            CommandTimeout::Normal,
+        )
+        .expect("large-output command should complete");
+
+        assert!(output.status.success());
+        assert_eq!(output.stdout.len(), OUTPUT_SIZE);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

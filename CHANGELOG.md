@@ -2,6 +2,13 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [2.0.1] - 2026-07-19
+
+### Fixed
+
+- Drained child-process stdout and stderr concurrently so updater release checks cannot deadlock when GitHub's latest-release response exceeds an operating-system pipe buffer.
+- Added repeatable post-public artifact and lifecycle qualification without republishing an already-public crate or release.
+
 ## [2.0.0] - 2026-07-18
 
 ### Added

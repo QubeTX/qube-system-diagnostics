@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::io::Read;
 use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -33,11 +34,29 @@ where
         .stderr(Stdio::piped())
         .spawn()
         .ok()?;
+    let mut stdout = child.stdout.take()?;
+    let mut stderr = child.stderr.take()?;
+    let stdout_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stdout.read_to_end(&mut bytes);
+        bytes
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stderr.read_to_end(&mut bytes);
+        bytes
+    });
 
     let deadline = Instant::now() + timeout.duration();
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => return child.wait_with_output().ok(),
+            Ok(Some(status)) => {
+                return Some(Output {
+                    status,
+                    stdout: stdout_reader.join().ok()?,
+                    stderr: stderr_reader.join().ok()?,
+                });
+            }
             Ok(None) => {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
