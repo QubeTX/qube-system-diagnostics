@@ -1443,20 +1443,27 @@ fn cargo_install_is_current(
     }
     let manifest_path =
         cargo_manifest_path().expect("cargo home exists when its binary path exists");
-    let manifest = std::fs::read_to_string(&manifest_path).map_err(|error| {
-        format!(
-            "The running path looks like Cargo, but {} could not prove ownership: {}. No mutation was attempted.",
-            manifest_path.display(),
-            error
-        )
-    })?;
-    let version = cargo_manifest_version(&manifest)?.ok_or_else(|| {
-        format!(
-            "The running path looks like Cargo, but {} has no tr300-tui record owning {}. No mutation was attempted.",
-            manifest_path.display(),
-            expected_binary.display()
-        )
-    })?;
+    let manifest = match std::fs::read_to_string(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(format!(
+                "The running path looks like Cargo, but {} could not be read: {}. No mutation was attempted.",
+                manifest_path.display(),
+                error
+            ));
+        }
+    };
+    cargo_manifest_matches_current(&manifest, current_version)
+}
+
+fn cargo_manifest_matches_current(
+    manifest: &str,
+    current_version: &str,
+) -> std::result::Result<bool, String> {
+    let Some(version) = cargo_manifest_version(manifest)? else {
+        return Ok(false);
+    };
     if version != current_version {
         return Err(format!(
             "Cargo records tr300-tui version {}, but the running binary reports {}. No mutation was attempted.",
@@ -2084,6 +2091,9 @@ mod tests {
         let wrong_binary = r#"{"installs":{"tr300-tui 2.0.0 (registry+https://example.invalid/index)":{"bins":["other"]}}}"#;
         assert_eq!(cargo_manifest_version(wrong_binary).unwrap(), None);
         assert!(cargo_manifest_version("not json").is_err());
+        assert!(!cargo_manifest_matches_current(&wrong_package, "2.0.0").unwrap());
+        assert!(cargo_manifest_matches_current(&valid, "2.0.0").unwrap());
+        assert!(cargo_manifest_matches_current(&valid, "1.9.9").is_err());
     }
 
     #[test]
