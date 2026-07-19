@@ -81,7 +81,10 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     if thermal.fans.is_empty() {
         lines.push(Line::from(vec![
             Span::styled("  Fans            ", Style::default().fg(COLOR_TEXT)),
-            Span::styled("Quiet / not detected", Style::default().fg(COLOR_DIM)),
+            Span::styled(
+                "Speed telemetry unavailable",
+                Style::default().fg(COLOR_DIM),
+            ),
         ]));
     } else {
         for fan in &thermal.fans {
@@ -104,6 +107,8 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     if let Some(ref bat) = thermal.battery {
         let charge_str = if bat.is_charging {
             "Charging"
+        } else if bat.is_on_ac {
+            "Plugged in"
         } else {
             "On battery"
         };
@@ -217,7 +222,14 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     sensor_lines.push(Line::from(""));
     if thermal.fans.is_empty() {
         sensor_lines.push(Line::from(Span::styled(
-            "  Fans: No data available",
+            format!(
+                "  Fans: {}",
+                thermal
+                    .fan_status
+                    .detail
+                    .as_deref()
+                    .unwrap_or("No verified RPM provider is available")
+            ),
             Style::default().fg(COLOR_DIM),
         )));
     } else {
@@ -240,6 +252,8 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                     bat.percent,
                     if bat.is_charging {
                         "AC (charging)"
+                    } else if bat.is_on_ac {
+                        "AC (not charging)"
                     } else {
                         "Discharging"
                     }
@@ -247,6 +261,25 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(COLOR_TEXT),
             ),
         ]));
+        let mut details = Vec::new();
+        if let Some(capacity) = bat.full_charged_capacity_mwh {
+            details.push(format!("Full capacity: {capacity} mWh"));
+        }
+        if let Some(voltage) = bat.design_voltage_mv {
+            details.push(format!("Design voltage: {voltage} mV"));
+        }
+        if let Some(cycles) = bat.cycle_count {
+            details.push(format!("Cycles: {cycles}"));
+        }
+        if let Some(ref remaining) = bat.time_remaining {
+            details.push(format!("Estimated runtime: {remaining}"));
+        }
+        if !details.is_empty() {
+            sensor_lines.push(Line::from(Span::styled(
+                format!("    {}", details.join("  ")),
+                Style::default().fg(COLOR_DIM),
+            )));
+        }
     }
 
     let sensor_panel = Paragraph::new(sensor_lines);

@@ -28,11 +28,12 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     let net = &app.snapshot.network;
     let diag = &app.snapshot.network_diag;
-    let connected = !net.interfaces.is_empty();
+    let connected = net.interfaces.iter().any(|interface| interface.is_up);
 
     let conn_type = net
         .interfaces
         .iter()
+        .filter(|interface| interface.is_up)
         .find_map(|i| {
             let name = i.name.to_lowercase();
             if name.contains("wlan")
@@ -138,6 +139,21 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         "Offline".into()
     };
     lines.push(status_line(&inet_status, "Internet", &inet_desc));
+    if let Some(link_speed) = net
+        .adapters
+        .iter()
+        .filter(|adapter| adapter.status.as_deref() == Some("Up"))
+        .filter_map(|adapter| adapter.link_speed_bps)
+        .max()
+    {
+        lines.push(Line::from(vec![
+            Span::styled("  Link speed     ", Style::default().fg(COLOR_TEXT)),
+            Span::styled(
+                format_throughput(link_speed / 8),
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+    }
 
     let status_panel = Paragraph::new(lines);
     frame.render_widget(status_panel, chunks[0]);
@@ -263,15 +279,22 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             .map(|s| s.as_str())
             .unwrap_or("N/A");
         let state_color = if iface.is_up { COLOR_GOOD } else { COLOR_DIM };
+        let link_speed = net
+            .adapters
+            .iter()
+            .find(|adapter| adapter.name.eq_ignore_ascii_case(&iface.name))
+            .and_then(|adapter| adapter.link_speed_bps)
+            .map(|bits| format_throughput(bits / 8))
+            .unwrap_or_else(|| "N/A".into());
 
         Row::new(vec![
-            Cell::from(truncate_str(&iface.name, 18)),
+            Cell::from(truncate_str(&iface.name, 14)),
             Cell::from(Span::styled(
-                truncate_str(&iface.operational_state, 14),
+                truncate_str(&iface.operational_state, 8),
                 Style::default().fg(state_color),
             )),
-            Cell::from(truncate_str(&iface.mac_address, 17)),
-            Cell::from(truncate_str(ip, 18)),
+            Cell::from(link_speed),
+            Cell::from(truncate_str(ip, 16)),
             Cell::from(format_throughput(iface.download_rate)),
             Cell::from(format_throughput(iface.upload_rate)),
         ])
@@ -281,16 +304,16 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let interface_table = Table::new(
         rows,
         [
-            Constraint::Length(18),
             Constraint::Length(14),
-            Constraint::Length(17),
-            Constraint::Min(12),
-            Constraint::Length(12),
-            Constraint::Length(12),
+            Constraint::Length(8),
+            Constraint::Length(10),
+            Constraint::Min(10),
+            Constraint::Length(9),
+            Constraint::Length(9),
         ],
     )
     .header(
-        Row::new(vec!["INTERFACE", "STATE", "MAC", "IP", "RX/s", "TX/s"])
+        Row::new(vec!["INTERFACE", "STATE", "LINK", "IP", "RX/s", "TX/s"])
             .style(Style::default().fg(COLOR_DIM).add_modifier(Modifier::BOLD))
             .bottom_margin(0),
     )

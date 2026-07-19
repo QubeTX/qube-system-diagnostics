@@ -2,32 +2,43 @@
 
 Real-time interactive TUI for system diagnostics and monitoring. Part of the **QubeTX 300 Series** alongside [TR-300](https://github.com/QubeTX/qube-machine-report) (Machine Report) and ND-300 (Network Diagnostic).
 
-## Installation
+## Install
 
-### Shell (macOS/Linux)
+The managed CLI channel is recommended on every platform. Installer filenames
+and public commands are stable and always resolve the latest qualified release.
 
-```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/tr300-tui-installer.sh | sh
-```
-
-### PowerShell (Windows)
+### Windows (recommended)
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/tr300-tui-installer.ps1 | iex"
+irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-cli-installer.ps1 | iex
 ```
 
-### Windows Installer (.msi)
+### macOS and Linux (recommended)
 
-Download `tr300-tui-x86_64-pc-windows-msvc.msi` from the [Releases](https://github.com/QubeTX/qube-system-diagnostics/releases) page. The installer still installs the `sd300` command.
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-cli-installer.sh | sh
+```
 
-### Cargo
+### Native installer options
+
+- Windows Global MSI: `sd300-windows-x64-global.msi`
+- Windows Corporate MSI (per-user, no admin): `sd300-windows-x64-corporate.msi`
+- Windows Global EXE: `sd300-windows-x64-global.exe`
+- Windows Corporate EXE (per-user, no admin): `sd300-windows-x64-corporate.exe`
+- macOS universal signed package: `sd300-macos-universal.pkg`
+
+Download them from the [latest release](https://github.com/QubeTX/qube-system-diagnostics/releases/latest). Global Windows installers use `%ProgramFiles%`; Corporate installers use `%LocalAppData%\Programs` and do not require elevation.
+
+### Cargo (advanced/unmanaged)
 
 ```sh
 cargo install tr300-tui
 ```
 
-Published releases are available as the `tr300-tui` crate. The installed binary
-is still lowercase: `sd300`.
+Published releases are available as the `tr300-tui` crate and still install the
+lowercase `sd300` command. Raw Cargo has no post-install ownership hook, so it is
+the advanced unmanaged channel. Use the recommended managed wrapper when you
+want verified receipts, cross-method takeover, and deterministic uninstall.
 
 After installation, the command surface is always `sd300`:
 
@@ -37,6 +48,10 @@ sd300 --user
 sd300 --tech
 sd300 update
 sd300 --update
+sd300 install
+sd300 uninstall
+sd300 snapshot --json
+sd300 capabilities --json
 ```
 
 ### From Source
@@ -53,9 +68,9 @@ The binary will be at `target/release/sd300` (or `sd300.exe` on Windows).
 
 SD-300 provides two diagnostic modes designed for different audiences:
 
-**User Mode** presents system health in plain language with color-coded status indicators. No technical knowledge required — statuses like "Running quietly", "Memory is getting full", and "Warm" replace raw numbers.
+**User Mode** presents system health in plain language with color-coded status indicators. Unsupported or unavailable telemetry remains explicit instead of being converted into a positive health claim.
 
-**Technician Mode** exposes raw data: per-core CPU utilization, exact memory addresses, driver versions and dates, network interface tables, and real-time sparkline graphs.
+**Technician Mode** exposes raw data: per-core CPU utilization, memory-module topology, driver versions and dates, network interface tables, and real-time sparkline graphs.
 
 ### Diagnostic Sections
 
@@ -94,18 +109,35 @@ sd300 --help       # Show help
 sd300 --version    # Show version
 ```
 
-## Updates
+## Install, Update, and Uninstall Semantics
 
-Run `sd300 update` to check for and install the latest GitHub release. The
-legacy `sd300 --update` flag is still supported for existing scripts.
+`sd300 update` proves the running binary's owner before changing anything, then
+installs the latest release through that same channel: managed PowerShell,
+managed shell, Cargo, Global/Corporate MSI, Global/Corporate EXE, or macOS PKG.
+Ambiguous ownership fails before mutation. Native downloads and wrappers are
+staged privately and verified against SHA-256 sidecars, including the exact-tag
+cargo-dist payload used inside each managed wrapper. On Windows, updates rename
+the running image to one tightly bounded rollback sibling before replacement;
+Global MSI/EXE channels use one elevated same-channel worker so Restart Manager
+cannot terminate the reporting parent or strand an unverified update.
 
-Update checks run before the Ratatui terminal UI is initialized. If Cargo is
-available, SD-300 tries `cargo install tr300-tui --force` first. If Cargo is not
-available or the Cargo update fails, it falls back to the cargo-dist installers:
-`tr300-tui-installer.sh` through `curl`/`wget` on macOS and Linux, and
-`tr300-tui-installer.ps1` through `powershell.exe`/`pwsh.exe` on Windows.
-Those package-named installers still install the `sd300` binary. Update failures
-report per-attempt diagnostics and exit with status `2`.
+If both Cargo and a managed receipt claim the same binary, the newer structured
+ownership record wins. Equal timestamps or contradictory evidence fail closed
+and direct the user to run a fresh official installer. JSON lifecycle responses
+always include `recovery_url` and `requires_user_action` so automation can
+distinguish a completed transaction from a safe handoff to the user.
+
+`sd300 install` deliberately runs the preferred managed CLI installer. A fresh
+official install is authoritative even when it is the same or an older version:
+it removes only recognized prior SD-300 ownership after the replacement is
+verified, and rolls back on failure. Direct native installers apply the same
+policy within their scope and stop before mutation if an opposite Windows scope
+is registered. `sd300 uninstall` delegates to the proven owner and preserves
+unrelated Cargo/Rust tooling and PATH entries.
+
+The legacy `sd300 --update` flag remains supported. Immutable 1.4.x fallback
+filenames remain as compatibility routers so existing clients can cross the v2
+cutover while preserving exact MSI/EXE/PKG ownership when it can be proven.
 
 ## Keybindings
 
@@ -125,20 +157,24 @@ report per-attempt diagnostics and exit with status `2`.
 
 | Platform | Target | Status |
 |----------|--------|--------|
-| Windows x86_64 | `x86_64-pc-windows-msvc` | Supported baseline |
-| macOS x86_64 | `x86_64-apple-darwin` | Supported build target; Intel runtime qualification pending |
-| macOS ARM | `aarch64-apple-darwin` | Supported baseline; M2 capability research complete |
-| Linux x86_64 | `x86_64-unknown-linux-gnu` | Supported baseline |
-| Linux x86_64 (musl) | `x86_64-unknown-linux-musl` | Supported baseline |
-| Linux ARM | `aarch64-unknown-linux-gnu` | Supported baseline |
+| Windows x86_64 | `x86_64-pc-windows-msvc` | Native install and diagnostics release gate |
+| macOS x86_64 | `x86_64-apple-darwin` | Native Intel PKG release gate |
+| macOS ARM | `aarch64-apple-darwin` | Native Apple Silicon PKG release gate |
+| Linux x86_64 | `x86_64-unknown-linux-gnu` | Managed lifecycle release gate |
+| Linux x86_64 (musl) | `x86_64-unknown-linux-musl` | Built and checksummed |
+| Linux ARM | `aarch64-unknown-linux-gnu` | Built and checksummed |
 
 ### Platform-Specific Features
 
-- **Windows**: Setup API driver scanning, battery info via PowerShell, GPU via nvidia-smi
+- **Windows**: Setup API plus WMI driver reconciliation, memory-module inventory, multi-GPU inventory, display topology/brightness, physical-disk health and explicit reliability availability, battery/power state, hardware identity, and native network link state/speed
 - **Linux**: sysfs-based driver scanning, PCI device enumeration, ALSA audio detection
 - **macOS**: bounded `system_profiler`/`diskutil`/network fallbacks plus `sysinfo`; the current implementation does not yet expose the full native hardware capability discovered on real M2 hardware
 
-The exhaustive [macOS hardware-monitor capability and Rust implementation report](https://github.com/QubeTX/qube-system-diagnostics/blob/main/docs/research/2026-07-17-macos-hardware-monitor-capability-report.md) records what was actually accessible on a `Mac14,7` M2 MacBook Pro, exact private/public API routes, sanitized real request/response payloads, privacy and privilege boundaries, current correctness gaps, different-Mac qualification needs, and the Alienware implementation plan. The report is a research handoff, not a claim that those deeper collectors are already implemented.
+`sd300 snapshot --json` provides a noninteractive, privacy-redacted diagnostic
+record; `sd300 capabilities --json` distinguishes available, unavailable,
+unsupported, permission-denied, contradictory, and error states instead of
+inventing zero-valued telemetry. Add `--include-sensitive` only when explicitly
+needed for a local JSON snapshot.
 
 ## Screenshots
 

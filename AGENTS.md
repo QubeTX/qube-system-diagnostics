@@ -2,6 +2,10 @@
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
+## Task management system
+
+This repository uses the git-tracked `.tasks/` board for milestones, active work, verification, and cross-session handoff. At session start, read `.tasks/TASKS.md`, `.tasks/MILESTONES.md`, `.tasks/CLAUDE.md`, and every Active task's detail file. Keep each Active task's `## Status`, `## Verification`, and newest `## Activity` entry current as work progresses. Launch or repair the live board with `node .tasks/board-server.mjs ensure --open` and read its identity-bound port from `.tasks/.board-server.json`.
+
 ## Build & Test Commands
 
 ```bash
@@ -12,6 +16,10 @@ cargo run -- --user            # Launch directly into User Mode
 cargo run -- --tech            # Launch directly into Technician Mode
 cargo run -- update            # Run self-update action (preferred command form)
 cargo run -- --update          # Run self-update action (legacy flag form)
+cargo run -- install           # Deliberate preferred managed install
+cargo run -- uninstall         # Uninstall through proven owner
+cargo run -- snapshot --json   # Redacted noninteractive diagnostic snapshot
+cargo run -- capabilities --json # Capability/provenance matrix
 cargo run -- --help            # Show help with keybindings and sections
 cargo clippy                   # Lint
 cargo test                     # Run tests (assert_cmd/predicates available for CLI integration tests)
@@ -21,28 +29,32 @@ The binary is named `sd300` (not `sd-300`). The crates.io package name is `tr300
 
 ## Release Process (cargo-dist + crates.io)
 
-The standard deploy path is a push to the repository default branch (`main`) with a new, unreleased `Cargo.toml` version. `.github/workflows/release.yml` is intentionally customized from cargo-dist output to match ND-300's probe-and-publish model; do not overwrite it with a generated cargo-dist workflow unless you preserve the main-branch deployment gate and crates.io publish job.
+The standard deploy path is a push to the repository default branch (`main`) with a new, unreleased `Cargo.toml` version. `.github/workflows/release.yml` is intentionally customized from cargo-dist output; do not overwrite it with a generated workflow unless you preserve the main-branch deployment gate, unpublished qualification draft, native matrices, and final crates.io/latest publish gate.
 
 1. Bump version in `Cargo.toml`
 2. Update `CHANGELOG.md` with new version entry
 3. Update `README.md`, `CODEX_PROJECT.md`, `AGENTS.md`, and `CLAUDE.md` for user-visible release/install/update workflow changes
 4. Run local verification: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --locked`, `cargo build --release --locked`, `cargo publish --dry-run --locked --allow-dirty`, cross-target `cargo check`, and `dist plan`
 5. Commit and push to `main`
-6. Wait for GitHub Actions to build successfully before treating the release as published
+6. Wait for the base draft, Windows native matrix, Intel/Apple Silicon PKG matrix, and final qualification workflow before treating the release as published
 
 On `main`, the release workflow reads the package name/version, checks crates.io, GitHub Releases, and tags, then:
 - skips deployment if the exact version is already fully published everywhere
 - repairs a crates.io-published/GitHub-release-missing state by rebuilding artifacts and finishing release hosting
 - fails other partial-release states so a human can repair or bump forward
 - runs cargo-dist artifact builds for all configured targets before hosting anything
-- publishes the `tr300-tui` crate only after GitHub Actions has built all cargo-dist artifacts
-- creates the `v{VERSION}` GitHub release and installer assets only after the crates.io publish step succeeds or confirms the version is already published
+- creates an unpublished `v{VERSION}` draft after all cargo-dist artifacts build
+- renders stable managed wrappers, internal exact-tag cargo-dist installers, and immutable-client compatibility routers with SHA-256 sidecars
+- builds and exercises Global/Corporate MSI and EXE installers on Windows, including synthetic-prior real self-updates through all four preserved channels
+- builds a signed/notarized universal PKG and exercises a synthetic-prior same-PKG update on native Intel and Apple Silicon runners
+- publishes the `tr300-tui` crate only after the complete native asset/checksum/test matrix passes
+- publishes the draft as `latest` immediately after the qualified crate step, then proves public Linux managed-shell and Cargo updates plus fresh install/uninstall
 
 Version tag pushes (`v*.*.*`) remain supported for explicit/manual releases, but the normal automation path is main-branch push. `CARGO_REGISTRY_TOKEN` must exist as a GitHub Actions secret; never commit registry tokens or publish from a local machine unless the user explicitly asks for an emergency manual publish after CI status has been checked.
 
 The package was moved to `tr300-tui` so the project can publish while keeping the installed command and product identity as `sd300` / SD-300. After release, verify `cargo install tr300-tui --version {VERSION}` installs `sd300` and that the GitHub Release assets are present.
 
-cargo-dist builds for 6 targets (x86_64/aarch64 across Windows/macOS/Linux) and produces `tr300-tui-*` archives and installers containing the `sd300` binary. The release workflow also uploads legacy `SD300-installer.sh` / `SD300-installer.ps1` aliases so 1.4.0/1.4.1 installer fallbacks can still update, but current docs and updater code use the package-derived `tr300-tui-installer.*` assets. Do not add lowercase `sd300-*` release aliases alongside uppercase `SD300-*`; GitHub release asset uploads can conflict on case-equivalent names. `allow-dirty = ["ci", "msi"]` is set in `Cargo.toml` because the release workflow and MSI product naming are deliberately customized.
+cargo-dist builds for 6 targets (x86_64/aarch64 across Windows/macOS/Linux) and produces `tr300-tui-*` archives containing the `sd300` binary. Fresh installs advertise stable `sd300-cli-installer.ps1` / `sd300-cli-installer.sh`; native options are stable Global/Corporate MSI/EXE names and `sd300-macos-universal.pkg`. `tr300-tui-installer.*` and uppercase `SD300-installer.*` remain compatibility routers for immutable 1.4.x clients. The `-cli-` segment prevents GitHub's case-equivalent asset collision with the uppercase bridge. Updater internals resolve the latest tag once and use exact-tag URLs plus SHA-256 sidecars. `allow-dirty = ["ci", "msi"]` is set because CI and installer naming are deliberately customized.
 
 ## Architecture
 

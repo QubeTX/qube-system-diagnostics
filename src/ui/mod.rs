@@ -79,3 +79,51 @@ fn render_too_small(frame: &mut Frame) {
     let paragraph = Paragraph::new(text).alignment(Alignment::Center);
     frame.render_widget(paragraph, center);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{DiagnosticMode, Section};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    #[test]
+    fn renders_every_populated_section_in_both_modes_at_minimum_size() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = App::new(Some(DiagnosticMode::User));
+        app.snapshot.refresh_static();
+        app.snapshot.refresh_fast();
+        app.snapshot.refresh_slow();
+        app.snapshot.refresh_connections();
+
+        for mode in [DiagnosticMode::User, DiagnosticMode::Technician] {
+            app.mode = Some(mode);
+            for section in Section::ALL {
+                app.current_section = section;
+                terminal.draw(|frame| render(frame, &app)).unwrap();
+                let buffer = terminal.backend().buffer();
+                assert!(
+                    buffer.content().iter().any(|cell| cell.symbol() != " "),
+                    "{mode:?} {section:?} rendered a blank frame"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn renders_small_terminal_guard() {
+        let backend = TestBackend::new(60, 18);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = App::new(Some(DiagnosticMode::Technician));
+        app.too_small = true;
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("Terminal too small"));
+    }
+}

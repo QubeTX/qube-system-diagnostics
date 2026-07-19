@@ -1,11 +1,12 @@
+use serde::Serialize;
 use sysinfo::Disks;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct DiskData {
     pub partitions: Vec<PartitionInfo>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PartitionInfo {
     pub name: String,
     pub mount_point: String,
@@ -17,7 +18,8 @@ pub struct PartitionInfo {
     pub disk_type: DiskType,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DiskType {
     Ssd,
     Hdd,

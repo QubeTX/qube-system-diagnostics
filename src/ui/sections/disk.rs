@@ -239,6 +239,22 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             }
         }
 
+        if !app.snapshot.disk_health.reliability_status.is_available() {
+            drive_lines.push(Line::from(""));
+            drive_lines.push(Line::from(Span::styled(
+                format!(
+                    "  Reliability counters: {}",
+                    app.snapshot
+                        .disk_health
+                        .reliability_status
+                        .detail
+                        .as_deref()
+                        .unwrap_or("unavailable")
+                ),
+                Style::default().fg(COLOR_DIM),
+            )));
+        }
+
         // Disk health warnings inline in drives panel
         let disk_warnings: Vec<_> = app
             .snapshot

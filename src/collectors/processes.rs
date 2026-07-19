@@ -1,15 +1,16 @@
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use sysinfo::System;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ProcessData {
     pub list: Vec<ProcessInfo>,
     pub total_count: usize,
     pub total_threads: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,

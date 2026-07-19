@@ -121,8 +121,10 @@ jobs:
             esac
 
             release_exists=false
+            release_is_draft=false
             if gh release view "$tag" >/dev/null 2>&1; then
               release_exists=true
+              release_is_draft=$(gh release view "$tag" --json isDraft --jq .isDraft)
             fi
 
             tag_exists=false
@@ -130,7 +132,10 @@ jobs:
               tag_exists=true
             fi
 
-            if [ "$crate_exists" = true ] && [ "$release_exists" = true ]; then
+            if [ "$release_is_draft" = true ]; then
+              echo "::error::Qualification draft ${tag} already exists. Finish or delete that exact draft before changing ${version} source state."
+              exit 1
+            elif [ "$crate_exists" = true ] && [ "$release_exists" = true ]; then
               echo "Crate ${package_name} ${version} and GitHub release ${tag} already exist; this main push will verify but skip deploy."
             elif [ "$crate_exists" = true ] && [ "$release_exists" = false ]; then
               echo "Crate ${package_name} ${version} exists but GitHub release ${tag} is missing; will rebuild artifacts and finish hosting."
@@ -250,7 +255,7 @@ jobs:
         run: |
           if ! command -v cargo > /dev/null 2>&1; then
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           fi
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
@@ -277,9 +282,11 @@ jobs:
         shell: bash
         run: |
           # Parse out what we just built and upload it to scratch storage
-          echo "paths<<EOF" >> "$GITHUB_OUTPUT"
-          dist print-upload-files-from-manifest --manifest dist-manifest.json >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          {
+            echo "paths<<EOF"
+            dist print-upload-files-from-manifest --manifest dist-manifest.json
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
       - name: "Upload artifacts"
@@ -324,9 +331,11 @@ jobs:
           echo "dist ran successfully"
 
           # Parse out what we just built and upload it to scratch storage
-          echo "paths<<EOF" >> "$GITHUB_OUTPUT"
-          jq --raw-output ".upload_files[]" dist-manifest.json >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          {
+            echo "paths<<EOF"
+            jq --raw-output ".upload_files[]" dist-manifest.json
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
       - name: "Upload artifacts"
@@ -336,57 +345,14 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
-  # Determines if we should publish/announce
-  publish-crate:
-    needs:
-      - source-check
-      - plan
-      - build-local-artifacts
-      - build-global-artifacts
-    if: ${{ always() && needs.source-check.outputs.should_deploy == 'true' && needs.plan.result == 'success' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
-    runs-on: "ubuntu-22.04"
-    env:
-      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-          submodules: recursive
-      - name: Publish crate to crates.io
-        shell: bash
-        env:
-          PACKAGE_NAME: ${{ needs.source-check.outputs.package_name }}
-          PACKAGE_VERSION: ${{ needs.source-check.outputs.version }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
-            echo "::error::CARGO_REGISTRY_TOKEN is not configured."
-            exit 1
-          fi
-
-          status=$(curl -sS -H "User-Agent: sd300-release-workflow (github.com/QubeTX/qube-system-diagnostics)" -o /tmp/crate-version.json -w "%{http_code}" "https://crates.io/api/v1/crates/${PACKAGE_NAME}/${PACKAGE_VERSION}")
-          case "$status" in
-            200)
-              echo "${PACKAGE_NAME} ${PACKAGE_VERSION} is already published on crates.io; skipping."
-              ;;
-            404)
-              cargo publish --locked
-              ;;
-            *)
-              echo "::error::Unexpected crates.io status ${status} while checking ${PACKAGE_NAME} ${PACKAGE_VERSION}"
-              cat /tmp/crate-version.json
-              exit 1
-              ;;
-          esac
-
   host:
     needs:
       - plan
       - build-local-artifacts
       - build-global-artifacts
-      - publish-crate
-    # Only run if we're "publishing", and only if plan, local/global builds, and crates.io publish didn't fail (skipped is fine)
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && needs.publish-crate.result == 'success' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    # Only assemble the draft after every cargo-dist build succeeds. Registry
+    # publication remains gated on the downstream native qualification matrix.
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"
@@ -434,25 +400,73 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
-      - name: Add legacy installer aliases
+      - name: Assemble stable managed and compatibility installers
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
         run: |
-          if [ -f artifacts/tr300-tui-installer.sh ]; then
-            cp artifacts/tr300-tui-installer.sh artifacts/SD300-installer.sh
+          set -euo pipefail
+          version=${RELEASE_TAG#v}
+          test -f artifacts/tr300-tui-installer.sh
+          test -f artifacts/tr300-tui-installer.ps1
+
+          mv artifacts/tr300-tui-installer.sh artifacts/sd300-dist-installer.sh
+          mv artifacts/tr300-tui-installer.ps1 artifacts/sd300-dist-installer.ps1
+          rm -f artifacts/tr300-tui-installer.sh.sha256 artifacts/tr300-tui-installer.ps1.sha256
+
+          render() {
+            sed \
+              -e "s/@SD300_TAG@/${RELEASE_TAG}/g" \
+              -e "s/@SD300_VERSION@/${version}/g" \
+              "$1" > "$2"
+          }
+          render scripts/managed-installers/sd300-installer.sh artifacts/sd300-cli-installer.sh
+          render scripts/managed-installers/sd300-installer.ps1 artifacts/sd300-cli-installer.ps1
+          render scripts/compat-installers/tr300-tui-installer.sh artifacts/tr300-tui-installer.sh
+          render scripts/compat-installers/tr300-tui-installer.ps1 artifacts/tr300-tui-installer.ps1
+          cp artifacts/tr300-tui-installer.sh artifacts/SD300-installer.sh
+          cp artifacts/tr300-tui-installer.ps1 artifacts/SD300-installer.ps1
+          chmod 755 artifacts/sd300-cli-installer.sh artifacts/tr300-tui-installer.sh artifacts/SD300-installer.sh
+
+          if grep -R -F '@SD300_' \
+            artifacts/sd300-cli-installer.* artifacts/tr300-tui-installer.* artifacts/SD300-installer.*; then
+            echo 'installer placeholder was not rendered' >&2
+            exit 1
           fi
-          if [ -f artifacts/tr300-tui-installer.ps1 ]; then
-            cp artifacts/tr300-tui-installer.ps1 artifacts/SD300-installer.ps1
-          fi
-      - name: Create GitHub Release
+          grep -Fq "releases/download/${RELEASE_TAG}/sd300-dist-installer.sh" artifacts/sd300-cli-installer.sh
+          grep -Fq "releases/download/\$Sd300Tag/sd300-dist-installer.ps1" artifacts/sd300-cli-installer.ps1
+          grep -Fq "sd300-macos-universal.pkg" artifacts/tr300-tui-installer.sh
+          grep -Fq "sd300-windows-x64-" artifacts/tr300-tui-installer.ps1
+
+          for asset in \
+            sd300-dist-installer.sh sd300-dist-installer.ps1 \
+            sd300-cli-installer.sh sd300-cli-installer.ps1 \
+            tr300-tui-installer.sh tr300-tui-installer.ps1 \
+            SD300-installer.sh SD300-installer.ps1; do
+            (cd artifacts && sha256sum "$asset" > "$asset.sha256")
+          done
+      - name: Create qualified-release draft
         env:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
           ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
           ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
           RELEASE_COMMIT: "${{ github.sha }}"
         run: |
-          # Write and read notes from a file to avoid quoting breaking things
-          echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
+          # Public instructions stay on the versionless latest endpoint. The
+          # draft remains invisible until native Windows/macOS artifacts and
+          # their installation tests pass in the downstream qualification jobs.
+          printf '%s\n' "$ANNOUNCEMENT_BODY" \
+            | sed \
+                -e "s|/releases/download/${{ needs.plan.outputs.tag }}/|/releases/latest/download/|g" \
+                -e 's/^## Install .* [^[:space:]]*$/## Install SD-300 (latest)/' \
+                -e 's/^## Download .* [^[:space:]]*$/## Download SD-300 (latest)/' \
+            > "$RUNNER_TEMP/notes.txt"
 
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+          prerelease_args=()
+          if [[ -n $PRERELEASE_FLAG ]]; then
+            prerelease_args+=("$PRERELEASE_FLAG")
+          fi
+          gh release create "${{ needs.plan.outputs.tag }}" --draft --target "$RELEASE_COMMIT" "${prerelease_args[@]}" --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
 
   announce:
     needs:

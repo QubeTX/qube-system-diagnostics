@@ -1,0 +1,182 @@
+name: Windows Native Installers
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Draft release tag to qualify"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sd300-windows-native-${{ github.event.workflow_run.head_sha || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-upload:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.tag }}
+          persist-credentials: false
+
+      - id: meta
+        name: Resolve draft metadata
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { "v$version" }
+          if ($tag -ne "v$version") { throw "tag $tag does not match Cargo.toml version $version" }
+          $draft = gh release view $tag --json isDraft --jq .isDraft
+          if ($draft -ne 'true') { throw "$tag is not an unpublished qualification draft" }
+          Add-Content $env:GITHUB_OUTPUT "tag=$tag"
+          Add-Content $env:GITHUB_OUTPUT "version=$version"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Build Global and Corporate MSI
+        shell: pwsh
+        run: |
+          $candle = "$env:WIX\bin\candle.exe"
+          $light = "$env:WIX\bin\light.exe"
+          if (-not (Test-Path $candle) -or -not (Test-Path $light)) { throw 'WiX 3 is unavailable' }
+          $null = New-Item -ItemType Directory -Path target\native -Force
+          foreach ($definition in @(
+              @{ Source = 'wix\main.wxs'; Stem = 'global' },
+              @{ Source = 'wix-corporate\corporate.wxs'; Stem = 'corporate' }
+          )) {
+            & $candle -arch x64 `
+              "-dVersion=${{ steps.meta.outputs.version }}" `
+              "-dCargoTargetBinDir=$PWD\target\release" `
+              -out "target\native\$($definition.Stem).wixobj" $definition.Source
+            if ($LASTEXITCODE -ne 0) { throw "candle failed for $($definition.Stem)" }
+            & $light -sice:ICE38 -sice:ICE64 -sice:ICE91 -ext WixUIExtension `
+              -out "target\native\sd300-windows-x64-$($definition.Stem).msi" `
+              "target\native\$($definition.Stem).wixobj"
+            if ($LASTEXITCODE -ne 0) { throw "light failed for $($definition.Stem)" }
+          }
+
+      - name: Build Global and Corporate EXE
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress --no-color
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\iscc.exe'
+          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" inno\global.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Global Inno build failed' }
+          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" inno\corporate.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Corporate Inno build failed' }
+          Copy-Item inno\Output\sd300-windows-x64-global.exe target\native\
+          Copy-Item inno\Output\sd300-windows-x64-corporate.exe target\native\
+
+      - name: Create and verify checksum sidecars
+        shell: pwsh
+        run: |
+          Get-ChildItem target\native\sd300-windows-x64-* -File | Where-Object Extension -in '.msi', '.exe' | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash *$($_.Name)" | Set-Content -LiteralPath "$($_.FullName).sha256" -Encoding ascii
+            if ((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne ((Get-Content "$($_.FullName).sha256") -split '\s+')[0]) { throw "checksum failed for $($_.Name)" }
+          }
+
+      - name: Exercise install, takeover, update-origin, and diagnostics
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts\validate-windows-installers.ps1 -ArtifactDirectory target\native -Version '${{ steps.meta.outputs.version }}' -BuiltBinary target\release\sd300.exe
+
+      - name: Build synthetic prior-version installers
+        shell: pwsh
+        run: |
+          $prior = '1.9.9'
+          $manifest = Get-Content Cargo.toml -Raw
+          $manifest = [regex]::Replace($manifest, '(?ms)(^\[package\]\s+.*?^version\s*=\s*")[^"]+', ('${1}' + $prior), 1)
+          Set-Content Cargo.toml $manifest -Encoding utf8
+          $lock = Get-Content Cargo.lock -Raw
+          $lock = [regex]::Replace($lock, '(?m)(^name = "tr300-tui"\r?\nversion = ")[^"]+', ('${1}' + $prior), 1)
+          Set-Content Cargo.lock $lock -Encoding utf8
+          cargo build --release --locked --target-dir target\prior-build
+
+          $candle = "$env:WIX\bin\candle.exe"
+          $light = "$env:WIX\bin\light.exe"
+          $null = New-Item -ItemType Directory -Path target\prior-native -Force
+          foreach ($definition in @(
+              @{ Source = 'wix\main.wxs'; Stem = 'global' },
+              @{ Source = 'wix-corporate\corporate.wxs'; Stem = 'corporate' }
+          )) {
+            & $candle -arch x64 "-dVersion=$prior" "-dCargoTargetBinDir=$PWD\target\prior-build\release" `
+              -out "target\prior-native\$($definition.Stem).wixobj" $definition.Source
+            if ($LASTEXITCODE -ne 0) { throw "prior candle failed for $($definition.Stem)" }
+            & $light -sice:ICE38 -sice:ICE64 -sice:ICE91 -ext WixUIExtension `
+              -out "target\prior-native\sd300-prior-$($definition.Stem).msi" `
+              "target\prior-native\$($definition.Stem).wixobj"
+            if ($LASTEXITCODE -ne 0) { throw "prior light failed for $($definition.Stem)" }
+          }
+
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\iscc.exe'
+          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" inno\global.iss
+          if ($LASTEXITCODE -ne 0) { throw 'prior Global Inno build failed' }
+          Copy-Item inno\Output\sd300-windows-x64-global.exe target\prior-native\sd300-prior-global.exe
+          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" inno\corporate.iss
+          if ($LASTEXITCODE -ne 0) { throw 'prior Corporate Inno build failed' }
+          Copy-Item inno\Output\sd300-windows-x64-corporate.exe target\prior-native\sd300-prior-corporate.exe
+
+      - name: Exercise real same-channel version transitions
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $null = New-Item -ItemType Directory -Path target\candidate-assets -Force
+          Copy-Item target\native\sd300-windows-x64-* target\candidate-assets\
+          foreach ($name in @(
+              'sd300-cli-installer.ps1', 'sd300-cli-installer.ps1.sha256'
+          )) {
+            gh release download '${{ steps.meta.outputs.tag }}' --pattern $name --dir target\candidate-assets
+            if ($LASTEXITCODE -ne 0) { throw "could not download candidate $name" }
+          }
+          @'
+          param([switch]$NoModifyPath)
+          $ErrorActionPreference = 'Stop'
+          $prefix = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
+          $binary = Join-Path $prefix 'bin\sd300.exe'
+          $receipt = Join-Path $env:LOCALAPPDATA 'sd300\sd300-receipt.json'
+          $null = New-Item -ItemType Directory -Path (Split-Path -Parent $binary), (Split-Path -Parent $receipt) -Force
+          Copy-Item -LiteralPath $env:SD300_CI_MANAGED_BINARY -Destination $binary -Force
+          @{
+            provider = @{ source = 'cargo-dist' }
+            source = @{ app_name = 'sd300' }
+            install_prefix = $prefix
+            version = $env:SD300_CI_RELEASE_TAG.TrimStart('v')
+          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $receipt -Encoding utf8
+          '@ | Set-Content target\candidate-assets\sd300-dist-installer.ps1 -Encoding utf8
+          $fixtureHash = (Get-FileHash target\candidate-assets\sd300-dist-installer.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$fixtureHash *sd300-dist-installer.ps1" | Set-Content target\candidate-assets\sd300-dist-installer.ps1.sha256 -Encoding ascii
+          scripts\validate-windows-self-update.ps1 `
+            -CandidateAssets target\candidate-assets `
+            -CandidateVersion '${{ steps.meta.outputs.version }}' `
+            -CandidateBinary target\release\sd300.exe `
+            -PriorArtifacts target\prior-native `
+            -PriorVersion '1.9.9' `
+            -PriorBinary target\prior-build\release\sd300.exe
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sd300-windows-native-${{ steps.meta.outputs.tag }}
+          if-no-files-found: error
+          path: target/native/sd300-windows-x64-*
+
+      - name: Attach qualified Windows assets to draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload '${{ steps.meta.outputs.tag }}' target/native/sd300-windows-x64-* --clobber

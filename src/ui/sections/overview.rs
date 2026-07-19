@@ -44,10 +44,23 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     let cpu_status = HealthStatus::from_percent(cpu_pct as f64);
     let mem_status = HealthStatus::from_percent(mem_pct);
-    let disk_status = HealthStatus::from_percent(disk_pct);
-    let gpu_status = HealthStatus::from_percent(gpu_pct as f64);
+    let disk_status = if app.snapshot.disk.partitions.is_empty() {
+        HealthStatus::Unknown
+    } else {
+        HealthStatus::from_percent(disk_pct)
+    };
+    let gpu_status = if app.snapshot.gpu.telemetry_available {
+        HealthStatus::from_percent(gpu_pct as f64)
+    } else {
+        HealthStatus::Unknown
+    };
 
-    let net_connected = !app.snapshot.network.interfaces.is_empty();
+    let net_connected = app
+        .snapshot
+        .network
+        .interfaces
+        .iter()
+        .any(|item| item.is_up);
     let net_status = if net_connected {
         HealthStatus::Good
     } else {
@@ -83,10 +96,12 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         .chain(app.snapshot.drivers.other.iter())
         .filter(|d| d.status != crate::collectors::drivers::DeviceStatus::Ok)
         .count();
-    let driver_status = if driver_issues == 0 {
-        HealthStatus::Good
-    } else {
-        HealthStatus::Warning
+    let driver_status = match app.snapshot.drivers.scan_status {
+        crate::collectors::drivers::DriverScanStatus::Success if driver_issues == 0 => {
+            HealthStatus::Good
+        }
+        crate::collectors::drivers::DriverScanStatus::Success => HealthStatus::Warning,
+        _ => HealthStatus::Unknown,
     };
 
     let bar_width = 20;
@@ -114,7 +129,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         bar_width,
     ));
 
-    if app.snapshot.gpu.available {
+    if app.snapshot.gpu.telemetry_available {
         health_lines.push(health_gauge_line(
             "Graphics",
             &gpu_status,
@@ -124,9 +139,13 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         ));
     } else {
         health_lines.push(status_line(
-            &HealthStatus::Good,
+            &HealthStatus::Unknown,
             "Graphics",
-            "Integrated (no detailed data)",
+            if app.snapshot.gpu.available {
+                "Detected; utilization unavailable"
+            } else {
+                "Inventory unavailable"
+            },
         ));
     }
 
@@ -228,7 +247,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6), // System identity
+            Constraint::Length(7), // System identity
             Constraint::Length(3), // Gauges
             Constraint::Length(4), // Disk + Network
             Constraint::Min(6),    // Processes + Summary
@@ -279,6 +298,14 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         ),
         val_w,
     );
+    let machine_val = truncate_str(
+        &format!(
+            "{} {}",
+            sys.manufacturer.as_deref().unwrap_or("Unknown"),
+            sys.model.as_deref().unwrap_or("model")
+        ),
+        val_w,
+    );
 
     let identity_lines = vec![
         Line::from(vec![
@@ -301,6 +328,27 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                     truncate_str(&sys.hostname, val_w),
                     width = val_w
                 ),
+                Style::default().fg(COLOR_TEXT),
+            ),
+            Span::styled("BIOS    ", Style::default().fg(COLOR_DIM)),
+            Span::styled(
+                sys.bios_version.as_deref().unwrap_or("N/A"),
+                Style::default().fg(COLOR_TEXT),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Machine ", Style::default().fg(COLOR_DIM)),
+            Span::styled(
+                format!("{:<width$}", machine_val, width = val_w),
+                Style::default().fg(COLOR_TEXT),
+            ),
+            Span::styled("Hyper-V ", Style::default().fg(COLOR_DIM)),
+            Span::styled(
+                match sys.hypervisor_present {
+                    Some(true) => "present",
+                    Some(false) => "not present",
+                    None => "N/A",
+                },
                 Style::default().fg(COLOR_TEXT),
             ),
         ]),
@@ -360,10 +408,18 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("  GPU ", Style::default().fg(COLOR_DIM)),
             Span::styled(
-                gauge_bar(app.snapshot.gpu.utilization_percent as f64, 20),
-                Style::default().fg(status_color(&HealthStatus::from_percent(
-                    app.snapshot.gpu.utilization_percent as f64,
-                ))),
+                if app.snapshot.gpu.telemetry_available {
+                    gauge_bar(app.snapshot.gpu.utilization_percent as f64, 20)
+                } else {
+                    format!("{:<20}", "N/A")
+                },
+                Style::default().fg(if app.snapshot.gpu.telemetry_available {
+                    status_color(&HealthStatus::from_percent(
+                        app.snapshot.gpu.utilization_percent as f64,
+                    ))
+                } else {
+                    COLOR_DIM
+                }),
             ),
             Span::raw("   "),
             Span::styled("SWP ", Style::default().fg(COLOR_DIM)),

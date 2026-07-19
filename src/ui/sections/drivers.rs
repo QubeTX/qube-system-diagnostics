@@ -87,6 +87,7 @@ fn render_user_category(
     for dev in devices {
         let status = match &dev.status {
             DeviceStatus::Ok => HealthStatus::Good,
+            DeviceStatus::Degraded(_) => HealthStatus::Warning,
             DeviceStatus::Disabled => HealthStatus::Warning,
             DeviceStatus::Error(_) => HealthStatus::Critical,
             DeviceStatus::NotFound => HealthStatus::Unknown,
@@ -275,6 +276,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         for dev in drivers.other.iter().take(show_count) {
             let status_color = match &dev.status {
                 DeviceStatus::Ok => COLOR_GOOD,
+                DeviceStatus::Degraded(_) => COLOR_WARN,
                 DeviceStatus::Error(_) => COLOR_CRIT,
                 _ => COLOR_DIM,
             };
@@ -352,6 +354,7 @@ fn render_tech_category(
     for dev in devices {
         let status_color = match &dev.status {
             DeviceStatus::Ok => COLOR_GOOD,
+            DeviceStatus::Degraded(_) => COLOR_WARN,
             DeviceStatus::Disabled => COLOR_WARN,
             DeviceStatus::Error(_) => COLOR_CRIT,
             _ => COLOR_DIM,
