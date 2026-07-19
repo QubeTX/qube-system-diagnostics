@@ -48,7 +48,7 @@ jobs:
           APPLE_INSTALLER_SIGNING_IDENTITY: ${{ vars.APPLE_INSTALLER_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         shell: bash
-        run: scripts/verify-apple-installer-identity.sh
+        run: bash scripts/verify-apple-installer-identity.sh
 
   build:
     needs: credential-preflight
@@ -109,7 +109,7 @@ jobs:
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         shell: bash
         run: |
-          scripts/build-sign-notarize-macos-installer.sh \
+          bash scripts/build-sign-notarize-macos-installer.sh \
             '${{ steps.meta.outputs.version }}' \
             upstream/tr300-tui-aarch64-apple-darwin.tar.xz \
             upstream/tr300-tui-x86_64-apple-darwin.tar.xz \
