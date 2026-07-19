@@ -1,10 +1,12 @@
 use std::net::ToSocketAddrs;
 use std::time::Instant;
 
+use serde::Serialize;
+
 use super::command::{run_output, run_stdout, CommandTimeout};
 use super::DiagnosticWarning;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct NetworkDiagData {
     pub gateway: ConnectivityResult,
     pub dns: DnsResult,
@@ -13,7 +15,7 @@ pub struct NetworkDiagData {
     pub listening_ports: Vec<ConnectionInfo>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct ConnectivityResult {
     pub reachable: bool,
     pub latency_ms: Option<f64>,
@@ -21,7 +23,7 @@ pub struct ConnectivityResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct DnsResult {
     pub resolved: bool,
     pub resolution_ms: Option<f64>,
@@ -30,7 +32,7 @@ pub struct DnsResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ConnectionInfo {
     pub protocol: Protocol,
     pub local_addr: String,
@@ -42,7 +44,8 @@ pub struct ConnectionInfo {
     pub process_name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Protocol {
     Tcp,
     Udp,
@@ -57,7 +60,8 @@ impl std::fmt::Display for Protocol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ConnectionState {
     Established,
     Listening,

@@ -1,9 +1,97 @@
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
-#[derive(Subcommand, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Check for updates and install the latest release.
-    Update,
+    Update(ActionArgs),
+    /// Install the latest release through the preferred managed CLI channel.
+    Install(ActionArgs),
+    /// Remove SD-300 through its proven installation owner.
+    Uninstall(ActionArgs),
+    /// Collect one redacted noninteractive diagnostic snapshot.
+    Snapshot(ReportArgs),
+    /// Show which diagnostic capabilities are available on this machine.
+    Capabilities(ReportArgs),
+    /// Installer-only cleanup used to make a fresh native install authoritative.
+    #[command(hide = true)]
+    MigrateCleanup(MigrateArgs),
+    /// Delete a renamed Windows live-image backup after a verified update.
+    #[command(hide = true)]
+    UpdateCleanup(UpdateCleanupArgs),
+    /// Perform an elevated, pinned, same-channel Global Windows update.
+    #[command(hide = true)]
+    UpdateWorker(UpdateWorkerArgs),
+}
+
+#[derive(Args, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ActionArgs {
+    /// Emit exactly one machine-readable JSON result object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct ReportArgs {
+    /// Emit machine-readable JSON instead of a compact text summary.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Include host, network-address, MAC-address, and drive-serial values.
+    #[arg(long, requires = "json")]
+    pub include_sensitive: bool,
+}
+
+#[derive(Args, Debug, Clone, Default, PartialEq, Eq)]
+pub struct MigrateArgs {
+    /// Remove an allowlisted SD-300 copy from the invoking user's Cargo home.
+    #[arg(long = "cargo-copy", hide = true)]
+    pub cargo_copy: bool,
+
+    /// Remove an unregistered executable left in the other Windows edition path.
+    #[arg(long = "other-edition", hide = true)]
+    pub other_edition: bool,
+
+    /// Require every requested cleanup target to converge.
+    #[arg(long, hide = true)]
+    pub strict: bool,
+
+    /// Suppress human-readable output.
+    #[arg(long, hide = true)]
+    pub quiet: bool,
+
+    /// Resolve targets without deleting them.
+    #[arg(long = "dry-run", hide = true)]
+    pub dry_run: bool,
+
+    /// Cargo home belonging to the user who launched the installer.
+    #[arg(long = "cargo-home", value_name = "PATH", hide = true)]
+    pub cargo_home: Option<std::path::PathBuf>,
+
+    /// Profile belonging to the user who launched the installer.
+    #[arg(long = "user-profile", value_name = "PATH", hide = true)]
+    pub user_profile: Option<std::path::PathBuf>,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct UpdateCleanupArgs {
+    /// Exact private sibling created by the Windows live-image handoff.
+    #[arg(long = "update-backup", value_name = "PATH", hide = true)]
+    pub update_backup: std::path::PathBuf,
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct UpdateWorkerArgs {
+    /// Exact Global Windows channel selected by the unelevated parent.
+    #[arg(long = "update-channel", value_name = "CHANNEL", hide = true)]
+    pub update_channel: String,
+
+    /// Exact immutable release version selected by the unelevated parent.
+    #[arg(long = "update-version", value_name = "VERSION", hide = true)]
+    pub update_version: String,
+
+    /// Exact private sibling reserved by the unelevated parent.
+    #[arg(long = "update-backup", value_name = "PATH", hide = true)]
+    pub update_backup: std::path::PathBuf,
 }
 
 /// SD-300 System Diagnostic — Real-time interactive system diagnostics TUI
@@ -21,7 +109,8 @@ pub enum Command {
     alongside TR-300 (Machine Report) and ND-300 (Network Diagnostic).\n\n\
     Run without flags to choose a diagnostic mode interactively, \n\
     use --user / --tech to launch directly into a mode, or run \n\
-    sd300 update to check for and install the latest release."
+    sd300 update to check for and install the latest release. Use
+    sd300 snapshot --json for a redacted, noninteractive diagnostic report."
 )]
 #[command(after_long_help = "\
 EXAMPLES:
@@ -29,6 +118,10 @@ EXAMPLES:
   sd300 --user   Launch directly into User Mode
   sd300 --tech   Launch directly into Technician Mode
   sd300 update   Check for updates and install
+  sd300 install  Install latest through the managed CLI channel
+  sd300 uninstall Remove the proven installed channel
+  sd300 snapshot --json       Redacted diagnostic snapshot
+  sd300 capabilities --json   Capability and availability states
   sd300 --update Same as 'sd300 update' (legacy flag form)
 
 KEYBINDINGS:
@@ -78,7 +171,7 @@ mod tests {
     #[test]
     fn parses_positional_update_action() {
         let cli = Cli::try_parse_from(["sd300", "update"]).expect("update action should parse");
-        assert_eq!(cli.command, Some(Command::Update));
+        assert_eq!(cli.command, Some(Command::Update(ActionArgs::default())));
         assert!(!cli.update);
     }
 
@@ -103,5 +196,106 @@ mod tests {
         let help = Cli::command().render_long_help().to_string();
         assert!(help.contains("sd300 update"));
         assert!(help.contains("--update"));
+        assert!(help.contains("sd300 snapshot --json"));
+    }
+
+    #[test]
+    fn parses_redacted_snapshot_and_capabilities_actions() {
+        let snapshot = Cli::try_parse_from(["sd300", "snapshot", "--json"])
+            .expect("snapshot action should parse");
+        assert_eq!(
+            snapshot.command,
+            Some(Command::Snapshot(ReportArgs {
+                json: true,
+                include_sensitive: false,
+            }))
+        );
+
+        let capabilities = Cli::try_parse_from(["sd300", "capabilities", "--json"])
+            .expect("capabilities action should parse");
+        assert!(matches!(
+            capabilities.command,
+            Some(Command::Capabilities(ReportArgs { json: true, .. }))
+        ));
+    }
+
+    #[test]
+    fn parses_lifecycle_json_actions() {
+        let update = Cli::try_parse_from(["sd300", "update", "--json"])
+            .expect("update JSON action should parse");
+        assert_eq!(
+            update.command,
+            Some(Command::Update(ActionArgs { json: true }))
+        );
+
+        let install =
+            Cli::try_parse_from(["sd300", "install"]).expect("install action should parse");
+        assert_eq!(
+            install.command,
+            Some(Command::Install(ActionArgs::default()))
+        );
+
+        let uninstall =
+            Cli::try_parse_from(["sd300", "uninstall"]).expect("uninstall action should parse");
+        assert_eq!(
+            uninstall.command,
+            Some(Command::Uninstall(ActionArgs::default()))
+        );
+    }
+
+    #[test]
+    fn parses_hidden_installer_cleanup() {
+        let cleanup = Cli::try_parse_from([
+            "sd300",
+            "migrate-cleanup",
+            "--cargo-copy",
+            "--strict",
+            "--quiet",
+        ])
+        .expect("installer cleanup should parse");
+        assert!(matches!(
+            cleanup.command,
+            Some(Command::MigrateCleanup(MigrateArgs {
+                cargo_copy: true,
+                strict: true,
+                quiet: true,
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn parses_hidden_windows_update_actions() {
+        let worker = Cli::try_parse_from([
+            "sd300",
+            "update-worker",
+            "--update-channel",
+            "msi-global",
+            "--update-version",
+            "2.0.0",
+            "--update-backup",
+            r"C:\Program Files\sd300\bin\.sd300-update-backup-12-34.exe",
+        ])
+        .expect("hidden update worker should parse");
+        assert!(matches!(worker.command, Some(Command::UpdateWorker(_))));
+
+        let cleanup = Cli::try_parse_from([
+            "sd300",
+            "update-cleanup",
+            "--update-backup",
+            r"C:\Users\example\.cargo\bin\.sd300-update-backup-12-34.exe",
+        ])
+        .expect("hidden update cleanup should parse");
+        assert!(matches!(cleanup.command, Some(Command::UpdateCleanup(_))));
+    }
+
+    #[test]
+    fn sensitive_snapshot_requires_json() {
+        let error = Cli::try_parse_from(["sd300", "snapshot", "--include-sensitive"])
+            .expect_err("sensitive values should require explicit JSON output");
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
     }
 }

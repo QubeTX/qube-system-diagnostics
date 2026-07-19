@@ -1,7 +1,9 @@
 pub mod platform;
 
+use serde::Serialize;
+
 /// Driver/device health data
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct DriverData {
     pub network: Vec<DeviceInfo>,
     pub bluetooth: Vec<DeviceInfo>,
@@ -16,7 +18,7 @@ pub struct DriverData {
     pub scan_status: DriverScanStatus,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DeviceInfo {
     pub name: String,
     pub driver_version: String,
@@ -26,9 +28,11 @@ pub struct DeviceInfo {
     pub extra: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DeviceStatus {
     Ok,
+    Degraded(String),
     Disabled,
     Error(String),
     NotFound,
@@ -39,6 +43,7 @@ impl std::fmt::Display for DeviceStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Ok => write!(f, "OK"),
+            Self::Degraded(msg) => write!(f, "Degraded: {}", msg),
             Self::Disabled => write!(f, "Disabled"),
             Self::Error(msg) => write!(f, "Error: {}", msg),
             Self::NotFound => write!(f, "Not Found"),
@@ -50,7 +55,8 @@ impl std::fmt::Display for DeviceStatus {
 impl DeviceStatus {
     pub fn icon(&self) -> &'static str {
         match self {
-            Self::Ok => "\u{2713}",       // checkmark
+            Self::Ok => "\u{2713}", // checkmark
+            Self::Degraded(_) => "\u{26A0}",
             Self::Disabled => "\u{2014}", // em dash
             Self::Error(_) => "\u{2717}", // x mark
             Self::NotFound => "?",
@@ -61,6 +67,7 @@ impl DeviceStatus {
     pub fn user_description(&self) -> &'static str {
         match self {
             Self::Ok => "Working",
+            Self::Degraded(_) => "Working with reported problems",
             Self::Disabled => "Turned off",
             Self::Error(_) => "Not working properly",
             Self::NotFound => "Not detected",
@@ -69,7 +76,8 @@ impl DeviceStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DeviceCategory {
     Network,
     Bluetooth,
@@ -98,7 +106,8 @@ impl DeviceCategory {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DriverScanStatus {
     #[default]
     NotScanned,
@@ -107,7 +116,7 @@ pub enum DriverScanStatus {
     ScanFailed(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ServiceInfo {
     pub name: String,
     pub display_name: String,

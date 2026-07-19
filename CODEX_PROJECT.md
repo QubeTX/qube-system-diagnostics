@@ -2,11 +2,11 @@
 
 ## TL;DR
 
-SD-300 is a Rust/Ratatui cross-platform system diagnostics and monitoring TUI for Windows, macOS, and Linux. The binary is `sd300`; the crates.io package is `tr300-tui`, so users should install with `cargo install tr300-tui`.
+SD-300 is a Rust/Ratatui cross-platform system diagnostics and monitoring TUI for Windows, macOS, and Linux. The binary is `sd300`; the crates.io package is `tr300-tui`. The recommended install is the stable managed wrapper (`irm | iex` on Windows, `curl | sh` on macOS/Linux); raw Cargo is an advanced unmanaged option.
 
-Current state is version `1.4.3`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`; it includes `sd300 update`, bounded external collector commands, background slow scans, CI, cargo-dist deployment, and crates.io publishing automation.
+Current state is version `2.0.0`, Rust `1.95`, `sysinfo` `0.39.x`, and `crossterm` `0.29`. It includes provenance-aware snapshots/capabilities, channel-preserving install/update/uninstall, expanded Windows diagnostics, stable managed/native artifacts, and draft-gated release qualification.
 
-The 2026-07-17 M2 MacBook Pro research checkpoint documents the gap between the current macOS baseline and a comprehensive hardware monitor. The implementation-ready report is at [`docs/research/2026-07-17-macos-hardware-monitor-capability-report.md`](docs/research/2026-07-17-macos-hardware-monitor-capability-report.md). No runtime redesign has been applied yet; most implementation is intentionally reserved for the Alienware/Windows phase, with later physical-Mac validation gates.
+The 2026-07-17 M2 MacBook Pro research checkpoint remains the implementation boundary for deeper private/model-specific macOS telemetry. The v2 release adds explicit observation states and native Intel/Apple Silicon PKG gates without claiming that every research-only private signal is implemented.
 
 ## Current Status
 
@@ -15,6 +15,9 @@ The 2026-07-17 M2 MacBook Pro research checkpoint documents the gap between the 
   - `sd300 --user` opens User Mode.
   - `sd300 --tech` opens Technician Mode.
   - `sd300 update` and `sd300 --update` run updater logic before terminal initialization.
+  - `sd300 install` makes the preferred managed channel authoritative.
+  - `sd300 uninstall` delegates to the proven owner.
+  - `sd300 snapshot --json` and `sd300 capabilities --json` provide redacted automation surfaces.
 - Core collector model:
   - Fast refresh: CPU, memory, network, processes.
   - Slow refresh: disk, GPU, thermals.
@@ -26,10 +29,12 @@ The 2026-07-17 M2 MacBook Pro research checkpoint documents the gap between the 
   - The research report specifies public and private access tiers, exact Rust/FFI integration guidance, safe cadence/redaction, sanitized real payload examples, the macOS 26 non-guaranteed NVMe SMART-detail route, different-Mac qualification, and optional Vercel Labs Native GUI boundaries.
   - TUI and CLI remain the canonical product surfaces; the GUI is only a decoupled experiment.
 - Packaging:
-  - cargo-dist release workflow is intentionally customized like ND-300: `main` pushes verify release state, build artifacts, publish crates.io, then host the GitHub release and installer assets.
-  - The workflow can finish hosting if crates.io already has the exact version but the GitHub release is missing.
-  - Release assets use cargo-dist's package-derived `tr300-tui-*` names; the shell, PowerShell, and MSI installers still install the `sd300` command.
-  - Legacy uppercase `SD300-installer.*` aliases are kept only for 1.4.0/1.4.1 updater fallback compatibility. Do not add lowercase `sd300-*` aliases next to those uppercase aliases.
+  - `release.yml` builds cargo-dist artifacts and creates an unpublished draft with stable managed wrappers and legacy compatibility routers.
+  - Windows qualification builds/tests Global/Corporate MSI and EXE assets; macOS qualification signs, notarizes, and tests the universal PKG on native Intel and Apple Silicon runners.
+  - Windows and macOS qualification compile a synthetic prior-version binary and prove real same-channel replacement, rollback cleanup, and final version verification rather than only checking an already-current install.
+  - `release-qualify.yml` verifies every updater-facing checksum, publishes the crate only after the native test matrix passes, publishes the draft as `latest`, and proves public Linux managed-shell and Cargo version transitions plus fresh install/uninstall.
+  - Public native and wrapper filenames are stable and versionless. Internal exact-tag downloads remain immutable.
+  - `sd300-cli-installer.*` is the advertised managed wrapper. `tr300-tui-installer.*` and `SD300-installer.*` are compatibility routers for immutable 1.4.x clients.
   - `allow-dirty = ["ci", "msi"]` is set in cargo-dist metadata because `.github/workflows/release.yml` and MSI product naming have deliberate deployment customizations.
 
 ## Goals

@@ -1,0 +1,273 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<!--
+  Copyright (C) 2017 Christopher R. Field.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE.md-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+
+<!--
+  SD-300 Corporate Edition (perUser MSI).
+
+  This template ships alongside `wix/main.wxs` (the Global / perMachine MSI).
+  Built by `.github/workflows/corporate-msi.yml` after `release.yml` finishes
+  publishing the GitHub Release, then uploaded as
+  `sd300-x86_64-pc-windows-msvc-corporate.msi`.
+
+  Differences vs main.wxs (intentional — do not converge):
+    - InstallScope="perUser" on the Package element. Sufficient on WiX 3.11+
+        to install without UAC on machines where the user has no admin rights
+        but still has write access to %LocalAppData%. Earlier drafts also set
+        ALLUSERS="" + MSIINSTALLPERUSER=1 as Property elements, but WiX 3.11
+        candle rejects ALLUSERS Value="" with CNDL0006 ("empty string"). Per
+        WiX docs, InstallScope="perUser" is equivalent to ALLUSERS unset.
+    - UpgradeCode is a DIFFERENT GUID from the Global edition.
+        Same UpgradeCode across editions would confuse Windows Installer
+        and break upgrades in both directions. Post-install consolidation
+        targets an older opposite-edition executable; an explicit format
+        choice within Corporate removes its MSI/Inno counterpart first.
+    - Install location: %LocalAppData%\Programs\sd300\bin\sd300.exe
+        instead of %ProgramFiles%\sd300\bin\sd300.exe.
+    - PATH entry: user PATH (HKCU\Environment\Path) instead of
+        system PATH (HKLM\...\Session Manager\Environment\Path).
+    - Product Name: "sd300 (Corporate Edition)" — distinct ARP entry.
+
+  If install paths/identity in this file change, update src/update.rs,
+  inno/corporate.iss, validation workflow, and the ADR in lockstep.
+-->
+
+<!--
+  The "cargo wix" subcommand provides a variety of predefined variables available
+  for customization of this template. The values for each variable are set at
+  installer creation time. The following variables are available:
+
+  TargetTriple      = The rustc target triple name.
+  TargetEnv         = The rustc target environment. This is typically either
+                      "msvc" or "gnu" depending on the toolchain downloaded and
+                      installed.
+  TargetVendor      = The rustc target vendor. This is typically "pc", but Rust
+                      does support other vendors, like "uwp".
+  CargoTargetBinDir = The complete path to the directory containing the
+                      binaries (exes) to include. The default would be
+                      "target\release\". If an explicit rustc target triple is
+                      used, i.e. cross-compiling, then the default path would
+                      be "target\<CARGO_TARGET>\<CARGO_PROFILE>",
+                      where "<CARGO_TARGET>" is replaced with the "CargoTarget"
+                      variable value and "<CARGO_PROFILE>" is replaced with the
+                      value from the "CargoProfile" variable. This can also
+                      be overridden manually with the "target-bin-dir" flag.
+  CargoTargetDir    = The path to the directory for the build artifacts, i.e.
+                      "target".
+  CargoProfile      = The cargo profile used to build the binaries
+                      (usually "debug" or "release").
+  Version           = The version for the installer. The default is the
+                      "Major.Minor.Fix" semantic versioning number of the Rust
+                      package.
+-->
+
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+
+    <Product
+        Id='*'
+        Name='SD-300 Corporate'
+        UpgradeCode='143F59B2-5D4B-4F6F-B258-BB44F9C50CC9'
+        Manufacturer='Emmett S'
+        Language='1033'
+        Codepage='1252'
+        Version='$(var.Version)'>
+
+        <Package Id='*'
+            Keywords='Installer'
+            Description='SD-300 real-time interactive system diagnostic TUI (Corporate Edition, per-user install)'
+            Manufacturer='Emmett S'
+            InstallerVersion='450'
+            Languages='1033'
+            Compressed='yes'
+            InstallScope='perUser'
+            SummaryCodepage='1252'
+            />
+
+        <!-- perUser scope: InstallScope='perUser' on the Package element above
+             is sufficient on WiX 3.11+ to make this a per-user install with
+             no UAC. We do NOT declare ALLUSERS or MSIINSTALLPERUSER Properties
+             explicitly:
+             - `<Property Id='ALLUSERS' Value=''/>` was rejected by WiX 3.11
+               candle with CNDL0006 ("Property/@Value attribute's value cannot
+               be an empty string") and CNDL1006 (Property would be ignored).
+               This was the root cause of the v3.15.0 release.yml failure on
+               build-local-artifacts(x86_64-pc-windows-msvc) at run 25901237669.
+             - `<Property Id='MSIINSTALLPERUSER' Value='1'/>` is redundant when
+               InstallScope='perUser' is set; cargo-wix's MSI compile path
+               doesn't need it.
+             The WiX 3 docs say InstallScope='perUser' is "equivalent to setting
+             ALLUSERS='' or NOT setting ALLUSERS at all". Sufficient. -->
+
+        <MajorUpgrade
+            Schedule='afterInstallInitialize'
+            AllowDowngrades='yes'/>
+
+        <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
+        <Property Id='DiskPrompt' Value='sd300 (Corporate Edition) Installation'/>
+        <Property Id='CONFLICTING_INNO_UNINSTALL'>
+            <RegistrySearch Id='FindConflictingCorporateInno'
+                Root='HKCU'
+                Key='Software\Microsoft\Windows\CurrentVersion\Uninstall\{ED209931-B5C0-43AE-89F6-83EE2C581653}_is1'
+                Name='UninstallString'
+                Type='raw'
+                Win64='yes'/>
+        </Property>
+        <Property Id='OTHEREDITIONINNO'>
+            <RegistrySearch Id='FindGlobalInnoForSafeStop'
+                Root='HKLM'
+                Key='Software\Microsoft\Windows\CurrentVersion\Uninstall\{DC74D35F-CBF4-425F-B11E-E9EA87C13CA9}_is1'
+                Name='UninstallString'
+                Type='raw'
+                Win64='yes'/>
+        </Property>
+        <Upgrade Id='A7C3E1D4-9F8B-4E2A-B6D1-3F5C8A0E7B94'>
+            <UpgradeVersion Minimum='0.0.0'
+                IncludeMinimum='yes'
+                OnlyDetect='yes'
+                Property='OTHEREDITIONMSI'/>
+        </Upgrade>
+        <Condition Message='Global Edition is installed. Setup stopped before changing anything. Uninstall it first or use the managed installer: https://github.com/QubeTX/qube-system-diagnostics/releases/latest'>
+            <![CDATA[NOT OTHEREDITIONMSI AND NOT OTHEREDITIONINNO]]>
+        </Condition>
+
+        <!-- MIC-1 strict cross-method convergence (v4.2.0+) - see wix/main.wxs.
+             The LaunchCondition above stops before mutation when a Global native
+             product remains registered; the strict actions below therefore target
+             only an exact managed/Cargo copy and an orphaned Program Files binary.
+             Interactive and passive installs share this mandatory, fail-closed
+             behavior; there is no opt-out or forged registration cleanup. -->
+
+        <Directory Id='TARGETDIR' Name='SourceDir'>
+            <Directory Id='LocalAppDataFolder'>
+                <Directory Id='ProgramsFolder' Name='Programs'>
+                    <Directory Id='APPLICATIONFOLDER' Name='sd300'>
+                        <!-- Install-source marker. sd300 update reads this from
+                             HKCU and picks the matching installer to download for
+                             in-place upgrades. Value must match the literal
+                             `msi-corporate` arm in src/update.rs. -->
+                        <Component Id='InstallSourceMarker' Guid='4B16FE9D-2637-4C76-A16D-1247C03E3D24'>
+                        <RegistryValue
+                            Root='HKCU'
+                            Key='Software\SD300'
+                            Name='InstallSource'
+                            Type='string'
+                            Value='msi-corporate'
+                            KeyPath='yes'/>
+                        <RegistryValue
+                            Root='HKCU'
+                            Key='Software\SD300'
+                            Name='InstallSourceCorporate'
+                            Type='string'
+                            Value='msi-corporate'/>
+                        </Component>
+                        <Directory Id='Bin' Name='bin'>
+                            <Component Id='Path' Guid='4CE5434A-02B8-45E8-A15F-D8FC9C1C609F' KeyPath='yes'>
+                                <!-- User PATH (HKCU\Environment\Path), not system PATH. -->
+                                <Environment
+                                    Id='PATH'
+                                    Name='PATH'
+                                    Value='[Bin]'
+                                    Permanent='no'
+                                    Part='last'
+                                    Action='set'
+                                    System='no'/>
+                            </Component>
+                            <Component Id='binary0' Guid='*'>
+                                <File
+                                    Id='exe0'
+                                    Name='sd300.exe'
+                                    DiskId='1'
+                                    Source='$(var.CargoTargetBinDir)\sd300.exe'
+                                    KeyPath='yes'/>
+                            </Component>
+                        </Directory>
+                    </Directory>
+                </Directory>
+            </Directory>
+        </Directory>
+
+        <Feature
+            Id='Binaries'
+            Title='Application'
+            Description='Installs the sd300 binary (Corporate Edition, per-user).'
+            Level='1'
+            ConfigurableDirectory='APPLICATIONFOLDER'
+            AllowAdvertise='no'
+            Display='expand'
+            Absent='disallow'>
+
+            <ComponentRef Id='binary0'/>
+            <ComponentRef Id='InstallSourceMarker'/>
+
+            <Feature
+                Id='Environment'
+                Title='PATH Environment Variable'
+                Description='Add the install location of [ProductName] to your user PATH so the binary is callable from any terminal.'
+                Level='1'
+                Absent='allow'>
+                <ComponentRef Id='Path'/>
+            </Feature>
+        </Feature>
+
+        <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+
+        <!-- MIC-1 strict convergence custom actions - see wix/main.wxs.
+             Deferred and impersonated; FileKey='exe0' avoids WixUtilExtension
+             (the Corporate MSI links only WixUIExtension). Return='check' makes
+             incomplete ownership convergence fail the package transaction, and
+             `NOT Installed` limits it to install/upgrade rather than uninstall or
+             repair. -->
+        <CustomAction Id='CleanCargoCopy'
+            FileKey='exe0'
+            ExeCommand='migrate-cleanup --quiet --strict --cargo-copy'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
+        <CustomAction Id='RemoveConflictingInno'
+            Directory='TARGETDIR'
+            ExeCommand='[CONFLICTING_INNO_UNINSTALL] /VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
+        <CustomAction Id='CleanOtherEdition'
+            FileKey='exe0'
+            ExeCommand='migrate-cleanup --quiet --strict --other-edition'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
+
+        <InstallExecuteSequence>
+            <Custom Action='RemoveConflictingInno' Before='InstallFiles'>
+                <![CDATA[CONFLICTING_INNO_UNINSTALL AND NOT REMOVE~="ALL"]]>
+            </Custom>
+            <Custom Action='CleanOtherEdition' Before='CleanCargoCopy'>
+                <![CDATA[NOT Installed]]>
+            </Custom>
+            <Custom Action='CleanCargoCopy' Before='InstallFinalize'>
+                <![CDATA[NOT Installed]]>
+            </Custom>
+        </InstallExecuteSequence>
+
+        <Property Id='ARPHELPLINK' Value='https://github.com/QubeTX/qube-system-diagnostics'/>
+
+        <UI>
+            <UIRef Id='WixUI_FeatureTree'/>
+
+        </UI>
+
+    </Product>
+
+</Wix>

@@ -1,0 +1,220 @@
+name: Qualify and Publish Release
+
+on:
+  workflow_run:
+    workflows: ["Windows Native Installers", "macOS Universal Package"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Draft release tag to qualify"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sd300-release-qualify-${{ github.event.workflow_run.head_sha || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.tag }}
+          persist-credentials: false
+
+      - id: meta
+        name: Resolve draft and asset matrix
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
+          if [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
+            tag='${{ inputs.tag }}'
+          else
+            tag="v${version}"
+          fi
+          [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
+          state=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)
+          if [[ $state != true ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "$tag is not a draft; it is either already qualified or unavailable."
+            exit 0
+          fi
+
+          mapfile -t assets < <(gh release view "$tag" --json assets --jq '.assets[].name')
+          required=(
+            dist-manifest.json
+            tr300-tui-aarch64-apple-darwin.tar.xz
+            tr300-tui-x86_64-apple-darwin.tar.xz
+            tr300-tui-x86_64-pc-windows-msvc.zip
+            tr300-tui-x86_64-unknown-linux-gnu.tar.xz
+            tr300-tui-x86_64-unknown-linux-musl.tar.xz
+            sd300-dist-installer.sh sd300-dist-installer.sh.sha256
+            sd300-dist-installer.ps1 sd300-dist-installer.ps1.sha256
+            sd300-cli-installer.sh sd300-cli-installer.sh.sha256
+            sd300-cli-installer.ps1 sd300-cli-installer.ps1.sha256
+            tr300-tui-installer.sh tr300-tui-installer.sh.sha256
+            tr300-tui-installer.ps1 tr300-tui-installer.ps1.sha256
+            SD300-installer.sh SD300-installer.sh.sha256
+            SD300-installer.ps1 SD300-installer.ps1.sha256
+            sd300-windows-x64-global.msi sd300-windows-x64-global.msi.sha256
+            sd300-windows-x64-corporate.msi sd300-windows-x64-corporate.msi.sha256
+            sd300-windows-x64-global.exe sd300-windows-x64-global.exe.sha256
+            sd300-windows-x64-corporate.exe sd300-windows-x64-corporate.exe.sha256
+            sd300-macos-universal.pkg sd300-macos-universal.pkg.sha256
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            printf '%s\n' "${assets[@]}" | grep -Fqx "$name" || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            printf 'Qualification is waiting for %s\n' "${missing[@]}"
+            exit 0
+          fi
+          {
+            echo "ready=true"
+            echo "tag=$tag"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download and verify every updater-facing artifact
+        if: ${{ steps.meta.outputs.ready == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir qualification
+          for name in \
+            sd300-dist-installer.sh sd300-dist-installer.ps1 \
+            sd300-cli-installer.sh sd300-cli-installer.ps1 \
+            tr300-tui-installer.sh tr300-tui-installer.ps1 \
+            SD300-installer.sh SD300-installer.ps1 \
+            sd300-windows-x64-global.msi sd300-windows-x64-corporate.msi \
+            sd300-windows-x64-global.exe sd300-windows-x64-corporate.exe \
+            sd300-macos-universal.pkg; do
+            gh release download '${{ steps.meta.outputs.tag }}' --dir qualification \
+              --pattern "$name" --pattern "$name.sha256"
+          done
+          (cd qualification && sha256sum -c ./*.sha256)
+          if grep -R -F '@SD300_' qualification; then
+            echo 'installer placeholder was not rendered' >&2
+            exit 1
+          fi
+          SD300_MANAGED_INSTALLER_TEST_ONLY=1 sh qualification/sd300-cli-installer.sh
+          SD300_COMPAT_INSTALLER_TEST_ONLY=1 sh qualification/tr300-tui-installer.sh
+          pwsh -NoProfile -NonInteractive -Command \
+            "\$env:SD300_MANAGED_INSTALLER_TEST_ONLY='1'; . ./qualification/sd300-cli-installer.ps1"
+          pwsh -NoProfile -NonInteractive -Command \
+            "\$env:SD300_COMPAT_INSTALLER_TEST_ONLY='1'; . ./qualification/tr300-tui-installer.ps1"
+
+      - name: Publish qualified crate to crates.io
+        if: ${{ steps.meta.outputs.ready == 'true' }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          PACKAGE_VERSION: ${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z ${CARGO_REGISTRY_TOKEN:-} ]]; then
+            echo '::error::CARGO_REGISTRY_TOKEN is not configured.'
+            exit 1
+          fi
+          package_name=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "name" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
+          status=$(curl -sS \
+            -H 'User-Agent: sd300-release-workflow (github.com/QubeTX/qube-system-diagnostics)' \
+            -o /tmp/crate-version.json -w '%{http_code}' \
+            "https://crates.io/api/v1/crates/${package_name}/${PACKAGE_VERSION}")
+          case "$status" in
+            200) echo "${package_name} ${PACKAGE_VERSION} is already published; continuing qualification." ;;
+            404) cargo publish --locked ;;
+            *)
+              echo "::error::Unexpected crates.io status ${status} for ${package_name} ${PACKAGE_VERSION}"
+              cat /tmp/crate-version.json
+              exit 1
+              ;;
+          esac
+
+      - name: Publish qualified draft as latest
+        if: ${{ steps.meta.outputs.ready == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit '${{ steps.meta.outputs.tag }}' --draft=false --latest
+
+      - name: Smoke public managed Linux lifecycle
+        if: ${{ steps.meta.outputs.ready == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SD300_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            latest=$(gh api 'repos/${{ github.repository }}/releases/latest' --jq .tag_name)
+            [[ $latest == '${{ steps.meta.outputs.tag }}' ]] && break
+            [[ $attempt -lt 12 ]] || { echo "latest release did not converge" >&2; exit 1; }
+            sleep 5
+          done
+          smoke_home=$(mktemp -d "$RUNNER_TEMP/sd300-managed.XXXXXXXX")
+          trap 'rm -rf "$smoke_home"' EXIT
+          export HOME="$smoke_home"
+          export CARGO_HOME="$smoke_home/.cargo"
+          export XDG_CONFIG_HOME="$smoke_home/.config"
+
+          perl -0pi -e 's/(\[package\].*?\nversion = ")[^"]+/${1}1.9.9/s' Cargo.toml
+          perl -0pi -e 's/(name = "tr300-tui"\nversion = ")[^"]+/${1}1.9.9/' Cargo.lock
+          cargo build --release --locked --target-dir "$smoke_home/prior-build"
+          mkdir -p "$CARGO_HOME/bin" "$XDG_CONFIG_HOME/sd300"
+          cp "$smoke_home/prior-build/release/sd300" "$CARGO_HOME/bin/sd300"
+          jq -n --arg prefix "$CARGO_HOME" '{
+            provider: {source: "cargo-dist"}, source: {app_name: "sd300"},
+            install_prefix: $prefix, version: "1.9.9"
+          }' > "$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
+          update=$("$CARGO_HOME/bin/sd300" update --json)
+          test "$(printf '%s\n' "$update" | wc -l | tr -d ' ')" -eq 1
+          jq -e --arg version '${{ steps.meta.outputs.version }}' '
+            .success == true and .install_channel == "shell-installer" and .target_version == $version
+          ' <<< "$update"
+          test "$("$CARGO_HOME/bin/sd300" --version)" = 'sd300 ${{ steps.meta.outputs.version }}'
+          uninstall=$("$CARGO_HOME/bin/sd300" uninstall --json)
+          jq -e '.success == true and .install_channel == "shell-installer"' <<< "$uninstall"
+          test ! -e "$CARGO_HOME/bin/sd300"
+          test ! -e "$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
+
+          mkdir -p "$CARGO_HOME/bin"
+          cp "$smoke_home/prior-build/release/sd300" "$CARGO_HOME/bin/sd300"
+          jq -n '{
+            installs: {"tr300-tui 1.9.9 (registry+https://github.com/rust-lang/crates.io-index)": {bins: ["sd300"]}}
+          }' > "$CARGO_HOME/.crates2.json"
+          cargo_update=$("$CARGO_HOME/bin/sd300" update --json)
+          jq -e --arg version '${{ steps.meta.outputs.version }}' '
+            .success == true and .install_channel == "cargo" and .target_version == $version
+          ' <<< "$cargo_update"
+          test "$("$CARGO_HOME/bin/sd300" --version)" = 'sd300 ${{ steps.meta.outputs.version }}'
+          cargo_uninstall=$("$CARGO_HOME/bin/sd300" uninstall --json)
+          jq -e '.success == true and .install_channel == "cargo"' <<< "$cargo_uninstall"
+
+          curl --proto '=https' --tlsv1.2 -fLsS \
+            'https://github.com/${{ github.repository }}/releases/latest/download/sd300-cli-installer.sh' | sh -s -- --no-modify-path
+          test "$("$CARGO_HOME/bin/sd300" --version)" = 'sd300 ${{ steps.meta.outputs.version }}'
+          jq -e --arg version '${{ steps.meta.outputs.version }}' '
+            .provider.source == "cargo-dist" and
+            .source.app_name == "sd300" and
+            .version == $version
+          ' "$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
+          update=$("$CARGO_HOME/bin/sd300" update --json)
+          test "$(printf '%s\n' "$update" | wc -l | tr -d ' ')" -eq 1
+          jq -e '.success == true and .install_channel == "shell-installer"' <<< "$update"
+          uninstall=$("$CARGO_HOME/bin/sd300" uninstall --json)
+          jq -e '.success == true and .install_channel == "shell-installer"' <<< "$uninstall"
+          test ! -e "$CARGO_HOME/bin/sd300"
+          test ! -e "$XDG_CONFIG_HOME/sd300/sd300-receipt.json"

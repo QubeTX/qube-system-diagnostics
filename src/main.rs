@@ -16,9 +16,54 @@ async fn main() -> Result<()> {
         enable_utf8_console();
     }
 
-    if cli.update || cli.command == Some(Command::Update) {
-        let exit_code = sd_300::update::run()?;
+    if cli.update {
+        let exit_code = sd_300::update::run(false)?;
         std::process::exit(exit_code);
+    }
+
+    if let Some(command) = cli.command {
+        match command {
+            Command::Update(args) => {
+                let exit_code = sd_300::update::run(args.json)?;
+                std::process::exit(exit_code);
+            }
+            Command::Install(args) => {
+                let exit_code = sd_300::update::install(args.json)?;
+                std::process::exit(exit_code);
+            }
+            Command::Uninstall(args) => {
+                let exit_code = sd_300::update::uninstall(args.json)?;
+                std::process::exit(exit_code);
+            }
+            Command::Snapshot(args) => {
+                let report =
+                    sd_300::report::DiagnosticReport::collect(args.include_sensitive).await;
+                sd_300::report::print_snapshot(&report, args.json)?;
+                return Ok(());
+            }
+            Command::Capabilities(args) => {
+                let report =
+                    sd_300::report::DiagnosticReport::collect(args.include_sensitive).await;
+                sd_300::report::print_capabilities(&report, args.json)?;
+                return Ok(());
+            }
+            Command::MigrateCleanup(args) => {
+                let exit_code = sd_300::migrate::run(&args);
+                std::process::exit(exit_code);
+            }
+            Command::UpdateCleanup(args) => {
+                let exit_code = sd_300::update::cleanup_windows_update_backup(&args.update_backup);
+                std::process::exit(exit_code);
+            }
+            Command::UpdateWorker(args) => {
+                let exit_code = sd_300::update::run_windows_update_worker(
+                    &args.update_channel,
+                    &args.update_version,
+                    &args.update_backup,
+                );
+                std::process::exit(exit_code);
+            }
+        }
     }
 
     // Determine initial mode from CLI flags

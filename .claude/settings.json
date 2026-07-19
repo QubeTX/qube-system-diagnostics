@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .tasks/board-server.mjs hook SessionStart"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .tasks/board-server.mjs hook PostToolUse"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .tasks/board-server.mjs hook SubagentStart"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .tasks/board-server.mjs hook SubagentStop"
+          }
+        ]
+      }
+    ]
+  }
+}

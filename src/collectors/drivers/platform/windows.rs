@@ -1,6 +1,8 @@
 use crate::collectors::drivers::{
     DeviceCategory, DeviceInfo, DeviceStatus, DriverData, DriverScanStatus, ServiceInfo,
 };
+use serde::Deserialize;
+use std::collections::HashMap;
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Devices::DeviceAndDriverInstallation::*;
 use windows::Win32::System::Registry::*;
@@ -36,6 +38,7 @@ pub fn collect() -> DriverData {
 /// Enumerate all present PnP devices via Setup API.
 /// Returns false if enumeration completely failed (sets ScanFailed).
 fn enumerate_devices(data: &mut DriverData) -> bool {
+    let wmi_health = query_wmi_pnp_health();
     let dev_info = unsafe {
         SetupDiGetClassDevsW(None, PCWSTR::null(), None, DIGCF_ALLCLASSES | DIGCF_PRESENT)
     };
@@ -94,7 +97,10 @@ fn enumerate_devices(data: &mut DriverData) -> bool {
         }
 
         // Read device status via Configuration Manager
-        let status = get_device_status(&dev_info_data);
+        let status = reconcile_device_status(
+            get_device_status(&dev_info_data),
+            wmi_health.get(&name.to_ascii_lowercase()),
+        );
 
         // Read driver version and date from registry
         let (driver_version, driver_date) =
@@ -124,6 +130,86 @@ fn enumerate_devices(data: &mut DriverData) -> bool {
 
     data.scan_status = DriverScanStatus::Success;
     true
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename = "Win32_PnPEntity")]
+#[serde(rename_all = "PascalCase")]
+struct WmiPnpEntity {
+    name: Option<String>,
+    status: Option<String>,
+    config_manager_error_code: Option<u32>,
+}
+
+type WmiPnpHealth = HashMap<String, Vec<(Option<String>, Option<u32>)>>;
+
+fn query_wmi_pnp_health() -> WmiPnpHealth {
+    use wmi::{COMLibrary, WMIConnection};
+
+    let Ok(com) = COMLibrary::new() else {
+        return HashMap::new();
+    };
+    let Ok(connection) = WMIConnection::new(com) else {
+        return HashMap::new();
+    };
+    let Ok(entities) = connection.raw_query::<WmiPnpEntity>(
+        "SELECT Name, Status, ConfigManagerErrorCode FROM Win32_PnPEntity",
+    ) else {
+        return HashMap::new();
+    };
+
+    let mut health = HashMap::new();
+    for entity in entities {
+        let Some(name) = entity.name else {
+            continue;
+        };
+        health
+            .entry(name.to_ascii_lowercase())
+            .or_insert_with(Vec::new)
+            .push((entity.status, entity.config_manager_error_code));
+    }
+    health
+}
+
+fn reconcile_device_status(
+    setup_status: DeviceStatus,
+    wmi_rows: Option<&Vec<(Option<String>, Option<u32>)>>,
+) -> DeviceStatus {
+    if !matches!(setup_status, DeviceStatus::Ok | DeviceStatus::Unknown) {
+        return setup_status;
+    }
+
+    let Some(rows) = wmi_rows else {
+        return setup_status;
+    };
+
+    for (status, code) in rows {
+        if *code == Some(22) {
+            return DeviceStatus::Disabled;
+        }
+        if code.is_some_and(|value| value != 0) {
+            return DeviceStatus::Error(format!(
+                "WMI configuration problem code {}",
+                code.unwrap_or_default()
+            ));
+        }
+
+        let normalized_status = status.as_deref().unwrap_or_default().to_ascii_lowercase();
+        match normalized_status.as_str() {
+            "degraded" => {
+                return DeviceStatus::Degraded("Win32_PnPEntity status".into());
+            }
+            "error" | "pred fail" | "nonrecover" => {
+                return DeviceStatus::Error(format!(
+                    "Win32_PnPEntity reported {}",
+                    status.as_deref().unwrap_or("error")
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    setup_status
 }
 
 /// Read a string property from a device via SetupDiGetDeviceRegistryPropertyW.

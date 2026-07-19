@@ -284,8 +284,10 @@ impl App {
             .push(self.snapshot.network.total_upload_rate as f64);
 
         // GPU
-        self.gpu_history
-            .push(self.snapshot.gpu.utilization_percent as f64);
+        if self.snapshot.gpu.telemetry_available {
+            self.gpu_history
+                .push(self.snapshot.gpu.utilization_percent as f64);
+        }
 
         // Temperature
         if let Some(cpu_temp) = self.snapshot.thermals.cpu_temp {

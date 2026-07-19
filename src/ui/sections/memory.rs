@@ -66,6 +66,22 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]));
     }
+    if !mem.modules.is_empty() {
+        let speed = mem
+            .modules
+            .iter()
+            .filter_map(|module| module.configured_speed_mt_s)
+            .max()
+            .map(|value| format!(" at {value} MT/s"))
+            .unwrap_or_default();
+        status_lines.push(Line::from(vec![
+            Span::styled("  Hardware      ", Style::default().fg(COLOR_TEXT)),
+            Span::styled(
+                format!("{} installed modules{speed}", mem.modules.len()),
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+    }
 
     let status_panel = Paragraph::new(status_lines);
     frame.render_widget(status_panel, chunks[0]);
@@ -126,6 +142,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .constraints([
             Constraint::Length(2),
             Constraint::Length(6),
+            Constraint::Length((mem.modules.len() as u16 + 2).clamp(3, 6)),
             Constraint::Min(6),
         ])
         .split(inner);
@@ -176,10 +193,44 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .style(Style::default().fg(SPARK_SWAP));
     frame.render_widget(swap_sparkline, spark_chunks[1]);
 
+    let module_block = sub_block("Physical Memory Modules");
+    let module_inner = module_block.inner(chunks[2]);
+    frame.render_widget(module_block, chunks[2]);
+    let module_lines = if mem.modules.is_empty() {
+        vec![Line::from(Span::styled(
+            format!(
+                "  {}",
+                mem.module_status
+                    .detail
+                    .as_deref()
+                    .unwrap_or("Module inventory unavailable")
+            ),
+            Style::default().fg(COLOR_DIM),
+        ))]
+    } else {
+        mem.modules
+            .iter()
+            .map(|module| {
+                Line::from(Span::styled(
+                    format!(
+                        "  {:<12} {:>8}  {:<7} {:>5} MT/s  {}",
+                        truncate_str(module.locator.as_deref().unwrap_or("Module"), 12),
+                        format_bytes_gib(module.capacity_bytes),
+                        module.memory_type.as_deref().unwrap_or("Unknown"),
+                        module.configured_speed_mt_s.unwrap_or_default(),
+                        truncate_str(module.manufacturer.as_deref().unwrap_or(""), 14),
+                    ),
+                    Style::default().fg(COLOR_TEXT),
+                ))
+            })
+            .collect()
+    };
+    frame.render_widget(Paragraph::new(module_lines), module_inner);
+
     // Process table
     let proc_block = sub_block("Top Memory Consumers");
-    let proc_inner = proc_block.inner(chunks[2]);
-    frame.render_widget(proc_block, chunks[2]);
+    let proc_inner = proc_block.inner(chunks[3]);
+    frame.render_widget(proc_block, chunks[3]);
 
     let mut proc_lines = vec![Line::from(Span::styled(
         format!(

@@ -39,11 +39,7 @@ fn render_unavailable(frame: &mut Frame, area: Rect, mode: DiagnosticMode) {
         )));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "  Your computer may have an integrated graphics chip that works fine",
-            Style::default().fg(COLOR_MUTED),
-        )));
-        lines.push(Line::from(Span::styled(
-            "  but doesn't provide detailed monitoring data.",
+            "  No graphics adapter inventory provider returned usable data.",
             Style::default().fg(COLOR_MUTED),
         )));
     } else {
@@ -69,7 +65,11 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     let gpu = &app.snapshot.gpu;
     let util = gpu.utilization_percent;
-    let status = HealthStatus::from_percent(util as f64);
+    let status = if gpu.telemetry_available {
+        HealthStatus::from_percent(util as f64)
+    } else {
+        HealthStatus::Unknown
+    };
 
     let util_desc = if util < 25.0 {
         "Not very busy"
@@ -103,29 +103,53 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     let simple_name = simplify_gpu_name(&gpu.name);
 
-    let lines = vec![
-        Line::from(""),
-        status_line(&status, "Card", &simple_name),
-        Line::from(vec![
-            Span::styled("  Utilization    ", Style::default().fg(COLOR_TEXT)),
-            Span::styled(
-                format!("{} ({:.0}%)", util_desc, util),
-                Style::default().fg(COLOR_DIM),
+    let mut lines = vec![Line::from(""), status_line(&status, "Card", &simple_name)];
+
+    if gpu.telemetry_available {
+        lines.extend([
+            Line::from(vec![
+                Span::styled("  Utilization    ", Style::default().fg(COLOR_TEXT)),
+                Span::styled(
+                    format!("{} ({:.0}%)", util_desc, util),
+                    Style::default().fg(COLOR_DIM),
+                ),
+            ]),
+            gauge_line("GPU", util as f64, 20),
+            Line::from(vec![
+                Span::styled("  Memory         ", Style::default().fg(COLOR_TEXT)),
+                Span::styled(
+                    format!("Graphics memory: {}", mem_desc),
+                    Style::default().fg(COLOR_DIM),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("  Temperature    ", Style::default().fg(COLOR_TEXT)),
+                Span::styled(temp_desc, Style::default().fg(COLOR_DIM)),
+            ]),
+        ]);
+    } else {
+        lines.push(status_line(
+            &HealthStatus::Unknown,
+            "Telemetry",
+            "Utilization and temperature unavailable",
+        ));
+    }
+
+    if gpu.adapters.len() > 1 {
+        lines.push(Line::from(Span::styled(
+            format!("  {} graphics adapters detected", gpu.adapters.len()),
+            Style::default().fg(COLOR_DIM),
+        )));
+    }
+    if !app.snapshot.displays.displays.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {} connected displays",
+                app.snapshot.displays.displays.len()
             ),
-        ]),
-        gauge_line("GPU", util as f64, 20),
-        Line::from(vec![
-            Span::styled("  Memory         ", Style::default().fg(COLOR_TEXT)),
-            Span::styled(
-                format!("Graphics memory: {}", mem_desc),
-                Style::default().fg(COLOR_DIM),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("  Temperature    ", Style::default().fg(COLOR_TEXT)),
-            Span::styled(temp_desc, Style::default().fg(COLOR_DIM)),
-        ]),
-    ];
+            Style::default().fg(COLOR_DIM),
+        )));
+    }
 
     let panel = Paragraph::new(lines);
     frame.render_widget(panel, inner);
@@ -133,58 +157,85 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     let gpu = &app.snapshot.gpu;
-    let outer = content_block(&format!("GPU \u{2014} {}", gpu.name));
+    let outer = content_block(&format!("GPU \u{2014} {} adapter(s)", gpu.adapters.len()));
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(6), Constraint::Min(6)])
+        .constraints([Constraint::Min(7), Constraint::Length(7)])
         .split(inner);
 
-    let temp_str = gpu
-        .temperature
-        .map(|t| format_temp(t, app.temp_unit))
-        .unwrap_or_else(|| "N/A".into());
-
-    let lines = vec![
-        Line::from(vec![
-            Span::styled("  Driver     ", Style::default().fg(COLOR_DIM)),
-            Span::styled(&gpu.driver_version, Style::default().fg(COLOR_TEXT)),
-            Span::styled("    Temp  ", Style::default().fg(COLOR_DIM)),
-            Span::styled(&temp_str, Style::default().fg(COLOR_TEXT)),
-        ]),
-        Line::from(vec![
-            Span::styled("  VRAM       ", Style::default().fg(COLOR_DIM)),
-            Span::styled(
+    let mut lines = vec![Line::from(Span::styled(
+        format!(
+            "  {:<32} {:<12} {:>7} {:>9} {:>7}",
+            "ADAPTER", "DRIVER", "UTIL", "MEMORY", "TEMP"
+        ),
+        Style::default().fg(COLOR_DIM),
+    ))];
+    for adapter in &gpu.adapters {
+        let utilization = adapter
+            .utilization_percent
+            .map(|value| format!("{value:.0}%"))
+            .unwrap_or_else(|| "N/A".into());
+        let memory = adapter
+            .dedicated_memory_mb
+            .map(|value| format!("{value} MB"))
+            .unwrap_or_else(|| "N/A".into());
+        let temperature = adapter
+            .temperature_celsius
+            .map(|value| format_temp(value, app.temp_unit))
+            .unwrap_or_else(|| "N/A".into());
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {:<32} {:<12} {:>7} {:>9} {:>7}",
+                truncate_str(&adapter.name, 32),
+                truncate_str(adapter.driver_version.as_deref().unwrap_or("N/A"), 12),
+                utilization,
+                memory,
+                temperature
+            ),
+            Style::default().fg(COLOR_TEXT),
+        )));
+        let details = [
+            adapter.status.as_deref(),
+            adapter.current_resolution.as_deref(),
+            adapter.source.as_str().into(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("  ");
+        lines.push(Line::from(Span::styled(
+            format!("    {details}"),
+            Style::default().fg(COLOR_DIM),
+        )));
+    }
+    if !app.snapshot.displays.displays.is_empty() {
+        lines.push(Line::from(""));
+        for display in &app.snapshot.displays.displays {
+            lines.push(Line::from(Span::styled(
                 format!(
-                    "{} / {} MB ({:.1}%)",
-                    gpu.memory_used_mb,
-                    gpu.memory_total_mb,
-                    gpu.memory_percent()
+                    "  {}: {}  brightness={}  size={}x{} cm",
+                    display.label,
+                    display.connection,
+                    display
+                        .brightness_percent
+                        .map(|value| format!("{value}%"))
+                        .unwrap_or_else(|| "N/A".into()),
+                    display
+                        .physical_width_cm
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "N/A".into()),
+                    display
+                        .physical_height_cm
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "N/A".into()),
                 ),
-                Style::default().fg(COLOR_TEXT),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("  GPU Util   ", Style::default().fg(COLOR_DIM)),
-            Span::styled(
-                gauge_bar(gpu.utilization_percent as f64, 20),
-                Style::default().fg(status_color(&HealthStatus::from_percent(
-                    gpu.utilization_percent as f64,
-                ))),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("  VRAM Util  ", Style::default().fg(COLOR_DIM)),
-            Span::styled(
-                gauge_bar(gpu.memory_percent(), 20),
-                Style::default().fg(status_color(&HealthStatus::from_percent(
-                    gpu.memory_percent(),
-                ))),
-            ),
-        ]),
-    ];
+                Style::default().fg(COLOR_DIM),
+            )));
+        }
+    }
 
     let info_panel = Paragraph::new(lines);
     frame.render_widget(info_panel, chunks[0]);

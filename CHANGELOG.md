@@ -2,9 +2,25 @@
 
 All notable changes to SD-300 will be documented in this file.
 
-## [Unreleased] - 2026-07-17
+## [2.0.0] - 2026-07-18
 
 ### Added
+
+- Added `sd300 install`, `sd300 uninstall`, `sd300 snapshot`, and `sd300 capabilities` with exactly-one-object JSON lifecycle output and privacy-redacted noninteractive diagnostics.
+- Added stable `recovery_url` and `requires_user_action` fields to every JSON install, update, and uninstall result for cross-product automation parity.
+- Added proven install-channel detection and same-channel updates for managed PowerShell/shell, Cargo, Global/Corporate MSI, Global/Corporate EXE, and signed universal macOS PKG ownership.
+- Added stable, versionless public wrappers and native artifact names with SHA-256 sidecars, plus immutable 1.4.x compatibility routers that preserve provable native ownership across the v2 transition.
+- Added authoritative fresh-install takeover with strict, bounded migration cleanup, rollback, downgrade-capable MSI packages, and opposite-scope Windows refusal before mutation.
+- Added separate Global and Corporate Windows MSI/EXE packages, a direct Developer ID signed/notarized universal macOS PKG, and draft release qualification across Windows, Apple Silicon, Intel Mac, and Linux before publication as `latest`.
+- Gated crates.io publication behind the same complete native asset and test matrix so v2 is not publicly installable through Cargo before Windows and macOS qualification succeeds.
+- Changed raw Cargo ownership detection to require Cargo's structured install manifest, exact package/binary ownership, and matching version instead of trusting the `.cargo/bin` path alone.
+- Required exact cargo-dist receipt fields in both updater detection and takeover cleanup; recursively nested lookalike keys no longer count as ownership proof.
+- Added a Windows live-image handoff with an elevated, same-channel Global worker, verified rollback, and bounded detached cleanup so MSI/EXE Restart Manager behavior cannot kill the updater's final result or strand the prior executable.
+- Resolve overlapping exact Cargo/managed ownership by the newer metadata record and fail closed on equal timestamps instead of guessing.
+- Added candidate-to-candidate hosted version-transition gates for managed PowerShell, four Windows native channels, direct PKG on Intel/Apple Silicon, and Linux managed shell/Cargo ownership.
+- Managed CLI wrappers now SHA-256 verify their exact-tag cargo-dist installer payload before execution.
+- Added Windows memory-module, multi-GPU, display, physical-disk health/reliability, battery, hardware identity, native adapter/link-speed, and SetupAPI/WMI driver-status diagnostics.
+- Added typed observation provenance so unavailable, unsupported, permission-denied, contradictory, and error states are never presented as fabricated zero telemetry.
 
 - Added an exhaustive, privacy-sanitized macOS hardware-monitor capability and implementation report based primarily on live testing of a `Mac14,7` M2 MacBook Pro running macOS 26.3.1.
 - Documented locally proven unprivileged access to 38 IOHID temperature services, read-only AppleSMC fan telemetry, IOReport energy/frequency residency, Metal/AGX data, battery/adapter internals, APFS/NVMe status, block-I/O counters, Wi-Fi radio state, displays, and device inventories.
@@ -15,12 +31,11 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Changed
 
+- Made `irm .../sd300-cli-installer.ps1 | iex` the recommended Windows install and `curl .../sd300-cli-installer.sh | sh` the recommended macOS/Linux install; native installers remain first-class options.
+- Made a deliberate fresh official install the authoritative latest user intent regardless of installed version, while raw `cargo install tr300-tui` remains an advanced unmanaged option because Cargo provides no post-install ownership hook.
+
 - Corrected project documentation so macOS is described as a supported baseline with known telemetry gaps instead of claiming comprehensive IOKit-based/full monitoring.
 - Recorded Vercel Labs Native as an optional pre-1.0 GUI experiment while preserving the Rust CLI and Ratatui TUI as the canonical interfaces.
-
-### Notes
-
-- This research update intentionally makes no runtime, dependency, release, package, or TUI behavior changes.
 
 ## [1.4.3] - 2026-05-11
 

@@ -1,6 +1,6 @@
 [package]
 name = "tr300-tui"
-version = "1.4.3"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.95"
 authors = ["Emmett S <hey@emmetts.dev>"]
@@ -11,15 +11,18 @@ repository = "https://github.com/QubeTX/qube-system-diagnostics"
 keywords = ["cli", "system", "diagnostics", "tui", "cross-platform"]
 categories = ["command-line-utilities"]
 include = [
-    "src/**",
-    "wix/main.wxs",
-    "build.rs",
-    "Cargo.lock",
-    "Cargo.toml",
-    "CHANGELOG.md",
-    "LICENSE.md",
-    "README.md",
-    "rust-toolchain.toml",
+    "/src/**",
+    "/wix/main.wxs",
+    "/wix-corporate/corporate.wxs",
+    "/inno/**",
+    "/scripts/**",
+    "/build.rs",
+    "/Cargo.lock",
+    "/Cargo.toml",
+    "/CHANGELOG.md",
+    "/LICENSE.md",
+    "/README.md",
+    "/rust-toolchain.toml",
 ]
 
 [package.metadata.wix]
@@ -45,11 +48,24 @@ clap = { version = "4.5", features = ["derive"] }
 thiserror = "2.0"
 futures = "0.3"
 serde_json = "1"
+serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.14"
-serde = { version = "1.0", features = ["derive"] }
-winapi = { version = "0.3", features = ["consoleapi", "wincon"] }
+winreg = "0.52"
+winapi = { version = "0.3", features = [
+    "consoleapi",
+    "errhandlingapi",
+    "handleapi",
+    "processthreadsapi",
+    "shellapi",
+    "synchapi",
+    "winbase",
+    "wincon",
+    "winuser",
+] }
 windows = { version = "0.62", features = [
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Foundation",

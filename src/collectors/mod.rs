@@ -2,6 +2,7 @@ pub mod command;
 pub mod cpu;
 pub mod disk;
 pub mod disk_health;
+pub mod display;
 pub mod drivers;
 pub mod gpu;
 pub mod memory;
@@ -12,9 +13,10 @@ pub mod processes;
 pub mod system_info;
 pub mod thermals;
 
+use serde::Serialize;
 use sysinfo::{Components, Disks, Networks, ProcessesToUpdate, System};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DiagnosticWarning {
     pub source: String,
     pub message: String,
@@ -68,7 +70,8 @@ mod command_tests {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum WarningSeverity {
     Info,
     Warning,
@@ -82,6 +85,7 @@ pub struct SystemSnapshot {
     pub memory: memory::MemoryData,
     pub disk: disk::DiskData,
     pub disk_health: disk_health::DiskHealthData,
+    pub displays: display::DisplayData,
     pub gpu: gpu::GpuData,
     pub network: network::NetworkData,
     pub network_diag: network_diag::NetworkDiagData,
@@ -104,6 +108,7 @@ impl Default for SystemSnapshot {
             memory: memory::MemoryData::default(),
             disk: disk::DiskData::default(),
             disk_health: disk_health::DiskHealthData::default(),
+            displays: display::DisplayData::default(),
             gpu: gpu::GpuData::default(),
             network: network::NetworkData::default(),
             network_diag: network_diag::NetworkDiagData::default(),
@@ -123,6 +128,9 @@ impl SystemSnapshot {
     /// Refresh static info (once at startup)
     pub fn refresh_static(&mut self) {
         self.system = system_info::collect(&self.sys);
+        memory::refresh_hardware(&mut self.memory);
+        self.displays = display::collect();
+        network::refresh_hardware(&mut self.network);
     }
 
     /// Refresh fast metrics (every 1s): CPU, memory, network, processes
@@ -132,8 +140,16 @@ impl SystemSnapshot {
         self.sys.refresh_processes(ProcessesToUpdate::All, true);
 
         self.cpu = cpu::collect(&self.sys);
+        let modules = std::mem::take(&mut self.memory.modules);
+        let module_status = self.memory.module_status.clone();
         self.memory = memory::collect(&self.sys);
+        self.memory.modules = modules;
+        self.memory.module_status = module_status;
+        let adapters = std::mem::take(&mut self.network.adapters);
+        let adapter_status = self.network.adapter_status.clone();
         self.network = network::collect(&mut self.networks);
+        self.network.adapters = adapters;
+        self.network.adapter_status = adapter_status;
         self.processes = processes::collect(&self.sys);
     }
 

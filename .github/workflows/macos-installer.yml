@@ -1,0 +1,235 @@
+name: macOS Universal Package
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Draft release tag to qualify"
+        required: true
+        type: string
+      preflight_only:
+        description: "Only prove the Installer identity on both Mac families"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sd300-macos-native-${{ github.event.workflow_run.head_sha || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  credential-preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple Silicon
+            runner: macos-15
+          - name: Intel
+            runner: macos-15-intel
+    name: Installer identity preflight (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.tag }}
+          persist-credentials: false
+      - name: Import Installer identity and sign disposable PKG
+        env:
+          APPLE_INSTALLER_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_P12_BASE64 }}
+          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
+          APPLE_INSTALLER_SIGNING_IDENTITY: ${{ vars.APPLE_INSTALLER_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        shell: bash
+        run: scripts/verify-apple-installer-identity.sh
+
+  build:
+    needs: credential-preflight
+    if: ${{ needs.credential-preflight.result == 'success' && (github.event_name == 'workflow_run' || inputs.preflight_only == false) }}
+    runs-on: macos-15-intel
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.tag }}
+          persist-credentials: false
+      - id: meta
+        name: Resolve draft metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
+          if [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
+            tag='${{ inputs.tag }}'
+          else
+            tag="v${version}"
+          fi
+          [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
+          [[ $(gh release view "$tag" --json isDraft --jq .isDraft) == true ]] || {
+            echo "$tag is not an unpublished qualification draft" >&2
+            exit 1
+          }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download exact architecture archives from draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          mkdir upstream
+          gh release download '${{ steps.meta.outputs.tag }}' --dir upstream \
+            --pattern 'tr300-tui-aarch64-apple-darwin.tar.xz*' \
+            --pattern 'tr300-tui-x86_64-apple-darwin.tar.xz*'
+          (cd upstream && shasum -a 256 -c ./*.sha256)
+
+      - name: Build, sign, notarize, and staple direct PKG
+        timeout-minutes: 45
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_INSTALLER_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_P12_BASE64 }}
+          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_INSTALLER_SIGNING_IDENTITY: ${{ vars.APPLE_INSTALLER_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          scripts/build-sign-notarize-macos-installer.sh \
+            '${{ steps.meta.outputs.version }}' \
+            upstream/tr300-tui-aarch64-apple-darwin.tar.xz \
+            upstream/tr300-tui-x86_64-apple-darwin.tar.xz \
+            output
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sd300-macos-universal-${{ steps.meta.outputs.tag }}
+          if-no-files-found: error
+          path: output/sd300-macos-universal.pkg*
+
+  validate:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple Silicon
+            runner: macos-15
+            target: aarch64-apple-darwin
+          - name: Intel
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+    name: Install and exercise PKG (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.tag }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build synthetic prior-version updater
+        shell: bash
+        run: |
+          set -euo pipefail
+          perl -0pi -e 's/(\[package\].*?\nversion = ")[^"]+/${1}1.9.9/s' Cargo.toml
+          perl -0pi -e 's/(name = "tr300-tui"\nversion = ")[^"]+/${1}1.9.9/' Cargo.lock
+          cargo build --release --locked --target-dir target/prior-build
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: sd300-macos-universal-${{ needs.build.outputs.tag }}
+          path: artifact
+      - name: Download matching managed fixture binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release download '${{ needs.build.outputs.tag }}' \
+            --pattern 'tr300-tui-${{ matrix.target }}.tar.xz' --dir fixture
+          mkdir fixture/extracted
+          tar -xJf fixture/tr300-tui-${{ matrix.target }}.tar.xz -C fixture/extracted
+
+      - name: Validate trust, takeover, diagnostics, update origin, and uninstall
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg="$PWD/artifact/sd300-macos-universal.pkg"
+          (cd artifact && shasum -a 256 -c sd300-macos-universal.pkg.sha256)
+          signature=$(pkgutil --check-signature "$pkg" 2>&1)
+          grep -Fq 'Status: signed by a developer certificate' <<< "$signature"
+          grep -Fq '${{ vars.APPLE_INSTALLER_SIGNING_IDENTITY }}' <<< "$signature"
+          grep -Fq '(${{ vars.APPLE_TEAM_ID }})' <<< "$signature"
+          xcrun stapler validate "$pkg"
+          spctl --assess --type install --verbose=4 "$pkg"
+
+          fixture_binary=$(find fixture/extracted -type f -name sd300 -perm -111 -print -quit)
+          test -n "$fixture_binary"
+          mkdir -p "$HOME/.cargo/bin" "$HOME/.config/sd300"
+          cp "$fixture_binary" "$HOME/.cargo/bin/sd300"
+          chmod 755 "$HOME/.cargo/bin/sd300"
+          jq -n --arg prefix "$HOME/.cargo" --arg version '${{ needs.build.outputs.version }}' '{
+            provider: {source: "cargo-dist"}, source: {app_name: "sd300"},
+            install_prefix: $prefix, version: $version
+          }' > "$HOME/.config/sd300/sd300-receipt.json"
+
+          sudo installer -pkg "$pkg" -target /
+          test ! -e "$HOME/.cargo/bin/sd300"
+          test ! -e "$HOME/.config/sd300/sd300-receipt.json"
+          test "$(/usr/local/bin/sd300 --version)" = 'sd300 ${{ needs.build.outputs.version }}'
+          lipo /usr/local/bin/sd300 -verify_arch arm64 x86_64
+          pkgutil --pkg-info com.qubetx.sd300.pkg | grep -Fqx 'package-id: com.qubetx.sd300.pkg'
+          pkgutil --files com.qubetx.sd300.pkg | grep -Fqx 'usr/local/bin/sd300'
+          codesign --verify --strict --verbose=4 /usr/local/bin/sd300
+
+          /usr/local/bin/sd300 snapshot --json > snapshot.json
+          jq -e '.target_os == "macos" and (.capabilities | length) >= 10' snapshot.json
+          sudo cp target/prior-build/release/sd300 /usr/local/bin/sd300
+          sudo chmod 755 /usr/local/bin/sd300
+          test "$(/usr/local/bin/sd300 --version)" = 'sd300 1.9.9'
+          export SD300_CI_RELEASE_TAG='${{ needs.build.outputs.tag }}'
+          export SD300_CI_RELEASE_ASSET_DIR="$PWD/artifact"
+          export SD300_CI_NONINTERACTIVE_PKG=1
+          update=$(/usr/local/bin/sd300 update --json)
+          test "$(printf '%s\n' "$update" | wc -l | tr -d ' ')" -eq 1
+          jq -e --arg version '${{ needs.build.outputs.version }}' '
+            .success == true and .install_channel == "mac-pkg" and .target_version == $version
+          ' <<< "$update"
+          test "$(/usr/local/bin/sd300 --version)" = 'sd300 ${{ needs.build.outputs.version }}'
+          lipo /usr/local/bin/sd300 -verify_arch arm64 x86_64
+          codesign --verify --strict --verbose=4 /usr/local/bin/sd300
+
+          uninstall=$(/usr/local/bin/sd300 uninstall --json)
+          test "$(printf '%s\n' "$uninstall" | wc -l | tr -d ' ')" -eq 1
+          jq -e '.success == true and .install_channel == "mac-pkg"' <<< "$uninstall"
+          test ! -e /usr/local/bin/sd300
+          ! pkgutil --pkg-info com.qubetx.sd300.pkg >/dev/null 2>&1
+
+  attach:
+    needs: [build, validate]
+    if: ${{ needs.build.result == 'success' && needs.validate.result == 'success' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: sd300-macos-universal-${{ needs.build.outputs.tag }}
+          path: artifact
+      - name: Attach qualified PKG to draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload '${{ needs.build.outputs.tag }}' artifact/sd300-macos-universal.pkg* --repo '${{ github.repository }}' --clobber
