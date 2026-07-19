@@ -246,8 +246,10 @@ function Get-Sd300ManagedBinary {
     if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
         throw "managed SD-300 binary is missing: $binary"
     }
-    $reported = (& $binary --version | Select-Object -First 1)
-    if ($LASTEXITCODE -ne 0 -or $reported -ne "sd300 $Sd300Version") {
+    $reportedLines = @(& $binary --version)
+    $versionExitCode = $LASTEXITCODE
+    $reported = $reportedLines | Select-Object -First 1
+    if ($versionExitCode -ne 0 -or $reported -ne "sd300 $Sd300Version") {
         throw "managed SD-300 binary did not report the expected version $Sd300Version"
     }
     return $binary

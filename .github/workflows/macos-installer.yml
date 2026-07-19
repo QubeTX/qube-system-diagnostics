@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.tag }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
       - name: Import Installer identity and sign disposable PKG
         env:
@@ -57,10 +57,11 @@ jobs:
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      source_ref: ${{ steps.meta.outputs.source_ref }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.tag }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
       - id: meta
         name: Resolve draft metadata
@@ -80,8 +81,11 @@ jobs:
             echo "$tag is not an unpublished qualification draft" >&2
             exit 1
           }
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "source_ref=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Download exact architecture archives from draft
         env:
@@ -138,7 +142,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.build.outputs.tag }}
+          ref: ${{ needs.build.outputs.source_ref }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Build synthetic prior-version updater

@@ -38,8 +38,10 @@ function Set-ManagedFixture {
 
 function Assert-NativeInstall([string]$Binary, [string]$Channel) {
     if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) { throw "missing native binary: $Binary" }
-    $reported = (& $Binary --version | Select-Object -First 1)
-    if ($LASTEXITCODE -ne 0 -or $reported -ne "sd300 $Version") {
+    $reportedLines = @(& $Binary --version)
+    $versionExitCode = $LASTEXITCODE
+    $reported = $reportedLines | Select-Object -First 1
+    if ($versionExitCode -ne 0 -or $reported -ne "sd300 $Version") {
         throw "unexpected version from $Binary`: $reported"
     }
     if (Test-Path -LiteralPath $managedBinary -PathType Leaf) {
@@ -58,8 +60,10 @@ function Assert-NativeInstall([string]$Binary, [string]$Channel) {
         throw "$Channel ownership was not preserved by update detection: $($updateLines[0])"
     }
 
-    $snapshot = (& $Binary snapshot --json) | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or $snapshot.target_os -ne 'windows' -or $snapshot.capabilities.Count -lt 10) {
+    $snapshotLines = @(& $Binary snapshot --json)
+    $snapshotExitCode = $LASTEXITCODE
+    $snapshot = $snapshotLines | ConvertFrom-Json
+    if ($snapshotExitCode -ne 0 -or $snapshot.target_os -ne 'windows' -or $snapshot.capabilities.Count -lt 10) {
         throw "$Channel diagnostic snapshot did not exercise the Windows collector set"
     }
 }
