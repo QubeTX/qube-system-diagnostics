@@ -6,6 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repository uses the git-tracked `.tasks/` board for milestones, active work, verification, and cross-session handoff. At session start, read `.tasks/TASKS.md`, `.tasks/MILESTONES.md`, `.tasks/CLAUDE.md`, and every Active task's detail file. Keep each Active task's `## Status`, `## Verification`, and newest `## Activity` entry current as work progresses. Launch or repair the live board with `node .tasks/board-server.mjs ensure --open` and read its identity-bound port from `.tasks/.board-server.json`.
 
+### Skill routing and current guidance
+
+Use `/tasks-start` to initialize, repair, upgrade, relaunch, or resume the board.
+`/tasks-create` is the preferred way to add a well-formed milestone, task, or proper
+dashboard-visible subtask; `tasks-management` is the format and completion contract.
+Use `/tasks-update` to upgrade and reconcile the existing board, sync/triage current
+work, and refresh memory. `tasks-memory` governs that memory, `tasks-boards` governs
+live-server identity, and `/tasks-remove` decommissions the system. As work changes,
+keep `.tasks/TASKS.md` plus each Active task's `## Status` and `## Activity` current.
+
+If the installed tasks plugin is missing or may be older than the board, first try the
+harness-native plugin update. If that is unavailable, fails, or still leaves freshness
+uncertain, use the GitHub skill/connector to read the relevant current `main` file under
+`RealEmmettS/shaughv-tasks/skills/<skill-name>/SKILL.md` and use it as the latest
+operating guidance: https://github.com/RealEmmettS/shaughv-tasks/tree/main/skills
+
 ## Build & Test Commands
 
 ```bash
