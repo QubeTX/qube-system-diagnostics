@@ -85,6 +85,30 @@ if [[ $host_os == Linux ]]; then
     exit 1
   }
   zig_build_args+=("-Dsystem-lib-dir=$gtk_lib_dir")
+elif [[ $host_os == Darwin ]]; then
+  macos_sdk=$(xcrun --sdk macosx --show-sdk-path)
+  [[ -n $macos_sdk && -d $macos_sdk ]] || {
+    echo "xcrun did not resolve a usable macOS SDK: $macos_sdk" >&2
+    exit 1
+  }
+  macos_include_dir="$macos_sdk/usr/include"
+  [[ -d $macos_include_dir ]] || {
+    echo "macOS SDK system include directory is missing: $macos_include_dir" >&2
+    exit 1
+  }
+  zig_build_args+=("-Dsystem-include-dir=$macos_include_dir")
+
+  # Xcode SDK layouts have carried libDER either under usr/include or as a
+  # private/nested framework. Zig explicit-target builds need the latter's
+  # parent supplied directly; never fall back to a host-global header path.
+  if [[ ! -f $macos_include_dir/libDER/DERItem.h ]]; then
+    libder_framework=$(find "$macos_sdk/System/Library" -type d -name libDER.framework -print -quit)
+    [[ -n $libder_framework && -d $libder_framework/Headers ]] || {
+      echo "macOS SDK does not contain a usable libDER header or framework: $macos_sdk" >&2
+      exit 1
+    }
+    zig_build_args+=("-Dsystem-framework-dir=$(dirname "$libder_framework")")
+  fi
 fi
 zig_log="$stage_root/zig-build-first-attempt.log"
 set +e

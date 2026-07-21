@@ -26,6 +26,20 @@ pub fn build(b: *std.Build) void {
             app.exe.root_module.addLibraryPath(library_path);
             app.tests.root_module.addLibraryPath(library_path);
         }
+    } else if (os == .macos) {
+        // Explicit architecture targets do not inherit every Xcode SDK search
+        // path. In particular, newer SDKs expose libDER as a nested/private
+        // framework even though Security.framework publicly includes it.
+        if (b.option([]const u8, "system-include-dir", "Target macOS SDK system include directory")) |dir| {
+            const include_path: std.Build.LazyPath = .{ .cwd_relative = dir };
+            app.exe.root_module.addSystemIncludePath(include_path);
+            app.tests.root_module.addSystemIncludePath(include_path);
+        }
+        if (b.option([]const u8, "system-framework-dir", "Target macOS SDK framework directory")) |dir| {
+            const framework_path: std.Build.LazyPath = .{ .cwd_relative = dir };
+            app.exe.root_module.addSystemFrameworkPath(framework_path);
+            app.tests.root_module.addSystemFrameworkPath(framework_path);
+        }
     }
     const engine_name = switch (os) {
         .windows => "sd300_engine.dll",
