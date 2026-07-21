@@ -16,6 +16,17 @@ pub fn build(b: *std.Build) void {
         .{ .name = "sd300-gui" };
     const app = native_sdk.addAppArtifacts(b, b.dependency("native_sdk", .{}), app_options);
     const os = app.exe.root_module.resolved_target.?.result.os.tag;
+    if (os == .linux) {
+        // Zig's explicit Linux target mode does not infer the native multiarch
+        // library directory even though Native SDK's pkg-config integration
+        // resolves GTK's headers and -l names. The owned build wrapper passes
+        // gtk4's target-native libdir so x86_64, ARM64, and musl stay portable.
+        if (b.option([]const u8, "system-lib-dir", "Target-native GTK/system library directory")) |dir| {
+            const library_path: std.Build.LazyPath = .{ .cwd_relative = dir };
+            app.exe.root_module.addLibraryPath(library_path);
+            app.tests.root_module.addLibraryPath(library_path);
+        }
+    }
     const engine_name = switch (os) {
         .windows => "sd300_engine.dll",
         .macos => "libsd300_engine.dylib",

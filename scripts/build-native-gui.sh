@@ -77,9 +77,18 @@ ZON
 if [[ $skip_tests != 1 ]]; then
   (cd "$gui_root" && npx --no-install native check . --strict)
 fi
+zig_build_args=(-Dtarget="$zig_target" -Dcpu=baseline -Doptimize=ReleaseFast)
+if [[ $host_os == Linux ]]; then
+  gtk_lib_dir=$(pkg-config --variable=libdir gtk4)
+  [[ -n $gtk_lib_dir && -d $gtk_lib_dir ]] || {
+    echo "pkg-config did not resolve a usable GTK4 library directory: $gtk_lib_dir" >&2
+    exit 1
+  }
+  zig_build_args+=("-Dsystem-lib-dir=$gtk_lib_dir")
+fi
 zig_log="$stage_root/zig-build-first-attempt.log"
 set +e
-(cd "$app_stage" && zig build -Dtarget="$zig_target" -Dcpu=baseline -Doptimize=ReleaseFast) 2>&1 | tee "$zig_log"
+(cd "$app_stage" && zig build "${zig_build_args[@]}") 2>&1 | tee "$zig_log"
 zig_status=${PIPESTATUS[0]}
 set -e
 if [[ $zig_status -ne 0 ]]; then
@@ -88,13 +97,13 @@ if [[ $zig_status -ne 0 ]]; then
     exit "$zig_status"
   fi
   echo 'Zig 0.16.0 reported its known first-use staged dependency-cache miss; retrying exactly once.' >&2
-  (cd "$app_stage" && zig build -Dtarget="$zig_target" -Dcpu=baseline -Doptimize=ReleaseFast)
+  (cd "$app_stage" && zig build "${zig_build_args[@]}")
 fi
 rm -f "$zig_log"
 if [[ $skip_tests != 1 ]]; then
   # Exercise the release-shaped staged graph through the public Native SDK
   # command while keeping the checked-in dependency URL/hash pinned.
-  (cd "$gui_root" && npx --no-install native test "$app_stage" --yes -Dtarget="$zig_target" -Dcpu=baseline -Doptimize=ReleaseFast)
+  (cd "$gui_root" && npx --no-install native test "$app_stage" --yes "${zig_build_args[@]}")
 fi
 notices="$app_stage/zig-out/bin/licenses"
 mkdir -p "$notices"
