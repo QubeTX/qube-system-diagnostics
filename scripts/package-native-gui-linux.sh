@@ -13,7 +13,7 @@ esac
 
 script_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH='' cd -- "$script_root/.." && pwd)
-SOURCE_DATE_EPOCH=$(git -C "$repo_root" show -s --format=%ct HEAD)
+SOURCE_DATE_EPOCH=$(git -c safe.directory="$repo_root" -C "$repo_root" show -s --format=%ct HEAD)
 export SOURCE_DATE_EPOCH
 stage="$repo_root/target/native-gui-stage/$target/app/zig-out/bin"
 binary="$stage/sd300-gui"

@@ -376,6 +376,89 @@ jobs:
             -PriorVersion '1.9.9' `
             -PriorBinary target\prior-build\release\sd300.exe
 
+      - name: Download and verify immutable public v2.0.6 Windows fixtures
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $fixtureRoot = Join-Path $PWD 'target\published-v2.0.6'
+          $downloadRoot = Join-Path $fixtureRoot 'downloads'
+          $priorRoot = Join-Path $fixtureRoot 'prior-native'
+          $extractRoot = Join-Path $fixtureRoot 'archive'
+          $null = New-Item -ItemType Directory -Path $downloadRoot, $priorRoot, $extractRoot -Force
+          $assets = @(
+            'tr300-tui-x86_64-pc-windows-msvc.zip',
+            'sd300-cli-installer.ps1',
+            'sd300-dist-installer.ps1',
+            'sd300-windows-x64-global.msi',
+            'sd300-windows-x64-corporate.msi',
+            'sd300-windows-x64-global.exe',
+            'sd300-windows-x64-corporate.exe'
+          )
+          $expectedDigests = @{
+            'tr300-tui-x86_64-pc-windows-msvc.zip' = '75ffafa4a1e41e0f5ebccb2e1099418c4b6de77feab0c28851b1a8fb20343f29'
+            'sd300-cli-installer.ps1' = '97aafc54842dfc71c001eb53ea23ae53d0f93159ebaf8e1e2413539c2d090953'
+            'sd300-dist-installer.ps1' = '854c7d69204c47247648933a3db75c8f764378cdf7a0a514fbd49f0b06898740'
+            'sd300-windows-x64-global.msi' = '7cd5fd28cc58d0710ef636dedbc3135ebdd143583f84c73c22f92c6edd95aaff'
+            'sd300-windows-x64-corporate.msi' = 'bc0e6004c7bcad17fe65759dcd9ee1d0aba3d3fe8ead864e3fecc1d552fe0aad'
+            'sd300-windows-x64-global.exe' = 'd60d32f92a82fd03845c1e84bb7260584da11cc5478b85edf367b28a13e61e8b'
+            'sd300-windows-x64-corporate.exe' = '1a8d050d4be95415d9e9ba6609d8eba8d51dc997fc4fb2dde1a422dd867003be'
+          }
+          git fetch --force --depth=1 origin 'refs/tags/v2.0.6:refs/tags/v2.0.6'
+          if ($LASTEXITCODE -ne 0) { throw 'could not fetch the immutable v2.0.6 tag' }
+          $priorCommit = (git rev-list -n 1 refs/tags/v2.0.6).Trim()
+          if ($priorCommit -cne 'a81d86cbd8c9617f84072d721e94040cc2a05dd2') {
+            throw "v2.0.6 resolves to $priorCommit instead of its reviewed commit"
+          }
+          foreach ($asset in $assets) {
+            gh release download v2.0.6 --repo QubeTX/qube-system-diagnostics `
+              --dir $downloadRoot --pattern $asset --pattern "$asset.sha256" --clobber
+            if ($LASTEXITCODE -ne 0) { throw "could not download immutable v2.0.6 asset $asset" }
+            $sidecar = (Get-Content -LiteralPath (Join-Path $downloadRoot "$asset.sha256") -Raw).Trim()
+            if ($sidecar -notmatch '^([0-9a-fA-F]{64})\s+\*?(.+)$') {
+              throw "v2.0.6 checksum sidecar is malformed: $asset.sha256"
+            }
+            if ([IO.Path]::GetFileName($Matches[2].Trim()) -cne $asset) {
+              throw "v2.0.6 checksum sidecar names the wrong asset: $asset.sha256"
+            }
+            $actual = (Get-FileHash -LiteralPath (Join-Path $downloadRoot $asset) -Algorithm SHA256).Hash
+            if ($actual -cne $Matches[1].ToUpperInvariant() -or
+                $actual.ToLowerInvariant() -cne $expectedDigests[$asset]) {
+              throw "immutable v2.0.6 asset checksum failed: $asset"
+            }
+          }
+
+          Expand-Archive -LiteralPath (Join-Path $downloadRoot 'tr300-tui-x86_64-pc-windows-msvc.zip') `
+            -DestinationPath $extractRoot -Force
+          $binaries = @(Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter sd300.exe)
+          if ($binaries.Count -ne 1) {
+            throw "immutable v2.0.6 archive contains $($binaries.Count) sd300.exe candidates"
+          }
+          $reported = (& $binaries[0].FullName --version).Trim()
+          if ($LASTEXITCODE -ne 0 -or $reported -ne 'sd300 2.0.6') {
+            throw "immutable v2.0.6 binary identity mismatch: $reported"
+          }
+          Copy-Item -LiteralPath $binaries[0].FullName -Destination (Join-Path $fixtureRoot 'sd300.exe')
+          Copy-Item -LiteralPath (Join-Path $downloadRoot 'sd300-windows-x64-global.msi') -Destination (Join-Path $priorRoot 'sd300-prior-global.msi')
+          Copy-Item -LiteralPath (Join-Path $downloadRoot 'sd300-windows-x64-corporate.msi') -Destination (Join-Path $priorRoot 'sd300-prior-corporate.msi')
+          Copy-Item -LiteralPath (Join-Path $downloadRoot 'sd300-windows-x64-global.exe') -Destination (Join-Path $priorRoot 'sd300-prior-global.exe')
+          Copy-Item -LiteralPath (Join-Path $downloadRoot 'sd300-windows-x64-corporate.exe') -Destination (Join-Path $priorRoot 'sd300-prior-corporate.exe')
+
+      - name: Exercise immutable public v2.0.6 same-channel transitions
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts\validate-windows-self-update.ps1 `
+            -CandidateAssets target\candidate-assets `
+            -CandidateVersion '${{ steps.meta.outputs.version }}' `
+            -CandidateBinary target\release\sd300.exe `
+            -PriorArtifacts target\published-v2.0.6\prior-native `
+            -PriorVersion '2.0.6' `
+            -PriorBinary target\published-v2.0.6\sd300.exe `
+            -PriorManagedInstaller target\published-v2.0.6\downloads\sd300-cli-installer.ps1 `
+            -PriorManagedAssets target\published-v2.0.6\downloads
+
       - uses: actions/upload-artifact@v6
         with:
           name: sd300-windows-native-${{ steps.meta.outputs.tag }}

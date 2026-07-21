@@ -25,6 +25,46 @@ function run(command, args) {
   }).trim();
 }
 
+function runOptional(command, args) {
+  try {
+    return run(command, args);
+  } catch {
+    return null;
+  }
+}
+
+function debianOwnershipCandidates(source) {
+  const candidates = [source];
+  const aliases = [
+    ["/usr/lib/", "/lib/"],
+    ["/usr/lib64/", "/lib64/"],
+    ["/usr/bin/", "/bin/"],
+    ["/usr/sbin/", "/sbin/"],
+  ];
+  for (const [usrPrefix, legacyPrefix] of aliases) {
+    if (source.startsWith(usrPrefix)) {
+      candidates.push(`${legacyPrefix}${source.slice(usrPrefix.length)}`);
+    } else if (source.startsWith(legacyPrefix)) {
+      candidates.push(`${usrPrefix}${source.slice(legacyPrefix.length)}`);
+    }
+  }
+  return [...new Set(candidates)];
+}
+
+function isSameFilesystemObject(left, right) {
+  try {
+    const leftStat = fs.statSync(left);
+    const rightStat = fs.statSync(right);
+    return (
+      leftStat.dev === rightStat.dev &&
+      leftStat.ino === rightStat.ino &&
+      fs.realpathSync(left) === fs.realpathSync(right)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function safeSegment(value) {
   return value.replace(/[^A-Za-z0-9._+-]/g, "_");
 }
@@ -112,11 +152,31 @@ function resolvePackages(origins) {
     let metadata;
     let key;
     if (isDebian) {
-      const ownerLine = run("dpkg-query", ["-S", origin.source])
-        .split("\n")
-        .find((line) => line.endsWith(`: ${origin.source}`));
-      if (!ownerLine) throw new Error(`no Debian package owns ${origin.source}`);
-      const owner = ownerLine.slice(0, ownerLine.length - origin.source.length - 2);
+      let ownerLine;
+      let ownedPath;
+      for (const candidate of debianOwnershipCandidates(origin.source)) {
+        if (
+          candidate !== origin.source &&
+          !isSameFilesystemObject(origin.source, candidate)
+        ) {
+          continue;
+        }
+        const output = runOptional("dpkg-query", ["-S", candidate]);
+        const match = output
+          ?.split("\n")
+          .find((line) => line.endsWith(`: ${candidate}`));
+        if (match) {
+          ownerLine = match;
+          ownedPath = candidate;
+          break;
+        }
+      }
+      if (!ownerLine || !ownedPath) {
+        throw new Error(
+          `no Debian package owns ${origin.source} or its merged-/usr alias`,
+        );
+      }
+      const owner = ownerLine.slice(0, ownerLine.length - ownedPath.length - 2);
       const fields = run("dpkg-query", [
         "-W",
         "-f=${binary:Package}\t${Version}\t${Architecture}\t${Homepage}",

@@ -4,7 +4,9 @@ param(
     [Parameter(Mandatory = $true)][string]$CandidateBinary,
     [Parameter(Mandatory = $true)][string]$PriorArtifacts,
     [Parameter(Mandatory = $true)][string]$PriorVersion,
-    [Parameter(Mandatory = $true)][string]$PriorBinary
+    [Parameter(Mandatory = $true)][string]$PriorBinary,
+    [string]$PriorManagedInstaller,
+    [string]$PriorManagedAssets
 )
 
 $ErrorActionPreference = 'Stop'
@@ -351,6 +353,61 @@ function Assert-Update([string]$Binary, [string]$Channel, [string]$Root) {
 }
 
 function Set-ManagedPrior {
+    if ($PriorManagedInstaller) {
+        if (-not $PriorManagedAssets) {
+            throw 'PriorManagedAssets is required with PriorManagedInstaller'
+        }
+        $priorInstaller = [IO.Path]::GetFullPath($PriorManagedInstaller)
+        $priorAssets = [IO.Path]::GetFullPath($PriorManagedAssets).TrimEnd('\')
+        $priorAssetPrefix = $priorAssets + '\'
+        if (-not (Test-Path -LiteralPath $priorInstaller -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $priorAssets -PathType Container) -or
+            -not $priorInstaller.StartsWith($priorAssetPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'the immutable prior managed installer fixture is incomplete'
+        }
+
+        $savedAssetDirectory = $env:SD300_CI_RELEASE_ASSET_DIR
+        $savedDownloadUrl = $env:TR300_TUI_DOWNLOAD_URL
+        try {
+            # The public v2 wrapper has a CI-only local asset hook. Point both
+            # wrapper and cargo-dist downloads at the hash-pinned fixture set so
+            # the transition consumes the exact bytes verified by the workflow.
+            $env:SD300_CI_RELEASE_ASSET_DIR = $priorAssets
+            $env:TR300_TUI_DOWNLOAD_URL = ([Uri]::new($priorAssetPrefix)).AbsoluteUri.TrimEnd('/')
+            $launcher = (Get-Process -Id $PID).Path
+            Invoke-Checked $launcher @(
+                '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                '-File', $priorInstaller
+            )
+        }
+        finally {
+            if ($null -eq $savedAssetDirectory) {
+                Remove-Item Env:SD300_CI_RELEASE_ASSET_DIR -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:SD300_CI_RELEASE_ASSET_DIR = $savedAssetDirectory
+            }
+            if ($null -eq $savedDownloadUrl) {
+                Remove-Item Env:TR300_TUI_DOWNLOAD_URL -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:TR300_TUI_DOWNLOAD_URL = $savedDownloadUrl
+            }
+        }
+
+        $receipt = Get-Content -LiteralPath $managedReceipt -Raw | ConvertFrom-Json
+        $reported = @(& $managedBinary --version) | Select-Object -First 1
+        $managedBinDirectory = Split-Path -Parent $managedBinary
+        if ($receipt.version -ne $PriorVersion -or
+            $receipt.provider.source -ne 'cargo-dist' -or
+            $receipt.source.app_name -ne 'sd300' -or
+            $reported -ne "sd300 $PriorVersion" -or
+            -not (Test-PathListContains ([Environment]::GetEnvironmentVariable('Path', 'User')) $managedBinDirectory)) {
+            throw 'the immutable prior managed installer did not reproduce its version, owner receipt, binary, and PATH integration'
+        }
+        return
+    }
+
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $managedBinary) -Force
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $managedReceipt) -Force
     Copy-Item -LiteralPath $PriorBinary -Destination $managedBinary -Force
