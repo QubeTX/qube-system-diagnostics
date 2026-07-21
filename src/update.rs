@@ -684,6 +684,11 @@ fn execute_managed_wrapper(
 }
 
 #[cfg(windows)]
+fn windows_msi_repair_required(current_version: &str, target_version: &str) -> bool {
+    current_version == target_version
+}
+
+#[cfg(windows)]
 fn execute_windows_msi(
     channel: InstallChannel,
     release: &Release,
@@ -693,23 +698,25 @@ fn execute_windows_msi(
         .update_asset()
         .ok_or_else(|| "MSI asset is unavailable".to_string())?;
     let staged = stage_verified(release, asset)?;
-    run_status(
-        Command::new("msiexec.exe").args([
-            "/i",
-            &staged.path.to_string_lossy(),
-            "/passive",
-            "/norestart",
-            // An update is always dispatched through an already proven MSI
-            // owner. Explicit reinstall semantics make a same-version repair
-            // restore missing GUI/engine files instead of letting `/i` treat
-            // the registered package as a no-op. `vomus` is Microsoft's
-            // documented complete-reinstall mode and also re-caches the exact
-            // staged package for ordinary version transitions.
-            "REINSTALL=ALL",
-            "REINSTALLMODE=vomus",
-        ]),
-        quiet_stdout,
-    )
+    let msiexec = trusted_windows_system_executable(Path::new("msiexec.exe"))?;
+    let mut command = Command::new(msiexec);
+    command.args([
+        "/i",
+        &staged.path.to_string_lossy(),
+        "/passive",
+        "/norestart",
+        "SD300GUIALREADYSTOPPED=1",
+    ]);
+    if windows_msi_repair_required(VERSION, &release.version) {
+        // Repair properties apply only to the already-registered product.
+        // Supplying them during a normal version transition targets the new
+        // ProductCode as though it were already installed and prevents WiX's
+        // MajorUpgrade transaction from running. The same-version companion
+        // repair needs them so Windows Installer restores a missing engine or
+        // GUI instead of treating `/i` as a no-op.
+        command.args(["REINSTALL=ALL", "REINSTALLMODE=vomus"]);
+    }
+    run_status(&mut command, quiet_stdout)
 }
 
 #[cfg(not(windows))]
@@ -732,7 +739,12 @@ fn execute_windows_exe(
         .ok_or_else(|| "EXE asset is unavailable".to_string())?;
     let staged = stage_verified(release, asset)?;
     run_status(
-        Command::new(&staged.path).args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]),
+        Command::new(&staged.path).args([
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/SD300GUIALREADYSTOPPED",
+        ]),
         quiet_stdout,
     )
 }
@@ -2889,6 +2901,8 @@ fn execute_windows_native_uninstaller(
                     &registration.key_name,
                     "/passive",
                     "/norestart",
+                    "SD300GUIALREADYSTOPPED=1",
+                    "SD300PRESERVEGUISTATE=1",
                 ]),
                 quiet_stdout,
             )?;
@@ -2912,7 +2926,13 @@ fn execute_windows_native_uninstaller(
                 );
             }
             run_status(
-                Command::new(executable).args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]),
+                Command::new(executable).args([
+                    "/VERYSILENT",
+                    "/SUPPRESSMSGBOXES",
+                    "/NORESTART",
+                    "/SD300GUIALREADYSTOPPED",
+                    "/PRESERVEGUISTATE",
+                ]),
                 quiet_stdout,
             )?;
         }
@@ -3273,5 +3293,12 @@ mod tests {
             windows_quote_command_arg(r"C:\Program Files\sd300\backup.exe"),
             r#""C:\Program Files\sd300\backup.exe""#
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn msi_reinstall_properties_are_reserved_for_same_version_repairs() {
+        assert!(windows_msi_repair_required("3.0.0", "3.0.0"));
+        assert!(!windows_msi_repair_required("1.9.9", "3.0.0"));
     }
 }

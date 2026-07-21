@@ -13,11 +13,23 @@ esac
 
 script_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH='' cd -- "$script_root/.." && pwd)
+SOURCE_DATE_EPOCH=$(git -C "$repo_root" show -s --format=%ct HEAD)
+export SOURCE_DATE_EPOCH
 stage="$repo_root/target/native-gui-stage/$target/app/zig-out/bin"
 binary="$stage/sd300-gui"
 engine="$stage/libsd300_engine.so"
 [[ -x $binary && -f $engine ]] || { echo "native GUI build is incomplete under $stage" >&2; exit 1; }
-for command in patchelf lddtree node tar xz; do command -v "$command" >/dev/null || { echo "$command is required" >&2; exit 1; }; done
+for command in patchelf node tar xz; do command -v "$command" >/dev/null || { echo "$command is required" >&2; exit 1; }; done
+if command -v lddtree >/dev/null; then
+  lddtree_command=lddtree
+elif command -v lddtreepax >/dev/null; then
+  # Alpine 3.20 splits the dependency-tree reader from pax-utils and exposes
+  # it as `lddtreepax`; Ubuntu's pax-utils keeps the `lddtree` command.
+  lddtree_command=lddtreepax
+else
+  echo 'lddtree or lddtreepax is required' >&2
+  exit 1
+fi
 
 work=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/sd300-linux-package.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT INT TERM
@@ -40,11 +52,11 @@ cat > "$root/bin/sd300-gui" <<'LAUNCHER'
 set -eu
 sd300_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 sd300_runtime="$sd300_root/lib/runtime"
-export LD_LIBRARY_PATH="$sd300_runtime/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="$sd300_runtime/lib"
 export GSETTINGS_SCHEMA_DIR="$sd300_runtime/share/glib-2.0/schemas"
 export GIO_EXTRA_MODULES="$sd300_runtime/lib/gio/modules"
 export GDK_PIXBUF_MODULE_FILE="$sd300_runtime/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
-export XDG_DATA_DIRS="$sd300_root/share:$sd300_runtime/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+export XDG_DATA_DIRS="$sd300_root/share:$sd300_runtime/share:/usr/local/share:/usr/share"
 exec "$sd300_root/libexec/sd300-gui" "$@"
 LAUNCHER
 chmod 755 "$root/bin/sd300-gui"
@@ -61,7 +73,7 @@ Categories=System;Monitor;
 StartupNotify=true
 DESKTOP
 
-system_allow='^(linux-vdso.*|ld-linux.*|ld-musl.*|libc\.so(\..*)?|libm\.so(\..*)?|libdl\.so(\..*)?|libpthread\.so(\..*)?|librt\.so(\..*)?)$'
+system_allow='^(linux-vdso.*|ld-linux.*|ld-musl.*|libc\.so(\..*)?|libc\.musl-[^.]+\.so(\..*)?|libm\.so(\..*)?|libdl\.so(\..*)?|libpthread\.so(\..*)?|librt\.so(\..*)?)$'
 record_runtime_source() {
   destination=$1
   source=$2
@@ -84,11 +96,19 @@ copy_library() {
 }
 copy_closure() {
   object=$1
+  dependency_list=$("$lddtree_command" -l "$object") || {
+    echo "dependency-tree inspection failed for $object" >&2
+    exit 1
+  }
   while IFS= read -r dependency; do
-    [[ -f $dependency ]] || continue
+    [[ -z $dependency ]] && continue
+    [[ -f $dependency ]] || {
+      echo "dependency-tree inspection returned an unresolved path for $object: $dependency" >&2
+      exit 1
+    }
     [[ $dependency == "$object" ]] && continue
     copy_library "$dependency"
-  done < <(lddtree -l "$object")
+  done <<< "$dependency_list"
 }
 copy_closure "$root/libexec/sd300-gui"
 copy_closure "$root/libexec/libsd300_engine.so"
@@ -100,35 +120,26 @@ while IFS= read -r bundled_library; do
   fi
 done < <(find "$runtime/lib" -type f)
 
-lib_roots=(/usr/lib /usr/lib64 /lib /lib64)
-module_sources=()
-for lib_root in "${lib_roots[@]}"; do
-  [[ -d $lib_root ]] || continue
-  while IFS= read -r -d '' module; do module_sources+=("$module"); done < <(
-    find "$lib_root" -type f \( \
-      -path '*/gdk-pixbuf-2.0/*/loaders/*.so' -o \
-      -path '*/gio/modules/*.so' -o \
-      -path '*/gtk-4.0/*/printbackends/*.so' \
-    \) -print0 2>/dev/null
-  )
-done
-for module in "${module_sources[@]}"; do
-  case "$module" in
-    */gdk-pixbuf-2.0/*/loaders/*) relative=${module#*gdk-pixbuf-2.0/}; destination="$runtime/lib/gdk-pixbuf-2.0/$relative" ;;
-    */gio/modules/*) destination="$runtime/lib/gio/modules/$(basename "$module")" ;;
-    */gtk-4.0/*/printbackends/*) relative=${module#*gtk-4.0/}; destination="$runtime/lib/gtk-4.0/$relative" ;;
-    *) continue ;;
-  esac
-  mkdir -p "$(dirname "$destination")"
-  cp -L "$module" "$destination"
-  chmod 755 "$destination"
-  record_runtime_source "$destination" "$module"
-  copy_closure "$module"
-done
+# SD-300 renders its own canvas, embeds its fonts, and ships only PNG assets.
+# GTK/GdkPixbuf provide PNG support in the linked core libraries on both pinned
+# baselines. Do not sweep ambient GIO, image-loader, or print-backend modules
+# from the runner: doing so makes the archive host-dependent and can pull in
+# unrelated networking/CUPS closures. The empty owned directories/cache make
+# this intentional module set explicit and are exercised by the blank-host GUI
+# launch below.
+mkdir -p "$runtime/lib/gio/modules" "$runtime/lib/gdk-pixbuf-2.0/2.10.0"
 
+gtk_schema_names=(
+  org.gtk.Settings.ColorChooser.gschema.xml
+  org.gtk.Settings.Debug.gschema.xml
+  org.gtk.Settings.EmojiChooser.gschema.xml
+  org.gtk.Settings.FileChooser.gschema.xml
+)
 for schema_root in /usr/share/glib-2.0/schemas /usr/local/share/glib-2.0/schemas; do
   [[ -d $schema_root ]] || continue
-  while IFS= read -r -d '' schema; do
+  for schema_name in "${gtk_schema_names[@]}"; do
+    schema="$schema_root/$schema_name"
+    [[ -f $schema ]] || continue
     destination="$runtime/share/glib-2.0/schemas/$(basename "$schema")"
     if [[ -e $destination ]]; then
       cmp -s "$schema" "$destination" || {
@@ -140,7 +151,7 @@ for schema_root in /usr/share/glib-2.0/schemas /usr/local/share/glib-2.0/schemas
       chmod 644 "$destination"
     fi
     record_runtime_source "$destination" "$schema"
-  done < <(find "$schema_root" -maxdepth 1 -type f -name '*.xml' -print0)
+  done
 done
 glib-compile-schemas "$runtime/share/glib-2.0/schemas"
 
@@ -158,7 +169,7 @@ fi
 
 patchelf --set-rpath '$ORIGIN/../lib/runtime/lib' "$root/libexec/sd300-gui"
 patchelf --set-rpath '$ORIGIN/../lib/runtime/lib' "$root/libexec/libsd300_engine.so"
-while IFS= read -r -d '' object; do patchelf --set-rpath '$ORIGIN' "$object" || true; done < <(find "$runtime/lib" -maxdepth 1 -type f -name '*.so*' -print0)
+while IFS= read -r -d '' object; do patchelf --set-rpath '$ORIGIN' "$object"; done < <(find "$runtime/lib" -maxdepth 1 -type f -name '*.so*' -print0)
 
 cat > "$root/THIRD_PARTY_NOTICES.txt" <<'NOTICES'
 SD-300 Linux private runtime

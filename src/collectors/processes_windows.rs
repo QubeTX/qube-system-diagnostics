@@ -33,6 +33,12 @@ struct ProcessTimes {
     total: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SystemCpuTimes {
+    total: u64,
+    idle: u64,
+}
+
 #[derive(Debug)]
 struct ProcessHandle(usize);
 
@@ -68,7 +74,8 @@ impl Drop for ProcessHandle {
 pub struct GuiProcessSampler {
     handles: HashMap<u32, ProcessHandle>,
     previous_process_times: HashMap<u32, ProcessTimes>,
-    previous_global_time: Option<u64>,
+    previous_system_times: Option<SystemCpuTimes>,
+    total_cpu_percent: f32,
     process_buffer: Vec<u8>,
     batched_rows: Vec<BatchedProcessRow>,
     ranked_rows: Vec<RankedBatchedRow>,
@@ -76,6 +83,10 @@ pub struct GuiProcessSampler {
 }
 
 impl GuiProcessSampler {
+    pub fn total_cpu_percent(&self) -> f32 {
+        self.total_cpu_percent
+    }
+
     pub fn collect(
         &mut self,
         total_memory: u64,
@@ -96,12 +107,13 @@ impl GuiProcessSampler {
         limit: usize,
         sort: ProcessSortKey,
     ) -> Option<ProcessData> {
-        let global_time = global_cpu_time()?;
+        let system_times = system_cpu_times()?;
         let global_delta = self
-            .previous_global_time
-            .map(|previous| global_time.saturating_sub(previous))
+            .previous_system_times
+            .map(|previous| system_times.total.saturating_sub(previous.total))
             .unwrap_or(0);
-        self.previous_global_time = Some(global_time);
+        self.total_cpu_percent = system_cpu_percent(self.previous_system_times, system_times);
+        self.previous_system_times = Some(system_times);
         let logical_cpus = std::thread::available_parallelism()
             .map(|count| count.get() as f32)
             .unwrap_or(1.0);
@@ -194,14 +206,15 @@ impl GuiProcessSampler {
         limit: usize,
         sort: ProcessSortKey,
     ) -> ProcessData {
-        let Some(global_time) = global_cpu_time() else {
+        let Some(system_times) = system_cpu_times() else {
             return ProcessData::default();
         };
         let global_delta = self
-            .previous_global_time
-            .map(|previous| global_time.saturating_sub(previous))
+            .previous_system_times
+            .map(|previous| system_times.total.saturating_sub(previous.total))
             .unwrap_or(0);
-        self.previous_global_time = Some(global_time);
+        self.total_cpu_percent = system_cpu_percent(self.previous_system_times, system_times);
+        self.previous_system_times = Some(system_times);
         let logical_cpus = std::thread::available_parallelism()
             .map(|count| count.get() as f32)
             .unwrap_or(1.0);
@@ -587,12 +600,29 @@ fn filetime(value: FILETIME) -> u64 {
     ((value.dwHighDateTime as u64) << 32) | value.dwLowDateTime as u64
 }
 
-fn global_cpu_time() -> Option<u64> {
+fn system_cpu_times() -> Option<SystemCpuTimes> {
     let mut idle: FILETIME = unsafe { zeroed() };
     let mut kernel: FILETIME = unsafe { zeroed() };
     let mut user: FILETIME = unsafe { zeroed() };
-    (unsafe { GetSystemTimes(&mut idle, &mut kernel, &mut user) } != 0)
-        .then(|| filetime(kernel).saturating_add(filetime(user)))
+    (unsafe { GetSystemTimes(&mut idle, &mut kernel, &mut user) } != 0).then(|| SystemCpuTimes {
+        // GetSystemTimes reports idle time as a subset of kernel time.
+        // Kernel + user is therefore the aggregate elapsed processor time;
+        // subtracting the idle delta yields 0..100% total machine load.
+        total: filetime(kernel).saturating_add(filetime(user)),
+        idle: filetime(idle),
+    })
+}
+
+fn system_cpu_percent(previous: Option<SystemCpuTimes>, current: SystemCpuTimes) -> f32 {
+    let Some(previous) = previous else {
+        return 0.0;
+    };
+    let total_delta = current.total.saturating_sub(previous.total);
+    if total_delta == 0 {
+        return 0.0;
+    }
+    let idle_delta = current.idle.saturating_sub(previous.idle).min(total_delta);
+    100.0 * total_delta.saturating_sub(idle_delta) as f32 / total_delta as f32
 }
 
 fn process_times(handle: &ProcessHandle) -> Option<ProcessTimes> {
@@ -741,5 +771,34 @@ mod tests {
             retain_best_batched_rows(&mut rows, sort, 2);
             assert_eq!(pids(&rows), expected);
         }
+    }
+
+    #[test]
+    fn system_cpu_percent_uses_idle_delta_and_stays_bounded() {
+        let previous = SystemCpuTimes {
+            total: 1_000,
+            idle: 400,
+        };
+        assert_eq!(
+            system_cpu_percent(
+                Some(previous),
+                SystemCpuTimes {
+                    total: 2_000,
+                    idle: 650,
+                },
+            ),
+            75.0
+        );
+        assert_eq!(
+            system_cpu_percent(
+                Some(previous),
+                SystemCpuTimes {
+                    total: 1_500,
+                    idle: 1_500,
+                },
+            ),
+            0.0
+        );
+        assert_eq!(system_cpu_percent(None, previous), 0.0);
     }
 }

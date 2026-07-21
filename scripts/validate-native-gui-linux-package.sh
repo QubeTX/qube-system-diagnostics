@@ -158,9 +158,19 @@ if not (
     and spdx.get("dataLicense") == "CC0-1.0"
     and spdx.get("SPDXID") == "SPDXRef-DOCUMENT"
     and spdx.get("name") == f"SD-300-{target}-{version}"
-    and spdx.get("documentNamespace") == f"https://github.com/QubeTX/qube-system-diagnostics/spdx/{version}/{target}"
+    and re.fullmatch(
+        rf"https://github\.com/QubeTX/qube-system-diagnostics/spdx/{re.escape(version)}/{re.escape(target)}/[0-9a-f]{{64}}",
+        spdx.get("documentNamespace", ""),
+    )
 ):
     raise SystemExit("Linux private-runtime SPDX identity does not match the archive")
+creation = spdx.get("creationInfo")
+if not isinstance(creation, dict) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", creation.get("created", "")):
+    raise SystemExit("Linux private-runtime SPDX has no reproducible creation timestamp")
+if creation.get("creators") != [
+        "Tool: sd300-generate-linux-runtime-sbom-1", "Organization: QubeTX"]:
+    raise SystemExit("Linux private-runtime SPDX creator identity is unexpected")
 spdx_records = spdx.get("files")
 if not isinstance(spdx_records, list) or not spdx_records:
     raise SystemExit("Linux private-runtime SPDX has no file inventory")
@@ -172,17 +182,23 @@ for record in spdx_records:
     checksums = record.get("checksums")
     if not isinstance(checksums, list):
         raise SystemExit(f"Linux private-runtime SPDX has no checksum for {name}")
+    sha1 = next((item.get("checksumValue") for item in checksums
+                 if isinstance(item, dict) and item.get("algorithm") == "SHA1"), None)
     sha256 = next((item.get("checksumValue") for item in checksums
                    if isinstance(item, dict) and item.get("algorithm") == "SHA256"), None)
+    if not isinstance(sha1, str) or re.fullmatch(r"[0-9a-f]{40}", sha1) is None:
+        raise SystemExit(f"Linux private-runtime SPDX has an invalid SHA-1 for {name}")
     if not isinstance(sha256, str) or re.fullmatch(r"[0-9a-f]{64}", sha256) is None:
         raise SystemExit(f"Linux private-runtime SPDX has an invalid SHA-256 for {name}")
-    spdx_files[name] = sha256
+    spdx_files[name] = {"sha1": sha1, "sha256": sha256, "id": record.get("SPDXID")}
 
 expected_spdx_files = set(files) - {"install-manifest.json", spdx_name}
 if set(spdx_files) != expected_spdx_files:
     raise SystemExit("Linux private-runtime SPDX inventory does not cover the packaged payload")
-for name, digest in spdx_files.items():
-    if hashlib.sha256(files[name].read_bytes()).hexdigest() != digest:
+for name, digests in spdx_files.items():
+    payload = files[name].read_bytes()
+    if (hashlib.sha1(payload).hexdigest() != digests["sha1"]
+            or hashlib.sha256(payload).hexdigest() != digests["sha256"]):
         raise SystemExit(f"Linux private-runtime SPDX digest mismatch: {name}")
 
 packages = spdx.get("packages")
@@ -201,6 +217,10 @@ for package in packages:
     package_ids[package_id] = package
 if product_id not in package_ids:
     raise SystemExit("Linux private-runtime SPDX is missing the aggregate runtime package")
+product_package = package_ids[product_id]
+if product_package.get("filesAnalyzed") is not True \
+        or product_package.get("primaryPackagePurpose") != "APPLICATION":
+    raise SystemExit("aggregate runtime package analysis/purpose metadata is invalid")
 
 runtime_package_ids = set(package_ids) - {product_id}
 for package_id in runtime_package_ids:
@@ -208,6 +228,8 @@ for package_id in runtime_package_ids:
     if not all(isinstance(package.get(field), str) and package[field]
                for field in ("name", "versionInfo", "supplier", "licenseComments")):
         raise SystemExit(f"runtime dependency package metadata is incomplete: {package_id}")
+    if package.get("filesAnalyzed") is not True:
+        raise SystemExit(f"runtime dependency package is not analyzed: {package_id}")
     if package.get("licenseConcluded") != "NOASSERTION" or package.get("licenseDeclared") != "NOASSERTION":
         raise SystemExit(f"runtime dependency makes an unaudited SPDX license assertion: {package_id}")
     attributions = package.get("attributionTexts")
@@ -242,6 +264,34 @@ for package_id in runtime_package_ids:
     if (product_id, "CONTAINS", package_id) not in edges:
         raise SystemExit(f"aggregate runtime package does not contain {package_id}")
 
+def verify_package_code(package_id, expected_excluded):
+    package = package_ids[package_id]
+    verification = package.get("packageVerificationCode")
+    if not isinstance(verification, dict):
+        raise SystemExit(f"SPDX package has no verification code: {package_id}")
+    value = verification.get("packageVerificationCodeValue")
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise SystemExit(f"SPDX package has an invalid verification code: {package_id}")
+    excluded = verification.get("packageVerificationCodeExcludedFiles", [])
+    if sorted(excluded) != sorted(expected_excluded):
+        raise SystemExit(f"SPDX package verification exclusions are invalid: {package_id}")
+    contained_ids = {
+        related for source, relationship, related in edges
+        if source == package_id and relationship == "CONTAINS" and related.startswith("SPDXRef-File-")
+    }
+    checksums = sorted(
+        item["sha1"] for item in spdx_files.values() if item["id"] in contained_ids
+    )
+    if not checksums:
+        raise SystemExit(f"SPDX package contains no analyzed files: {package_id}")
+    expected = hashlib.sha1("".join(checksums).encode("ascii")).hexdigest()
+    if value != expected:
+        raise SystemExit(f"SPDX package verification code mismatch: {package_id}")
+
+verify_package_code(product_id, ["install-manifest.json", "runtime-components.spdx.json"])
+for package_id in runtime_package_ids:
+    verify_package_code(package_id, [])
+
 file_ids_by_name = {record["fileName"]: record["SPDXID"] for record in spdx_records}
 owned_runtime_files = {
     related for source, relationship, related in edges
@@ -249,7 +299,7 @@ owned_runtime_files = {
 }
 for name, file_id in file_ids_by_name.items():
     package_owned = (
-        (name.startswith("lib/runtime/lib/") and re.search(r"\\.so(?:\\.|$)", name))
+        (name.startswith("lib/runtime/lib/") and re.search(r"\.so(?:\.|$)", name))
         or (name.startswith("lib/runtime/share/glib-2.0/schemas/") and name.endswith(".xml"))
     )
     if package_owned and file_id not in owned_runtime_files:
@@ -268,20 +318,76 @@ mv "$desktop.configured" "$desktop"
 grep -Fqx "Exec=$entry" "$desktop"
 grep -Fqx 'Terminal=false' "$desktop"
 
-for forbidden in 'libc.so*' 'ld-linux*' 'ld-musl*' 'libGL.so*' 'libEGL.so*' 'libdrm.so*'; do
+for forbidden in \
+  'libc.so*' 'libc.musl-*.so*' 'ld-linux*' 'ld-musl*' \
+  'libm.so*' 'libdl.so*' 'libpthread.so*' 'librt.so*' \
+  'libGL.so*' 'libEGL.so*' 'libGLX.so*' 'libOpenGL.so*' 'libdrm.so*'; do
   if find "$runtime/lib" -type f -name "$forbidden" -print -quit | grep -q .; then
     echo "private runtime contains forbidden host/system component: $forbidden" >&2
     exit 1
   fi
 done
-for object in "$root/libexec/sd300-gui" "$root/libexec/libsd300_engine.so"; do
-  if [[ -n ${HOME:-} ]] && readelf -d "$object" | grep -E '(RPATH|RUNPATH)' | grep -Fq "$HOME"; then
-    echo "RPATH leaks the build user home: $object" >&2
+
+allowed_system_dependency() {
+  case "$1" in
+    linux-vdso.*|ld-linux*|ld-musl*|libc.so*|libc.musl-*.so*|\
+    libm.so*|libdl.so*|libpthread.so*|librt.so*|\
+    libGL.so*|libEGL.so*|libGLX.so*|libOpenGL.so*|libdrm.so*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+elf_objects=("$root/libexec/sd300-gui" "$root/libexec/libsd300_engine.so")
+while IFS= read -r -d '' candidate; do
+  if readelf -h "$candidate" >/dev/null 2>&1; then elf_objects+=("$candidate"); fi
+done < <(find "$runtime/lib" -type f -print0)
+
+for object in "${elf_objects[@]}"; do
+  dynamic=$(readelf -d "$object")
+  runpath=$(grep -E '(RPATH|RUNPATH)' <<< "$dynamic" | sed -E 's/^.*\[([^]]*)\].*$/\1/')
+  if [[ $object == "$root/libexec/"* ]]; then expected_runpath='$ORIGIN/../lib/runtime/lib'; else expected_runpath='$ORIGIN'; fi
+  if [[ $runpath != "$expected_runpath" ]]; then
+    echo "ELF object has an unexpected private-runtime RUNPATH: $object ($runpath)" >&2
     exit 1
   fi
-  dependency_report=$(LD_LIBRARY_PATH="$runtime/lib" ldd "$object" 2>&1)
+  if grep -Eq '(/home/|/Users/|[A-Za-z]:\\|runner|RUNNER_TEMP)' <<< "$runpath"; then
+    echo "ELF RUNPATH leaks a build/developer path: $object" >&2
+    exit 1
+  fi
+
+  dependency_report=$(LD_LIBRARY_PATH="$runtime/lib" ldd "$object" 2>&1) || {
+    printf '%s\n' "$dependency_report" >&2
+    echo "ldd failed for packaged ELF: $object" >&2
+    exit 1
+  }
   printf '%s\n' "$dependency_report"
-  ! grep -Fq 'not found' <<< "$dependency_report"
+  if grep -Fq 'not found' <<< "$dependency_report"; then
+    echo "packaged ELF has an unresolved dependency: $object" >&2
+    exit 1
+  fi
+  while IFS= read -r dependency_line; do
+    [[ -z $dependency_line ]] && continue
+    dependency_name=$(awk '{print $1}' <<< "$dependency_line")
+    if [[ $dependency_line == *' => '* ]]; then
+      resolved=$(awk '{print $3}' <<< "$dependency_line")
+    elif [[ $dependency_name == /* ]]; then
+      resolved=$dependency_name
+      dependency_name=$(basename "$resolved")
+    else
+      allowed_system_dependency "$dependency_name" && continue
+      echo "ldd returned an unclassified dependency for $object: $dependency_line" >&2
+      exit 1
+    fi
+    [[ $resolved == /* ]] || {
+      echo "ldd returned a non-absolute dependency for $object: $dependency_line" >&2
+      exit 1
+    }
+    if [[ $resolved == "$runtime/"* ]]; then continue; fi
+    allowed_system_dependency "$(basename "$resolved")" || {
+      echo "packaged ELF resolved outside the private runtime: $object -> $resolved" >&2
+      exit 1
+    }
+  done <<< "$dependency_report"
 done
 gui_dependencies=$(LD_LIBRARY_PATH="$runtime/lib" ldd "$root/libexec/sd300-gui" 2>&1)
 grep -E 'libgtk-4\.so' <<< "$gui_dependencies" | grep -Fq "$runtime"

@@ -316,7 +316,7 @@
           </panel>
 
           <panel padding="20" background="surface" radius="lg">
-            <column gap="10"><row cross="center"><column gap="3" grow="1"><text>Diagnostic exports</text><text foreground="text_muted">Exports are explicit, redacted by default, and preserved if SD-300 is uninstalled.</text></column><if test="{export_pending}"><badge variant="outline">PREPARING</badge></if></row><row gap="8"><button variant="outline" on-press="export_redacted_snapshot">Export redacted snapshot</button><button variant="outline" on-press="export_capabilities">Export capabilities</button></row><text foreground="text_muted">The saved path appears in the status rail. Sensitive network addresses, host identity, and storage serials are removed from snapshot exports.</text></column>
+            <column gap="10"><row cross="center"><column gap="3" grow="1"><text>Diagnostic exports</text><text foreground="text_muted">Exports are explicit, redacted by default, and preserved if SD-300 is uninstalled.</text></column><if test="{export_pending}"><badge variant="outline">PREPARING</badge></if></row><row gap="8"><button variant="outline" on-press="export_redacted_snapshot">Export redacted snapshot</button><button variant="outline" on-press="export_capabilities">Export capabilities</button></row><text foreground="text_muted">Sensitive network addresses, host identity, and storage serials are removed from snapshot exports.</text><text foreground="text_muted">{status}</text></column>
           </panel>
 
           <panel padding="20" background="surface" radius="lg">
@@ -334,5 +334,4 @@
   </row>
 
   <if test="{engine_ready}"><row gap="12" padding="8" cross="center" background="surface"><if test="{activeTopicReady}"><if test="{active_topic_stale}"><badge variant="outline">STALE</badge></if><else><badge variant="outline">{upper(activeTopicAvailability)}</badge></else><text grow="1" foreground="text_muted"><span mono="true">TOPIC {upper(activeTopicName)} · SEQ {activeTopicSequence} · AGE {active_topic_age_ms} ms · CAPTURE {activeTopicCapturedUnixMs} · SCHEMA {activeTopicSchema}</span></text><if test="{technicianMode}"><text foreground="text_muted"><span mono="true">{activeTopicProvenance} · {activeTopicTarget}</span></text></if></if><else><badge variant="outline">TOPIC PENDING</badge></else></row></if>
-  <status-bar>{status}</status-bar>
 </column>

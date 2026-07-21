@@ -118,6 +118,7 @@
         <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
         <Property Id='DiskPrompt' Value='sd300 (Corporate Edition) Installation'/>
         <Property Id='SD300PRESERVEGUISTATE' Secure='yes'/>
+        <Property Id='SD300GUIALREADYSTOPPED' Secure='yes'/>
         <Property Id='SD300OWNEDNATIVEROOT'>
             <RegistrySearch Id='FindOwnedCorporateNativeRoot'
                 Root='HKCU'
@@ -367,7 +368,7 @@
 
         <InstallExecuteSequence>
             <Custom Action='StopGuiBeforeMutation' Before='RemoveExistingProducts'>
-                <![CDATA[SD300OWNEDNATIVEROOT]]>
+                <![CDATA[SD300OWNEDNATIVEROOT AND NOT SD300GUIALREADYSTOPPED]]>
             </Custom>
             <Custom Action='RemoveConflictingInno' Before='InstallFiles'>
                 <![CDATA[CONFLICTING_INNO_UNINSTALL AND NOT REMOVE~="ALL"]]>

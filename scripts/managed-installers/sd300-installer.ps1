@@ -156,12 +156,12 @@ function Invoke-Sd300Process([string]$FilePath, [string[]]$Arguments, [bool]$Ele
 function Remove-Sd300NativeProduct($Product) {
     Write-Information "Switching SD-300 ownership from $($Product.Channel) to powershell-installer..."
     if ($Product.Kind -eq 'msi') {
-        $process = Invoke-Sd300Process 'msiexec.exe' @('/x', $Product.ProductCode, '/passive', '/norestart', 'SD300PRESERVEGUISTATE=1') $Product.Elevated
+        $process = Invoke-Sd300Process 'msiexec.exe' @('/x', $Product.ProductCode, '/passive', '/norestart', 'SD300GUIALREADYSTOPPED=1', 'SD300PRESERVEGUISTATE=1') $Product.Elevated
         if ($process.ExitCode -notin @(0, 1605, 1614, 1641, 3010)) {
             throw "$($Product.Channel) uninstall exited with Windows Installer code $($process.ExitCode)"
         }
     } else {
-        $process = Invoke-Sd300Process $Product.Uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/PRESERVEGUISTATE') $Product.Elevated
+        $process = Invoke-Sd300Process $Product.Uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SD300GUIALREADYSTOPPED', '/PRESERVEGUISTATE') $Product.Elevated
         if ($process.ExitCode -ne 0) {
             throw "$($Product.Channel) uninstall exited with code $($process.ExitCode)"
         }

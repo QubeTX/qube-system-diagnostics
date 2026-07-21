@@ -155,6 +155,19 @@ begin
     StopGuiAtRoot(RegisteredRoot);
 end;
 
+function HasCommandLineParameter(Parameter: String): Boolean;
+var
+  Index: Integer;
+begin
+  Result := False;
+  for Index := 1 to ParamCount do
+    if CompareText(ParamStr(Index), Parameter) = 0 then
+    begin
+      Result := True;
+      exit;
+    end;
+end;
+
 #include "remove-conflicting-msi.pas"
 
 procedure RunStrictMigration(Args: String; LabelText: String);
@@ -193,19 +206,6 @@ begin
   if ExitCode <> 0 then
     RaiseException('The installed SD-300 GUI or engine failed self-test (exit ' +
       IntToStr(ExitCode) + '). Setup stopped safely.');
-end;
-
-function HasCommandLineParameter(Parameter: String): Boolean;
-var
-  Index: Integer;
-begin
-  Result := False;
-  for Index := 1 to ParamCount do
-    if CompareText(ParamStr(Index), Parameter) = 0 then
-    begin
-      Result := True;
-      exit;
-    end;
 end;
 
 procedure CleanupOwnedGuiState;
@@ -303,7 +303,10 @@ begin
   begin
     { The uninstaller itself proves ownership of its application directory;
       it does not need the registry locator required by a fresh installer. }
-    StopGuiAtRoot(ExpandConstant('{app}'));
+    if HasCommandLineParameter('/SD300GUIALREADYSTOPPED') then
+      Log('SD-300 lifecycle preflight already stopped the GUI before uninstall.')
+    else
+      StopGuiAtRoot(ExpandConstant('{app}'));
     CleanupOwnedGuiState;
   end;
   if CurUninstallStep = usPostUninstall then

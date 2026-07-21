@@ -175,9 +175,14 @@ begin
 
   { Shutdown is deliberately independent from /PRESERVEGUISTATE: that switch
     preserves preferences during a channel transition, never a live process
-    whose image is about to be replaced. StopExistingGui uses SW_HIDE and the
-    CLI's authenticated lifecycle endpoint, and fails before file mutation. }
-  StopExistingGui;
+    whose image is about to be replaced. The internal already-stopped switch is
+    accepted only from SD-300 lifecycle code that proved shutdown before moving
+    the installed CLI image out of the way. Direct installer launches still use
+    the hidden authenticated lifecycle endpoint and fail before file mutation. }
+  if HasCommandLineParameter('/SD300GUIALREADYSTOPPED') then
+    Log('SD-300 lifecycle preflight already stopped the GUI.')
+  else
+    StopExistingGui;
 
   AddMatchingMsiProducts(HKEY_LOCAL_MACHINE_64, ProductCodes);
   AddMatchingMsiProducts(HKEY_LOCAL_MACHINE_32, ProductCodes);

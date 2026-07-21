@@ -252,21 +252,26 @@ impl SystemSnapshot {
     }
 
     /// Refresh the one-second process projection only while its GUI page is
-    /// subscribed. The page consumes per-process CPU/memory from the platform
-    /// sampler, not the aggregate CPU and memory projections. Leaving those
-    /// cached avoids a second set of system queries every second; selecting a
-    /// page that displays them changes the engine profile and refreshes them
-    /// immediately. Unrelated network and command-backed collectors stay
-    /// dormant as before.
+    /// subscribed. The platform sampler supplies both ranked process rows and
+    /// total CPU load from the same system-time sample; memory is refreshed so
+    /// the persistent header/tray never freezes while Processes is selected.
+    /// Unrelated network and command-backed collectors stay dormant as before.
     pub fn refresh_processes_gui(&mut self, sort: crate::types::ProcessSortKey) {
         #[cfg(target_os = "windows")]
         {
+            self.sys.refresh_memory();
+            memory::refresh_usage(&mut self.memory, &self.sys);
             self.processes = self
                 .gui_process_sampler
-                .collect(self.sys.total_memory(), 16, sort);
+                .collect(self.memory.total_bytes, 16, sort);
+            self.cpu.total_usage = self.gui_process_sampler.total_cpu_percent();
         }
         #[cfg(not(target_os = "windows"))]
         {
+            self.sys.refresh_cpu_usage();
+            self.sys.refresh_memory();
+            self.cpu.total_usage = self.sys.global_cpu_usage();
+            memory::refresh_usage(&mut self.memory, &self.sys);
             self.sys.refresh_processes_specifics(
                 ProcessesToUpdate::All,
                 true,

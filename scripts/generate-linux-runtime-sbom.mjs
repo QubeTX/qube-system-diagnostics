@@ -86,6 +86,7 @@ function parseApkDatabase() {
       origin: fields.get("o") || name,
       supplier: "Organization: Alpine Linux",
       manager: "apk",
+      installedMetadata: `${paragraph.trim()}\n`,
     });
   }
   return packages;
@@ -121,10 +122,18 @@ function resolvePackages(origins) {
         "-f=${binary:Package}\t${Version}\t${Architecture}\t${Homepage}",
         owner,
       ]).split("\t");
-      if (fields.length !== 4 || fields.some((field, index) => index < 3 && !field)) {
+      // `run()` trims command output. Debian permits Homepage to be absent,
+      // which removes the trailing tab and yields three fields rather than
+      // four. Package identity, version, and architecture remain mandatory;
+      // an absent optional Homepage is recorded honestly as NOASSERTION.
+      if (
+        fields.length < 3 ||
+        fields.length > 4 ||
+        fields.slice(0, 3).some((field) => !field)
+      ) {
         throw new Error(`incomplete Debian metadata for ${owner}`);
       }
-      const [name, packageVersion, architecture, homepage] = fields;
+      const [name, packageVersion, architecture, homepage = ""] = fields;
       key = `deb:${name}=${packageVersion}:${architecture}`;
       metadata = {
         name,
@@ -141,12 +150,14 @@ function resolvePackages(origins) {
         licenseRoot,
         "debian-packages",
         safeSegment(name),
-        "copyright",
       );
-      if (!copyTree(copyright, destination)) {
+      if (!copyTree(copyright, path.join(destination, "copyright"))) {
         throw new Error(`Debian package ${name} has no installed copyright file at ${copyright}`);
       }
       metadata.licenseEvidence = path.relative(root, destination).replaceAll("\\", "/");
+      metadata.commonLicenseEvidence = path
+        .relative(root, path.join(licenseRoot, "debian-common"))
+        .replaceAll("\\", "/");
     } else {
       const ownerLine = run("apk", ["info", "--who-owns", origin.source]);
       const match = ownerLine.match(/ is owned by (\S+)$/) || ownerLine.match(/^(\S+) owns /);
@@ -163,18 +174,11 @@ function resolvePackages(origins) {
   }
 
   if (isAlpine) {
-    const requestedDocs = new Set();
-    for (const runtimePackage of packages.values()) {
-      const docPackage = `${runtimePackage.origin}-doc`;
-      const found = run("apk", ["search", "--exact", docPackage]);
-      if (found.split("\n").some((line) => line.startsWith(`${docPackage}-`))) {
-        requestedDocs.add(docPackage);
-      }
-    }
-    if (requestedDocs.size > 0) {
-      execFileSync("apk", ["add", "--no-cache", ...[...requestedDocs].sort()], {
-        stdio: "inherit",
-      });
+    const spdxTextRoot = "/usr/share/spdx/text";
+    if (!fs.existsSync(spdxTextRoot)) {
+      throw new Error(
+        "Alpine SPDX license texts are missing; install the pinned spdx-licenses-text package",
+      );
     }
     for (const runtimePackage of packages.values()) {
       const destination = path.join(
@@ -182,16 +186,33 @@ function resolvePackages(origins) {
         "alpine-packages",
         safeSegment(runtimePackage.name),
       );
-      const candidates = [
-        path.join("/usr/share/licenses", runtimePackage.name),
-        path.join("/usr/share/licenses", runtimePackage.origin),
-      ];
-      const copied = candidates.find((candidate) => copyTree(candidate, destination));
-      if (!copied) {
+      fs.mkdirSync(destination, { recursive: true, mode: 0o755 });
+      fs.writeFileSync(
+        path.join(destination, "APK-METADATA.txt"),
+        runtimePackage.installedMetadata,
+        { mode: 0o644 },
+      );
+      const licenseIds = [
+        ...new Set(
+          runtimePackage.distributorLicense
+            .replace(/[()]/g, " ")
+            .split(/\s+/)
+            .filter((token) => token && !["AND", "OR", "WITH"].includes(token)),
+        ),
+      ].sort();
+      if (licenseIds.length === 0 || licenseIds.includes("NOASSERTION")) {
         throw new Error(
-          `Alpine package ${runtimePackage.name} (${runtimePackage.origin}) has no installed license evidence; ` +
-            `the ${runtimePackage.origin}-doc package must provide /usr/share/licenses material`,
+          `Alpine package ${runtimePackage.name} has no auditable license expression`,
         );
+      }
+      for (const licenseId of licenseIds) {
+        const source = path.join(spdxTextRoot, `${licenseId}.txt`);
+        if (!fs.existsSync(source) || !fs.statSync(source).isFile()) {
+          throw new Error(
+            `Alpine package ${runtimePackage.name} references unsupported license identifier ${licenseId}`,
+          );
+        }
+        copyTree(source, path.join(destination, `${safeSegment(licenseId)}.txt`));
       }
       runtimePackage.licenseEvidence = path.relative(root, destination).replaceAll("\\", "/");
     }
@@ -220,6 +241,10 @@ const files = allFiles.map((absolute, index) => ({
   fileName: path.relative(root, absolute).replaceAll("\\", "/"),
   checksums: [
     {
+      algorithm: "SHA1",
+      checksumValue: crypto.createHash("sha1").update(fs.readFileSync(absolute)).digest("hex"),
+    },
+    {
       algorithm: "SHA256",
       checksumValue: crypto.createHash("sha256").update(fs.readFileSync(absolute)).digest("hex"),
     },
@@ -228,6 +253,31 @@ const files = allFiles.map((absolute, index) => ({
   copyrightText: "NOASSERTION",
 }));
 const fileIds = new Map(files.map((file) => [file.fileName, file.SPDXID]));
+const fileSha1 = new Map(
+  files.map((file) => [
+    file.fileName,
+    file.checksums.find((checksum) => checksum.algorithm === "SHA1").checksumValue,
+  ]),
+);
+function packageVerificationCode(fileNames, excludedFiles = []) {
+  const checksums = [...new Set(fileNames)].map((fileName) => {
+    const checksum = fileSha1.get(fileName);
+    if (!checksum) throw new Error(`package verification references an absent file: ${fileName}`);
+    return checksum;
+  });
+  if (checksums.length === 0) throw new Error("cannot verify an empty SPDX package");
+  checksums.sort();
+  const result = {
+    packageVerificationCodeValue: crypto
+      .createHash("sha1")
+      .update(checksums.join(""))
+      .digest("hex"),
+  };
+  if (excludedFiles.length > 0) {
+    result.packageVerificationCodeExcludedFiles = [...excludedFiles].sort();
+  }
+  return result;
+}
 const productId = "SPDXRef-Package-SD300-Linux-Runtime";
 const packages = [
   {
@@ -236,10 +286,14 @@ const packages = [
     versionInfo: version,
     downloadLocation: "NOASSERTION",
     filesAnalyzed: true,
+    packageVerificationCode: packageVerificationCode(
+      files.map((file) => file.fileName),
+      ["install-manifest.json", "runtime-components.spdx.json"],
+    ),
     licenseConcluded: "NOASSERTION",
     licenseDeclared: "NOASSERTION",
     copyrightText: "NOASSERTION",
-    primaryPackagePurpose: "RUNTIME",
+    primaryPackagePurpose: "APPLICATION",
   },
 ];
 const relationships = [
@@ -262,6 +316,7 @@ for (const [key, runtimePackage] of [...runtimePackages.entries()].sort(([left],
 )) {
   packageIndex += 1;
   const packageId = `SPDXRef-RuntimePackage-${packageIndex}`;
+  const packageFiles = [...new Set(runtimePackage.files)].sort();
   packages.push({
     SPDXID: packageId,
     name: runtimePackage.name,
@@ -269,12 +324,16 @@ for (const [key, runtimePackage] of [...runtimePackages.entries()].sort(([left],
     supplier: runtimePackage.supplier,
     downloadLocation: "NOASSERTION",
     homepage: runtimePackage.homepage,
-    filesAnalyzed: false,
+    filesAnalyzed: true,
+    packageVerificationCode: packageVerificationCode(packageFiles),
     licenseConcluded: "NOASSERTION",
     licenseDeclared: "NOASSERTION",
     licenseComments:
       `${runtimePackage.manager} metadata reports ${runtimePackage.distributorLicense}; ` +
-      `license evidence is bundled at ${runtimePackage.licenseEvidence}.`,
+      `license evidence is bundled at ${runtimePackage.licenseEvidence}.` +
+      (runtimePackage.commonLicenseEvidence
+        ? ` Shared Debian license texts are bundled at ${runtimePackage.commonLicenseEvidence}.`
+        : ""),
     copyrightText: "NOASSERTION",
     attributionTexts: [`Bundled license evidence: ${runtimePackage.licenseEvidence}`],
     externalRefs: [
@@ -292,7 +351,7 @@ for (const [key, runtimePackage] of [...runtimePackages.entries()].sort(([left],
     relationshipType: "CONTAINS",
     relatedSpdxElement: packageId,
   });
-  for (const fileName of [...new Set(runtimePackage.files)].sort()) {
+  for (const fileName of packageFiles) {
     const fileId = fileIds.get(fileName);
     if (!fileId) throw new Error(`SPDX runtime package maps an absent file: ${fileName}`);
     relationships.push({
@@ -303,16 +362,34 @@ for (const [key, runtimePackage] of [...runtimePackages.entries()].sort(([left],
   }
 }
 
+const sourceDateEpoch = process.env.SOURCE_DATE_EPOCH;
+if (!sourceDateEpoch || !/^\d+$/.test(sourceDateEpoch)) {
+  throw new Error("SOURCE_DATE_EPOCH must be the checked-out commit timestamp");
+}
+const namespaceDigest = crypto.createHash("sha256");
+namespaceDigest.update(`${target}\0${version}\0`);
+for (const file of files) {
+  namespaceDigest.update(`${file.fileName}\0${file.checksums[1].checksumValue}\0`);
+}
+for (const [key, runtimePackage] of [...runtimePackages.entries()].sort(([left], [right]) =>
+  left.localeCompare(right, "en"),
+)) {
+  namespaceDigest.update(
+    `${key}\0${runtimePackage.distributorLicense}\0${runtimePackage.homepage}\0`,
+  );
+}
 const document = {
   spdxVersion: "SPDX-2.3",
   dataLicense: "CC0-1.0",
   SPDXID: "SPDXRef-DOCUMENT",
   name: `SD-300-${target}-${version}`,
-  documentNamespace: `https://github.com/QubeTX/qube-system-diagnostics/spdx/${version}/${target}`,
+  documentNamespace:
+    `https://github.com/QubeTX/qube-system-diagnostics/spdx/${version}/${target}/` +
+    namespaceDigest.digest("hex"),
   creationInfo: {
-    created: new Date(0).toISOString(),
+    created: new Date(Number(sourceDateEpoch) * 1000).toISOString().replace(".000Z", "Z"),
     creators: [
-      `Tool: sd300-generate-linux-runtime-sbom`,
+      `Tool: sd300-generate-linux-runtime-sbom-1`,
       `Organization: QubeTX`,
     ],
   },

@@ -910,8 +910,6 @@ pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     model.warning_count = summary.warning_count;
     pushHistory(&model.cpu_history, model.cpu_percent);
     pushHistory(&model.memory_history, model.memory_percent);
-    model.status_buffer.set("1-second collection · 1-second visual refresh · latest sample only");
-
     var cpu_text: [64]u8 = undefined;
     const cpu_label = std.fmt.bufPrint(&cpu_text, "CPU · {d:.1}%", .{model.cpu_percent}) catch "CPU · live";
     model.tray_cpu_buffer.set(cpu_label);

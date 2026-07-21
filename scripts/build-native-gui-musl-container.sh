@@ -19,7 +19,25 @@ grep -Eq '^3\.20([.]|$)' /etc/alpine-release || {
 
 apk add --no-cache \
   bash build-base ca-certificates curl findutils git gtk4.0-dev nodejs npm \
-  pax-utils patchelf pkgconf xz
+  lddtreepax patchelf pkgconf scanelf spdx-licenses-text tar xz
+for command in lddtreepax scanelf; do
+  command -v "$command" >/dev/null || {
+    echo "the Alpine private-runtime packager requires $command" >&2
+    exit 1
+  }
+done
+lddtreepax -l /bin/sh >/dev/null || {
+  echo 'lddtreepax could not inspect a native Alpine executable' >&2
+  exit 1
+}
+tar --version | grep -Fq 'GNU tar' || {
+  echo 'the reproducible private-runtime archive requires GNU tar' >&2
+  exit 1
+}
+[[ -s /usr/share/spdx/text/MIT.txt && -s /usr/share/spdx/text/LGPL-2.1-or-later.txt ]] || {
+  echo 'the Alpine private-runtime SBOM requires the pinned SPDX license-text package' >&2
+  exit 1
+}
 
 zig_archive=zig-x86_64-linux-0.16.0.tar.xz
 zig_url=https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz

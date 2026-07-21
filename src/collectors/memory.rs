@@ -42,15 +42,21 @@ impl MemoryData {
 }
 
 pub fn collect(sys: &System) -> MemoryData {
-    MemoryData {
-        used_bytes: sys.used_memory(),
-        total_bytes: sys.total_memory(),
-        available_bytes: sys.available_memory(),
-        swap_used_bytes: sys.used_swap(),
-        swap_total_bytes: sys.total_swap(),
-        modules: Vec::new(),
-        module_status: Observation::default(),
-    }
+    let mut data = MemoryData::default();
+    refresh_usage(&mut data, sys);
+    data
+}
+
+/// Refresh only the volatile capacity counters while preserving the slower
+/// physical-module inventory and its observation state. GUI collection
+/// profiles use this to keep their persistent summary live without cloning or
+/// reallocating the hardware projection every second.
+pub fn refresh_usage(data: &mut MemoryData, sys: &System) {
+    data.used_bytes = sys.used_memory();
+    data.total_bytes = sys.total_memory();
+    data.available_bytes = sys.available_memory();
+    data.swap_used_bytes = sys.used_swap();
+    data.swap_total_bytes = sys.total_swap();
 }
 
 pub fn refresh_hardware(data: &mut MemoryData) {
