@@ -80,6 +80,27 @@ function copyTree(source, destination) {
   return true;
 }
 
+function copyFlatDirectoryAsRegularFiles(source, destination) {
+  if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) return false;
+  const resolvedRoot = fs.realpathSync(source);
+  const resolvedPrefix = `${resolvedRoot}${path.sep}`;
+  fs.rmSync(destination, { recursive: true, force: true });
+  fs.mkdirSync(destination, { recursive: true, mode: 0o755 });
+  for (const name of fs.readdirSync(source).sort((left, right) => left.localeCompare(right, "en"))) {
+    const entry = path.join(source, name);
+    const resolved = fs.realpathSync(entry);
+    if (!resolved.startsWith(resolvedPrefix) || !fs.statSync(resolved).isFile()) {
+      throw new Error(
+        `common-license entry does not resolve to a regular file inside ${source}: ${entry}`,
+      );
+    }
+    const output = path.join(destination, name);
+    fs.copyFileSync(resolved, output);
+    fs.chmodSync(output, 0o644);
+  }
+  return true;
+}
+
 function parseOrigins() {
   const records = [];
   for (const line of fs.readFileSync(originsPath, "utf8").split(/\r?\n/)) {
@@ -143,7 +164,7 @@ function resolvePackages(origins) {
   const apkPackages = isAlpine ? parseApkDatabase() : null;
   if (isDebian) {
     const common = "/usr/share/common-licenses";
-    if (!copyTree(common, path.join(licenseRoot, "debian-common"))) {
+    if (!copyFlatDirectoryAsRegularFiles(common, path.join(licenseRoot, "debian-common"))) {
       throw new Error(`Debian common-license directory is missing: ${common}`);
     }
   }
@@ -252,9 +273,13 @@ function resolvePackages(origins) {
         runtimePackage.installedMetadata,
         { mode: 0o644 },
       );
+      const normalizedLicenseExpression = runtimePackage.distributorLicense.replace(
+        /\bPublic\s+Domain\b/g,
+        "Public-Domain",
+      );
       const licenseIds = [
         ...new Set(
-          runtimePackage.distributorLicense
+          normalizedLicenseExpression
             .replace(/[()]/g, " ")
             .split(/\s+/)
             .filter((token) => token && !["AND", "OR", "WITH"].includes(token)),
@@ -267,6 +292,23 @@ function resolvePackages(origins) {
       }
       for (const licenseId of licenseIds) {
         const source = path.join(spdxTextRoot, `${licenseId}.txt`);
+        if (licenseId === "Public-Domain" && !fs.existsSync(source)) {
+          fs.writeFileSync(
+            path.join(destination, "Public-Domain-DECLARATION.txt"),
+            [
+              `Package: ${runtimePackage.name}`,
+              `Version: ${runtimePackage.version}`,
+              `Alpine license declaration: ${runtimePackage.distributorLicense}`,
+              "",
+              "Alpine declares part of this package Public Domain. Public Domain is not an SPDX",
+              "license identifier with a canonical license text in the pinned SPDX 3.22 data set.",
+              "The exact installed Alpine package record is retained in APK-METADATA.txt.",
+              "",
+            ].join("\n"),
+            { mode: 0o644 },
+          );
+          continue;
+        }
         if (!fs.existsSync(source) || !fs.statSync(source).isFile()) {
           throw new Error(
             `Alpine package ${runtimePackage.name} references unsupported license identifier ${licenseId}`,
