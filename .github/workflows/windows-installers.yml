@@ -326,9 +326,9 @@ jobs:
           )) {
             if ('${{ needs.draft-check.outputs.qualification_only }}' -eq 'true') {
               if ($name -eq 'sd300-cli-installer.ps1') {
-                $wrapper = (Get-Content scripts\managed-installers\sd300-installer.ps1 -Raw) `
-                  .Replace('@SD300_TAG@', '${{ steps.meta.outputs.tag }}') `
-                  .Replace('@SD300_VERSION@', '${{ steps.meta.outputs.version }}')
+                $wrapper = Get-Content scripts\managed-installers\sd300-installer.ps1 -Raw
+                $wrapper = $wrapper.Replace('@SD300_TAG@', '${{ steps.meta.outputs.tag }}')
+                $wrapper = $wrapper.Replace('@SD300_VERSION@', '${{ steps.meta.outputs.version }}')
                 [IO.File]::WriteAllText(
                   (Join-Path $PWD 'target\candidate-assets\sd300-cli-installer.ps1'),
                   $wrapper,

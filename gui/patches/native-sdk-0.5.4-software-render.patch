@@ -1,3 +1,20 @@
+diff --git a/build/app.zig b/build/app.zig
+--- a/build/app.zig
++++ b/build/app.zig
+@@ -669,7 +669,12 @@ pub fn addAppArtifacts(b: *std.Build, dep: *std.Build.Dependency, app_options: A
+     });
+     const contract_run = b.addRunArtifact(contract_exe);
+     contract_run.setCwd(b.path(app_options.app_root));
+-    contract_run.addArgs(&.{ "--src", "src", "--out", "zig-out/model-contract.zon" });
++    // A custom entry point may live outside `<app_root>/src` (for example,
++    // a platform-specific manifest root that reuses one shared Zig core).
++    // Hash the directory that actually owns `main`, while keeping the
++    // contract artifact beside the selected app manifest.
++    const contract_source_root = std.fs.path.dirname(app_options.main) orelse ".";
++    contract_run.addArgs(&.{ "--src", contract_source_root, "--out", "zig-out/model-contract.zon" });
+     contract_run.has_side_effects = true;
+     const contract_step = b.step("model-contract", "Emit zig-out/model-contract.zon for `native check`");
+     contract_step.dependOn(&contract_run.step);
 diff --git a/src/app_runner/root.zig b/src/app_runner/root.zig
 index 248fb21c925a9c6033288bbf48ade4ce4531da1f..bf16c888d2a449a94c84e4469eb2b67c3d8119a4 100644
 --- a/src/app_runner/root.zig

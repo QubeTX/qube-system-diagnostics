@@ -48,6 +48,12 @@ RUSTFLAGS="$rust_flags" cargo build \
   --manifest-path "$engine_root/Cargo.toml" --release --locked --target "$rust_target"
 engine_artifact="$engine_root/target/$rust_target/release/$engine"
 [[ -f $engine_artifact ]] || { echo "engine missing: $engine_artifact" >&2; exit 1; }
+if [[ $host_os == Darwin ]]; then
+  # Rust cdylibs can retain their build output as LC_ID_DYLIB. Give the
+  # companion a stable bundle-relative identity before package signing so no
+  # runner or developer checkout path reaches the shipped Mach-O image.
+  install_name_tool -id "@rpath/$engine" "$engine_artifact"
+fi
 
 stage_base="$repo_root/target/native-gui-stage"
 stage_root="$stage_base/$target"

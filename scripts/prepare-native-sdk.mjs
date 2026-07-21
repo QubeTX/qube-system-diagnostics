@@ -17,10 +17,11 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "ff4c8944d3d1981c5f13242fda1468b0baa6de2463c7c8bd94426768cdd83fd8",
+  patchHash: "53bf348184d0d167c1dcc3a233958d8d1132b0fc96ca135848e7b2643b73d0eb",
 };
 
 const files = new Map([
+  ["build/app.zig", ["0b224d560c66f0a111c1cc333c3f81002ab25811dabb81d85d174a89ed491595", "675bd4cd6552a4084eaf57856b2f681b02424eaa783a50e05a6bf7722dc2eb2c"]],
   ["src/app_runner/root.zig", ["e085afe9f414a5ef0c21388e0bb1436bf05cb346349d6e87ca7e352c38b0c4e0", "5a3cbdbe53a4a68c93a49defb6024d20f335bda176697342a3c79163ce880340"]],
   ["src/platform/linux/gtk_host.c", ["da73fa340df0f577cc09873ae0c6d5e6d94bc7ca8024a68ad51d2df94cd93af7", "1a99d8edaba90152a39ae01b76152eb2ce6b5ec513f04c1780a0f1c34044e442"]],
   ["src/platform/windows/webview2_host.cpp", ["93d9843a411de4364310bbd4f87be19381c085828152b1c975249064d0c6e8a3", "7410ad7d8e2f6ddd97d78614967473f67934c7eed7fb1202af0e7a21ef9cbe2a"]],

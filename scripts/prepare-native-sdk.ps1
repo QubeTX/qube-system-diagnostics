@@ -15,7 +15,7 @@ $requiredVersion = "0.5.4"
 $requiredTarball = "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz"
 $requiredIntegrity = "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA=="
 $requiredZigHash = "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb"
-$requiredPatchHash = "ff4c8944d3d1981c5f13242fda1468b0baa6de2463c7c8bd94426768cdd83fd8"
+$requiredPatchHash = "53bf348184d0d167c1dcc3a233958d8d1132b0fc96ca135848e7b2643b73d0eb"
 
 if (-not (Test-Path -LiteralPath $sdkRoot -PathType Container)) {
     throw "The project-local Native SDK is missing. Run npm ci in '$gui' first."
@@ -43,6 +43,10 @@ if ($sdkPackage.version -ne $requiredVersion) {
 }
 
 $files = [ordered]@{
+    "build/app.zig" = @{
+        Pristine = "0b224d560c66f0a111c1cc333c3f81002ab25811dabb81d85d174a89ed491595"
+        Patched = "675bd4cd6552a4084eaf57856b2f681b02424eaa783a50e05a6bf7722dc2eb2c"
+    }
     "src/app_runner/root.zig" = @{
         Pristine = "e085afe9f414a5ef0c21388e0bb1436bf05cb346349d6e87ca7e352c38b0c4e0"
         Patched = "5a3cbdbe53a4a68c93a49defb6024d20f335bda176697342a3c79163ce880340"

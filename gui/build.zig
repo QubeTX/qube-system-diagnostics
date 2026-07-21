@@ -16,6 +16,14 @@ pub fn build(b: *std.Build) void {
         .{ .name = "sd300-gui" };
     const app = native_sdk.addAppArtifacts(b, b.dependency("native_sdk", .{}), app_options);
     const os = app.exe.root_module.resolved_target.?.result.os.tag;
+    // Release packages must not retain checkout/user-profile paths through
+    // compiler debug metadata. Keep Debug builds inspectable, but strip the
+    // shipped Unix executable (Native SDK resolves ReleaseFast by default).
+    // Zig 0.16's Windows install step still expects a PDB even when the root
+    // module is stripped, so Windows keeps its existing post-build PDB removal.
+    if (os != .windows and app.exe.root_module.optimize != null and app.exe.root_module.optimize.? != .Debug) {
+        app.exe.root_module.strip = true;
+    }
     if (os == .linux) {
         // Zig's explicit Linux target mode does not infer the native multiarch
         // library directory even though Native SDK's pkg-config integration
