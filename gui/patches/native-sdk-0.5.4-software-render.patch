@@ -1,0 +1,1497 @@
+diff --git a/src/app_runner/root.zig b/src/app_runner/root.zig
+index 248fb21c925a9c6033288bbf48ade4ce4531da1f..bf16c888d2a449a94c84e4469eb2b67c3d8119a4 100644
+--- a/src/app_runner/root.zig
++++ b/src/app_runner/root.zig
+@@ -597,6 +597,11 @@ fn runLinux(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
+     // stack overflows on a stack instance, so construct it on the heap.
+     const runtime = try std.heap.page_allocator.create(native_sdk.Runtime);
+     defer std.heap.page_allocator.destroy(runtime);
++    // Linux is also a software-pixel GPU-surface host. Retain its keyed
++    // baseline and memoized reference-render output just as Windows does so a
++    // live model update repaints changed commands rather than the full view.
++    var pixel_render_memo = native_sdk.canvas.ReferenceRenderMemo.init(std.heap.page_allocator);
++    defer pixel_render_memo.deinit();
+     // Fonts registered at startup and media-surface texture buffers
+     // adopted during the run are heap-owned by the runtime; return them
+     // (and disarm the producer wake bindings) before the runtime
+@@ -611,6 +616,8 @@ fn runLinux(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
+         .js_window_api = options.js_window_api,
+         .web_layer = webLayerEnabled(),
+         .gpu_surface_frame_diagnostics = false,
++        .pixel_present_retained_baseline = true,
++        .pixel_present_render_memo = &pixel_render_memo,
+         .security = options.security,
+         .menus = options.menus,
+         .shortcuts = shortcuts,
+@@ -653,6 +660,11 @@ fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init)
+     // stack overflows on a stack instance, so construct it on the heap.
+     const runtime = try std.heap.page_allocator.create(native_sdk.Runtime);
+     defer std.heap.page_allocator.destroy(runtime);
++    // Windows is a pixels-only GPU-surface host. Keep the keyed baseline
++    // aligned with the retained DIB and memoize heavyweight reference-render
++    // commands so a model update repaints only the commands that changed.
++    var pixel_render_memo = native_sdk.canvas.ReferenceRenderMemo.init(std.heap.page_allocator);
++    defer pixel_render_memo.deinit();
+     // Fonts registered at startup and media-surface texture buffers
+     // adopted during the run are heap-owned by the runtime; return them
+     // (and disarm the producer wake bindings) before the runtime
+@@ -667,6 +679,8 @@ fn runWindows(app: native_sdk.App, options: RunOptions, init: std.process.Init)
+         .js_window_api = options.js_window_api,
+         .web_layer = webLayerEnabled(),
+         .gpu_surface_frame_diagnostics = false,
++        .pixel_present_retained_baseline = true,
++        .pixel_present_render_memo = &pixel_render_memo,
+         .security = options.security,
+         .menus = options.menus,
+         .shortcuts = shortcuts,
+diff --git a/src/platform/windows/webview2_host.cpp b/src/platform/windows/webview2_host.cpp
+index 5ad29323f8ccb5a3a9d9cf772765a1482574b46c..d92ee9a2bea0d16c423c11d1149bf9def3c430b6 100644
+--- a/src/platform/windows/webview2_host.cpp
++++ b/src/platform/windows/webview2_host.cpp
+@@ -5876,12 +5876,6 @@ int native_sdk_windows_note_gpu_surface_input(Host *host, uint64_t window_id, co
+ }
+
+ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id, const char *label, size_t label_len, size_t width, size_t height, double scale, int has_dirty_rect, double dirty_x, double dirty_y, double dirty_width, double dirty_height, const uint8_t *rgba8, size_t rgba8_len) {
+-    (void)scale;
+-    (void)has_dirty_rect;
+-    (void)dirty_x;
+-    (void)dirty_y;
+-    (void)dirty_width;
+-    (void)dirty_height;
+     if (!host || label_len == 0) return 0;
+     auto found = host->native_views.find(nativeViewKey(window_id, slice(label, label_len)));
+     if (found == host->native_views.end() || found->second.kind != kViewGpuSurface || !found->second.hwnd) return 0;
+@@ -5898,15 +5892,43 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
+      * the redirection surface's alpha is 0 — the app's pixels must read
+      * as opaque there or the whole header band would vanish under DWM
+      * chrome (only the punched button hole yields on purpose). */
+-    view.gpu_bgra.resize(width * height * 4);
++    const bool size_changed = view.gpu_bgra.size() != rgba8_len ||
++        view.gpu_buf_width != (int)width || view.gpu_buf_height != (int)height;
++    const double pixel_scale = std::isfinite(scale) && scale > 0.0 ? scale : 1.0;
++    bool partial_copy = !size_changed && has_dirty_rect != 0 &&
++        std::isfinite(dirty_x) && std::isfinite(dirty_y) &&
++        std::isfinite(dirty_width) && std::isfinite(dirty_height) &&
++        dirty_width > 0.0 && dirty_height > 0.0;
++    size_t copy_x0 = 0;
++    size_t copy_y0 = 0;
++    size_t copy_x1 = width;
++    size_t copy_y1 = height;
++    if (partial_copy) {
++        const double left = std::max(0.0, std::floor(dirty_x * pixel_scale));
++        const double top = std::max(0.0, std::floor(dirty_y * pixel_scale));
++        const double right = std::min((double)width, std::ceil((dirty_x + dirty_width) * pixel_scale));
++        const double bottom = std::min((double)height, std::ceil((dirty_y + dirty_height) * pixel_scale));
++        if (right <= left || bottom <= top) {
++            partial_copy = false;
++        } else {
++            copy_x0 = (size_t)left;
++            copy_y0 = (size_t)top;
++            copy_x1 = (size_t)right;
++            copy_y1 = (size_t)bottom;
++        }
++    }
++
++    view.gpu_bgra.resize(rgba8_len);
+     uint8_t *dst = view.gpu_bgra.data();
+-    const size_t pixel_count = width * height;
+-    for (size_t index = 0; index < pixel_count; index++) {
+-        const uint8_t *src = rgba8 + index * 4;
+-        dst[index * 4 + 0] = src[2];
+-        dst[index * 4 + 1] = src[1];
+-        dst[index * 4 + 2] = src[0];
+-        dst[index * 4 + 3] = 255;
++    for (size_t y = copy_y0; y < copy_y1; y++) {
++        for (size_t x = copy_x0; x < copy_x1; x++) {
++            const size_t index = y * width + x;
++            const uint8_t *src = rgba8 + index * 4;
++            dst[index * 4 + 0] = src[2];
++            dst[index * 4 + 1] = src[1];
++            dst[index * 4 + 2] = src[0];
++            dst[index * 4 + 3] = 255;
++        }
+     }
+     view.gpu_buf_width = (int)width;
+     view.gpu_buf_height = (int)height;
+@@ -5926,7 +5948,17 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
+         view.gpu_sample_color = ((uint32_t)sa << 24) | ((uint32_t)sr << 16) | ((uint32_t)sg << 8) | (uint32_t)sb;
+     }
+
+-    InvalidateRect(view.hwnd, nullptr, FALSE);
++    if (partial_copy) {
++        RECT dirty_pixels = {
++            (LONG)copy_x0,
++            (LONG)copy_y0,
++            (LONG)copy_x1,
++            (LONG)copy_y1,
++        };
++        InvalidateRect(view.hwnd, &dirty_pixels, FALSE);
++    } else {
++        InvalidateRect(view.hwnd, nullptr, FALSE);
++    }
+     /* A present is the completion producer on the surface's single
+      * frame-event scheduler: the completion event it arms is what
+      * drives the runtime's frame loop (an armed animation presents,
+diff --git a/src/primitives/canvas/reference.zig b/src/primitives/canvas/reference.zig
+index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f69368d24 100644
+--- a/src/primitives/canvas/reference.zig
++++ b/src/primitives/canvas/reference.zig
+@@ -84,6 +84,56 @@ const referenceDistanceToSegment = reference_paths.referenceDistanceToSegment;
+
+ const max_reference_text_layout_lines: usize = 64;
+ const max_reference_blur_kernel_samples: usize = 4096;
++const reference_damage_union_fallback_ratio: f32 = 0.75;
++
++/// Result of the retained-pixel damage path. Callers do not need this to
++/// present the frame, but tests and profilers can distinguish a true sparse
++/// repaint from the deliberately conservative union fallback.
++pub const ReferenceDamageRenderMode = enum {
++    damage,
++    fallback,
++};
++
++const ReferenceDamageRegions = struct {
++    rects: [frame_model.max_canvas_frame_dirty_rects]geometry.RectF = undefined,
++    count: usize = 0,
++    bounds: ?geometry.RectF = null,
++    area: f32 = 0,
++
++    /// Add one already-clipped, outward-pixel-snapped rect. Re-scan from the
++    /// beginning after every merge: joining A can expand into B even when the
++    /// original candidate did not intersect B. That transitive closure is
++    /// what prevents a translucent command from blending an overlap twice.
++    fn add(self: *ReferenceDamageRegions, rect: geometry.RectF) bool {
++        var merged = rect;
++        var index: usize = 0;
++        while (index < self.count) {
++            if (!self.rects[index].intersects(merged)) {
++                index += 1;
++                continue;
++            }
++            merged = geometry.RectF.unionWith(self.rects[index], merged);
++            var shift = index;
++            while (shift + 1 < self.count) : (shift += 1) self.rects[shift] = self.rects[shift + 1];
++            self.count -= 1;
++            index = 0;
++        }
++        if (self.count >= self.rects.len) return false;
++        self.rects[self.count] = merged;
++        self.count += 1;
++        return true;
++    }
++
++    fn finish(self: *ReferenceDamageRegions) void {
++        self.bounds = null;
++        self.area = 0;
++        for (self.rects[0..self.count]) |rect| {
++            self.bounds = if (self.bounds) |bounds| geometry.RectF.unionWith(bounds, rect) else rect;
++            self.area += rect.width * rect.height;
++        }
++        std.sort.pdq(geometry.RectF, self.rects[0..self.count], {}, referenceDamageRectLessThan);
++    }
++};
+
+ pub const ReferenceImage = struct {
+     id: ImageId,
+@@ -177,6 +227,11 @@ pub const ReferenceRenderSurface = struct {
+         key: ReferenceRenderMemo.Key,
+     };
+
++    const GlyphMemoProbe = struct {
++        memo: *ReferenceRenderMemo,
++        key: ReferenceRenderMemo.Key,
++    };
++
+     /// Build the memo key for a per-pixel command about to run.
+     /// `params_hash` must cover every command parameter the pixel loop
+     /// reads (see `referenceMemoParamsHash`); `apron_rows` is how far
+@@ -238,6 +293,127 @@ pub const ReferenceRenderSurface = struct {
+         }
+     }
+
++    fn glyphMemoProbe(self: ReferenceRenderSurface, pixel_rect: ReferencePixelRect, params_hash: u64) ?GlyphMemoProbe {
++        const memo = self.render_memo orelse return null;
++        return .{
++            .memo = memo,
++            .key = ReferenceRenderMemo.glyphKeyFor(
++                self.pixels,
++                self.width,
++                self.height,
++                pixel_rect.x,
++                pixel_rect.y,
++                pixel_rect.width,
++                pixel_rect.height,
++                params_hash,
++            ),
++        };
++    }
++
++    fn glyphMemoReplay(self: ReferenceRenderSurface, probe: ?GlyphMemoProbe, pixel_rect: ReferencePixelRect) bool {
++        const p = probe orelse return false;
++        const cached = p.memo.findGlyph(p.key) orelse return false;
++        var row: usize = 0;
++        while (row < pixel_rect.height) : (row += 1) {
++            const src_offset = row * pixel_rect.width * 4;
++            const dst_offset = ((pixel_rect.y + row) * self.width + pixel_rect.x) * 4;
++            @memcpy(
++                self.pixels[dst_offset .. dst_offset + pixel_rect.width * 4],
++                cached[src_offset .. src_offset + pixel_rect.width * 4],
++            );
++        }
++        return true;
++    }
++
++    fn glyphMemoStore(self: ReferenceRenderSurface, probe: ?GlyphMemoProbe, pixel_rect: ReferencePixelRect) void {
++        const p = probe orelse return;
++        const buffer = p.memo.storeGlyph(p.key) orelse return;
++        var row: usize = 0;
++        while (row < pixel_rect.height) : (row += 1) {
++            const dst_offset = row * pixel_rect.width * 4;
++            const src_offset = ((pixel_rect.y + row) * self.width + pixel_rect.x) * 4;
++            @memcpy(
++                buffer[dst_offset .. dst_offset + pixel_rect.width * 4],
++                self.pixels[src_offset .. src_offset + pixel_rect.width * 4],
++            );
++        }
++    }
++
++    fn glyphMaskKey(
++        self: ReferenceRenderSurface,
++        face: *const font_ttf.Face,
++        glyph: u16,
++        total: Affine,
++    ) ?ReferenceRenderMemo.GlyphMaskKey {
++        _ = self.render_memo orelse return null;
++        if (!referenceAffineIsFinite(total)) return null;
++        const floor_x = @floor(total.tx);
++        const floor_y = @floor(total.ty);
++        return .{
++            .face_identity = @intFromPtr(face),
++            .glyph = glyph,
++            .transform_a = total.a,
++            .transform_b = total.b,
++            .transform_c = total.c,
++            .transform_d = total.d,
++            .phase_x = canonicalZero(total.tx - floor_x),
++            .phase_y = canonicalZero(total.ty - floor_y),
++        };
++    }
++
++    /// Blend a retained glyph coverage mask at this draw's integer
++    /// translation. The mask is independent of destination pixels, text
++    /// color, and opacity, so dynamic dashboard numbers reuse the expensive
++    /// outline raster even when their background or alignment changes.
++    fn glyphMaskReplay(
++        self: ReferenceRenderSurface,
++        key: ?ReferenceRenderMemo.GlyphMaskKey,
++        total: Affine,
++        draw_bounds: geometry.RectF,
++        color: Color,
++        opacity: f32,
++    ) bool {
++        const resolved_key = key orelse return false;
++        const memo = self.render_memo orelse return false;
++        const mask = memo.findGlyphMask(resolved_key) orelse return false;
++        const anchor_x = referenceFloor(total.tx);
++        const anchor_y = referenceFloor(total.ty);
++        const left = @as(i64, anchor_x) + mask.offset_x;
++        const top = @as(i64, anchor_y) + mask.offset_y;
++        const right = left + @as(i64, @intCast(mask.width));
++        const bottom = top + @as(i64, @intCast(mask.height));
++        const clip = referencePixelRect(draw_bounds, self.width, self.height) orelse return true;
++        const clip_left: i64 = @intCast(clip.x);
++        const clip_top: i64 = @intCast(clip.y);
++        const clip_right: i64 = @intCast(clip.x + clip.width);
++        const clip_bottom: i64 = @intCast(clip.y + clip.height);
++        const x0 = @max(left, clip_left);
++        const y0 = @max(top, clip_top);
++        const x1 = @min(right, clip_right);
++        const y1 = @min(bottom, clip_bottom);
++        if (x1 <= x0 or y1 <= y0) return true;
++
++        var y = y0;
++        while (y < y1) : (y += 1) {
++            var x = x0;
++            while (x < x1) : (x += 1) {
++                const mask_x: usize = @intCast(x - left);
++                const mask_y: usize = @intCast(y - top);
++                const coverage = mask.coverage[mask_y * mask.width + mask_x];
++                if (coverage <= 0.0009) continue;
++                self.blendPixelCoverage(
++                    @intCast(x),
++                    @intCast(y),
++                    color,
++                    coverage,
++                    opacity,
++                    .srgb,
++                );
++            }
++        }
++        return true;
++    }
++
+     pub fn clear(self: ReferenceRenderSurface, color: Color) void {
+         const pixel = colorToRgba8(color);
+         var index: usize = 0;
+@@ -283,6 +459,56 @@ pub const ReferenceRenderSurface = struct {
+         for (pass.commands) |command| try self.renderCommand(referenceScaleCommand(command, scale), scissor);
+     }
+
++    /// Repaint a retained pixel surface through several sparse damage
++    /// regions without replaying the complete command list once per region.
++    ///
++    /// `damage_rects` are logical-space refinements of `pass.dirty_bounds`.
++    /// The renderer scales and snaps them outward to device pixels, clips
++    /// them to the pass scissor, merges pixel overlaps to a fixed point, and
++    /// validates that their bounding union still equals the snapped scissor.
++    /// Any ambiguity takes the ordinary single-union `renderPass` path.
++    pub fn renderPassDamage(
++        self: ReferenceRenderSurface,
++        pass: CanvasRenderPass,
++        clear_color: Color,
++        damage_rects: []const geometry.RectF,
++    ) Error!ReferenceDamageRenderMode {
++        const regions = referenceCanonicalDamageRegions(pass, damage_rects, self.width, self.height) orelse {
++            try self.renderPass(pass, clear_color);
++            return .fallback;
++        };
++
++        // A blur reads an apron of pixels around its output. Rendering one
++        // fragment changes the input subsequently copied for another, so the
++        // command cannot be safely fragmented without a dedicated immutable
++        // source snapshot. Keep the established union renderer for now.
++        for (pass.commands) |command| {
++            switch (command.command) {
++                .blur => {
++                    try self.renderPass(pass, clear_color);
++                    return .fallback;
++                },
++                else => {},
++            }
++        }
++
++        ensureSrgbToLinearByteTable();
++        ensureLinearToSrgbTable();
++        if (self.render_memo) |memo| memo.image_scale_fills_this_pass = 0;
++
++        for (regions.rects[0..regions.count]) |region| self.clearRect(region, clear_color);
++
++        // Command-major traversal preserves z-order while scaling each
++        // command only once. The canonical regions are disjoint device-pixel
++        // fragments, so translucent commands never touch a pixel twice.
++        const scale = referencePassScale(pass.scale);
++        for (pass.commands) |command| {
++            const scaled = referenceScaleCommand(command, scale);
++            for (regions.rects[0..regions.count]) |region| try self.renderCommand(scaled, region);
++        }
++        return .damage;
++    }
++
+     pub fn pixelRgba8(self: ReferenceRenderSurface, x: usize, y: usize) [4]u8 {
+         if (x >= self.width or y >= self.height) return .{ 0, 0, 0, 0 };
+         const index = (y * self.width + x) * 4;
+@@ -865,12 +1091,50 @@ pub const ReferenceRenderSurface = struct {
+         // placement, then apply the command transform on top.
+         const local = Affine{ .a = scale, .b = 0, .c = 0, .d = -scale, .tx = pen_x + cell_inset, .ty = baseline };
+         const total = command.transform.multiply(local);
++        const mask_key = self.glyphMaskKey(face, glyph, total);
++        if (self.glyphMaskReplay(mask_key, total, draw_bounds, value.color, command.opacity)) return true;
+
+         var builder = vector.PathBuilder(reference_glyph_path_capacity){};
+         face.glyphOutline(glyph, total, &builder) catch return false;
+         if (builder.slice().len == 0) return true; // Space: nothing to ink.
+
+-        const pixel_rect = referencePixelRect(draw_bounds, self.width, self.height) orelse return true;
++        const glyph_bounds = drawing_model.pathBounds(builder.slice()) orelse return true;
++        const clipped_bounds = geometry.RectF.intersection(glyph_bounds.normalized(), draw_bounds.normalized());
++        const pixel_rect = referencePixelRect(clipped_bounds, self.width, self.height) orelse return true;
++        const memo_probe = self.glyphMemoProbe(pixel_rect, referenceGlyphMemoParamsHash(value, command, glyph, total));
++        if (self.glyphMemoReplay(memo_probe, pixel_rect)) return true;
++        var capture: ?ReferenceCoverageCapture = null;
++        if (mask_key) |key| {
++            const normalized_glyph_bounds = glyph_bounds.normalized();
++            const surface_bounds = geometry.RectF.init(0, 0, @floatFromInt(self.width), @floatFromInt(self.height));
++            if (surface_bounds.containsRect(normalized_glyph_bounds) and
++                draw_bounds.normalized().containsRect(normalized_glyph_bounds))
++            {
++                const anchor_x = referenceFloor(total.tx);
++                const anchor_y = referenceFloor(total.ty);
++                const offset_x = @as(i64, @intCast(pixel_rect.x)) - @as(i64, anchor_x);
++                const offset_y = @as(i64, @intCast(pixel_rect.y)) - @as(i64, anchor_y);
++                if (offset_x >= std.math.minInt(i32) and offset_x <= std.math.maxInt(i32) and
++                    offset_y >= std.math.minInt(i32) and offset_y <= std.math.maxInt(i32))
++                {
++                    if (self.render_memo.?.prepareGlyphMask(
++                        key,
++                        @intCast(offset_x),
++                        @intCast(offset_y),
++                        pixel_rect.width,
++                        pixel_rect.height,
++                    )) |coverage| {
++                        capture = .{
++                            .coverage = coverage,
++                            .origin_x = @intCast(pixel_rect.x),
++                            .origin_y = @intCast(pixel_rect.y),
++                            .width = pixel_rect.width,
++                            .height = pixel_rect.height,
++                        };
++                    }
++                }
++            }
++        }
+         // Glyph coverage blends in sRGB, not linear light (see
+         // `CoverageBlend`): apparent text weight is set by how edge
+         // pixels darken, and re-blending them in linear light thins
+@@ -881,6 +1145,7 @@ pub const ReferenceRenderSurface = struct {
+             .transform = command.transform,
+             .opacity = command.opacity,
+             .coverage_blend = .srgb,
++            .coverage_capture = capture,
+         };
+         // The outline is already in device space; TrueType interiorness
+         // is the nonzero rule. The glyph raster budgets are derived from
+@@ -898,6 +1163,8 @@ pub const ReferenceRenderSurface = struct {
+             referenceVectorClip(pixel_rect),
+             &sink,
+         ) catch return false;
++        if (capture != null) self.render_memo.?.commitGlyphMask(mask_key.?);
++        self.glyphMemoStore(memo_probe, pixel_rect);
+         return true;
+     }
+
+@@ -988,8 +1255,10 @@ const ReferenceCoverageSink = struct {
+     transform: Affine,
+     opacity: f32,
+     coverage_blend: CoverageBlend,
++    coverage_capture: ?ReferenceCoverageCapture = null,
+
+     pub fn pixel(self: *ReferenceCoverageSink, x: i32, y: i32, coverage: f32) void {
++        if (self.coverage_capture) |capture| capture.write(x, y, coverage);
+         if (x < 0 or y < 0) return;
+         const px: usize = @intCast(x);
+         const py: usize = @intCast(y);
+@@ -1000,6 +1269,22 @@ const ReferenceCoverageSink = struct {
+     }
+ };
+
++const ReferenceCoverageCapture = struct {
++    coverage: []f32,
++    origin_x: i32,
++    origin_y: i32,
++    width: usize,
++    height: usize,
++
++    fn write(self: ReferenceCoverageCapture, x: i32, y: i32, value: f32) void {
++        if (x < self.origin_x or y < self.origin_y) return;
++        const local_x: usize = @intCast(x - self.origin_x);
++        const local_y: usize = @intCast(y - self.origin_y);
++        if (local_x >= self.width or local_y >= self.height) return;
++        self.coverage[local_y * self.width + local_x] = value;
++    }
++};
++
+ fn referenceVectorClip(pixel_rect: ReferencePixelRect) vector.ClipRect {
+     return .{
+         .x0 = @intCast(pixel_rect.x),
+@@ -1047,6 +1332,18 @@ fn referenceMemoParamsHash(kind: u8, command: RenderCommand, value: anytype) u64
+     return hasher.final();
+ }
+
++fn referenceGlyphMemoParamsHash(value: DrawText, command: RenderCommand, glyph: u16, total: Affine) u64 {
++    var hasher = std.hash.Wyhash.init(0xc42a_719d);
++    referenceMemoHashValue(&hasher, @as(u8, 6));
++    referenceMemoHashValue(&hasher, value.font_id);
++    referenceMemoHashValue(&hasher, value.size);
++    referenceMemoHashValue(&hasher, value.color);
++    referenceMemoHashValue(&hasher, command.opacity);
++    referenceMemoHashValue(&hasher, glyph);
++    referenceMemoHashValue(&hasher, total);
++    return hasher.final();
++}
++
+ /// Recursively hash a plain value BIT-EXACTLY: floats hash their bit
+ /// patterns (so -0.0 and 0.0, or two NaNs, are distinct keys — stricter
+ /// than `==`, which can only cause a spurious miss, never a wrong hit).
+@@ -1124,6 +1421,93 @@ fn referenceScaleRect(rect: geometry.RectF, scale: f32) geometry.RectF {
+     return geometry.RectF.init(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale);
+ }
+
++fn referenceCanonicalDamageRegions(
++    pass: CanvasRenderPass,
++    damage_rects: []const geometry.RectF,
++    width: usize,
++    height: usize,
++) ?ReferenceDamageRegions {
++    if (pass.loadAction() != .load or
++        damage_rects.len < 2 or
++        damage_rects.len > frame_model.max_canvas_frame_dirty_rects)
++    {
++        return null;
++    }
++
++    const logical_scissor = pass.scissorBounds() orelse return null;
++    if (!referenceRectIsFinite(logical_scissor)) return null;
++    const scale = referencePassScale(pass.scale);
++    const scaled_scissor = referenceScaleRect(logical_scissor.normalized(), scale);
++    const snapped_scissor = referenceSnappedRect(scaled_scissor, width, height) orelse return null;
++
++    var regions = ReferenceDamageRegions{};
++    for (damage_rects) |candidate| {
++        if (!referenceRectIsFinite(candidate)) return null;
++        const logical = geometry.RectF.intersection(candidate.normalized(), logical_scissor.normalized());
++        if (logical.isEmpty()) return null;
++        const snapped = referenceSnappedRect(referenceScaleRect(logical, scale), width, height) orelse return null;
++        const clipped = geometry.RectF.intersection(snapped, snapped_scissor);
++        if (clipped.isEmpty() or !regions.add(clipped)) return null;
++    }
++    regions.finish();
++
++    // One fragment is just the existing scissor. A mismatched bounding union
++    // means the refinement cannot prove it covers the pass's dirty contract.
++    if (regions.count < 2 or
++        regions.bounds == null or
++        !referenceRectsEqual(regions.bounds.?, snapped_scissor))
++    {
++        return null;
++    }
++
++    // When fragments cover most of their bounding rectangle, clipping the
++    // command more than once costs at least as much as the established union
++    // pass. Keep this threshold explicit so production profiling can tune it.
++    const union_area = snapped_scissor.width * snapped_scissor.height;
++    if (!(union_area > 0) or regions.area / union_area >= reference_damage_union_fallback_ratio) return null;
++    return regions;
++}
++
++fn referenceSnappedRect(rect: geometry.RectF, width: usize, height: usize) ?geometry.RectF {
++    const pixel_rect = referencePixelRect(rect, width, height) orelse return null;
++    return geometry.RectF.init(
++        @floatFromInt(pixel_rect.x),
++        @floatFromInt(pixel_rect.y),
++        @floatFromInt(pixel_rect.width),
++        @floatFromInt(pixel_rect.height),
++    );
++}
++
++fn referenceRectIsFinite(rect: geometry.RectF) bool {
++    return std.math.isFinite(rect.x) and
++        std.math.isFinite(rect.y) and
++        std.math.isFinite(rect.width) and
++        std.math.isFinite(rect.height);
++}
++
++fn referenceAffineIsFinite(transform: Affine) bool {
++    return std.math.isFinite(transform.a) and
++        std.math.isFinite(transform.b) and
++        std.math.isFinite(transform.c) and
++        std.math.isFinite(transform.d) and
++        std.math.isFinite(transform.tx) and
++        std.math.isFinite(transform.ty);
++}
++
++fn canonicalZero(value: f32) f32 {
++    return if (value == 0) 0 else value;
++}
++
++fn referenceRectsEqual(a: geometry.RectF, b: geometry.RectF) bool {
++    return a.x == b.x and a.y == b.y and a.width == b.width and a.height == b.height;
++}
++
++fn referenceDamageRectLessThan(_: void, a: geometry.RectF, b: geometry.RectF) bool {
++    if (a.y != b.y) return a.y < b.y;
++    if (a.x != b.x) return a.x < b.x;
++    if (a.height != b.height) return a.height < b.height;
++    return a.width < b.width;
++}
+
+ fn referencePixelCenter(x: usize, y: usize) geometry.PointF {
+     return geometry.PointF.init(@as(f32, @floatFromInt(x)) + 0.5, @as(f32, @floatFromInt(y)) + 0.5);
+diff --git a/src/primitives/canvas/reference_memo.zig b/src/primitives/canvas/reference_memo.zig
+index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2a6dcf97c 100644
+--- a/src/primitives/canvas/reference_memo.zig
++++ b/src/primitives/canvas/reference_memo.zig
+@@ -42,7 +42,22 @@ pub const ReferenceRenderMemo = struct {
+     /// over the threshold, and a couple of widget backdrops. Eviction is
+     /// least-recently-used beyond that — an eviction loop (more stable
+     /// big commands than entries) only costs time, never correctness.
+-    pub const max_entries: usize = 16;
++    pub const max_entries: usize = 128;
++    pub const max_entry_bytes: usize = 8 * 1024 * 1024;
++    pub const max_total_bytes: usize = 32 * 1024 * 1024;
++    /// Small dynamic text is dominated by repeatedly parsing and
++    /// rasterizing the same glyph at the same table-cell position. A
++    /// direct-mapped glyph result cache keeps that work bounded and O(1)
++    /// without evicting the heavyweight command entries above.
++    pub const max_glyph_entries: usize = 1024;
++    /// Position- and background-independent glyph coverage masks. Numeric
++    /// dashboards move glyphs as values change and repaint them over fresh
++    /// backgrounds, which defeats the exact final-pixel cache above. The
++    /// mask cache retains the expensive outline/raster result and performs
++    /// only the cheap destination blend at the current integer position.
++    pub const max_glyph_mask_entries: usize = 2048;
++    pub const max_glyph_mask_entry_bytes: usize = 512 * 1024;
++    pub const max_glyph_mask_total_bytes: usize = 32 * 1024 * 1024;
+
+     /// Everything a memoized command's output pixels are a pure function
+     /// of. Two runs with equal keys produce equal bytes, so replaying
+@@ -78,14 +93,62 @@ pub const ReferenceRenderMemo = struct {
+         stamp: u64 = 0,
+     };
+
++    /// Every input that can change glyph COVERAGE. Integer translation,
++    /// text color, opacity, destination pixels, and surface dimensions are
++    /// deliberately absent: they affect only where/how the retained mask is
++    /// blended, not the outline raster itself.
++    pub const GlyphMaskKey = struct {
++        face_identity: usize,
++        glyph: u16,
++        transform_a: f32,
++        transform_b: f32,
++        transform_c: f32,
++        transform_d: f32,
++        phase_x: f32,
++        phase_y: f32,
++    };
++
++    pub const GlyphMask = struct {
++        coverage: []const f32,
++        offset_x: i32,
++        offset_y: i32,
++        width: usize,
++        height: usize,
++    };
++
++    const GlyphMaskEntry = struct {
++        key: GlyphMaskKey = undefined,
++        coverage: []f32 = &.{},
++        offset_x: i32 = 0,
++        offset_y: i32 = 0,
++        width: usize = 0,
++        height: usize = 0,
++        used: bool = false,
++        stamp: u64 = 0,
++
++        fn view(self: *const GlyphMaskEntry) GlyphMask {
++            return .{
++                .coverage = self.coverage,
++                .offset_x = self.offset_x,
++                .offset_y = self.offset_y,
++                .width = self.width,
++                .height = self.height,
++            };
++        }
++    };
++
+     allocator: std.mem.Allocator,
+     entries: [max_entries]Entry = @splat(.{}),
++    entry_total_bytes: usize = 0,
++    glyph_entries: [max_glyph_entries]Entry = @splat(.{}),
++    glyph_mask_entries: [max_glyph_mask_entries]GlyphMaskEntry = @splat(.{}),
++    glyph_mask_total_bytes: usize = 0,
+     clock: u64 = 0,
+     /// Commands smaller than this many pixels render directly: the memo
+     /// trades a hash of the source region per frame for the loop, and
+     /// that trade only wins on large rects. Tests may lower it to
+     /// exercise the memo on small surfaces.
+-    min_pixels: usize = 32 * 1024,
++    min_pixels: usize = 1024,
+     /// Hit/miss counters: observability for tests and profiling only.
+     hits: u64 = 0,
+     misses: u64 = 0,
+@@ -101,6 +164,10 @@ pub const ReferenceRenderMemo = struct {
+     /// frame re-misses anyway. Beyond the budget, draws sample directly
+     /// — the exact pixels either way, only the caching stops.
+     image_scale_fills_this_pass: u64 = 0,
++    glyph_hits: u64 = 0,
++    glyph_misses: u64 = 0,
++    glyph_mask_hits: u64 = 0,
++    glyph_mask_misses: u64 = 0,
+
+     pub fn init(allocator: std.mem.Allocator) ReferenceRenderMemo {
+         return .{ .allocator = allocator };
+@@ -111,6 +178,16 @@ pub const ReferenceRenderMemo = struct {
+             if (entry.pixels.len > 0) self.allocator.free(entry.pixels);
+             entry.* = .{};
+         }
++        self.entry_total_bytes = 0;
++        for (&self.glyph_entries) |*entry| {
++            if (entry.pixels.len > 0) self.allocator.free(entry.pixels);
++            entry.* = .{};
++        }
++        for (&self.glyph_mask_entries) |*entry| {
++            if (entry.coverage.len > 0) self.allocator.free(entry.coverage);
++            entry.* = .{};
++        }
++        self.glyph_mask_total_bytes = 0;
+         for (&self.image_scale_entries) |*entry| {
+             if (entry.pixels.len > 0) self.allocator.free(entry.pixels);
+             entry.* = .{};
+@@ -135,8 +212,55 @@ pub const ReferenceRenderMemo = struct {
+     ) Key {
+         const apron_top = rect_y -| apron_rows;
+         const apron_bottom = @min(surface_height, rect_y + rect_height + apron_rows);
+-        const row_bytes = surface_width * 4;
+-        const hashed = source[apron_top * row_bytes .. apron_bottom * row_bytes];
++        var source_hasher = std.hash.Wyhash.init(0x5c72_11b8);
++        if (apron_rows == 0) {
++            // Single-pixel blends read only the rectangle they write. Hash
++            // those tight rows so an unrelated live value elsewhere on the
++            // same scanline cannot invalidate a retained background fragment.
++            var row: usize = 0;
++            while (row < rect_height) : (row += 1) {
++                const offset = ((rect_y + row) * surface_width + rect_x) * 4;
++                source_hasher.update(source[offset .. offset + rect_width * 4]);
++            }
++        } else {
++            // Blur reads a horizontal and vertical apron. Whole rows are a
++            // conservative superset of that input and therefore preserve the
++            // exact-hit contract.
++            const row_bytes = surface_width * 4;
++            source_hasher.update(source[apron_top * row_bytes .. apron_bottom * row_bytes]);
++        }
++        return .{
++            .surface_width = surface_width,
++            .surface_height = surface_height,
++            .rect_x = rect_x,
++            .rect_y = rect_y,
++            .rect_width = rect_width,
++            .rect_height = rect_height,
++            .params_hash = params_hash,
++            .source_hash = source_hasher.final(),
++        };
++    }
++
++    /// Exact key for a glyph result. Glyph blending reads only the pixels
++    /// it writes, so hash the tight rectangle row-by-row rather than whole
++    /// surface rows; unrelated live values on the same row cannot evict a
++    /// valid glyph result.
++    pub fn glyphKeyFor(
++        source: []const u8,
++        surface_width: usize,
++        surface_height: usize,
++        rect_x: usize,
++        rect_y: usize,
++        rect_width: usize,
++        rect_height: usize,
++        params_hash: u64,
++    ) Key {
++        var source_hasher = std.hash.Wyhash.init(0x7134_ef25);
++        var row: usize = 0;
++        while (row < rect_height) : (row += 1) {
++            const offset = ((rect_y + row) * surface_width + rect_x) * 4;
++            source_hasher.update(source[offset .. offset + rect_width * 4]);
++        }
+         return .{
+             .surface_width = surface_width,
+             .surface_height = surface_height,
+@@ -145,7 +269,7 @@ pub const ReferenceRenderMemo = struct {
+             .rect_width = rect_width,
+             .rect_height = rect_height,
+             .params_hash = params_hash,
+-            .source_hash = std.hash.Wyhash.hash(0x5c72_11b8, hashed),
++            .source_hash = source_hasher.final(),
+         };
+     }
+
+@@ -169,8 +293,9 @@ pub const ReferenceRenderMemo = struct {
+     /// recently used entry when full; returns null when the allocator
+     /// cannot supply the buffer (the command simply stays unmemoized).
+     pub fn store(self: *ReferenceRenderMemo, key: Key) ?[]u8 {
+-        const byte_len = key.rect_width * key.rect_height * 4;
+-        if (byte_len == 0) return null;
++        const pixel_len = std.math.mul(usize, key.rect_width, key.rect_height) catch return null;
++        const byte_len = std.math.mul(usize, pixel_len, 4) catch return null;
++        if (byte_len == 0 or byte_len > max_entry_bytes) return null;
+         var victim: *Entry = &self.entries[0];
+         for (&self.entries) |*entry| {
+             if (!entry.used) {
+@@ -180,10 +305,13 @@ pub const ReferenceRenderMemo = struct {
+             if (entry.stamp < victim.stamp) victim = entry;
+         }
+         if (victim.pixels.len != byte_len) {
+-            if (victim.pixels.len > 0) self.allocator.free(victim.pixels);
+-            victim.pixels = &.{};
+-            victim.used = false;
++            self.evictEntry(victim);
++            while (self.entry_total_bytes + byte_len > max_total_bytes) {
++                const oldest = self.oldestEntry() orelse return null;
++                self.evictEntry(oldest);
++            }
+             victim.pixels = self.allocator.alloc(u8, byte_len) catch return null;
++            self.entry_total_bytes += byte_len;
+         }
+         self.clock += 1;
+         victim.key = key;
+@@ -192,6 +320,151 @@ pub const ReferenceRenderMemo = struct {
+         return victim.pixels;
+     }
+
++    fn oldestEntry(self: *ReferenceRenderMemo) ?*Entry {
++        var oldest: ?*Entry = null;
++        for (&self.entries) |*entry| {
++            if (entry.pixels.len == 0) continue;
++            if (oldest == null or entry.stamp < oldest.?.stamp) oldest = entry;
++        }
++        return oldest;
++    }
++
++    fn evictEntry(self: *ReferenceRenderMemo, entry: *Entry) void {
++        if (entry.pixels.len > 0) {
++            self.entry_total_bytes -= entry.pixels.len;
++            self.allocator.free(entry.pixels);
++        }
++        entry.* = .{};
++    }
++
++    pub fn findGlyph(self: *ReferenceRenderMemo, key: Key) ?[]const u8 {
++        const entry = &self.glyph_entries[glyphSlot(key)];
++        if (!entry.used or !std.meta.eql(entry.key, key)) {
++            self.glyph_misses += 1;
++            return null;
++        }
++        self.glyph_hits += 1;
++        return entry.pixels;
++    }
++
++    pub fn storeGlyph(self: *ReferenceRenderMemo, key: Key) ?[]u8 {
++        const entry = &self.glyph_entries[glyphSlot(key)];
++        const byte_len = key.rect_width * key.rect_height * 4;
++        if (byte_len == 0) return null;
++        if (entry.pixels.len != byte_len) {
++            if (entry.pixels.len > 0) self.allocator.free(entry.pixels);
++            entry.pixels = &.{};
++            entry.used = false;
++            entry.pixels = self.allocator.alloc(u8, byte_len) catch return null;
++        }
++        entry.key = key;
++        entry.used = true;
++        return entry.pixels;
++    }
++
++    fn glyphSlot(key: Key) usize {
++        var hasher = std.hash.Wyhash.init(0xa63d_2b91);
++        hasher.update(std.mem.asBytes(&key.surface_width));
++        hasher.update(std.mem.asBytes(&key.surface_height));
++        hasher.update(std.mem.asBytes(&key.rect_x));
++        hasher.update(std.mem.asBytes(&key.rect_y));
++        hasher.update(std.mem.asBytes(&key.rect_width));
++        hasher.update(std.mem.asBytes(&key.rect_height));
++        hasher.update(std.mem.asBytes(&key.params_hash));
++        hasher.update(std.mem.asBytes(&key.source_hash));
++        return @intCast(hasher.final() % max_glyph_entries);
++    }
++
++    /// Find a reusable coverage mask. A hit refreshes its stamp so the
++    /// bounded pool keeps the glyphs a live dashboard is actively using.
++    pub fn findGlyphMask(self: *ReferenceRenderMemo, key: GlyphMaskKey) ?GlyphMask {
++        const entry = &self.glyph_mask_entries[glyphMaskSlot(key)];
++        if (!entry.used or !std.meta.eql(entry.key, key)) {
++            self.glyph_mask_misses += 1;
++            return null;
++        }
++        self.clock += 1;
++        entry.stamp = self.clock;
++        self.glyph_mask_hits += 1;
++        return entry.view();
++    }
++
++    /// Reserve zeroed f32 coverage for one glyph. The entry remains hidden
++    /// until `commitGlyphMask` so a recoverable raster failure can never
++    /// publish a partial mask. The caller writes exactly one coverage value
++    /// for every emitted pixel; untouched cells stay transparent.
++    pub fn prepareGlyphMask(
++        self: *ReferenceRenderMemo,
++        key: GlyphMaskKey,
++        offset_x: i32,
++        offset_y: i32,
++        width: usize,
++        height: usize,
++    ) ?[]f32 {
++        const pixel_len = std.math.mul(usize, width, height) catch return null;
++        const byte_len = std.math.mul(usize, pixel_len, @sizeOf(f32)) catch return null;
++        if (pixel_len == 0 or byte_len > max_glyph_mask_entry_bytes) return null;
++
++        const entry = &self.glyph_mask_entries[glyphMaskSlot(key)];
++        self.evictGlyphMask(entry);
++        while (self.glyph_mask_total_bytes + byte_len > max_glyph_mask_total_bytes) {
++            const oldest = self.oldestGlyphMaskEntry() orelse return null;
++            self.evictGlyphMask(oldest);
++        }
++        entry.coverage = self.allocator.alloc(f32, pixel_len) catch {
++            entry.* = .{};
++            return null;
++        };
++        @memset(entry.coverage, 0);
++        self.glyph_mask_total_bytes += byte_len;
++        entry.key = key;
++        entry.offset_x = offset_x;
++        entry.offset_y = offset_y;
++        entry.width = width;
++        entry.height = height;
++        entry.used = false;
++        return entry.coverage;
++    }
++
++    pub fn commitGlyphMask(self: *ReferenceRenderMemo, key: GlyphMaskKey) void {
++        const entry = &self.glyph_mask_entries[glyphMaskSlot(key)];
++        if (entry.coverage.len == 0 or !std.meta.eql(entry.key, key)) return;
++        self.clock += 1;
++        entry.stamp = self.clock;
++        entry.used = true;
++    }
++
++    fn oldestGlyphMaskEntry(self: *ReferenceRenderMemo) ?*GlyphMaskEntry {
++        var oldest: ?*GlyphMaskEntry = null;
++        for (&self.glyph_mask_entries) |*entry| {
++            if (entry.coverage.len == 0) continue;
++            if (oldest == null or entry.stamp < oldest.?.stamp) oldest = entry;
++        }
++        return oldest;
++    }
++
++    fn evictGlyphMask(self: *ReferenceRenderMemo, entry: *GlyphMaskEntry) void {
++        if (entry.coverage.len > 0) {
++            self.glyph_mask_total_bytes -= entry.coverage.len * @sizeOf(f32);
++            self.allocator.free(entry.coverage);
++        }
++        entry.* = .{};
++    }
++
++    fn glyphMaskSlot(key: GlyphMaskKey) usize {
++        var hasher = std.hash.Wyhash.init(0x2c67_d495);
++        hasher.update(std.mem.asBytes(&key.face_identity));
++        hasher.update(std.mem.asBytes(&key.glyph));
++        hasher.update(std.mem.asBytes(&key.transform_a));
++        hasher.update(std.mem.asBytes(&key.transform_b));
++        hasher.update(std.mem.asBytes(&key.transform_c));
++        hasher.update(std.mem.asBytes(&key.transform_d));
++        hasher.update(std.mem.asBytes(&key.phase_x));
++        hasher.update(std.mem.asBytes(&key.phase_y));
++        return @intCast(hasher.final() % max_glyph_mask_entries);
++    }
++
++
+     // ------------------------------------------------ scaled-image samples
+     //
+     // Scale-once pool for `draw_image`: at integer device alignment a
+diff --git a/src/primitives/canvas/reference_tests.zig b/src/primitives/canvas/reference_tests.zig
+index 1e4fb9acb77578c8748bf46c80696c08973545c4..ec44eeda8b6531e8378b9f42a89b94596e6a2445 100644
+--- a/src/primitives/canvas/reference_tests.zig
++++ b/src/primitives/canvas/reference_tests.zig
+@@ -489,6 +489,257 @@ test "reference renderer clears dirty rect on retained load" {
+     try expectPixelRgba8(.{ 0, 0, 255, 255 }, surface, 3, 3);
+ }
+
++test "reference damage rendering matches union pixels and retains sparse gaps across scales" {
++    const stops = [_]GradientStop{
++        .{ .offset = 0, .color = Color.rgb8(7, 12, 18) },
++        .{ .offset = 1, .color = Color.rgb8(24, 31, 42) },
++    };
++    const path = [_]PathElement{
++        .{ .verb = .move_to, .points = .{ geometry.PointF.init(6, 22), geometry.PointF.zero(), geometry.PointF.zero() } },
++        .{ .verb = .line_to, .points = .{ geometry.PointF.init(18, 22), geometry.PointF.zero(), geometry.PointF.zero() } },
++        .{ .verb = .line_to, .points = .{ geometry.PointF.init(12, 31), geometry.PointF.zero(), geometry.PointF.zero() } },
++        .{ .verb = .close },
++    };
++    const image_pixels = [_]u8{
++        255, 80, 16, 255, 32,  40,  52, 255,
++        32,  40, 52, 255, 255, 180, 24, 255,
++    };
++    const images = [_]ReferenceImage{.{ .id = 91, .width = 2, .height = 2, .pixels = &image_pixels }};
++    const background = CanvasCommand{ .fill_rect = .{
++        .id = 1,
++        .rect = geometry.RectF.init(0, 0, 80, 40),
++        .fill = .{ .linear_gradient = .{
++            .start = geometry.PointF.init(0, 0),
++            .end = geometry.PointF.init(80, 40),
++            .stops = &stops,
++        } },
++    } };
++    const baseline_commands = [_]CanvasCommand{background};
++    const commands = [_]CanvasCommand{
++        background,
++        .{ .push_opacity = 0.57 },
++        .{ .fill_rounded_rect = .{
++            .id = 2,
++            .rect = geometry.RectF.init(4, 4, 16, 15),
++            .radius = Radius.all(3),
++            .fill = .{ .color = Color.rgb8(255, 72, 16) },
++        } },
++        .pop_opacity,
++        .{ .fill_path = .{
++            .id = 3,
++            .elements = &path,
++            .fill = .{ .color = Color.rgba8(255, 176, 32, 192) },
++        } },
++        .{ .draw_image = .{
++            .id = 4,
++            .image_id = 91,
++            .dst = geometry.RectF.init(60, 4, 16, 14),
++            .fit = .cover,
++            .sampling = .linear,
++            .radius = Radius.all(2),
++        } },
++        .{ .draw_text = .{
++            .id = 5,
++            .font_id = default_mono_font_id,
++            .size = 9,
++            .origin = geometry.PointF.init(60, 29),
++            .color = Color.rgb8(245, 247, 250),
++            .text = "RAM",
++        } },
++    };
++
++    var baseline_render_commands: [baseline_commands.len]RenderCommand = undefined;
++    const baseline_plan = try (DisplayList{ .commands = &baseline_commands }).renderPlan(&baseline_render_commands);
++    var render_commands: [commands.len]RenderCommand = undefined;
++    const plan = try (DisplayList{ .commands = &commands }).renderPlan(&render_commands);
++    const damage = [_]geometry.RectF{
++        geometry.RectF.init(2, 2, 20, 32),
++        geometry.RectF.init(58, 2, 20, 32),
++    };
++    const dirty_union = geometry.RectF.init(2, 2, 76, 32);
++
++    const Harness = struct {
++        fn pixelBounds(rect: geometry.RectF, scale: f32) [4]usize {
++            return .{
++                @intFromFloat(@floor(rect.x * scale)),
++                @intFromFloat(@floor(rect.y * scale)),
++                @intFromFloat(@ceil(rect.maxX() * scale)),
++                @intFromFloat(@ceil(rect.maxY() * scale)),
++            };
++        }
++
++        fn expectRegionEqual(expected: []const u8, actual: []const u8, width: usize, bounds: [4]usize) !void {
++            var y = bounds[1];
++            while (y < bounds[3]) : (y += 1) {
++                const first = (y * width + bounds[0]) * 4;
++                const last = (y * width + bounds[2]) * 4;
++                try std.testing.expectEqualSlices(u8, expected[first..last], actual[first..last]);
++            }
++        }
++    };
++
++    for ([_]f32{ 1, 1.25, 2 }) |scale| {
++        const width: usize = @intFromFloat(80 * scale);
++        const height: usize = @intFromFloat(40 * scale);
++        const byte_len = width * height * 4;
++        var expected_storage: [160 * 80 * 4]u8 = undefined;
++        var actual_storage: [160 * 80 * 4]u8 = undefined;
++        const expected = expected_storage[0..byte_len];
++        const actual = actual_storage[0..byte_len];
++
++        const expected_surface = (try ReferenceRenderSurface.init(width, height, expected)).withImages(&images);
++        const actual_base_surface = (try ReferenceRenderSurface.init(width, height, actual)).withImages(&images);
++        const baseline_pass = CanvasRenderPass{
++            .surface_size = geometry.SizeF.init(80, 40),
++            .scale = scale,
++            .full_repaint = true,
++            .commands = baseline_plan.commands,
++        };
++        try expected_surface.renderPass(baseline_pass, Color.rgb8(2, 3, 5));
++        try actual_base_surface.renderPass(baseline_pass, Color.rgb8(2, 3, 5));
++
++        const sentinel_x: usize = @intFromFloat(40 * scale);
++        const sentinel_y: usize = @intFromFloat(20 * scale);
++        const sentinel_offset = (sentinel_y * width + sentinel_x) * 4;
++        const sentinel = [_]u8{ 203, 17, 241, 255 };
++        @memcpy(expected[sentinel_offset..][0..4], &sentinel);
++        @memcpy(actual[sentinel_offset..][0..4], &sentinel);
++
++        const pass = CanvasRenderPass{
++            .surface_size = geometry.SizeF.init(80, 40),
++            .scale = scale,
++            .dirty_bounds = dirty_union,
++            .commands = plan.commands,
++        };
++        try expected_surface.renderPass(pass, Color.rgb8(2, 3, 5));
++        var memo = canvas.ReferenceRenderMemo.init(std.testing.allocator);
++        defer memo.deinit();
++        memo.min_pixels = 0;
++        const actual_surface = actual_base_surface.withRenderMemo(&memo);
++        try std.testing.expectEqual(.damage, try actual_surface.renderPassDamage(pass, Color.rgb8(2, 3, 5), &damage));
++
++        for (damage) |rect| try Harness.expectRegionEqual(expected, actual, width, Harness.pixelBounds(rect, scale));
++        try std.testing.expectEqualSlices(u8, &sentinel, actual[sentinel_offset..][0..4]);
++        try std.testing.expect(!std.mem.eql(u8, &sentinel, expected[sentinel_offset..][0..4]));
++    }
++}
++
++test "reference damage rendering transitively merges snapped overlaps before translucent draws" {
++    const commands = [_]RenderCommand{.{
++        .command = .{ .fill_rect = .{
++            .id = 1,
++            .rect = geometry.RectF.init(0, 0, 30, 10),
++            .fill = .{ .color = Color.rgb8(255, 255, 255) },
++        } },
++        .opacity = 0.5,
++        .local_bounds = geometry.RectF.init(0, 0, 30, 10),
++        .bounds = geometry.RectF.init(0, 0, 30, 10),
++    }};
++    const pass = CanvasRenderPass{
++        .surface_size = geometry.SizeF.init(30, 10),
++        .dirty_bounds = geometry.RectF.init(0, 0, 30, 10),
++        .commands = &commands,
++    };
++    // A and B do not intersect. The bridge intersects A first, expands, then
++    // intersects B: the fixed-point merge must produce one [0,12)x[0,2)
++    // fragment, plus the far corner that keeps the path sparse.
++    const damage = [_]geometry.RectF{
++        geometry.RectF.init(0, 0, 4.2, 2),
++        geometry.RectF.init(7.2, 0, 4, 2),
++        geometry.RectF.init(4.1, 0, 3.2, 2),
++        geometry.RectF.init(28, 8, 2, 2),
++    };
++
++    var expected_pixels: [30 * 10 * 4]u8 = undefined;
++    var actual_pixels: [30 * 10 * 4]u8 = undefined;
++    const expected = try ReferenceRenderSurface.init(30, 10, &expected_pixels);
++    const actual = try ReferenceRenderSurface.init(30, 10, &actual_pixels);
++    expected.clear(Color.rgb8(0, 0, 255));
++    actual.clear(Color.rgb8(0, 0, 255));
++    try expected.renderPass(pass, Color.rgb8(0, 0, 0));
++    try std.testing.expectEqual(.damage, try actual.renderPassDamage(pass, Color.rgb8(0, 0, 0), &damage));
++
++    for (0..2) |y| {
++        try std.testing.expectEqualSlices(u8, expected_pixels[(y * 30) * 4 .. (y * 30 + 12) * 4], actual_pixels[(y * 30) * 4 .. (y * 30 + 12) * 4]);
++    }
++    for (8..10) |y| {
++        try std.testing.expectEqualSlices(u8, expected_pixels[(y * 30 + 28) * 4 .. (y * 30 + 30) * 4], actual_pixels[(y * 30 + 28) * 4 .. (y * 30 + 30) * 4]);
++    }
++    try expectPixelRgba8(.{ 0, 0, 255, 255 }, actual, 15, 5);
++}
++
++test "reference damage rendering falls back for malformed dense mismatched excess and blur refinements" {
++    const fill_command = RenderCommand{
++        .command = .{ .fill_rect = .{
++            .id = 1,
++            .rect = geometry.RectF.init(0, 0, 16, 8),
++            .fill = .{ .color = Color.rgb8(255, 64, 16) },
++        } },
++        .local_bounds = geometry.RectF.init(0, 0, 16, 8),
++        .bounds = geometry.RectF.init(0, 0, 16, 8),
++    };
++    const commands = [_]RenderCommand{fill_command};
++    const pass = CanvasRenderPass{
++        .surface_size = geometry.SizeF.init(16, 8),
++        .dirty_bounds = geometry.RectF.init(0, 0, 16, 8),
++        .commands = &commands,
++    };
++    const nan = std.math.nan(f32);
++    const malformed = [_]geometry.RectF{
++        geometry.RectF.init(nan, 0, 2, 2),
++        geometry.RectF.init(14, 6, 2, 2),
++    };
++    const mismatched = [_]geometry.RectF{
++        geometry.RectF.init(0, 0, 2, 2),
++        geometry.RectF.init(8, 4, 2, 2),
++    };
++    const dense = [_]geometry.RectF{
++        geometry.RectF.init(0, 0, 8, 8),
++        geometry.RectF.init(8, 0, 8, 8),
++    };
++    const excess = [_]geometry.RectF{
++        geometry.RectF.init(0, 0, 1, 1),
++        geometry.RectF.init(2, 0, 1, 1),
++        geometry.RectF.init(4, 0, 1, 1),
++        geometry.RectF.init(6, 0, 1, 1),
++        geometry.RectF.init(8, 0, 1, 1),
++        geometry.RectF.init(10, 0, 1, 1),
++        geometry.RectF.init(12, 0, 1, 1),
++        geometry.RectF.init(14, 0, 1, 1),
++        geometry.RectF.init(15, 7, 1, 1),
++    };
++
++    var pixels: [16 * 8 * 4]u8 = undefined;
++    const surface = try ReferenceRenderSurface.init(16, 8, &pixels);
++    for ([_][]const geometry.RectF{ &malformed, &mismatched, &dense, &excess }) |damage| {
++        surface.clear(Color.rgb8(0, 0, 255));
++        try std.testing.expectEqual(.fallback, try surface.renderPassDamage(pass, Color.rgb8(0, 0, 0), damage));
++        try expectPixelRgba8(.{ 255, 64, 16, 255 }, surface, 4, 4);
++    }
++
++    const blur_commands = [_]RenderCommand{
++        fill_command,
++        .{
++            .command = .{ .blur = .{ .id = 2, .rect = geometry.RectF.init(0, 0, 16, 8), .radius = 1 } },
++            .local_bounds = geometry.RectF.init(0, 0, 16, 8),
++            .bounds = geometry.RectF.init(0, 0, 16, 8),
++        },
++    };
++    const blur_pass = CanvasRenderPass{
++        .surface_size = geometry.SizeF.init(16, 8),
++        .dirty_bounds = geometry.RectF.init(0, 0, 16, 8),
++        .commands = &blur_commands,
++    };
++    const sparse = [_]geometry.RectF{
++        geometry.RectF.init(0, 0, 2, 2),
++        geometry.RectF.init(14, 6, 2, 2),
++    };
++    var blur_scratch: [16 * 8 * 4]u8 = undefined;
++    const blur_surface = try ReferenceRenderSurface.initWithScratch(16, 8, &pixels, &blur_scratch);
++    blur_surface.clear(Color.rgb8(0, 0, 255));
++    try std.testing.expectEqual(.fallback, try blur_surface.renderPassDamage(blur_pass, Color.rgb8(0, 0, 0), &sparse));
++}
++
+ test "reference renderer captures Phase 2 primitive signature" {
+     const stops = [_]GradientStop{
+         .{ .offset = 0, .color = Color.rgb8(248, 250, 252) },
+@@ -1462,6 +1713,66 @@ test "reference renderer draws proxy text runs" {
+     try expectPixelRgba8(.{ 0, 0, 0, 255 }, surface, 1, 3);
+ }
+
++test "glyph coverage masks reuse raster across position color and background" {
++    const width: usize = 128;
++    const height: usize = 72;
++    const bounds = geometry.RectF.init(0, 0, width, height);
++    const first = RenderCommand{
++        .command = .{ .draw_text = .{
++            .id = 1,
++            .font_id = default_mono_font_id,
++            .size = 28,
++            .origin = geometry.PointF.init(18, 44),
++            .color = Color.rgb8(232, 232, 232),
++            .text = "8",
++        } },
++        .local_bounds = bounds,
++        .bounds = bounds,
++    };
++    const moved = RenderCommand{
++        .command = .{ .draw_text = .{
++            .id = 1,
++            .font_id = default_mono_font_id,
++            .size = 28,
++            .origin = geometry.PointF.init(74, 52),
++            .color = Color.rgb8(255, 94, 26),
++            .text = "8",
++        } },
++        .local_bounds = bounds,
++        .bounds = bounds,
++    };
++    const changed_background = Color.rgb8(27, 22, 19);
++
++    var memo = canvas.ReferenceRenderMemo.init(std.testing.allocator);
++    defer memo.deinit();
++    var cached_pixels: [width * height * 4]u8 = undefined;
++    const cached = (try ReferenceRenderSurface.init(width, height, &cached_pixels)).withRenderMemo(&memo);
++    try blendSplitRenderPass(cached, first, Color.rgb8(9, 9, 9), width, height);
++    try std.testing.expectEqual(@as(u64, 1), memo.glyph_mask_misses);
++    try std.testing.expectEqual(@as(u64, 0), memo.glyph_mask_hits);
++
++    // Integer translation, foreground color, and all destination pixels
++    // change. Coverage remains identical, so the second frame must hit the
++    // mask and still match a direct reference render byte-for-byte.
++    try blendSplitRenderPass(cached, moved, changed_background, width, height);
++    try std.testing.expectEqual(@as(u64, 1), memo.glyph_mask_misses);
++    try std.testing.expectEqual(@as(u64, 1), memo.glyph_mask_hits);
++
++    var direct_pixels: [width * height * 4]u8 = undefined;
++    const direct = try ReferenceRenderSurface.init(width, height, &direct_pixels);
++    try blendSplitRenderPass(direct, moved, changed_background, width, height);
++    try std.testing.expectEqualSlices(u8, direct_pixels[0..], cached_pixels[0..]);
++
++    // A different fractional phase is a distinct raster key. It may not
++    // borrow coverage computed on another pixel phase.
++    var fractional = moved;
++    fractional.command.draw_text.origin.x += 0.25;
++    try blendSplitRenderPass(cached, fractional, changed_background, width, height);
++    try std.testing.expectEqual(@as(u64, 2), memo.glyph_mask_misses);
++    try blendSplitRenderPass(direct, fractional, changed_background, width, height);
++    try std.testing.expectEqualSlices(u8, direct_pixels[0..], cached_pixels[0..]);
++}
++
+ test "reference renderer advances proxy text by utf8 scalars" {
+     const commands = [_]CanvasCommand{.{ .draw_text = .{
+         .id = 1,
+diff --git a/src/runtime/canvas_frame.zig b/src/runtime/canvas_frame.zig
+index ed90a45bfaa5e53a77a93b49270af27b1a6377ee..b2e3d590c9d9e12bc4a2066788cc3e21210b0b71 100644
+--- a/src/runtime/canvas_frame.zig
++++ b/src/runtime/canvas_frame.zig
+@@ -401,7 +401,11 @@ pub fn RuntimeCanvasFrames(comptime Runtime: type) type {
+             // equivalent of the packet host's decode+draw).
+             const present_begin = self.frame_profile.begin();
+             defer self.frame_profile.end(.present, present_begin);
+-            try surface.renderPass(canvas_frame.renderPass(), clear_color);
++            // Retained pixel hosts still receive one bounding present below,
++            // but sparse frames rasterize their canonical dirty fragments in
++            // one command-major pass. The renderer falls back to the ordinary
++            // union whenever the refinement cannot prove equivalence.
++            _ = try surface.renderPassDamage(canvas_frame.renderPass(), clear_color, canvas_frame.dirtyRects());
+             try self.options.platform.services.presentGpuSurfacePixels(.{
+                 .window_id = window_id,
+                 .label = label,
+@@ -1391,38 +1395,64 @@ const CanvasPacketPatchDirty = struct {
+     rects: [canvas.max_canvas_frame_dirty_rects]geometry.RectF = undefined,
+     rect_count: usize = 0,
+
+-    /// Fold `rect` in: union with the first intersecting cluster, a new
+-    /// cluster while slots remain, else the cluster whose union grows
+-    /// the least. `bounds` stays the union of everything added.
++    /// Fold `rect` in while preserving a disjoint cluster set. Every union is
++    /// followed to transitive closure: a bridge can join two clusters that did
++    /// not intersect the original rect. At capacity, seed the closure with the
++    /// least-growth cluster. `bounds` stays the union of everything added.
+     fn add(self: *CanvasPacketPatchDirty, rect: geometry.RectF) void {
+         const normalized = rect.normalized();
+         if (normalized.isEmpty()) return;
+         self.bounds = unionRects(self.bounds, normalized);
+-        for (self.rects[0..self.rect_count]) |*cluster| {
+-            if (cluster.intersects(normalized)) {
+-                cluster.* = geometry.RectF.unionWith(cluster.*, normalized);
+-                return;
++        var merged = normalized;
++        self.absorbIntersecting(&merged);
++        if (self.rect_count >= self.rects.len) {
++            var best_index: usize = 0;
++            var best_cost: f32 = std.math.floatMax(f32);
++            for (self.rects[0..self.rect_count], 0..) |cluster, index| {
++                const candidate = geometry.RectF.unionWith(cluster, merged);
++                const cost = candidate.width * candidate.height - cluster.width * cluster.height;
++                if (cost < best_cost) {
++                    best_cost = cost;
++                    best_index = index;
++                }
+             }
++            merged = geometry.RectF.unionWith(self.rects[best_index], merged);
++            self.remove(best_index);
++            self.absorbIntersecting(&merged);
+         }
+-        if (self.rect_count < self.rects.len) {
+-            self.rects[self.rect_count] = normalized;
+-            self.rect_count += 1;
+-            return;
+-        }
+-        var best_index: usize = 0;
+-        var best_cost: f32 = std.math.floatMax(f32);
+-        for (self.rects[0..self.rect_count], 0..) |cluster, index| {
+-            const merged = geometry.RectF.unionWith(cluster, normalized);
+-            const cost = merged.width * merged.height - cluster.width * cluster.height;
+-            if (cost < best_cost) {
+-                best_cost = cost;
+-                best_index = index;
++        self.rects[self.rect_count] = merged;
++        self.rect_count += 1;
++        std.sort.pdq(geometry.RectF, self.rects[0..self.rect_count], {}, canvasPacketDirtyRectLessThan);
++    }
++
++    fn absorbIntersecting(self: *CanvasPacketPatchDirty, merged: *geometry.RectF) void {
++        var index: usize = 0;
++        while (index < self.rect_count) {
++            if (!self.rects[index].intersects(merged.*)) {
++                index += 1;
++                continue;
+             }
++            merged.* = geometry.RectF.unionWith(self.rects[index], merged.*);
++            self.remove(index);
++            // The expanded union can now intersect a cluster already tested.
++            index = 0;
+         }
+-        self.rects[best_index] = geometry.RectF.unionWith(self.rects[best_index], normalized);
++    }
++
++    fn remove(self: *CanvasPacketPatchDirty, index: usize) void {
++        var shift = index;
++        while (shift + 1 < self.rect_count) : (shift += 1) self.rects[shift] = self.rects[shift + 1];
++        self.rect_count -= 1;
+     }
+ };
+
++fn canvasPacketDirtyRectLessThan(_: void, a: geometry.RectF, b: geometry.RectF) bool {
++    if (a.y != b.y) return a.y < b.y;
++    if (a.x != b.x) return a.x < b.x;
++    if (a.height != b.height) return a.height < b.height;
++    return a.width < b.width;
++}
++
+ fn canvasPacketPatchDirtyBounds(view: anytype, current: []const CanvasPacketCurrentCommand) ?CanvasPacketPatchDirty {
+     const baseline_count = view.canvas_packet_baseline_count;
+     const baseline_keys = view.canvas_packet_baseline_keys[0..baseline_count];
+@@ -1768,3 +1798,17 @@ fn canvasRotationCircumscribedBounds(rect: geometry.RectF, center: geometry.Poin
+     }
+     return geometry.RectF.init(center.x - radius, center.y - radius, radius * 2, radius * 2);
+ }
++
++test "packet dirty clusters merge bridge intersections to a stable disjoint set" {
++    var dirty = CanvasPacketPatchDirty{};
++    dirty.add(geometry.RectF.init(0, 0, 5, 4));
++    dirty.add(geometry.RectF.init(8, 0, 5, 4));
++    dirty.add(geometry.RectF.init(4, 0, 5, 4));
++    dirty.add(geometry.RectF.init(28, 8, 2, 2));
++
++    try std.testing.expectEqual(@as(usize, 2), dirty.rect_count);
++    try std.testing.expectEqualDeep(geometry.RectF.init(0, 0, 13, 4), dirty.rects[0]);
++    try std.testing.expectEqualDeep(geometry.RectF.init(28, 8, 2, 2), dirty.rects[1]);
++    try std.testing.expect(!dirty.rects[0].intersects(dirty.rects[1]));
++    try std.testing.expectEqualDeep(geometry.RectF.init(0, 0, 30, 10), dirty.bounds.?);
++}
+diff --git a/src/runtime/canvas_frame_patch_tests.zig b/src/runtime/canvas_frame_patch_tests.zig
+index ec2aa238b6601f6f3edd655a6f592974288479a1..5b65626a3858bd53e893ae630c7bcfe34d7afa3b 100644
+--- a/src/runtime/canvas_frame_patch_tests.zig
++++ b/src/runtime/canvas_frame_patch_tests.zig
+@@ -336,13 +336,15 @@ fn buildScriptScene(
+     count += 1;
+     for (0..message_count) |row| {
+         const y: f32 = @as(f32, @floatFromInt(row)) * 28 + 12 - scroll_offset;
+-        commands[count] = .{ .fill_rounded_rect = .{
+-            .id = @intCast(1_000 + row),
+-            .rect = geometry.RectF.init(8, y, patch_surface_width - 16, 24),
+-            .radius = canvas.Radius.all(6),
+-            // The "toggle": message 0's bubble flips color from step 1 on.
+-            .fill = .{ .color = if (row == 0 and step >= 1) canvas.Color.rgb8(37, 99, 235) else canvas.Color.rgb8(30, 41, 59) },
+-        } };
++        commands[count] = .{
++            .fill_rounded_rect = .{
++                .id = @intCast(1_000 + row),
++                .rect = geometry.RectF.init(8, y, patch_surface_width - 16, 24),
++                .radius = canvas.Radius.all(6),
++                // The "toggle": message 0's bubble flips color from step 1 on.
++                .fill = .{ .color = if (row == 0 and step >= 1) canvas.Color.rgb8(37, 99, 235) else canvas.Color.rgb8(30, 41, 59) },
++            },
++        };
+         count += 1;
+         const text = std.fmt.bufPrint(&text_storage[row], "message {d} body{s}", .{
+             row,
+@@ -1069,11 +1071,29 @@ test "pixel presents adopt a dirty-refinement baseline only for opted-in hosts a
+     try std.testing.expectEqualDeep(buildGrid.rectAt(13), toggled.dirty_bounds.?);
+     try std.testing.expectEqualDeep(buildGrid.rectAt(13), harness.null_platform.gpu_surface_present_dirty_bounds.?);
+
++    // Two far-apart changes retain two raster fragments but still cross the
++    // platform boundary as ONE pixel present carrying their bounding union.
++    // This pins the live CPU path's command-major damage renderer without
++    // changing the host contract.
++    rects[14].fill_rect.fill = .{ .color = canvas.Color.rgb8(220, 38, 38) };
++    rects[69].fill_rect.fill = .{ .color = canvas.Color.rgb8(245, 158, 11) };
++    _ = try harness.runtime.setCanvasDisplayList(1, "canvas", .{ .commands = &rects });
++    const split = try harness.runtime.presentNextCanvasFramePixels(1, "canvas", .{
++        .frame_index = 72,
++        .timestamp_ns = 72 * 16_000,
++        .surface_size = geometry.SizeF.init(patch_surface_width, patch_surface_height),
++        .scale = 1,
++    }, canvasFrameScratchStorage(&harness.runtime), buffers.pixels, buffers.scratch, canvas.Color.rgb8(15, 23, 42));
++    try std.testing.expect(!split.full_repaint);
++    try std.testing.expectEqual(@as(usize, 2), split.dirtyRects().len);
++    try std.testing.expectEqual(@as(usize, 3), harness.null_platform.gpu_surface_present_count);
++    try std.testing.expectEqualDeep(split.dirty_bounds.?, harness.null_platform.gpu_surface_present_dirty_bounds.?);
++
+     // A packet present against the pixel-adopted mirror resyncs FULL —
+     // the patch gate refuses it even though the baseline is valid.
+-    rects[14].fill_rect.fill = .{ .color = canvas.Color.rgb8(220, 38, 38) };
++    rects[15].fill_rect.fill = .{ .color = canvas.Color.rgb8(22, 163, 74) };
+     _ = try harness.runtime.setCanvasDisplayList(1, "canvas", .{ .commands = &rects });
+-    const packet_resync = try presentFrame(harness, &buffers, 72);
++    const packet_resync = try presentFrame(harness, &buffers, 73);
+     try std.testing.expectEqual(CanvasPresentationMode.gpu_packet, packet_resync.mode);
+     try std.testing.expectEqual(@as(u8, 2), harness.null_platform.gpu_surface_packet_present_binary_load_action);
+     try std.testing.expectEqual(platform.GpuPresentPacketMode.full, harness.runtime.views[0].gpu_present_packet_mode);
+@@ -1081,9 +1101,9 @@ test "pixel presents adopt a dirty-refinement baseline only for opted-in hosts a
+
+     // The packet-adopted baseline behaves exactly as before: the next
+     // one-command change rides a patch.
+-    rects[15].fill_rect.fill = .{ .color = canvas.Color.rgb8(22, 163, 74) };
++    rects[16].fill_rect.fill = .{ .color = canvas.Color.rgb8(34, 197, 94) };
+     _ = try harness.runtime.setCanvasDisplayList(1, "canvas", .{ .commands = &rects });
+-    _ = try presentFrame(harness, &buffers, 73);
++    _ = try presentFrame(harness, &buffers, 74);
+     try std.testing.expectEqual(canvas.binary_packet_load_action_patch, harness.null_platform.gpu_surface_packet_present_binary_load_action);
+     try std.testing.expectEqual(platform.GpuPresentPacketMode.patch, harness.runtime.views[0].gpu_present_packet_mode);
+ }

@@ -1,0 +1,35 @@
+.{
+    .id = "dev.qubetx.sd300",
+    .name = "sd300-gui",
+    .display_name = "SD-300",
+    .description = "Native system diagnostics and live performance monitoring.",
+    .version = "3.0.0",
+    .icons = .{"assets/icon.png"},
+    .platforms = .{ "windows", "macos" },
+    .permissions = .{ "view", "command" },
+    .capabilities = .{ "native_views", "gpu_surfaces", "tray" },
+    .shell = .{
+        .windows = .{
+            .{
+                .label = "main",
+                .title = "SD-300 System Diagnostics",
+                .width = 1180,
+                .height = 760,
+                .restore_state = true,
+                .restore_policy = "center_on_primary",
+                .close_policy = "quit",
+                .views = .{
+                    .{ .label = "main-canvas", .kind = "gpu_surface", .fill = true, .role = "SD-300 diagnostics canvas", .accessibility_label = "Live system diagnostics", .gpu_backend = "metal", .gpu_pixel_format = "bgra8_unorm", .gpu_present_mode = "timer", .gpu_alpha_mode = "opaque", .gpu_color_space = "srgb", .gpu_vsync = true },
+                },
+            },
+        },
+    },
+    .security = .{
+        .navigation = .{
+            .allowed_origins = .{ "zero://app", "zero://inline" },
+            .external_links = .{ .action = "deny" },
+        },
+    },
+    .web_engine = "system",
+    .cef = .{ .dir = "third_party/cef/macos", .auto_install = false },
+}

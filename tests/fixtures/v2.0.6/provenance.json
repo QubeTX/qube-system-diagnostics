@@ -1,0 +1,13 @@
+{
+  "tag": "v2.0.6",
+  "commit": "a81d86cbd8c9617f84072d721e94040cc2a05dd2",
+  "remote_ref": "refs/tags/v2.0.6",
+  "remote_commit": "a81d86cbd8c9617f84072d721e94040cc2a05dd2",
+  "capture_platform": "windows-x86_64",
+  "origin": "Locally built from `git archive v2.0.6` with Cargo.lock; no downloaded executable was used.",
+  "normalization": [
+    "CRLF to LF",
+    "sd300.exe to sd300 so fixtures are portable across supported operating systems",
+    "trailing horizontal whitespace removed from each line"
+  ]
+}

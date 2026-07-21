@@ -1,0 +1,270 @@
+name: Linux Native GUI Packages
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Draft release tag to qualify"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sd300-linux-native-gui-${{ github.event.workflow_run.head_sha || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  draft-check:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
+    runs-on: ubuntu-22.04
+    outputs:
+      ready: ${{ steps.meta.outputs.ready }}
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
+      source_ref: ${{ steps.meta.outputs.source_ref }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - id: meta
+        name: Resolve qualification draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          EXPECTED_SOURCE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          TRIGGER_SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha=$(git rev-parse HEAD)
+          [[ $source_sha == "$EXPECTED_SOURCE_SHA" ]] || {
+            echo "checkout $source_sha does not match triggering source $EXPECTED_SOURCE_SHA" >&2
+            exit 1
+          }
+          source_ref=${TRIGGER_SOURCE_REF:-$source_sha}
+          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
+          if [[ $EVENT_NAME == workflow_dispatch ]]; then tag=$DISPATCH_TAG; else tag="v${version}"; fi
+          [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
+          release_json=$(gh release view "$tag" --json isDraft,tagName,targetCommitish 2>/dev/null || true)
+          state=$(jq -r '.isDraft // empty' <<< "$release_json")
+          if [[ $state == true ]]; then
+            ready=true
+            release_tag=$(jq -r '.tagName // empty' <<< "$release_json")
+            target_commitish=$(jq -r '.targetCommitish // empty' <<< "$release_json")
+            [[ $release_tag == "$tag" ]] || { echo "release tag $release_tag does not match requested tag $tag" >&2; exit 1; }
+            [[ $target_commitish == "$source_sha" ]] || {
+              echo "release $tag targets $target_commitish, but this producer checkout is $source_sha" >&2
+              exit 1
+            }
+            git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+            tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
+            [[ $tag_sha == "$source_sha" ]] || {
+              echo "tag $tag resolves to $tag_sha, but this producer checkout is $source_sha" >&2
+              exit 1
+            }
+          elif [[ $EVENT_NAME == workflow_dispatch ]]; then
+            echo "$tag is not an unpublished qualification draft" >&2
+            exit 1
+          else
+            ready=false
+            echo "$tag is already public or unavailable; skipping Linux GUI qualification."
+          fi
+          {
+            echo "ready=$ready"
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "source_sha=$source_sha"
+            echo "source_ref=$source_ref"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo '### Linux producer source identity'
+            echo
+            echo "- Source ref: \`$source_ref\`"
+            echo "- Source SHA: \`$source_sha\`"
+            echo "- Release tag: \`$tag\`"
+            echo "- Producer enabled: \`$ready\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build-gnu:
+    needs: draft-check
+    if: ${{ needs.draft-check.outputs.ready == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GNU x86-64
+            runner: ubuntu-22.04
+            gui_target: linux-gnu-x86_64
+          - name: GNU ARM64
+            runner: ubuntu-22.04-arm
+            gui_target: linux-gnu-arm64
+    name: Build and qualify ${{ matrix.name }} GUI
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.draft-check.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify exact source checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = '${{ needs.draft-check.outputs.source_sha }}'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: "1.95"
+      - name: Verify coordinated product version
+        run: node scripts/check-product-version-consistency.mjs --expected-target '${{ needs.draft-check.outputs.version }}'
+      - name: Verify clean-cache and warmed-offline Native SDK restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/sd300-native-npm-cache"
+          rm -rf gui/node_modules "$cache"
+          npm --prefix gui ci --ignore-scripts --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
+          rm -rf gui/node_modules
+          npm --prefix gui ci --ignore-scripts --offline --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
+      - name: Install pinned Ubuntu 22.04 GTK build inputs
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libglib2.0-dev libgdk-pixbuf-2.0-dev \
+            patchelf pax-utils xz-utils
+      - name: Build, test, package, and audit private GTK closure
+        shell: bash
+        env:
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+        run: |
+          set -euo pipefail
+          SD300_SKIP_NPM_CI=1 bash scripts/build-native-gui.sh '${{ matrix.gui_target }}'
+          bash scripts/package-native-gui-linux.sh \
+            '${{ matrix.gui_target }}' "$PWD/output" '${{ needs.draft-check.outputs.version }}'
+          (cd output && sha256sum -c "sd300-gui-${{ matrix.gui_target }}.tar.xz.sha256")
+      - name: Qualify in a GTK-free Ubuntu 22.04 container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/work:ro" -w /work ubuntu:22.04 bash -ceu '
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                binutils dbus-x11 jq libc-bin python3 xauth xvfb xz-utils
+              ! ldconfig -p | grep -Fq libgtk-4.so
+              bash scripts/validate-native-gui-linux-package.sh \
+                output/sd300-gui-${{ matrix.gui_target }}.tar.xz \
+                "${{ needs.draft-check.outputs.version }}"
+            '
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sd300-gui-${{ matrix.gui_target }}-${{ needs.draft-check.outputs.tag }}
+          if-no-files-found: error
+          path: output/sd300-gui-${{ matrix.gui_target }}.tar.xz*
+
+  build-musl:
+    needs: draft-check
+    if: ${{ needs.draft-check.outputs.ready == 'true' }}
+    name: Build and qualify musl x86-64 GUI
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.draft-check.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify exact source checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = '${{ needs.draft-check.outputs.source_sha }}'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Verify coordinated product version
+        run: node scripts/check-product-version-consistency.mjs --expected-target '${{ needs.draft-check.outputs.version }}'
+      - name: Prepare licensed Makira build input
+        env:
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+        run: node scripts/prepare-makira-font.mjs gui
+      - name: Build in pinned Alpine 3.20
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir output
+          docker run --rm \
+            -e HOME=/tmp/sd300-home -e RUNNER_TEMP=/tmp \
+            -v "$PWD:/work" -w /work alpine:3.20 \
+            sh -ceu 'apk add --no-cache bash; exec bash scripts/build-native-gui-musl-container.sh "$@"' \
+              sh '${{ needs.draft-check.outputs.version }}' /work/output
+          (cd output && sha256sum -c sd300-gui-linux-musl-x86_64.tar.xz.sha256)
+      - name: Qualify in a clean GTK-free Alpine 3.20 container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/work:ro" -w /work alpine:3.20 sh -ceu '
+              apk add --no-cache bash binutils dbus jq python3 xauth xvfb xz
+              ! apk info -e gtk4.0
+              bash scripts/validate-native-gui-linux-package.sh \
+                output/sd300-gui-linux-musl-x86_64.tar.xz \
+                "${{ needs.draft-check.outputs.version }}"
+            '
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sd300-gui-linux-musl-x86_64-${{ needs.draft-check.outputs.tag }}
+          if-no-files-found: error
+          path: output/sd300-gui-linux-musl-x86_64.tar.xz*
+
+  attach:
+    needs: [draft-check, build-gnu, build-musl]
+    if: ${{ needs.build-gnu.result == 'success' && needs.build-musl.result == 'success' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.draft-check.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify exact source checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = '${{ needs.draft-check.outputs.source_sha }}'
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: sd300-gui-linux-*-${{ needs.draft-check.outputs.tag }}
+          path: artifacts
+          merge-multiple: true
+      - name: Verify and attach all qualified Linux GUI assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ needs.draft-check.outputs.tag }}'
+          expected='${{ needs.draft-check.outputs.source_sha }}'
+          release_json=$(gh release view "$tag" --json isDraft,tagName,targetCommitish)
+          test "$(jq -r .isDraft <<< "$release_json")" = true
+          test "$(jq -r .tagName <<< "$release_json")" = "$tag"
+          test "$(jq -r .targetCommitish <<< "$release_json")" = "$expected"
+          git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+          tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
+          test "$tag_sha" = "$expected"
+          (cd artifacts && sha256sum -c ./*.sha256)
+          test "$(find artifacts -maxdepth 1 -name '*.tar.xz' | wc -l)" -eq 3
+          gh release upload '${{ needs.draft-check.outputs.tag }}' artifacts/* \
+            --repo '${{ github.repository }}' --clobber

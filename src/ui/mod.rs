@@ -19,7 +19,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     // Mode selection screen
     if app.mode.is_none() {
-        mode_select::render(frame);
+        mode_select::render(frame, app.cargo_gui_completion_notice);
         return;
     }
 
@@ -161,5 +161,48 @@ mod tests {
             assert!(rendered.contains("Administrator"));
             assert!(!rendered.contains("Thermals not supported"));
         }
+    }
+
+    #[test]
+    fn cargo_completion_notice_is_confined_to_the_intermediate_chooser_state() {
+        let mut plain_terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let plain = App::new(None);
+        plain_terminal.draw(|frame| render(frame, &plain)).unwrap();
+        let plain_text = plain_terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(!plain_text.contains("Desktop app pending"));
+
+        let mut pending_terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut pending = App::new(None);
+        pending.cargo_gui_completion_notice = true;
+        pending_terminal
+            .draw(|frame| render(frame, &pending))
+            .unwrap();
+        let pending_text = pending_terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(pending_text.contains("Desktop app pending"));
+
+        pending.mode = Some(DiagnosticMode::User);
+        pending_terminal
+            .draw(|frame| render(frame, &pending))
+            .unwrap();
+        let user_text = pending_terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(!user_text.contains("Desktop app pending"));
     }
 }

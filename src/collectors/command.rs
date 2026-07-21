@@ -4,6 +4,17 @@ use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+// Collector commands are non-interactive probes whose output is always captured. A
+// GUI-subsystem parent has no console to inherit, so Windows would otherwise create
+// a visible console window for helpers such as ping, netstat, route, or nvidia-smi.
+// Keep this scoped to the collector helper; installer/UAC launches use their own
+// explicit Command paths in update.rs.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandTimeout {
     Quick,
@@ -23,17 +34,22 @@ impl CommandTimeout {
     }
 }
 
-pub fn run_output<I, S>(program: &str, args: I, timeout: CommandTimeout) -> Option<Output>
+pub fn run_output<P, I, S>(program: P, args: I, timeout: CommandTimeout) -> Option<Output>
 where
+    P: AsRef<OsStr>,
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut child = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(args)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = command.spawn().ok()?;
     let mut stdout = child.stdout.take()?;
     let mut stderr = child.stderr.take()?;
     let stdout_reader = thread::spawn(move || {
@@ -74,16 +90,18 @@ where
     }
 }
 
-pub fn run_status<I, S>(program: &str, args: I, timeout: CommandTimeout) -> Option<bool>
+pub fn run_status<P, I, S>(program: P, args: I, timeout: CommandTimeout) -> Option<bool>
 where
+    P: AsRef<OsStr>,
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
     run_output(program, args, timeout).map(|output| output.status.success())
 }
 
-pub fn run_stdout<I, S>(program: &str, args: I, timeout: CommandTimeout) -> Option<String>
+pub fn run_stdout<P, I, S>(program: P, args: I, timeout: CommandTimeout) -> Option<String>
 where
+    P: AsRef<OsStr>,
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {

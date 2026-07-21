@@ -1,12 +1,24 @@
 //! Bounded cross-method cleanup invoked only by native installers.
 
+use std::fs::{self, OpenOptions, Permissions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 
 use serde::Serialize;
 
 use crate::cli::MigrateArgs;
 
 const APP_NAME: &str = "sd300";
+const CARGO_PACKAGE_NAME: &str = "tr300-tui";
+
+static MIGRATION_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,6 +36,76 @@ struct CleanupResult {
     status: CleanupStatus,
     path: Option<PathBuf>,
     detail: String,
+}
+
+#[derive(Debug, Clone)]
+struct CargoManifestEdit {
+    path: PathBuf,
+    original: Vec<u8>,
+    updated: Vec<u8>,
+    entry_key: String,
+}
+
+#[derive(Debug)]
+struct PreparedManifestEdit {
+    backup: PathBuf,
+    replacement: PathBuf,
+    attributes: PreservedFileAttributes,
+}
+
+#[derive(Debug, Clone)]
+struct PreservedFileAttributes {
+    permissions: Permissions,
+    #[cfg(unix)]
+    uid: u32,
+    #[cfg(unix)]
+    gid: u32,
+}
+
+#[derive(Debug, Default)]
+struct CargoRemovalState {
+    binary_staged: Option<PathBuf>,
+    receipt_staged: Option<PathBuf>,
+    manifest_replaced: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MigrationCheckpoint {
+    ManifestReplaced,
+    ReceiptStaged,
+    BinaryStaged,
+}
+
+#[derive(Debug, Default)]
+struct CargoRemovalOutcome {
+    cleanup_residue: Vec<PathBuf>,
+}
+
+impl PreservedFileAttributes {
+    fn from_metadata(metadata: &fs::Metadata) -> Self {
+        Self {
+            permissions: metadata.permissions(),
+            #[cfg(unix)]
+            uid: metadata.uid(),
+            #[cfg(unix)]
+            gid: metadata.gid(),
+        }
+    }
+
+    fn apply_to(&self, file: &fs::File) -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            let metadata = file.metadata()?;
+            if metadata.uid() != self.uid || metadata.gid() != self.gid {
+                // SAFETY: `file` remains open for the call, so its raw descriptor is valid.
+                let result = unsafe { libc::fchown(file.as_raw_fd(), self.uid, self.gid) };
+                if result != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+        }
+        file.set_permissions(self.permissions.clone())
+    }
 }
 
 pub fn run(args: &MigrateArgs) -> i32 {
@@ -112,41 +194,42 @@ fn clean_cargo_pair(args: &MigrateArgs) -> Vec<CleanupResult> {
                 "receipt exists but its owned binary is missing",
             )];
         }
-    } else if binary_exists {
-        let manifest_path = cargo_home.join(".crates2.json");
-        let manifest = match std::fs::read_to_string(&manifest_path) {
-            Ok(manifest) => manifest,
+    }
+
+    let manifest_path = cargo_home.join(".crates2.json");
+    let manifest_edit = match fs::read(&manifest_path) {
+        Ok(manifest) => match cargo_manifest_edit(&manifest_path, manifest) {
+            Ok(edit) => edit,
             Err(error) => {
                 return vec![preserved(
-                    "cargo_copy",
-                    Some(binary),
-                    &format!(
-                        "receipt-less Cargo-path binary has unproven ownership because {} could not be read: {error}",
-                        manifest_path.display()
-                    ),
+                    "cargo_manifest_entry",
+                    Some(manifest_path),
+                    &format!("Cargo ownership metadata is ambiguous: {error}"),
                 )];
             }
-        };
-        match crate::update::cargo_manifest_version(&manifest) {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                return vec![preserved(
-                    "cargo_copy",
-                    Some(binary),
-                    &format!(
-                        "receipt-less Cargo-path binary is not owned by tr300-tui in {}",
-                        manifest_path.display()
-                    ),
-                )];
-            }
-            Err(error) => {
-                return vec![preserved(
-                    "cargo_copy",
-                    Some(binary),
-                    &format!("receipt-less Cargo ownership is ambiguous: {error}"),
-                )];
-            }
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound && receipt_exists => None,
+        Err(error) => {
+            return vec![preserved(
+                "cargo_copy",
+                Some(binary),
+                &format!(
+                    "Cargo-path ownership could not be reconciled because {} could not be read: {error}",
+                    manifest_path.display()
+                ),
+            )];
         }
+    };
+
+    if !receipt_exists && manifest_edit.is_none() {
+        return vec![preserved(
+            "cargo_copy",
+            Some(binary),
+            &format!(
+                "receipt-less Cargo-path binary is not owned by {CARGO_PACKAGE_NAME} in {}",
+                manifest_path.display()
+            ),
+        )];
     }
 
     if args.dry_run {
@@ -154,47 +237,23 @@ fn clean_cargo_pair(args: &MigrateArgs) -> Vec<CleanupResult> {
         if let Some(receipt) = receipt.filter(|path| path.is_file()) {
             results.push(would_remove("managed_receipt", receipt));
         }
+        if let Some(edit) = manifest_edit {
+            results.push(would_remove_manifest_entry(&edit));
+        }
         return results;
     }
 
-    let backup = binary.with_file_name(format!(
-        ".sd300-migrate-{}-{}",
-        std::process::id(),
-        if cfg!(windows) { "sd300.exe" } else { "sd300" }
-    ));
-    if let Err(error) = std::fs::rename(&binary, &backup) {
-        return vec![failure(
-            "cargo_copy",
-            Some(binary),
-            &format!("could not stage bounded removal: {error}"),
-        )];
-    }
-
-    if let Some(receipt_path) = receipt.as_ref().filter(|path| path.is_file()) {
-        if let Err(error) = std::fs::remove_file(receipt_path) {
-            let rollback = std::fs::rename(&backup, &binary);
+    let receipt_to_remove = receipt.as_deref().filter(|path| path.is_file());
+    let outcome = match commit_cargo_removal(&binary, receipt_to_remove, manifest_edit.as_ref()) {
+        Ok(outcome) => outcome,
+        Err(error) => {
             return vec![failure(
-                "managed_receipt",
-                Some(receipt_path.clone()),
-                &format!(
-                    "could not remove receipt: {error}; binary rollback {}",
-                    if rollback.is_ok() {
-                        "succeeded"
-                    } else {
-                        "failed"
-                    }
-                ),
+                "cargo_copy",
+                Some(binary),
+                &format!("could not commit Cargo ownership transfer: {error}"),
             )];
         }
-    }
-
-    if let Err(error) = std::fs::remove_file(&backup) {
-        return vec![failure(
-            "cargo_copy",
-            Some(backup),
-            &format!("could not finish staged removal: {error}"),
-        )];
-    }
+    };
 
     let mut results = vec![removed("cargo_copy", binary)];
     if let Some(receipt_path) = receipt.filter(|path| !path.exists()) {
@@ -202,7 +261,389 @@ fn clean_cargo_pair(args: &MigrateArgs) -> Vec<CleanupResult> {
             results.push(removed("managed_receipt", receipt_path));
         }
     }
+    if let Some(edit) = manifest_edit {
+        results.push(removed_manifest_entry(&edit));
+    }
+    if !outcome.cleanup_residue.is_empty() {
+        let residue = outcome
+            .cleanup_residue
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if let Some(result) = results.first_mut() {
+            result.detail = format!(
+                "removed exact owned target; committed rollback material could not be deleted: {residue}"
+            );
+        }
+    }
     results
+}
+
+fn cargo_manifest_edit(
+    path: &Path,
+    original: Vec<u8>,
+) -> std::result::Result<Option<CargoManifestEdit>, String> {
+    let manifest = std::str::from_utf8(&original)
+        .map_err(|error| format!("Cargo's .crates2.json is not UTF-8 JSON: {error}"))?;
+    if crate::update::cargo_manifest_version(manifest)?.is_none() {
+        return Ok(None);
+    }
+
+    let mut json: serde_json::Value = serde_json::from_slice(&original)
+        .map_err(|error| format!("Cargo's .crates2.json is invalid: {error}"))?;
+    let installs = json
+        .get_mut("installs")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or_else(|| "Cargo's .crates2.json has no installs object".to_string())?;
+    let binary_name = if cfg!(windows) { "sd300.exe" } else { "sd300" };
+    let prefix = format!("{CARGO_PACKAGE_NAME} ");
+    let matching_keys = installs
+        .iter()
+        .filter_map(|(key, value)| {
+            let owns_binary = key.starts_with(&prefix)
+                && value
+                    .get("bins")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|bins| bins.iter().any(|bin| bin.as_str() == Some(binary_name)));
+            owns_binary.then(|| key.clone())
+        })
+        .collect::<Vec<_>>();
+    let [entry_key] = matching_keys.as_slice() else {
+        return Err(format!(
+            "the proven {CARGO_PACKAGE_NAME} ownership entry could not be isolated exactly"
+        ));
+    };
+    installs
+        .remove(entry_key)
+        .expect("the exact manifest entry was collected from this object");
+
+    let mut updated = serde_json::to_vec(&json)
+        .map_err(|error| format!("could not serialize updated Cargo metadata: {error}"))?;
+    if original.ends_with(b"\r\n") {
+        updated.extend_from_slice(b"\r\n");
+    } else if original.ends_with(b"\n") {
+        updated.push(b'\n');
+    }
+
+    Ok(Some(CargoManifestEdit {
+        path: path.to_path_buf(),
+        original,
+        updated,
+        entry_key: entry_key.clone(),
+    }))
+}
+
+fn commit_cargo_removal(
+    binary: &Path,
+    receipt: Option<&Path>,
+    manifest: Option<&CargoManifestEdit>,
+) -> std::result::Result<CargoRemovalOutcome, String> {
+    commit_cargo_removal_with_checkpoint(binary, receipt, manifest, |_| Ok(()))
+}
+
+fn commit_cargo_removal_with_checkpoint<F>(
+    binary: &Path,
+    receipt: Option<&Path>,
+    manifest: Option<&CargoManifestEdit>,
+    mut checkpoint: F,
+) -> std::result::Result<CargoRemovalOutcome, String>
+where
+    F: FnMut(MigrationCheckpoint) -> io::Result<()>,
+{
+    let prepared_manifest = manifest.map(prepare_manifest_edit).transpose()?;
+    let mut state = CargoRemovalState::default();
+
+    let operation = (|| -> std::result::Result<(), String> {
+        if let (Some(edit), Some(prepared)) = (manifest, prepared_manifest.as_ref()) {
+            let current = fs::read(&edit.path).map_err(|error| {
+                format!(
+                    "could not re-read {} before the atomic metadata write: {error}",
+                    edit.path.display()
+                )
+            })?;
+            if current != edit.original {
+                return Err(format!(
+                    "{} changed after ownership was proven; no stale metadata write was applied",
+                    edit.path.display()
+                ));
+            }
+            fs::rename(&prepared.replacement, &edit.path).map_err(|error| {
+                format!(
+                    "could not atomically replace {}: {error}",
+                    edit.path.display()
+                )
+            })?;
+            state.manifest_replaced = true;
+            checkpoint(MigrationCheckpoint::ManifestReplaced)
+                .map_err(|error| format!("metadata checkpoint failed: {error}"))?;
+        }
+
+        if let Some(receipt_path) = receipt {
+            let staged = unique_adjacent_path(receipt_path, "receipt-backup");
+            fs::rename(receipt_path, &staged).map_err(|error| {
+                format!(
+                    "could not stage managed receipt {}: {error}",
+                    receipt_path.display()
+                )
+            })?;
+            state.receipt_staged = Some(staged);
+            checkpoint(MigrationCheckpoint::ReceiptStaged)
+                .map_err(|error| format!("receipt checkpoint failed: {error}"))?;
+        }
+
+        let staged = unique_adjacent_path(binary, "binary-backup");
+        fs::rename(binary, &staged).map_err(|error| {
+            format!("could not stage Cargo binary {}: {error}", binary.display())
+        })?;
+        state.binary_staged = Some(staged);
+        checkpoint(MigrationCheckpoint::BinaryStaged)
+            .map_err(|error| format!("binary checkpoint failed: {error}"))?;
+        Ok(())
+    })();
+
+    if let Err(cause) = operation {
+        let rollback_errors = rollback_cargo_removal(
+            binary,
+            receipt,
+            manifest,
+            prepared_manifest.as_ref(),
+            &state,
+        );
+        if rollback_errors.is_empty() {
+            cleanup_prepared_transaction(&state, prepared_manifest.as_ref());
+            return Err(format!("{cause}; rollback succeeded"));
+        }
+
+        let recovery_paths = transaction_artifacts(&state, prepared_manifest.as_ref())
+            .into_iter()
+            .filter(|path| path.exists())
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "{cause}; rollback failed: {}; recovery material was preserved at: {recovery_paths}",
+            rollback_errors.join("; ")
+        ));
+    }
+
+    let cleanup_residue = cleanup_prepared_transaction(&state, prepared_manifest.as_ref());
+    Ok(CargoRemovalOutcome { cleanup_residue })
+}
+
+fn prepare_manifest_edit(
+    edit: &CargoManifestEdit,
+) -> std::result::Result<PreparedManifestEdit, String> {
+    let current = fs::read(&edit.path).map_err(|error| {
+        format!(
+            "could not read {} while preparing its backup: {error}",
+            edit.path.display()
+        )
+    })?;
+    if current != edit.original {
+        return Err(format!(
+            "{} changed after ownership was proven; no mutation was attempted",
+            edit.path.display()
+        ));
+    }
+    let metadata = fs::metadata(&edit.path).map_err(|error| {
+        format!(
+            "could not read file attributes for {}: {error}",
+            edit.path.display()
+        )
+    })?;
+    let attributes = PreservedFileAttributes::from_metadata(&metadata);
+    let backup = write_adjacent_file(&edit.path, "manifest-backup", &edit.original, None).map_err(
+        |error| {
+            format!(
+                "could not create an ownership metadata backup beside {}: {error}",
+                edit.path.display()
+            )
+        },
+    )?;
+    let replacement = match write_adjacent_file(
+        &edit.path,
+        "manifest-replacement",
+        &edit.updated,
+        Some(&attributes),
+    ) {
+        Ok(replacement) => replacement,
+        Err(error) => {
+            let _ = fs::remove_file(&backup);
+            return Err(format!(
+                "could not prepare an atomic ownership metadata write beside {}: {error}",
+                edit.path.display()
+            ));
+        }
+    };
+    Ok(PreparedManifestEdit {
+        backup,
+        replacement,
+        attributes,
+    })
+}
+
+fn rollback_cargo_removal(
+    binary: &Path,
+    receipt: Option<&Path>,
+    manifest: Option<&CargoManifestEdit>,
+    prepared_manifest: Option<&PreparedManifestEdit>,
+    state: &CargoRemovalState,
+) -> Vec<String> {
+    let mut errors = Vec::new();
+
+    if let Some(staged) = state.binary_staged.as_deref() {
+        if binary.exists() {
+            errors.push(format!(
+                "refusing to overwrite a replacement binary at {}",
+                binary.display()
+            ));
+        } else if let Err(error) = fs::rename(staged, binary) {
+            errors.push(format!(
+                "could not restore binary {}: {error}",
+                binary.display()
+            ));
+        }
+    }
+
+    if let (Some(receipt_path), Some(staged)) = (receipt, state.receipt_staged.as_deref()) {
+        if receipt_path.exists() {
+            errors.push(format!(
+                "refusing to overwrite a replacement receipt at {}",
+                receipt_path.display()
+            ));
+        } else if let Err(error) = fs::rename(staged, receipt_path) {
+            errors.push(format!(
+                "could not restore receipt {}: {error}",
+                receipt_path.display()
+            ));
+        }
+    }
+
+    if state.manifest_replaced {
+        if let (Some(edit), Some(prepared)) = (manifest, prepared_manifest) {
+            match fs::read(&edit.path) {
+                Ok(current) if current == edit.original => {}
+                Ok(current) if current == edit.updated => {
+                    if let Err(error) =
+                        restore_file_atomically(&prepared.backup, &edit.path, &prepared.attributes)
+                    {
+                        errors.push(format!(
+                            "could not restore Cargo metadata {}: {error}",
+                            edit.path.display()
+                        ));
+                    }
+                }
+                Ok(_) => errors.push(format!(
+                    "refusing to overwrite concurrently changed Cargo metadata at {}",
+                    edit.path.display()
+                )),
+                Err(error) => errors.push(format!(
+                    "could not inspect Cargo metadata {} during rollback: {error}",
+                    edit.path.display()
+                )),
+            }
+        }
+    }
+
+    errors
+}
+
+fn restore_file_atomically(
+    source: &Path,
+    target: &Path,
+    attributes: &PreservedFileAttributes,
+) -> io::Result<()> {
+    let contents = fs::read(source)?;
+    let replacement = write_adjacent_file(target, "rollback", &contents, Some(attributes))?;
+    if let Err(error) = fs::rename(&replacement, target) {
+        let _ = fs::remove_file(replacement);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn write_adjacent_file(
+    target: &Path,
+    role: &str,
+    contents: &[u8],
+    attributes: Option<&PreservedFileAttributes>,
+) -> io::Result<PathBuf> {
+    for _ in 0..64 {
+        let path = unique_adjacent_path(target, role);
+        let mut file = match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        };
+        let result = (|| {
+            file.write_all(contents)?;
+            file.sync_all()?;
+            if let Some(attributes) = attributes {
+                attributes.apply_to(&file)?;
+            }
+            file.sync_all()?;
+            drop(file);
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let _ = fs::remove_file(&path);
+            return Err(error);
+        }
+        return Ok(path);
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not reserve a unique adjacent migration file",
+    ))
+}
+
+fn unique_adjacent_path(target: &Path, role: &str) -> PathBuf {
+    let sequence = MIGRATION_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let file_name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("sd300");
+    target.with_file_name(format!(
+        ".{file_name}.sd300-migrate-{}-{timestamp}-{sequence}.{role}",
+        std::process::id()
+    ))
+}
+
+fn transaction_artifacts(
+    state: &CargoRemovalState,
+    prepared_manifest: Option<&PreparedManifestEdit>,
+) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(path) = &state.binary_staged {
+        paths.push(path.clone());
+    }
+    if let Some(path) = &state.receipt_staged {
+        paths.push(path.clone());
+    }
+    if let Some(prepared) = prepared_manifest {
+        paths.push(prepared.backup.clone());
+        paths.push(prepared.replacement.clone());
+    }
+    paths
+}
+
+fn cleanup_prepared_transaction(
+    state: &CargoRemovalState,
+    prepared_manifest: Option<&PreparedManifestEdit>,
+) -> Vec<PathBuf> {
+    transaction_artifacts(state, prepared_manifest)
+        .into_iter()
+        .filter_map(|path| match fs::remove_file(&path) {
+            Ok(()) => None,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(_) => Some(path),
+        })
+        .collect()
 }
 
 fn receipt_exactly_matches(path: &Path, cargo_home: &Path) -> bool {
@@ -446,6 +887,27 @@ fn would_remove(target: &'static str, path: PathBuf) -> CleanupResult {
     }
 }
 
+fn would_remove_manifest_entry(edit: &CargoManifestEdit) -> CleanupResult {
+    CleanupResult {
+        target: "cargo_manifest_entry",
+        status: CleanupStatus::WouldRemove,
+        path: Some(edit.path.clone()),
+        detail: format!(
+            "exact Cargo ownership entry would be removed: {}",
+            edit.entry_key
+        ),
+    }
+}
+
+fn removed_manifest_entry(edit: &CargoManifestEdit) -> CleanupResult {
+    CleanupResult {
+        target: "cargo_manifest_entry",
+        status: CleanupStatus::Removed,
+        path: Some(edit.path.clone()),
+        detail: format!("removed exact Cargo ownership entry: {}", edit.entry_key),
+    }
+}
+
 fn absent(target: &'static str, path: Option<PathBuf>, detail: &str) -> CleanupResult {
     CleanupResult {
         target,
@@ -476,6 +938,38 @@ fn failure(target: &'static str, path: Option<PathBuf>, detail: &str) -> Cleanup
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cargo_binary_name() -> &'static str {
+        if cfg!(windows) {
+            "sd300.exe"
+        } else {
+            "sd300"
+        }
+    }
+
+    fn cargo_manifest_with_other_install(entry_version: &str) -> Vec<u8> {
+        let binary_name = cargo_binary_name();
+        let mut installs = serde_json::Map::new();
+        installs.insert(
+            "another-tool 9.1.0 (registry+https://example.invalid/index)".into(),
+            serde_json::json!({"bins": ["another-tool"], "features": ["safe"]}),
+        );
+        installs.insert(
+            format!("tr300-tui {entry_version} (registry+https://example.invalid/index)"),
+            serde_json::json!({"bins": [binary_name], "features": ["default"]}),
+        );
+        installs.insert(
+            "tr300-tui 0.1.0 (path+file:///foreign)".into(),
+            serde_json::json!({"bins": ["not-sd300"]}),
+        );
+        let mut manifest = serde_json::to_vec_pretty(&serde_json::json!({
+            "v1": 1,
+            "installs": installs,
+        }))
+        .unwrap();
+        manifest.push(b'\n');
+        manifest
+    }
 
     #[test]
     fn receipt_requires_exact_provider_app_and_prefix() {
@@ -544,6 +1038,168 @@ mod tests {
             "unexpected cleanup results: {results:?}"
         );
         assert!(binary.exists());
+    }
+
+    #[test]
+    fn manifest_edit_removes_only_the_exact_owned_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join(".crates2.json");
+        let original = cargo_manifest_with_other_install("2.0.6");
+        let edit = cargo_manifest_edit(&path, original.clone())
+            .unwrap()
+            .expect("the exact Cargo entry should be proven");
+
+        assert!(edit.entry_key.starts_with("tr300-tui 2.0.6 (registry+"));
+        assert_eq!(edit.original, original);
+        assert!(edit.updated.ends_with(b"\n"));
+
+        let updated: serde_json::Value = serde_json::from_slice(&edit.updated).unwrap();
+        let installs = updated["installs"].as_object().unwrap();
+        assert!(!installs.contains_key(&edit.entry_key));
+        assert!(
+            installs.contains_key("another-tool 9.1.0 (registry+https://example.invalid/index)")
+        );
+        assert!(installs.contains_key("tr300-tui 0.1.0 (path+file:///foreign)"));
+        assert_eq!(updated["v1"], 1);
+        assert_eq!(
+            updated["installs"]["another-tool 9.1.0 (registry+https://example.invalid/index)"]
+                ["features"],
+            serde_json::json!(["safe"])
+        );
+    }
+
+    #[test]
+    fn committed_cargo_cleanup_removes_binary_and_manifest_ownership_together() {
+        let temp = tempfile::tempdir().unwrap();
+        let cargo_home = temp.path().join("cargo");
+        let binary = cargo_home.join("bin").join(cargo_binary_name());
+        let manifest_path = cargo_home.join(".crates2.json");
+        fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        fs::write(&binary, b"owned executable").unwrap();
+        fs::write(&manifest_path, cargo_manifest_with_other_install("2.0.6")).unwrap();
+
+        let results = clean_cargo_pair(&MigrateArgs {
+            cargo_copy: true,
+            strict: true,
+            cargo_home: Some(cargo_home.clone()),
+            user_profile: Some(temp.path().to_path_buf()),
+            ..MigrateArgs::default()
+        });
+
+        assert!(
+            results
+                .iter()
+                .all(|result| result.status == CleanupStatus::Removed),
+            "unexpected cleanup results: {results:?}"
+        );
+        assert!(!binary.exists());
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        let installs = manifest["installs"].as_object().unwrap();
+        assert_eq!(installs.len(), 2);
+        assert!(
+            installs.contains_key("another-tool 9.1.0 (registry+https://example.invalid/index)")
+        );
+        assert!(installs.contains_key("tr300-tui 0.1.0 (path+file:///foreign)"));
+        assert!(fs::read_dir(&cargo_home)
+            .unwrap()
+            .chain(fs::read_dir(cargo_home.join("bin")).unwrap())
+            .all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("sd300-migrate")));
+    }
+
+    #[test]
+    fn transaction_failure_restores_manifest_receipt_and_binary_exactly() {
+        let temp = tempfile::tempdir().unwrap();
+        let cargo_home = temp.path().join("cargo");
+        let binary = cargo_home.join("bin").join(cargo_binary_name());
+        let receipt = temp.path().join("sd300-receipt.json");
+        let manifest_path = cargo_home.join(".crates2.json");
+        fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        let binary_contents = b"original executable bytes";
+        let receipt_contents = br#"{"provider":{"source":"cargo-dist"}}"#;
+        let manifest_contents = cargo_manifest_with_other_install("2.0.6");
+        fs::write(&binary, binary_contents).unwrap();
+        fs::write(&receipt, receipt_contents).unwrap();
+        fs::write(&manifest_path, &manifest_contents).unwrap();
+        let edit = cargo_manifest_edit(&manifest_path, manifest_contents.clone())
+            .unwrap()
+            .unwrap();
+
+        let result = commit_cargo_removal_with_checkpoint(
+            &binary,
+            Some(&receipt),
+            Some(&edit),
+            |checkpoint| {
+                if checkpoint == MigrationCheckpoint::BinaryStaged {
+                    Err(io::Error::other("injected post-stage failure"))
+                } else {
+                    Ok(())
+                }
+            },
+        );
+
+        let error = result.expect_err("the injected failure must abort the transfer");
+        assert!(error.contains("rollback succeeded"), "{error}");
+        assert_eq!(fs::read(&binary).unwrap(), binary_contents);
+        assert_eq!(fs::read(&receipt).unwrap(), receipt_contents);
+        assert_eq!(fs::read(&manifest_path).unwrap(), manifest_contents);
+        assert!(fs::read_dir(binary.parent().unwrap())
+            .unwrap()
+            .all(|entry| {
+                !entry
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("sd300-migrate")
+            }));
+        assert!(fs::read_dir(temp.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("sd300-migrate")
+        }));
+        assert!(fs::read_dir(&cargo_home).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("sd300-migrate")
+        }));
+    }
+
+    #[test]
+    fn manifest_change_after_proof_aborts_before_binary_or_receipt_mutation() {
+        let temp = tempfile::tempdir().unwrap();
+        let cargo_home = temp.path().join("cargo");
+        let binary = cargo_home.join("bin").join(cargo_binary_name());
+        let receipt = temp.path().join("receipt.json");
+        let manifest_path = cargo_home.join(".crates2.json");
+        fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        fs::write(&binary, b"owned executable").unwrap();
+        fs::write(&receipt, b"owned receipt").unwrap();
+        let original = cargo_manifest_with_other_install("2.0.6");
+        fs::write(&manifest_path, &original).unwrap();
+        let edit = cargo_manifest_edit(&manifest_path, original)
+            .unwrap()
+            .unwrap();
+        let concurrent = cargo_manifest_with_other_install("2.0.7");
+        fs::write(&manifest_path, &concurrent).unwrap();
+
+        let error = commit_cargo_removal(&binary, Some(&receipt), Some(&edit))
+            .expect_err("concurrent metadata changes must fail closed");
+
+        assert!(
+            error.contains("changed after ownership was proven"),
+            "{error}"
+        );
+        assert_eq!(fs::read(&binary).unwrap(), b"owned executable");
+        assert_eq!(fs::read(&receipt).unwrap(), b"owned receipt");
+        assert_eq!(fs::read(&manifest_path).unwrap(), concurrent);
     }
 
     #[test]

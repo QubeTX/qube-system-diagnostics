@@ -1,0 +1,5 @@
+error: the argument '--user' cannot be used with '--tech'
+
+Usage: sd300 --user
+
+For more information, try '--help'.

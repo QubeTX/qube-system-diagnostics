@@ -26,6 +26,7 @@ jobs:
       ready: ${{ steps.meta.outputs.ready }}
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
       source_ref: ${{ steps.meta.outputs.source_ref }}
     steps:
       - uses: actions/checkout@v6
@@ -36,20 +37,44 @@ jobs:
         name: Resolve qualification draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          EXPECTED_SOURCE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          TRIGGER_SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
         shell: bash
         run: |
           set -euo pipefail
+          source_sha=$(git rev-parse HEAD)
+          [[ $source_sha == "$EXPECTED_SOURCE_SHA" ]] || {
+            echo "checkout $source_sha does not match triggering source $EXPECTED_SOURCE_SHA" >&2
+            exit 1
+          }
+          source_ref=${TRIGGER_SOURCE_REF:-$source_sha}
           version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
-          if [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
-            tag='${{ inputs.tag }}'
+          if [[ $EVENT_NAME == workflow_dispatch ]]; then
+            tag=$DISPATCH_TAG
           else
             tag="v${version}"
           fi
           [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
-          state=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)
+          release_json=$(gh release view "$tag" --json isDraft,tagName,targetCommitish 2>/dev/null || true)
+          state=$(jq -r '.isDraft // empty' <<< "$release_json")
           if [[ $state == true ]]; then
             ready=true
-          elif [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
+            release_tag=$(jq -r '.tagName // empty' <<< "$release_json")
+            target_commitish=$(jq -r '.targetCommitish // empty' <<< "$release_json")
+            [[ $release_tag == "$tag" ]] || { echo "release tag $release_tag does not match requested tag $tag" >&2; exit 1; }
+            [[ $target_commitish == "$source_sha" ]] || {
+              echo "release $tag targets $target_commitish, but this producer checkout is $source_sha" >&2
+              exit 1
+            }
+            git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+            tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
+            [[ $tag_sha == "$source_sha" ]] || {
+              echo "tag $tag resolves to $tag_sha, but this producer checkout is $source_sha" >&2
+              exit 1
+            }
+          elif [[ $EVENT_NAME == workflow_dispatch ]]; then
             echo "$tag is not an unpublished qualification draft" >&2
             exit 1
           else
@@ -60,8 +85,17 @@ jobs:
             echo "ready=$ready"
             echo "tag=$tag"
             echo "version=$version"
-            echo "source_ref=$(git rev-parse HEAD)"
+            echo "source_sha=$source_sha"
+            echo "source_ref=$source_ref"
           } >> "$GITHUB_OUTPUT"
+          {
+            echo '### Windows producer source identity'
+            echo
+            echo "- Source ref: \`$source_ref\`"
+            echo "- Source SHA: \`$source_sha\`"
+            echo "- Release tag: \`$tag\`"
+            echo "- Producer enabled: \`$ready\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   build-test-upload:
     needs: draft-check
@@ -70,8 +104,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.draft-check.outputs.source_ref }}
+          ref: ${{ needs.draft-check.outputs.source_sha }}
           persist-credentials: false
+
+      - name: Verify exact source checkout
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          $expected = '${{ needs.draft-check.outputs.source_sha }}'
+          if ($actual -ne $expected) { throw "checkout $actual does not match qualified source $expected" }
 
       - id: meta
         name: Resolve draft metadata
@@ -80,9 +121,47 @@ jobs:
           Add-Content $env:GITHUB_OUTPUT 'tag=${{ needs.draft-check.outputs.tag }}'
           Add-Content $env:GITHUB_OUTPUT 'version=${{ needs.draft-check.outputs.version }}'
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: "1.95"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Verify coordinated product version
+        run: node scripts/check-product-version-consistency.mjs --expected-target '${{ needs.draft-check.outputs.version }}'
+      - name: Verify clean-cache and warmed-offline Native SDK restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/sd300-native-npm-cache"
+          rm -rf gui/node_modules "$cache"
+          npm --prefix gui ci --ignore-scripts --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
+          rm -rf gui/node_modules
+          npm --prefix gui ci --ignore-scripts --offline --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
       - name: Build release binary
         run: cargo build --release --locked
+
+      - name: Build and qualify native GUI companion
+        shell: pwsh
+        env:
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+        run: |
+          scripts\build-native-gui.ps1 -Target windows-x86_64 -SkipNpmCi
+          scripts\package-native-gui.ps1 `
+            -Target windows-x86_64 `
+            -Version '${{ steps.meta.outputs.version }}'
+          $null = New-Item -ItemType Directory -Path target\native -Force
+          Copy-Item target\native-gui-packages\sd300-gui-windows-x86_64.zip* target\native\
 
       - name: Build Global and Corporate MSI
         shell: pwsh
@@ -95,12 +174,14 @@ jobs:
               @{ Source = 'wix\main.wxs'; Stem = 'global' },
               @{ Source = 'wix-corporate\corporate.wxs'; Stem = 'corporate' }
           )) {
-            & $candle -arch x64 `
+            & $candle -arch x64 -ext WixUtilExtension `
               "-dVersion=${{ steps.meta.outputs.version }}" `
               "-dCargoTargetBinDir=$PWD\target\release" `
+              "-dNativeGuiBinDir=$PWD\target\native-gui-stage\windows-x86_64\app\zig-out\bin" `
               -out "target\native\$($definition.Stem).wixobj" $definition.Source
             if ($LASTEXITCODE -ne 0) { throw "candle failed for $($definition.Stem)" }
-            & $light -sice:ICE38 -sice:ICE64 -sice:ICE91 -ext WixUIExtension `
+            & $light -sice:ICE38 -sice:ICE64 -sice:ICE91 `
+              -ext WixUIExtension -ext WixUtilExtension `
               -out "target\native\sd300-windows-x64-$($definition.Stem).msi" `
               "target\native\$($definition.Stem).wixobj"
             if ($LASTEXITCODE -ne 0) { throw "light failed for $($definition.Stem)" }
@@ -111,9 +192,10 @@ jobs:
         run: |
           choco install innosetup -y --no-progress --no-color
           $iscc = 'C:\Program Files (x86)\Inno Setup 6\iscc.exe'
-          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" inno\global.iss
+          $guiBin = "$PWD\target\native-gui-stage\windows-x86_64\app\zig-out\bin"
+          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" "/DMyAppGuiBinDir=$guiBin" inno\global.iss
           if ($LASTEXITCODE -ne 0) { throw 'Global Inno build failed' }
-          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" inno\corporate.iss
+          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" "/DMyAppGuiBinDir=$guiBin" inno\corporate.iss
           if ($LASTEXITCODE -ne 0) { throw 'Corporate Inno build failed' }
           Copy-Item inno\Output\sd300-windows-x64-global.exe target\native\
           Copy-Item inno\Output\sd300-windows-x64-corporate.exe target\native\
@@ -130,6 +212,18 @@ jobs:
             )
             if ((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne ((Get-Content "$($_.FullName).sha256") -split '\s+')[0]) { throw "checksum failed for $($_.Name)" }
           }
+          $global = 'target\native\sd300-windows-x64-global.msi'
+          $legacy = 'target\native\tr300-tui-x86_64-pc-windows-msvc.msi'
+          Copy-Item -LiteralPath $global -Destination $legacy -Force
+          $legacyHash = (Get-FileHash -LiteralPath $legacy -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(
+            "$legacy.sha256",
+            "$legacyHash *$([IO.Path]::GetFileName($legacy))`n",
+            [Text.Encoding]::ASCII
+          )
+          $globalHash = (Get-FileHash -LiteralPath $global -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($legacyHash -ne $globalHash) { throw 'legacy MSI alias is not byte-identical to the qualified Global MSI' }
+          if ($legacyHash -ne ((Get-Content "$legacy.sha256") -split '\s+')[0]) { throw 'legacy MSI alias checksum failed' }
 
       - name: Exercise install, takeover, update-origin, and diagnostics
         shell: pwsh
@@ -150,12 +244,32 @@ jobs:
           Set-Content Cargo.lock $lock -Encoding utf8
           cargo build --release --locked --target-dir target\prior-build
 
+          # The synthetic prior must remain a genuine CLI-only predecessor.
+          # Building it with current v3 installer definitions would silently
+          # give the old CLI a v3 GUI and invalidate the transition test.
+          git fetch --force --depth=1 origin refs/tags/v2.0.6:refs/tags/v2.0.6
+          if ($LASTEXITCODE -ne 0) { throw 'could not fetch immutable v2.0.6 installer definitions' }
+          $priorDefinitions = Join-Path $PWD 'target\prior-definitions'
+          $null = New-Item -ItemType Directory -Path $priorDefinitions -Force
+          foreach ($path in @(
+            'wix/main.wxs',
+            'wix-corporate/corporate.wxs',
+            'inno/global.iss',
+            'inno/corporate.iss',
+            'inno/remove-conflicting-msi.pas'
+          )) {
+            $contents = @(git show "v2.0.6:$path")
+            if ($LASTEXITCODE -ne 0) { throw "could not read v2.0.6:$path" }
+            $destination = Join-Path $priorDefinitions ([IO.Path]::GetFileName($path))
+            [IO.File]::WriteAllText($destination, (($contents -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          }
+
           $candle = "$env:WIX\bin\candle.exe"
           $light = "$env:WIX\bin\light.exe"
           $null = New-Item -ItemType Directory -Path target\prior-native -Force
           foreach ($definition in @(
-              @{ Source = 'wix\main.wxs'; Stem = 'global' },
-              @{ Source = 'wix-corporate\corporate.wxs'; Stem = 'corporate' }
+              @{ Source = (Join-Path $priorDefinitions 'main.wxs'); Stem = 'global' },
+              @{ Source = (Join-Path $priorDefinitions 'corporate.wxs'); Stem = 'corporate' }
           )) {
             & $candle -arch x64 "-dVersion=$prior" "-dCargoTargetBinDir=$PWD\target\prior-build\release" `
               -out "target\prior-native\$($definition.Stem).wixobj" $definition.Source
@@ -167,12 +281,12 @@ jobs:
           }
 
           $iscc = 'C:\Program Files (x86)\Inno Setup 6\iscc.exe'
-          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" inno\global.iss
+          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" (Join-Path $priorDefinitions 'global.iss')
           if ($LASTEXITCODE -ne 0) { throw 'prior Global Inno build failed' }
-          Copy-Item inno\Output\sd300-windows-x64-global.exe target\prior-native\sd300-prior-global.exe
-          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" inno\corporate.iss
+          Copy-Item (Join-Path $priorDefinitions 'Output\sd300-windows-x64-global.exe') target\prior-native\sd300-prior-global.exe
+          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" (Join-Path $priorDefinitions 'corporate.iss')
           if ($LASTEXITCODE -ne 0) { throw 'prior Corporate Inno build failed' }
-          Copy-Item inno\Output\sd300-windows-x64-corporate.exe target\prior-native\sd300-prior-corporate.exe
+          Copy-Item (Join-Path $priorDefinitions 'Output\sd300-windows-x64-corporate.exe') target\prior-native\sd300-prior-corporate.exe
 
       - name: Exercise real same-channel version transitions
         shell: pwsh
@@ -181,6 +295,7 @@ jobs:
         run: |
           $null = New-Item -ItemType Directory -Path target\candidate-assets -Force
           Copy-Item target\native\sd300-windows-x64-* target\candidate-assets\
+          Copy-Item target\native\sd300-gui-windows-x86_64.zip* target\candidate-assets\
           foreach ($name in @(
               'sd300-cli-installer.ps1', 'sd300-cli-installer.ps1.sha256'
           )) {
@@ -217,10 +332,28 @@ jobs:
         with:
           name: sd300-windows-native-${{ steps.meta.outputs.tag }}
           if-no-files-found: error
-          path: target/native/sd300-windows-x64-*
+          path: |
+            target/native/sd300-windows-x64-*
+            target/native/sd300-gui-windows-x86_64.zip*
+            target/native/tr300-tui-x86_64-pc-windows-msvc.msi*
 
       - name: Attach qualified Windows assets to draft
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload '${{ steps.meta.outputs.tag }}' target/native/sd300-windows-x64-* --clobber
+        run: |
+          $tag = '${{ steps.meta.outputs.tag }}'
+          $expected = '${{ needs.draft-check.outputs.source_sha }}'
+          $release = gh release view $tag --json isDraft,tagName,targetCommitish | ConvertFrom-Json
+          if (-not $release.isDraft) { throw "$tag is no longer an unpublished qualification draft" }
+          if ($release.tagName -ne $tag) { throw "release tag $($release.tagName) does not match $tag" }
+          if ($release.targetCommitish -ne $expected) { throw "$tag targets $($release.targetCommitish), expected $expected" }
+          git fetch --force --depth=1 origin "refs/tags/$($tag):refs/tags/$($tag)"
+          if ($LASTEXITCODE -ne 0) { throw "could not fetch $tag for final source verification" }
+          $tagSha = (git rev-list -n 1 "refs/tags/$tag").Trim()
+          if ($tagSha -ne $expected) { throw "$tag resolves to $tagSha, expected $expected" }
+          gh release upload '${{ steps.meta.outputs.tag }}' `
+            target/native/sd300-windows-x64-* `
+            target/native/sd300-gui-windows-x86_64.zip* `
+            target/native/tr300-tui-x86_64-pc-windows-msvc.msi* `
+            --clobber

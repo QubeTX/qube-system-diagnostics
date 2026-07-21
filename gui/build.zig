@@ -1,0 +1,46 @@
+const std = @import("std");
+const builtin = @import("builtin");
+const native_sdk = @import("native_sdk");
+
+pub fn build(b: *std.Build) void {
+    // SD-300 release lanes build on the target OS (cross-architecture only).
+    // Using the host here avoids redeclaring the SDK-owned `target` build
+    // option and makes unsupported cross-OS builds fail closed later.
+    const app_options: native_sdk.AppOptions = if (builtin.os.tag == .linux)
+        .{
+            .name = "sd300-gui",
+            .main = "../../src/main.zig",
+            .app_root = "platform/linux",
+        }
+    else
+        .{ .name = "sd300-gui" };
+    const app = native_sdk.addAppArtifacts(b, b.dependency("native_sdk", .{}), app_options);
+    const os = app.exe.root_module.resolved_target.?.result.os.tag;
+    const engine_name = switch (os) {
+        .windows => "sd300_engine.dll",
+        .macos => "libsd300_engine.dylib",
+        .linux => "libsd300_engine.so",
+        else => @panic("SD-300 GUI engine is supported only on Windows, macOS, and Linux"),
+    };
+    const install_engine = b.addInstallBinFile(b.path(engine_name), engine_name);
+    const install_icon = b.addInstallBinFile(b.path("assets/icon.png"), "assets/icon.png");
+    if (builtin.os.tag == .macos) {
+        const visibility_source = b.path("src/platform/window_visibility_macos.m");
+        const lifecycle_source = b.path("src/platform/lifecycle_unix.c");
+        app.exe.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{ "-fobjc-arc", "-fblocks" } });
+        app.tests.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{ "-fobjc-arc", "-fblocks" } });
+        app.exe.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
+        app.tests.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
+    } else if (builtin.os.tag == .linux) {
+        const visibility_source = b.path("src/platform/window_visibility_linux.c");
+        const lifecycle_source = b.path("src/platform/lifecycle_unix.c");
+        app.exe.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{} });
+        app.tests.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{} });
+        app.exe.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
+        app.tests.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
+    }
+    app.install.step.dependOn(&install_engine.step);
+    app.install.step.dependOn(&install_icon.step);
+    app.run.step.dependOn(&install_engine.step);
+    app.run.step.dependOn(&install_icon.step);
+}

@@ -24,6 +24,11 @@ $globalRoot = Join-Path $env:ProgramFiles 'sd300'
 $corporateRoot = Join-Path $env:LOCALAPPDATA 'Programs\sd300'
 $managedRoot = Join-Path $env:USERPROFILE '.cargo'
 $managedBinary = Join-Path $managedRoot 'bin\sd300.exe'
+$managedGuiRoot = Join-Path $env:LOCALAPPDATA 'Programs\SD-300'
+$managedGuiShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\SD-300.lnk'
+$managedGuiRegistration = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Uninstall\SD-300-Managed'
+$guiStateRoot = Join-Path $env:APPDATA 'SD-300'
+$guiRunKey = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run'
 $managedConfigRoot = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { $env:LOCALAPPDATA }
 $managedReceipt = Join-Path $managedConfigRoot 'sd300\sd300-receipt.json'
 
@@ -31,6 +36,28 @@ function Invoke-Checked([string]$FilePath, [string[]]$Arguments, [int[]]$Allowed
     $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
     if ($process.ExitCode -notin $Allowed) {
         throw "$FilePath exited with $($process.ExitCode); expected $($Allowed -join ', ')"
+    }
+}
+
+function Invoke-GuiSelfTest([string]$Gui, [string]$Context) {
+    $tempBase = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
+    $tempRoot = Join-Path $tempBase "sd300-gui-self-test-$([Guid]::NewGuid().ToString('N'))"
+    $stdout = Join-Path $tempRoot 'stdout.json'
+    $stderr = Join-Path $tempRoot 'stderr.txt'
+    $null = New-Item -ItemType Directory -Path $tempRoot -Force
+    try {
+        $process = Start-Process -FilePath $Gui -WorkingDirectory (Split-Path -Parent $Gui) `
+            -ArgumentList @('--self-test', '--json') -Wait -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            Lines = @(Get-Content -LiteralPath $stdout -ErrorAction SilentlyContinue)
+            ErrorText = @(Get-Content -LiteralPath $stderr -ErrorAction SilentlyContinue) -join "`n"
+            Context = $Context
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -93,7 +120,115 @@ function Get-Sd300Registrations([string]$DisplayName) {
     return @($records)
 }
 
+function Assert-GuiCompanion([string]$Root, [string]$Channel) {
+    $guiRoot = if ($Channel -eq 'powershell-installer') { $managedGuiRoot } else { $Root }
+    $gui = Join-Path $guiRoot 'app\sd300-gui.exe'
+    $engine = Join-Path $guiRoot 'app\sd300_engine.dll'
+    if (-not (Test-Path -LiteralPath $gui -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $engine -PathType Leaf)) {
+        throw "$Channel update did not install a complete GUI companion under $guiRoot"
+    }
+    foreach ($notice in @(
+        'PRODUCT-LICENSE.md',
+        'IBM-PLEX-OFL-1.1.txt',
+        'NATIVE-SDK-APACHE-2.0.txt'
+    )) {
+        $noticePath = Join-Path $guiRoot "app\licenses\$notice"
+        if (-not (Test-Path -LiteralPath $noticePath -PathType Leaf) -or
+            (Get-Item -LiteralPath $noticePath).Length -eq 0) {
+            throw "$Channel update did not install required GUI notice $noticePath"
+        }
+    }
+    $selfTest = Invoke-GuiSelfTest $gui $Channel
+    if ($selfTest.ExitCode -ne 0 -or $selfTest.Lines.Count -ne 1) {
+        throw "$Channel GUI self-test did not return one successful JSON object (exit $($selfTest.ExitCode), lines $($selfTest.Lines.Count)): $($selfTest.ErrorText)"
+    }
+    $result = $selfTest.Lines[0] | ConvertFrom-Json
+    if (-not $result.success -or $result.product -ne 'SD-300' -or
+        $result.product_version -ne $CandidateVersion -or
+        $result.abi_version -ne 1 -or $result.engine_schema_version -ne 1 -or
+        $result.target_os -ne 'windows' -or $result.target_arch -ne 'x86_64') {
+        throw "$Channel GUI self-test reported an incompatible product, version, ABI, schema, or target"
+    }
+    if ($Channel -eq 'powershell-installer') {
+        $ownerPath = Join-Path $managedGuiRoot '.sd300-managed-owner.json'
+        $owner = Get-Content -LiteralPath $ownerPath -Raw | ConvertFrom-Json
+        if ($owner.schema -ne 1 -or $owner.product -ne 'SD-300' -or
+            $owner.version -ne $CandidateVersion -or $owner.owner -ne 'powershell-installer' -or
+            -not (Test-Path -LiteralPath $managedGuiShortcut -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $managedGuiRegistration)) {
+            throw 'managed PowerShell update did not install its proven GUI ownership and discovery integrations'
+        }
+    }
+}
+
+function Assert-CurrentNoop([string]$Binary, [string]$Channel) {
+    $lines = @(& $Binary update --json)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -or $lines.Count -ne 1) {
+        throw "$Channel current-version update did not return one successful JSON object (exit $exitCode, lines $($lines.Count))"
+    }
+    $result = $lines[0] | ConvertFrom-Json
+    if (-not $result.success -or $result.action -ne 'update' -or
+        $result.current_version -ne $CandidateVersion -or
+        $result.target_version -ne $CandidateVersion -or
+        $result.install_channel -ne $Channel -or $result.strategy -ne 'current' -or
+        $result.message -ne "SD-300 $CandidateVersion is already current") {
+        throw "$Channel complete-current update was not the preserved no-op: $($lines[0])"
+    }
+}
+
+function Assert-SameVersionGuiRepair([string]$Binary, [string]$Channel, [string]$Root) {
+    $guiRoot = if ($Channel -eq 'powershell-installer') { $managedGuiRoot } else { $Root }
+    Remove-Item -LiteralPath (Join-Path $guiRoot 'app\sd300_engine.dll') -Force
+    $lines = @(& $Binary update --json)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -or $lines.Count -ne 1) {
+        throw "$Channel same-version repair did not return one successful JSON object (exit $exitCode, lines $($lines.Count))"
+    }
+    $result = $lines[0] | ConvertFrom-Json
+    if (-not $result.success -or $result.action -ne 'update' -or
+        $result.current_version -ne $CandidateVersion -or
+        $result.target_version -ne $CandidateVersion -or
+        $result.install_channel -ne $Channel -or $result.strategy -ne 'same-version-repair') {
+        throw "$Channel missing-GUI update did not use the same-version repair path: $($lines[0])"
+    }
+    Assert-GuiCompanion $Root $Channel
+}
+
+function Set-GuiUninstallFixture([string]$Channel) {
+    $null = New-Item -ItemType Directory -Path (Join-Path $guiStateRoot 'reports') -Force
+    Set-Content -LiteralPath (Join-Path $guiStateRoot 'settings.json') -Value '{"schema_version":1}' -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $guiStateRoot 'settings.corrupt-test.json') -Value '{}' -Encoding utf8
+    Set-Content -LiteralPath (Join-Path $guiStateRoot '.settings-test.tmp') -Value '{}' -Encoding utf8
+    $export = Join-Path $guiStateRoot "reports\$Channel-user-export.json"
+    Set-Content -LiteralPath $export -Value '{"preserve":true}' -Encoding utf8
+    $null = New-Item -Path $guiRunKey -Force
+    New-ItemProperty -Path $guiRunKey -Name 'SD-300' `
+        -Value ('"' + $managedGuiRoot + '\app\sd300-gui.exe" --startup') `
+        -PropertyType String -Force | Out-Null
+    return $export
+}
+
+function Assert-GuiUninstallState([string]$Export, [string]$Channel) {
+    foreach ($owned in @('settings.json', 'settings.corrupt-test.json', '.settings-test.tmp')) {
+        if (Test-Path -LiteralPath (Join-Path $guiStateRoot $owned)) {
+            throw "$Channel uninstall left owned GUI state: $owned"
+        }
+    }
+    if ((Get-ItemProperty -LiteralPath $guiRunKey -Name 'SD-300' -ErrorAction SilentlyContinue).'SD-300') {
+        throw "$Channel uninstall left its launch-at-login registration"
+    }
+    if (-not (Test-Path -LiteralPath $Export -PathType Leaf)) {
+        throw "$Channel uninstall removed a user-exported report"
+    }
+    Remove-Item -LiteralPath $Export -Force
+    Remove-Item -LiteralPath (Split-Path -Parent $Export) -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $guiStateRoot -Force -ErrorAction SilentlyContinue
+}
+
 function Assert-ManagedUninstall([string]$Binary, [string]$Channel) {
+    $export = Set-GuiUninstallFixture $Channel
     $lines = @(& $Binary uninstall --json)
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0 -or $lines.Count -ne 1) {
@@ -106,10 +241,16 @@ function Assert-ManagedUninstall([string]$Binary, [string]$Channel) {
     for ($attempt = 0; $attempt -lt 600; $attempt++) {
         if (-not (Test-Path -LiteralPath $managedBinary) -and
             -not (Test-Path -LiteralPath $managedReceipt) -and
-            -not (Test-Path -LiteralPath (Split-Path -Parent $managedReceipt))) { return }
+            -not (Test-Path -LiteralPath (Split-Path -Parent $managedReceipt)) -and
+            -not (Test-Path -LiteralPath $managedGuiRoot) -and
+            -not (Test-Path -LiteralPath $managedGuiShortcut) -and
+            -not (Test-Path -LiteralPath $managedGuiRegistration)) {
+            Assert-GuiUninstallState $export $Channel
+            return
+        }
         Start-Sleep -Milliseconds 100
     }
-    throw "$Channel uninstall left its binary, receipt, or receipt directory"
+    throw "$Channel uninstall left its CLI, GUI, receipt, ownership registration, or shortcut"
 }
 
 function Assert-NativeUninstall(
@@ -119,6 +260,7 @@ function Assert-NativeUninstall(
     [string]$DisplayName
 ) {
     $binDir = Split-Path -Parent $Binary
+    $export = Set-GuiUninstallFixture $Channel
     $lines = @(& $Binary uninstall --json)
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0 -or $lines.Count -ne 1) {
@@ -136,7 +278,10 @@ function Assert-NativeUninstall(
             @(Get-Sd300Registrations $DisplayName).Count -eq 0 -and
             -not $marker -and
             -not $ownsPath -and
-            -not (Test-Path -LiteralPath (Split-Path -Parent $managedReceipt))) { return }
+            -not (Test-Path -LiteralPath (Split-Path -Parent $managedReceipt))) {
+            Assert-GuiUninstallState $export $Channel
+            return
+        }
         Start-Sleep -Milliseconds 100
     }
     throw "$Channel uninstall left payload, registration, marker, PATH ownership, or an empty managed receipt directory"
@@ -199,6 +344,10 @@ function Assert-Update([string]$Binary, [string]$Channel, [string]$Root) {
         throw "$Channel replacement reports an unexpected version: $reported"
     }
     Wait-ForCleanup $Root
+    Assert-GuiCompanion $Root $Channel
+    Assert-CurrentNoop $Binary $Channel
+    Assert-SameVersionGuiRepair $Binary $Channel $Root
+    Assert-CurrentNoop $Binary $Channel
 }
 
 function Set-ManagedPrior {

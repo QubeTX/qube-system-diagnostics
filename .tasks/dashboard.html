@@ -247,6 +247,7 @@
       padding-bottom: 24px;
       flex: 1;
       min-height: 0;
+      position: relative;
     }
 
     .column {
@@ -282,11 +283,42 @@
     }
 
     .column-drop-indicator {
-      width: 3px;
+      position: absolute;
+      top: 0;
+      bottom: 24px;
+      width: 4px;
       background: var(--accent);
-      border-radius: 2px;
-      margin: 0 -2px;
-      min-height: 100px;
+      border-radius: 999px;
+      box-shadow: 0 0 0 1px var(--bg-primary), 0 0 14px var(--accent);
+      pointer-events: none;
+      transform: translateX(-50%);
+      z-index: 20;
+    }
+
+    .column-drop-indicator::before,
+    .column-drop-indicator::after,
+    .drop-indicator::before,
+    .drop-indicator::after {
+      content: '';
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border: 2px solid var(--bg-primary);
+      border-radius: 50%;
+      box-sizing: border-box;
+    }
+
+    .column-drop-indicator::before {
+      top: 0;
+      left: 50%;
+      transform: translate(-50%, -25%);
+    }
+
+    .column-drop-indicator::after {
+      bottom: 0;
+      left: 50%;
+      transform: translate(-50%, 25%);
     }
 
     .column-header .count {
@@ -303,11 +335,37 @@
       overflow-y: auto;
       padding: 0 12px 12px;
       min-height: 100px;
+      position: relative;
     }
 
     .cards.drag-over {
       background: var(--accent-tint);
       border-radius: 8px;
+    }
+
+    .drop-indicator {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      height: 4px;
+      background: var(--accent);
+      border-radius: 999px;
+      box-shadow: 0 0 0 1px var(--bg-primary), 0 0 10px var(--accent);
+      pointer-events: none;
+      transform: translateY(-50%);
+      z-index: 20;
+    }
+
+    .drop-indicator::before {
+      left: 0;
+      top: 50%;
+      transform: translate(-25%, -50%);
+    }
+
+    .drop-indicator::after {
+      right: 0;
+      top: 50%;
+      transform: translate(25%, -50%);
     }
 
     .task-card {
@@ -1425,7 +1483,13 @@
       font-size: 13px;
       color: var(--text-muted);
       margin-top: 2px;
+      max-width: min(68vw, 820px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
+
+    .file-path.source-mismatch { color: var(--accent); font-weight: 600; }
     /* ===== SHAUGHV TYPOGRAPHY LAYER ===== */
     h1, .app-title { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.005em; }
     .app-title { font-size: 1.35rem; }
@@ -1592,15 +1656,56 @@
       return typeof value === 'string' ? value.trim() : '';
     }
 
+    function compactSourcePath(value) {
+      const full = String(value || '');
+      if (full.length <= 88) return full;
+      const separator = full.includes('\\') ? '\\' : '/';
+      const parts = full.split(/[\\/]+/).filter(Boolean);
+      if (parts.length <= 6) return full;
+      const prefix = /^[A-Za-z]:/.test(parts[0]) ? parts[0] + separator : (full.startsWith('/') ? separator : '');
+      return prefix + '…' + separator + parts.slice(-5).join(separator);
+    }
+
+    function updateSourceDisplay() {
+      filePathEl.classList.toggle('source-mismatch', Boolean(sourceMismatch));
+      if (sourceMismatch) {
+        filePathEl.textContent = 'Source mismatch — reopen this project board';
+        filePathEl.title = sourceMismatch;
+        return;
+      }
+      if (activeMainTab === 'tasks') {
+        if (SERVER_MODE && taskFileName) {
+          const source = serverTasksPath || (boardRepoName ? boardRepoName + '/.tasks/TASKS.md' : 'TASKS.md');
+          filePathEl.textContent = 'Live · ' + compactSourcePath(source);
+          filePathEl.title = `Project: ${boardTitle || 'Tasks'}\nTasks source: ${source}\nServer: ${location.origin}`;
+        } else if (!SERVER_MODE && taskFileHandle) {
+          filePathEl.textContent = 'Selected file · ' + taskFileName;
+          filePathEl.title = 'The browser exposes the selected filename, but not its full local path.';
+        } else {
+          filePathEl.textContent = '';
+          filePathEl.title = '';
+        }
+      } else if (SERVER_MODE && serverRoot) {
+        const separator = serverRoot.includes('\\') ? '\\' : '/';
+        const source = serverRoot.replace(/[\\/]+$/, '') + separator + 'memory';
+        filePathEl.textContent = 'Live · ' + compactSourcePath(source);
+        filePathEl.title = `Project: ${boardTitle || 'Tasks'}\nMemory source: ${source}\nServer: ${location.origin}`;
+      } else if (memoryDirHandle) {
+        filePathEl.textContent = 'Selected folder · ' + memoryDirHandle.name;
+        filePathEl.title = 'The browser exposes the selected folder name, but not its full local path.';
+      } else {
+        filePathEl.textContent = '';
+        filePathEl.title = '';
+      }
+    }
+
     function applyBoardIdentity(configuredTitle, repoName) {
       const title = cleanBoardTitle(configuredTitle) || cleanBoardTitle(repoName) || 'Tasks';
       boardTitle = title;
       appTitleEl.textContent = title;
       document.title = title.toUpperCase() + ' / TASKS / SHAUGHV';
       if (repoName) boardRepoName = repoName;
-      if (activeMainTab === 'tasks' && taskFileName) {
-        filePathEl.textContent = boardRepoName ? boardRepoName + '/.tasks/TASKS.md' : 'TASKS.md';
-      }
+      updateSourceDisplay();
     }
 
     function showStatus(msg) {
@@ -1653,16 +1758,7 @@
       openMemoryBtn.style.display = tab === 'memory' ? 'inline-flex' : 'none';
       saveBtn.style.display = tab === 'tasks' ? 'inline-flex' : 'none';
 
-      // Update file path display
-      if (tab === 'tasks') {
-        filePathEl.textContent = SERVER_MODE
-          ? (taskFileName ? 'TASKS.md' : '')
-          : (taskFileHandle ? taskFileName : '');
-      } else {
-        filePathEl.textContent = SERVER_MODE
-          ? '.tasks/ memory'
-          : (memoryDirHandle ? memoryDirHandle.name : '');
-      }
+      updateSourceDisplay();
     }
 
     tasksTabBtn.addEventListener('click', () => switchMainTab('tasks'));
@@ -1684,6 +1780,129 @@
     const listView = document.getElementById('listView');
     const listViewBtn = document.getElementById('listViewBtn');
     const boardViewBtn = document.getElementById('boardViewBtn');
+
+    // Native drag data is deliberately typed. The old implementation treated every drag
+    // over a column as a task drag, so a category reorder could show both a vertical category
+    // marker and a horizontal task marker. Keep the legacy payloads for installed browsers,
+    // but route handlers exclusively through these explicit drag kinds.
+    const TASK_DRAG_TYPE = 'application/x-shaughv-task';
+    const SECTION_DRAG_TYPE = 'application/x-shaughv-section';
+    let activeDrag = null;
+
+    function dragHasType(event, type) {
+      return Array.from(event.dataTransfer?.types || []).includes(type);
+    }
+
+    function isTaskDrag(event) {
+      return activeDrag?.kind === 'task' || dragHasType(event, TASK_DRAG_TYPE);
+    }
+
+    function isSectionDrag(event) {
+      return activeDrag?.kind === 'section'
+        || dragHasType(event, SECTION_DRAG_TYPE)
+        || dragHasType(event, 'text/column');
+    }
+
+    function dragId(event, kind) {
+      if (activeDrag?.kind === kind) return activeDrag.id;
+      if (kind === 'section') {
+        return event.dataTransfer?.getData(SECTION_DRAG_TYPE)
+          || event.dataTransfer?.getData('text/column') || '';
+      }
+      return event.dataTransfer?.getData(TASK_DRAG_TYPE)
+        || event.dataTransfer?.getData('text/plain') || '';
+    }
+
+    function clearBoardDragFeedback() {
+      board.querySelectorAll('.column-drop-indicator, .drop-indicator').forEach(el => el.remove());
+      board.querySelectorAll('.cards.drag-over').forEach(el => el.classList.remove('drag-over'));
+    }
+
+    function clearAllDragFeedback() {
+      clearBoardDragFeedback();
+      document.querySelectorAll('.list-drop-indicator').forEach(el => el.remove());
+      document.querySelectorAll('.list-section.drag-over').forEach(el => el.classList.remove('drag-over'));
+    }
+
+    function autoScrollNearEdge(container, pointer, axis) {
+      const rect = container.getBoundingClientRect();
+      const start = axis === 'x' ? rect.left : rect.top;
+      const end = axis === 'x' ? rect.right : rect.bottom;
+      const threshold = axis === 'x' ? 72 : 48;
+      const maxStep = axis === 'x' ? 22 : 16;
+      let delta = 0;
+      if (pointer < start + threshold) delta = -maxStep * (1 - Math.max(0, pointer - start) / threshold);
+      else if (pointer > end - threshold) delta = maxStep * (1 - Math.max(0, end - pointer) / threshold);
+      if (!delta) return;
+      if (axis === 'x') container.scrollLeft += delta;
+      else container.scrollTop += delta;
+    }
+
+    // Return the nearest actual boundary between columns. Boundaries on both sides of the
+    // dragged column intentionally map to the same no-op position, keeping the marker under
+    // the pointer without making the board jump while the drag is still in progress.
+    function getSectionDropPosition(clientX, fromId) {
+      const columns = [...board.querySelectorAll('.column[data-section-id]')];
+      if (!columns.length) return { dropIndex: 0, left: board.scrollLeft + 4 };
+
+      const boardRect = board.getBoundingClientRect();
+      const addRect = board.querySelector('[data-add-section]')?.getBoundingClientRect();
+      const rects = columns.map(col => col.getBoundingClientRect());
+      const points = [Math.max(boardRect.left + 4, rects[0].left - 12)];
+      for (let i = 1; i < rects.length; i++) {
+        points.push((rects[i - 1].right + rects[i].left) / 2);
+      }
+      points.push(addRect ? (rects.at(-1).right + addRect.left) / 2 : rects.at(-1).right + 12);
+
+      let boundaryIndex = 0;
+      for (let i = 1; i < points.length; i++) {
+        if (Math.abs(points[i] - clientX) < Math.abs(points[boundaryIndex] - clientX)) boundaryIndex = i;
+      }
+      const fromIndex = columns.findIndex(col => col.dataset.sectionId === fromId);
+      const dropIndex = boundaryIndex - (fromIndex !== -1 && fromIndex < boundaryIndex ? 1 : 0);
+      return {
+        dropIndex,
+        left: points[boundaryIndex] - boardRect.left + board.scrollLeft,
+      };
+    }
+
+    function showSectionDropIndicator(position) {
+      board.querySelectorAll('.column-drop-indicator').forEach(el => el.remove());
+      const indicator = document.createElement('div');
+      indicator.className = 'column-drop-indicator';
+      indicator.setAttribute('aria-hidden', 'true');
+      indicator.style.left = `${position.left}px`;
+      board.appendChild(indicator);
+    }
+
+    board.addEventListener('dragover', (event) => {
+      if (!isSectionDrag(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'move';
+      autoScrollNearEdge(board, event.clientX, 'x');
+      showSectionDropIndicator(getSectionDropPosition(event.clientX, dragId(event, 'section')));
+    });
+
+    board.addEventListener('dragleave', (event) => {
+      if (!isSectionDrag(event)) return;
+      const rect = board.getBoundingClientRect();
+      if (event.clientX <= rect.left || event.clientX >= rect.right
+          || event.clientY <= rect.top || event.clientY >= rect.bottom) {
+        board.querySelectorAll('.column-drop-indicator').forEach(el => el.remove());
+      }
+    });
+
+    board.addEventListener('drop', (event) => {
+      if (!isSectionDrag(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const fromId = dragId(event, 'section');
+      const { dropIndex } = getSectionDropPosition(event.clientX, fromId);
+      activeDrag = null;
+      clearAllDragFeedback();
+      moveSectionToIndex(fromId, dropIndex);
+    });
 
     function taskSectionId(name) {
       return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -1858,7 +2077,7 @@
     // ===== MILESTONES (MILESTONES.md + milestones/<id>.md) =====
     // ============================================================
     // Milestones are the level above tasks: a dated outcome tasks roll up into via the
-    // (ms #id) tag. Progress is DERIVED, never stored — done children (live Done tasks +
+    // (ms #id) tag. Progress is DERIVED, never stored — done children (live Completed tasks +
     // lines archived under the milestone detail file's "## Completed") over all children.
     let milestones = [];
     let msDetails = {};                    // id → parsed detail (powers archived counts + the modal)
@@ -1866,6 +2085,35 @@
     let lastMilestonesModified = 0;
     let msSaving = false;
     let boardRepoName = '';                // from /api/ping root — disambiguates multi-board tabs
+    let serverRoot = '';
+    let serverTasksPath = '';
+    let serverBoardId = '';
+    let sourceMismatch = '';
+    const boardClientId = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+
+    function serverWriteHeaders(contentType, extra = {}) {
+      return {
+        ...(contentType ? { 'Content-Type': contentType } : {}),
+        ...(serverBoardId ? { 'X-Expected-Board-Id': serverBoardId } : {}),
+        'X-Board-Client': boardClientId,
+        ...extra,
+      };
+    }
+
+    function failSourceIdentity(message) {
+      sourceMismatch = message || 'The live server no longer matches this board.';
+      if (evtSource) { evtSource.close(); evtSource = null; }
+      updateSourceDisplay();
+      showStatus('Board source mismatch — reopen the correct project board');
+    }
+
+    function verifyServerResponse(response) {
+      const actual = response.headers.get('X-Board-Id') || '';
+      if (serverBoardId && actual !== serverBoardId) {
+        failSourceIdentity(`Expected board ${serverBoardId}, but ${location.origin} answered as ${actual || 'an unverified server'}.`);
+        throw new Error('board source identity mismatch');
+      }
+    }
 
     function parseMilestoneMarkdown(content) {
       const out = [];
@@ -1918,7 +2166,7 @@
       const d = msDetails[m.id];
       return d && d.completed ? d.completed.length : 0;
     }
-    // Progress counts archived children too — clearing old Done tasks (which archives
+    // Progress counts archived children too — clearing old Completed tasks (which archives
     // them into the milestone's ## Completed) must never move a milestone backward.
     function milestoneProgress(m) {
       const kids = milestoneChildren(m);
@@ -1968,9 +2216,10 @@
       try {
         const res = await fetch('/api/milestones', {
           method: 'POST',
-          headers: { 'Content-Type': 'text/markdown', 'X-Base-Mtime': String(lastMilestonesModified) },
+          headers: serverWriteHeaders('text/markdown', { 'X-Base-Mtime': String(lastMilestonesModified) }),
           body: milestonesToMarkdown(),
         });
+        verifyServerResponse(res);
         if (res.status === 409) {
           const latest = await res.text();
           lastMilestonesModified = Number(res.headers.get('X-Board-Mtime')) || lastMilestonesModified;
@@ -1990,11 +2239,12 @@
       const d = msDetails[id] || (msDetails[id] = parseDetail(''));
       if (activityNote) d.activity.push(`${nowStamp()} — ${activityNote}`);
       try {
-        await fetch('/api/milestone?id=' + encodeURIComponent(id), {
+        const res = await fetch('/api/milestone?id=' + encodeURIComponent(id), {
           method: 'POST',
-          headers: { 'Content-Type': 'text/markdown' },
+          headers: serverWriteHeaders('text/markdown'),
           body: serializeDetail(d),
         });
+        verifyServerResponse(res);
         markBoardUpdated();
       } catch (e) { showStatus('Milestone detail save failed: ' + e.message); }
     }
@@ -2054,12 +2304,16 @@
       let dragged = false;
       card.addEventListener('dragstart', (e) => {
         dragged = true;
+        activeDrag = { kind: 'task', id: task.id };
         card.classList.add('dragging');
+        e.dataTransfer.setData(TASK_DRAG_TYPE, task.id);
         e.dataTransfer.setData('text/plain', task.id);
         e.dataTransfer.effectAllowed = 'move';
       });
       card.addEventListener('dragend', () => {
         card.classList.remove('dragging');
+        activeDrag = null;
+        clearAllDragFeedback();
         setTimeout(() => { dragged = false; }, 60);
       });
       card.addEventListener('click', () => { if (!dragged) openTaskModal(task); });
@@ -2218,6 +2472,7 @@
     function createColumn(id, title, items) {
       const col = document.createElement('div');
       col.className = 'column';
+      col.dataset.sectionId = id;
       col.innerHTML = `
         <div class="column-header">
           <span class="column-title" data-section-id="${id}" style="cursor: pointer;">${title}</span>
@@ -2229,89 +2484,84 @@
         </div>
       `;
 
-      col.querySelector('.column-title').addEventListener('click', (e) => {
-        if (!col.dragging) { startEditingColumnTitle(e.target, id); }
-      });
-
       const header = col.querySelector('.column-header');
       header.draggable = true;
+      let columnDragged = false;
+
+      col.querySelector('.column-title').addEventListener('click', (e) => {
+        if (!columnDragged) startEditingColumnTitle(e.target, id);
+      });
 
       header.addEventListener('dragstart', (e) => {
         e.stopPropagation();
+        columnDragged = true;
+        activeDrag = { kind: 'section', id };
         col.classList.add('dragging-column');
+        e.dataTransfer.setData(SECTION_DRAG_TYPE, id);
         e.dataTransfer.setData('text/column', id);
         e.dataTransfer.effectAllowed = 'move';
       });
 
       header.addEventListener('dragend', () => {
         col.classList.remove('dragging-column');
-        board.querySelectorAll('.column-drop-indicator').forEach(el => el.remove());
-      });
-
-      col.addEventListener('dragover', (e) => {
-        if (e.dataTransfer.types.includes('text/column')) {
-          e.preventDefault();
-          e.stopPropagation();
-          board.querySelectorAll('.column-drop-indicator').forEach(el => el.remove());
-          const indicator = document.createElement('div');
-          indicator.className = 'column-drop-indicator';
-          const rect = col.getBoundingClientRect();
-          if (e.clientX < rect.left + rect.width / 2) { col.before(indicator); }
-          else { col.after(indicator); }
-        }
-      });
-
-      col.addEventListener('drop', (e) => {
-        if (e.dataTransfer.types.includes('text/column')) {
-          e.preventDefault();
-          e.stopPropagation();
-          const fromId = e.dataTransfer.getData('text/column');
-          const toId = id;
-          if (fromId !== toId) {
-            const rect = col.getBoundingClientRect();
-            const insertBefore = e.clientX < rect.left + rect.width / 2;
-            moveSection(fromId, toId, insertBefore);
-          }
-          board.querySelectorAll('.column-drop-indicator').forEach(el => el.remove());
-        }
+        activeDrag = null;
+        clearAllDragFeedback();
+        setTimeout(() => { columnDragged = false; }, 60);
       });
 
       const cardsContainer = col.querySelector('.cards');
       items.forEach(task => { cardsContainer.appendChild(createCard(task)); });
 
-      const getDropPosition = (e) => {
-        const allCards = [...cardsContainer.querySelectorAll('.task-card')];
-        const visibleCards = allCards.filter(c => !c.classList.contains('dragging'));
-        let insertBeforeCard = null;
-        let dropIndex = visibleCards.length;
-        for (let i = 0; i < visibleCards.length; i++) {
-          const rect = visibleCards[i].getBoundingClientRect();
-          if (e.clientY < rect.top + rect.height / 2) {
-            insertBeforeCard = visibleCards[i];
-            dropIndex = i;
-            break;
-          }
+      const getDropPosition = (event, taskId) => {
+        const cards = [...cardsContainer.querySelectorAll('.task-card')];
+        const containerRect = cardsContainer.getBoundingClientRect();
+        if (!cards.length) {
+          return { beforeTaskId: null, top: cardsContainer.scrollTop + 8 };
         }
-        return { insertBeforeCard, dropIndex };
+
+        const rects = cards.map(card => card.getBoundingClientRect());
+        const points = [rects[0].top];
+        for (let i = 1; i < rects.length; i++) {
+          points.push((rects[i - 1].bottom + rects[i].top) / 2);
+        }
+        points.push(rects.at(-1).bottom + 5);
+
+        let boundaryIndex = 0;
+        for (let i = 1; i < points.length; i++) {
+          if (Math.abs(points[i] - event.clientY) < Math.abs(points[boundaryIndex] - event.clientY)) boundaryIndex = i;
+        }
+
+        const ids = cards.map(card => card.dataset.id);
+        const fromIndex = ids.indexOf(taskId);
+        const remainingIds = ids.filter(cardId => cardId !== taskId);
+        const targetIndex = boundaryIndex - (fromIndex !== -1 && fromIndex < boundaryIndex ? 1 : 0);
+        return {
+          beforeTaskId: remainingIds[targetIndex] || null,
+          top: points[boundaryIndex] - containerRect.top + cardsContainer.scrollTop,
+        };
       };
 
-      const showDropIndicator = (e) => {
-        col.querySelectorAll('.drop-indicator').forEach(el => el.remove());
-        const { insertBeforeCard } = getDropPosition(e);
+      const showDropIndicator = (position) => {
+        board.querySelectorAll('.drop-indicator').forEach(el => el.remove());
         const indicator = document.createElement('div');
         indicator.className = 'drop-indicator';
-        indicator.style.cssText = 'height: 3px; background: var(--accent); border-radius: 2px; margin: 5px 0;';
-        if (insertBeforeCard) { cardsContainer.insertBefore(indicator, insertBeforeCard); }
-        else { cardsContainer.appendChild(indicator); }
+        indicator.setAttribute('aria-hidden', 'true');
+        indicator.style.top = `${position.top}px`;
+        cardsContainer.appendChild(indicator);
       };
 
       col.addEventListener('dragover', (e) => {
+        if (!isTaskDrag(e)) return;
         e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        autoScrollNearEdge(cardsContainer, e.clientY, 'y');
         cardsContainer.classList.add('drag-over');
-        showDropIndicator(e);
+        showDropIndicator(getDropPosition(e, dragId(e, 'task')));
       });
 
       col.addEventListener('dragleave', (e) => {
+        if (!isTaskDrag(e)) return;
         if (!col.contains(e.relatedTarget)) {
           cardsContainer.classList.remove('drag-over');
           col.querySelectorAll('.drop-indicator').forEach(el => el.remove());
@@ -2319,12 +2569,14 @@
       });
 
       col.addEventListener('drop', (e) => {
+        if (!isTaskDrag(e)) return;
         e.preventDefault();
-        cardsContainer.classList.remove('drag-over');
-        col.querySelectorAll('.drop-indicator').forEach(el => el.remove());
-        const taskId = e.dataTransfer.getData('text/plain');
-        const { dropIndex } = getDropPosition(e);
-        moveTask(taskId, id, dropIndex);
+        e.stopPropagation();
+        const taskId = dragId(e, 'task');
+        const { beforeTaskId } = getDropPosition(e, taskId);
+        activeDrag = null;
+        clearAllDragFeedback();
+        moveTask(taskId, id, beforeTaskId);
       });
 
       col.querySelector(`[data-add="${id}"]`).addEventListener('click', () => {
@@ -2371,19 +2623,24 @@
       input.addEventListener('blur', () => { setTimeout(() => input.remove(), 100); });
     }
 
-    function moveSection(fromId, toId, insertBefore) {
+    function moveSectionToIndex(fromId, dropIndex) {
       const fromIdx = sections.findIndex(s => s.id === fromId);
-      const toIdx = sections.findIndex(s => s.id === toId);
-      if (fromIdx === -1 || toIdx === -1) return;
+      if (fromIdx === -1) return;
       const [section] = sections.splice(fromIdx, 1);
-      let newIdx = sections.findIndex(s => s.id === toId);
-      if (!insertBefore) newIdx++;
+      const newIdx = Math.max(0, Math.min(dropIndex, sections.length));
       sections.splice(newIdx, 0, section);
+      if (newIdx === fromIdx) return;
       markChanged();
       renderTasks();
     }
 
-    function moveTask(taskId, toSectionId, dropIndex = -1) {
+    function isCompletionSection(sectionId) {
+      const section = sections.find(candidate => candidate.id === sectionId);
+      const normalized = taskSectionId(section?.name || sectionId);
+      return normalized === 'done' || normalized === 'completed';
+    }
+
+    function moveTask(taskId, toSectionId, beforeTaskId = null) {
       // Locate the task first WITHOUT removing it, so a blocked move can be refused cleanly.
       let task = null, fromSectionId = null, fromIdx = -1;
       for (const section of sections) {
@@ -2401,15 +2658,16 @@
         renderTasks(); // snap the card back
         return;
       }
-      if (toSectionId === 'done' && fromSectionId !== toSectionId) {
+      if (isCompletionSection(toSectionId) && fromSectionId !== toSectionId) {
+        const destinationName = sections.find(section => section.id === toSectionId)?.name || 'Completed';
         const unmet = unmetNeeds(task);
         if (unmet.length) {
-          showStatus(`Blocked — finish ${unmet.map(id => '#' + id).join(', ')} before moving this to Done`);
+          showStatus(`Blocked — finish ${unmet.map(id => '#' + id).join(', ')} before moving this to ${destinationName}`);
           renderTasks(); // snap the card back
           return;
         }
         if (openSubtasks(task).length) {
-          showStatus('Blocked — finish or remove open subtasks before moving this to Done');
+          showStatus(`Blocked — finish or remove open subtasks before moving this to ${destinationName}`);
           renderTasks(); // snap the card back
           return;
         }
@@ -2418,11 +2676,11 @@
       tasks[fromSectionId].splice(fromIdx, 1);
       task.section = toSectionId;
       if (!tasks[toSectionId]) tasks[toSectionId] = [];
-      if (dropIndex >= 0 && dropIndex <= tasks[toSectionId].length) {
-        tasks[toSectionId].splice(dropIndex, 0, task);
-      } else {
-        tasks[toSectionId].push(task);
-      }
+      const dropIndex = beforeTaskId
+        ? tasks[toSectionId].findIndex(candidate => candidate.id === beforeTaskId)
+        : -1;
+      if (dropIndex >= 0) tasks[toSectionId].splice(dropIndex, 0, task);
+      else tasks[toSectionId].push(task);
       markChanged();
       renderTasks();
     }
@@ -2437,7 +2695,9 @@
       // Drop the per-task detail file so it can't outlive the task (or bleed into a future
       // task that reuses the id). Fire-and-forget; server mode only.
       if (SERVER_MODE && task.id) {
-        fetch('/api/task?id=' + encodeURIComponent(task.id), { method: 'DELETE' }).catch(() => {});
+        fetch('/api/task?id=' + encodeURIComponent(task.id), {
+          method: 'DELETE', headers: serverWriteHeaders(),
+        }).then(verifyServerResponse).catch(() => {});
       }
       markChanged();
       renderTasks();
@@ -2481,36 +2741,55 @@
     let evtSource = null;
 
     async function loadBoardIdentityFromServer() {
-      if (!SERVER_MODE) return;
+      if (!SERVER_MODE) return true;
       let config = {};
-      let info = {};
       try {
         const res = await fetch('/api/config', { cache: 'no-store' });
         if (res.ok) config = await res.json();
       } catch (_) {}
       try {
         const res = await fetch('/api/ping', { cache: 'no-store' });
-        if (res.ok) info = await res.json();
-      } catch (_) {}
+        if (!res.ok) throw new Error(`identity request failed (${res.status})`);
+        const info = await res.json();
+        if (!info || info.ok !== 'shaughv-task-board' || !info.root) {
+          throw new Error('server did not identify a board root');
+        }
+        if (serverBoardId && info.boardId && serverBoardId !== String(info.boardId)) {
+          failSourceIdentity(`This tab expected board ${serverBoardId}, but ${location.origin} now serves ${info.boardId}.`);
+          return false;
+        }
 
-      let repo = '';
-      if (info && info.root) {
-        const parts = String(info.root).replace(/[\\/]+$/, '').split(/[\\/]/);
-        repo = parts.length >= 2 ? parts[parts.length - 2] : parts[parts.length - 1];
+        serverRoot = String(info.root);
+        serverBoardId = info.boardId ? String(info.boardId) : '';
+        const separator = serverRoot.includes('\\') ? '\\' : '/';
+        serverTasksPath = String(info.tasksPath || (serverRoot.replace(/[\\/]+$/, '') + separator + 'TASKS.md'));
+        const parts = serverRoot.replace(/[\\/]+$/, '').split(/[\\/]/);
+        const repo = parts.length >= 2 ? parts[parts.length - 2] : parts[parts.length - 1];
+        sourceMismatch = '';
+        applyBoardIdentity(config?.boardTitle, repo);
+        return true;
+      } catch (error) {
+        failSourceIdentity('Could not verify the live task source: ' + error.message);
+        return false;
       }
-      applyBoardIdentity(config?.boardTitle, repo);
     }
 
     async function loadTasksFromServer(initial) {
+      if (sourceMismatch) return;
       try {
-        const res = await fetch('/api/tasks');
+        const res = await fetch('/api/tasks', { cache: 'no-store' });
+        verifyServerResponse(res);
+        if (!res.ok) throw new Error(`task source returned ${res.status}`);
         const content = await res.text();
         lastModified = Number(res.headers.get('X-Board-Mtime')) || 0;
         const result = parseTaskMarkdown(content);
         sections = result.sections;
         tasks = result.tasks;
         taskFileName = 'TASKS.md';
-        if (activeMainTab === 'tasks') filePathEl.textContent = boardRepoName ? boardRepoName + '/.tasks/TASKS.md' : 'TASKS.md';
+        if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+        hasChanges = false;
+        saveBtn.disabled = true;
+        updateSourceDisplay();
         if (initial) switchTaskView('board'); else renderTasks();
         markBoardUpdated();             // an agent (or reload) just refreshed the board
         showStatus(initial ? 'Live board connected' : 'Reloaded');
@@ -2523,9 +2802,10 @@
       try {
         const res = await fetch('/api/tasks', {
           method: 'POST',
-          headers: { 'Content-Type': 'text/markdown', 'X-Base-Mtime': String(lastModified) },
+          headers: serverWriteHeaders('text/markdown', { 'X-Base-Mtime': String(lastModified) }),
           body: toMarkdown(),
         });
+        verifyServerResponse(res);
         if (res.status === 409) {
           // An agent changed TASKS.md under us — reload latest rather than stomp its write.
           const latest = await res.text();
@@ -2554,9 +2834,18 @@
       if (evtSource) evtSource.close();
       try {
         evtSource = new EventSource('/api/events');
+        // Re-check identity on every initial connection/reconnect. A tab left open while its
+        // old server stops therefore catches localhost port reuse before the next user action.
+        evtSource.addEventListener('open', () => { loadBoardIdentityFromServer(); });
         evtSource.addEventListener('change', (e) => {
-          let kind = 'tasks';
-          try { kind = (JSON.parse(e.data) || {}).kind || 'tasks'; } catch (_) {}
+          let change = { kind: 'tasks' };
+          try { change = JSON.parse(e.data) || change; } catch (_) {}
+          if (serverBoardId && change.boardId && String(change.boardId) !== serverBoardId) {
+            failSourceIdentity(`This tab expected board ${serverBoardId}, but its live stream now identifies as ${change.boardId}.`);
+            return;
+          }
+          if (change.writer && change.writer === boardClientId) return;
+          const kind = change.kind || 'tasks';
           if (kind === 'tasks') {
             if (!hasChanges && !isSaving) loadTasksFromServer(false);
           } else if (kind === 'milestones') {
@@ -2631,6 +2920,7 @@
 
       const addSectionBtn = document.createElement('div');
       addSectionBtn.className = 'column';
+      addSectionBtn.dataset.addSection = 'true';
       addSectionBtn.style.cssText = 'background: transparent; border: 2px dashed var(--border); display: flex; align-items: center; justify-content: center; cursor: pointer; min-height: 120px;';
       addSectionBtn.innerHTML = '<span style="color: var(--text-muted); font-size: 14px; font-weight: 500;">+ Add Section</span>';
       addSectionBtn.addEventListener('click', () => startAddingSection(addSectionBtn));
@@ -2740,12 +3030,14 @@
         };
 
         sectionEl.addEventListener('dragover', (e) => {
+          if (!isTaskDrag(e)) return;
           e.preventDefault();
           sectionEl.classList.add('drag-over');
           showDropIndicator(e);
         });
 
         sectionEl.addEventListener('dragleave', (e) => {
+          if (!isTaskDrag(e)) return;
           if (!sectionEl.contains(e.relatedTarget)) {
             sectionEl.classList.remove('drag-over');
             tasksContainer.querySelectorAll('.list-drop-indicator').forEach(el => el.remove());
@@ -2753,13 +3045,17 @@
         });
 
         sectionEl.addEventListener('drop', (e) => {
+          if (!isTaskDrag(e)) return;
           e.preventDefault();
           sectionEl.classList.remove('drag-over');
           tasksContainer.querySelectorAll('.list-drop-indicator').forEach(el => el.remove());
-          const taskId = e.dataTransfer.getData('text/plain');
+          const taskId = dragId(e, 'task');
           if (!taskId) return;
           const { dropIndex } = getDropPosition(e, tasksContainer);
-          moveTask(taskId, section.id, dropIndex);
+          const beforeTaskId = tasksContainer.querySelectorAll('.list-item:not(.dragging)')[dropIndex]?.dataset.taskId || null;
+          activeDrag = null;
+          clearAllDragFeedback();
+          moveTask(taskId, section.id, beforeTaskId);
         });
 
         listView.appendChild(sectionEl);
@@ -2856,14 +3152,16 @@
       let dragged = false;
       item.addEventListener('dragstart', (e) => {
         dragged = true;
+        activeDrag = { kind: 'task', id: task.id };
         item.classList.add('dragging');
+        e.dataTransfer.setData(TASK_DRAG_TYPE, task.id);
         e.dataTransfer.setData('text/plain', task.id);
         e.dataTransfer.effectAllowed = 'move';
       });
       item.addEventListener('dragend', () => {
         item.classList.remove('dragging');
-        document.querySelectorAll('.list-drop-indicator').forEach(el => el.remove());
-        document.querySelectorAll('.list-section.drag-over').forEach(el => el.classList.remove('drag-over'));
+        activeDrag = null;
+        clearAllDragFeedback();
         setTimeout(() => { dragged = false; }, 60);
       });
       item.addEventListener('click', () => { if (!dragged) openTaskModal(task); });
@@ -3122,7 +3420,7 @@
         switchTaskView('board');
         startWatching();
         taskFileName = file.name;
-        filePathEl.textContent = file.name;
+        updateSourceDisplay();
         showStatus('Loaded ' + file.name);
       } catch (e) {
         if (e.name !== 'AbortError') { showStatus('Error: ' + e.message); }
@@ -3272,14 +3570,15 @@
         renderMemory();
         memoryEmptyState.style.display = 'none';
         memoryMainContent.style.display = 'flex';
-        if (activeMainTab === 'memory') filePathEl.textContent = '.tasks/ memory · live';
+        if (activeMainTab === 'memory') updateSourceDisplay();
       } catch (e) { showStatus('Memory load failed: ' + e.message); }
     }
 
     async function saveMemoryToServer(serverPath, content) {
-      await fetch('/api/memory/file?path=' + encodeURIComponent(serverPath), {
-        method: 'POST', headers: { 'Content-Type': 'text/markdown' }, body: content,
+      const res = await fetch('/api/memory/file?path=' + encodeURIComponent(serverPath), {
+        method: 'POST', headers: serverWriteHeaders('text/markdown'), body: content,
       });
+      verifyServerResponse(res);
     }
 
     async function loadMemoryDirectory() {
@@ -3328,7 +3627,7 @@
         renderMemory();
         memoryEmptyState.style.display = 'none';
         memoryMainContent.style.display = 'flex';
-        filePathEl.textContent = memoryDirHandle.name;
+        updateSourceDisplay();
         showStatus('Loaded memory from ' + memoryDirHandle.name);
 
       } catch (e) {
@@ -4038,11 +4337,12 @@
       if (!SERVER_MODE || !tmTask) return;
       if (activityNote) tmDetail.activity.push(`${nowStamp()} — ${activityNote}`);
       try {
-        await fetch('/api/task?id=' + encodeURIComponent(tmTask.id), {
+        const res = await fetch('/api/task?id=' + encodeURIComponent(tmTask.id), {
           method: 'POST',
-          headers: { 'Content-Type': 'text/markdown' },
+          headers: serverWriteHeaders('text/markdown'),
           body: serializeDetail(tmDetail),
         });
+        verifyServerResponse(res);
         markBoardUpdated();
       } catch (e) { showStatus('Detail save failed: ' + e.message); }
     }
@@ -4778,7 +5078,7 @@
           const row = document.createElement('div');
           row.className = 'tm-ms-archived';
           row.textContent = '· ' + line.replace(/^\[[xX]\]\s*/, '').replace(/\*\*/g, '');
-          row.title = 'Archived from Done — still counts toward progress';
+          row.title = 'Archived from Completed — still counts toward progress';
           childrenEl.appendChild(row);
         });
       }
@@ -4839,7 +5139,9 @@
       if (idx !== -1) milestones.splice(idx, 1);
       delete msDetails[m.id];
       if (activeMilestoneFilter === m.id) activeMilestoneFilter = null;
-      if (SERVER_MODE) fetch('/api/milestone?id=' + encodeURIComponent(m.id), { method: 'DELETE' }).catch(() => {});
+      if (SERVER_MODE) fetch('/api/milestone?id=' + encodeURIComponent(m.id), {
+        method: 'DELETE', headers: serverWriteHeaders(),
+      }).then(verifyServerResponse).catch(() => {});
       closeMilestoneModal();
       commitMilestones();
       if (kids.length) markChanged();   // the untag changed TASKS.md
@@ -5246,13 +5548,16 @@
     if (SERVER_MODE) {
       openTaskBtn.textContent = 'Reload';
       openMemoryBtn.textContent = 'Reload';
-      // Milestones load FIRST so the task-id backfill sees the full used-id pool.
-      loadMilestonesFromServer().then(() => loadTasksFromServer(true));
-      startWatching();
-      loadMemoryFromServer();
-      // Durable board identity → visible heading + tab title. config.json owns the title;
-      // /api/ping supplies only the repo-path fallback and multi-board path label.
-      loadBoardIdentityFromServer();
+      (async () => {
+        // Verify the canonical server root before reading any content. Milestones then load
+        // before tasks so task-id backfill sees the full used-id pool.
+        if (!await loadBoardIdentityFromServer()) return;
+        await loadMilestonesFromServer();
+        await loadTasksFromServer(true);
+        if (sourceMismatch) return;
+        startWatching();
+        loadMemoryFromServer();
+      })();
     }
   </script>
 </body>

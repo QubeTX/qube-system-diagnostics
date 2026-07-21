@@ -6,11 +6,12 @@ use ratatui::Frame;
 
 use crate::ui::common::*;
 
-pub fn render(frame: &mut Frame) {
+pub fn render(frame: &mut Frame, cargo_gui_completion_notice: bool) {
     let area = frame.area();
 
     // Center the selection box
-    let [center_y] = Layout::vertical([Constraint::Length(18)])
+    let box_height = if cargo_gui_completion_notice { 20 } else { 18 };
+    let [center_y] = Layout::vertical([Constraint::Length(box_height)])
         .flex(Flex::Center)
         .areas(area);
     let [center] = Layout::horizontal([Constraint::Length(60)])
@@ -23,7 +24,7 @@ pub fn render(frame: &mut Frame) {
         .border_style(Style::default().fg(COLOR_BORDER))
         .title_alignment(Alignment::Center);
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
             "SD-300 SYSTEM DIAGNOSTIC",
@@ -72,6 +73,14 @@ pub fn render(frame: &mut Frame) {
             Style::default().fg(COLOR_MUTED),
         )),
     ];
+
+    if cargo_gui_completion_notice {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Desktop app pending: run `sd300 update` once more to finish setup.",
+            Style::default().fg(COLOR_WARN),
+        )));
+    }
 
     let paragraph = Paragraph::new(lines)
         .block(block)

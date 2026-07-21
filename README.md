@@ -1,11 +1,22 @@
 # SD-300 System Diagnostic
 
-Real-time interactive TUI for system diagnostics and monitoring. Part of the **QubeTX 300 Series** alongside [TR-300](https://github.com/QubeTX/qube-machine-report) (Machine Report) and ND-300 (Network Diagnostic).
+Cross-platform system diagnostics with an established Rust/Ratatui CLI/TUI and
+an additive native desktop monitor. Part of the **QubeTX 300 Series** alongside
+[TR-300](https://github.com/QubeTX/qube-machine-report) (Machine Report) and
+ND-300 (Network Diagnostic).
+
+> **v3.0.0 qualification status:** the native GUI is being qualified on the six
+> release targets listed below. This branch documents the v3 release contract;
+> it does not claim that v3.0.0 has already passed every hosted or physical test
+> or that its artifacts have been published.
 
 ## Install
 
-The managed CLI channel is recommended on every platform. Installer filenames
+The managed channel is recommended on every platform. Installer filenames
 and public commands are stable and always resolve the latest qualified release.
+Beginning with the qualified v3.0.0 release, managed wrappers and native
+installers install the CLI/TUI and desktop app as one product. Installation and
+update never launch the GUI automatically.
 
 ### Windows (recommended)
 
@@ -37,8 +48,18 @@ cargo install tr300-tui
 
 Published releases are available as the `tr300-tui` crate and still install the
 lowercase `sd300` command. Raw Cargo has no post-install ownership hook, so it is
-the advanced unmanaged channel. Use the recommended managed wrapper when you
-want verified receipts, cross-method takeover, and deterministic uninstall.
+the advanced unmanaged CLI-only channel. Use the recommended managed wrapper
+when you want the complete CLI+GUI product, verified receipts, cross-method
+takeover, and deterministic uninstall.
+
+Existing Cargo-owned v2 installations have an intentional two-step transition:
+
+1. The first `sd300 update` uses the existing Cargo route to install the v3 CLI.
+2. Run `sd300 update` again at the same version. The v3 CLI installs the complete
+   managed CLI+GUI product and transactionally transfers ownership from Cargo.
+
+After that takeover, future updates and uninstall use the managed channel. An
+already complete managed installation remains a normal same-version no-op.
 
 After installation, the command surface is always `sd300`:
 
@@ -46,6 +67,7 @@ After installation, the command surface is always `sd300`:
 sd300
 sd300 --user
 sd300 --tech
+sd300 gui
 sd300 update
 sd300 --update
 sd300 install
@@ -63,6 +85,26 @@ cargo build --release
 ```
 
 The binary will be at `target/release/sd300` (or `sd300.exe` on Windows).
+Source builds produce the CLI/TUI only unless the separately pinned GUI build
+and packaging pipeline is also run.
+
+## Product Surfaces
+
+- Bare `sd300` still opens the existing User/Technician chooser. The v3 GUI does
+  not replace, wrap, or auto-launch from the terminal experience.
+- `sd300 gui` launches or focuses the installed desktop app. If its companion is
+  missing or corrupt, the command reports how to repair it with `sd300 install`
+  or `sd300 update`; it does not fall back to a different UI silently.
+- The GUI and TUI use the same Rust collectors, typed observations,
+  capabilities, warning rules, provenance, and redaction. Frontend-specific
+  rendering and runtime state remain isolated, and feature parity is a release
+  invariant.
+- The GUI exposes richer visual history, tables, details, and GUI-only
+  preferences without changing any TUI startup choice, default, keybinding, or
+  refresh cadence.
+- Its Warm Carbon visual system uses black/charcoal depth, restrained orange
+  energy, a subtle fading grid, Makira for primary copy and major numerals, and
+  IBM Plex Mono for compact technical text.
 
 ## Features
 
@@ -103,6 +145,7 @@ Navigate between 9 sections using number keys:
 sd300              # Interactive mode selection
 sd300 --user       # Launch directly into User Mode
 sd300 --tech       # Launch directly into Technician Mode
+sd300 gui          # Launch or focus the installed desktop monitor
 sd300 update       # Check for and install the latest release
 sd300 --update     # Legacy update flag
 sd300 --help       # Show help
@@ -119,7 +162,12 @@ staged privately and verified against SHA-256 sidecars, including the exact-tag
 cargo-dist payload used inside each managed wrapper. On Windows, updates rename
 the running image to one tightly bounded rollback sibling before replacement;
 Global MSI/EXE channels use one elevated same-channel worker so Restart Manager
-cannot terminate the reporting parent or strand an unverified update.
+cannot terminate the reporting parent or strand an unverified update. In v3,
+the selected artifact is composite: CLI and GUI payloads are verified before
+mutation, the running GUI is asked to quit, both components are verified after
+installation, and failure restores the prior CLI+GUI state together. A missing
+GUI at the current version is a repair; a complete installation is still a
+no-op. The GUI never opens as a side effect of install or update.
 
 If both Cargo and a managed receipt claim the same binary, the newer structured
 ownership record wins. Equal timestamps or contradictory evidence fail closed
@@ -127,20 +175,42 @@ and direct the user to run a fresh official installer. JSON lifecycle responses
 always include `recovery_url` and `requires_user_action` so automation can
 distinguish a completed transaction from a safe handoff to the user.
 
-`sd300 install` deliberately runs the preferred managed CLI installer. A fresh
+`sd300 install` deliberately runs the preferred managed installer. A fresh
 official install is authoritative even when it is the same or an older version:
 it removes only recognized prior SD-300 ownership after the replacement is
 verified, and rolls back on failure. Direct native installers apply the same
 policy within their scope and stop before mutation if an opposite Windows scope
-is registered. `sd300 uninstall` delegates to the proven owner, removes its
-binary, receipt or native registration, installer marker, and SD-300-only PATH
-entry, and preserves unrelated Cargo/Rust tooling and shared PATH entries.
+is registered. `sd300 uninstall` delegates to the proven owner and removes the
+owned CLI, GUI, engine, integration, launch-at-login entry, receipt or native
+registration, installer marker, SD-300-only PATH entry, and private application
+data. It preserves ambiguous paths, unrelated Cargo/Rust tooling, shared PATH
+entries, and user-exported reports.
 Windows native uninstall first retires the running image so MSI/EXE cleanup
 cannot terminate the command before it reports the final result.
 
 The legacy `sd300 --update` flag remains supported. Immutable 1.4.x fallback
 filenames remain as compatibility routers so existing clients can cross the v2
 cutover while preserving exact MSI/EXE/PKG ownership when it can be proven.
+
+## GUI Settings, Tray, and Startup
+
+The versioned settings document separates `shared` and `gui` namespaces. The
+`shared` namespace is reserved for preferences deliberately supported by both
+frontends. GUI mode, temperature unit, window geometry, chart density,
+navigation, tray, close behavior, launch-at-login, and reduced motion remain in
+`gui`. In particular, GUI choices never change the TUI chooser, sort defaults,
+temperature default, or session behavior.
+
+Settings live at `%APPDATA%\SD-300\settings.json` on Windows,
+`~/Library/Application Support/SD-300/settings.json` on macOS, and
+`${XDG_CONFIG_HOME:-~/.config}/sd300/settings.json` on Linux.
+
+Tray and launch-at-login are independent and default off. Windows and macOS use
+one app process with a supported tray/status item: Open restores the window and
+Quit terminates it. Closing hides the window only when tray mode is enabled;
+otherwise it exits. Native SDK 0.5.4 does not provide the required Linux tray,
+so Linux closes normally and launch-at-login must open a visible window rather
+than leave an undiscoverable background process.
 
 ## Keybindings
 
@@ -158,14 +228,44 @@ cutover while preserving exact MSI/EXE/PKG ownership when it can be proven.
 
 ## Platform Support
 
-| Platform | Target | Status |
-|----------|--------|--------|
-| Windows x86_64 | `x86_64-pc-windows-msvc` | Native install and diagnostics release gate |
-| macOS x86_64 | `x86_64-apple-darwin` | Native Intel PKG release gate |
-| macOS ARM | `aarch64-apple-darwin` | Native Apple Silicon PKG release gate |
-| Linux x86_64 | `x86_64-unknown-linux-gnu` | Managed lifecycle release gate |
-| Linux x86_64 (musl) | `x86_64-unknown-linux-musl` | Built and checksummed |
-| Linux ARM | `aarch64-unknown-linux-gnu` | Built and checksummed |
+| Platform | Target | v3 release requirement |
+|----------|--------|------------------------|
+| Windows x86_64 | `x86_64-pc-windows-msvc` | CLI/TUI + GUI + managed/native lifecycle |
+| macOS x86_64 | `x86_64-apple-darwin` | CLI/TUI + GUI in universal PKG, native Intel qualification |
+| macOS ARM64 | `aarch64-apple-darwin` | CLI/TUI + GUI in universal PKG, native Apple Silicon qualification |
+| Linux GNU x86_64 | `x86_64-unknown-linux-gnu` | CLI/TUI + GUI + private runtime + managed lifecycle |
+| Linux GNU ARM64 | `aarch64-unknown-linux-gnu` | CLI/TUI + GUI + private runtime + managed lifecycle |
+| Linux musl x86_64 | `x86_64-unknown-linux-musl` | CLI/TUI + GUI + private runtime + managed lifecycle |
+
+These are the six exact release targets. The x86_64 artifacts cover both Intel
+and AMD processors. Windows ARM64 and Linux musl ARM64 are not implied by the
+word “ARM” and are not part of this release matrix.
+
+## Performance and Release Trust
+
+The GUI keeps collector sampling live while publishing bounded, latest-only
+projections so a slow renderer cannot create work backlog. In a visible window,
+fast-topic samples must reach the GUI at least once per second after renderer
+optimization; hidden/tray mode may coalesce work to the summary data it needs.
+Release builds must pass Native SDK strict checks, lifecycle and compatibility
+matrices, path-leak
+scans, and foreground/hidden/soak performance tests. The v3 budgets are at most
+2% of one logical core foreground, 1% hidden/tray, 150 MiB working set/RSS,
+300 MiB private memory/commit, 16.7 ms frame-time p95, and 50 ms input-response
+p95 outside explicit scans, with no unbounded history, event, log, or memory
+growth. These are qualification thresholds, not claims about an unpublished
+candidate.
+
+Qualified release assets include SHA-256 sidecars, an SPDX SBOM, and GitHub
+artifact attestations. After a public release, verify a downloaded asset with:
+
+```sh
+gh attestation verify <asset> -R QubeTX/qube-system-diagnostics
+```
+
+Attestation proves the repository, workflow, commit, and artifact digest that
+produced the bytes. It is not a commercial code-signing identity and does not
+eliminate Windows SmartScreen warnings.
 
 ### Platform-Specific Features
 

@@ -4,7 +4,22 @@
 
 ## To-Do
 
+- [ ] **Qualify and release SD-300 v3.0.0 on all six existing targets** - pass compatibility, lifecycle, performance, provenance, hosted, physical Windows, and public-byte gates across Windows x86-64, macOS x86-64/ARM64, Linux GNU x86-64/ARM64, and Linux musl x86-64; probe additional SDK architectures without silently expanding the owned release contract (needs #gux, #cpl) (ms #v3n) #qv3
+
 ## Active
+
+- [ ] **Prove the pinned Native SDK, shared Rust engine, and Windows MSI vertical slice** - establish v2 compatibility baselines, a native CPU/memory GUI, reproducible dependencies, and an installed Corporate MSI smoke before full UI work (ms #v3n) #nsp
+  - [ ] Capture immutable v2.0.6 CLI/TUI compatibility fixtures
+  - [ ] Scaffold the pinned native-rendered Zig application without a local-path dependency
+  - [ ] Export and dynamically load the bounded Rust monitoring ABI
+  - [ ] Exercise the GUI with Native SDK automation and performance profiling
+  - [x] Build, install, launch, verify, and uninstall a Corporate MSI candidate
+- [ ] **Build the complete QubeTX-native diagnostic GUI** - implement all nine sections, both modes, settings, exports, accessibility, and supported tray behavior (needs #nsp) (ms #v3n) #gux
+  - [x] Lock the approved Warm Carbon design and bundled font hierarchy
+  - [x] Make all nine navigation destinations functional with bounded live projections
+  - [ ] Complete audience modes, settings, exports, sorting/filtering, and unavailable-state parity
+  - [ ] Qualify keyboard, scaling, tray/autostart, and sustained renderer performance
+- [ ] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration (needs #nsp) (ms #v3n) #cpl
 
 ## Done
 

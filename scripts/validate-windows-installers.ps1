@@ -24,6 +24,28 @@ function Invoke-Checked([string]$FilePath, [string[]]$Arguments, [int[]]$Allowed
     return $process.ExitCode
 }
 
+function Invoke-GuiSelfTest([string]$Gui, [string]$Context) {
+    $tempBase = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
+    $tempRoot = Join-Path $tempBase "sd300-gui-self-test-$([Guid]::NewGuid().ToString('N'))"
+    $stdout = Join-Path $tempRoot 'stdout.json'
+    $stderr = Join-Path $tempRoot 'stderr.txt'
+    $null = New-Item -ItemType Directory -Path $tempRoot -Force
+    try {
+        $process = Start-Process -FilePath $Gui -WorkingDirectory (Split-Path -Parent $Gui) `
+            -ArgumentList @('--self-test', '--json') -Wait -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            Lines = @(Get-Content -LiteralPath $stdout -ErrorAction SilentlyContinue)
+            ErrorText = @(Get-Content -LiteralPath $stderr -ErrorAction SilentlyContinue) -join "`n"
+            Context = $Context
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Set-ManagedFixture {
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $managedBinary) -Force
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $managedReceipt) -Force
@@ -67,6 +89,48 @@ function Assert-NativeInstall([string]$Binary, [string]$Channel) {
     if ($snapshotExitCode -ne 0 -or $snapshot.target_os -ne 'windows' -or $snapshot.capabilities.Count -lt 10) {
         throw "$Channel diagnostic snapshot did not exercise the Windows collector set"
     }
+
+    $gui = Join-Path (Split-Path -Parent (Split-Path -Parent $Binary)) 'app\sd300-gui.exe'
+    if (-not (Test-Path -LiteralPath $gui -PathType Leaf)) {
+        throw "$Channel GUI companion is missing: $gui"
+    }
+    $notices = Join-Path (Split-Path -Parent $gui) 'licenses'
+    foreach ($notice in @(
+        'PRODUCT-LICENSE.md',
+        'IBM-PLEX-OFL-1.1.txt',
+        'NATIVE-SDK-APACHE-2.0.txt'
+    )) {
+        $noticePath = Join-Path $notices $notice
+        if (-not (Test-Path -LiteralPath $noticePath -PathType Leaf) -or
+            (Get-Item -LiteralPath $noticePath).Length -eq 0) {
+            throw "$Channel GUI companion is missing required notice: $noticePath"
+        }
+    }
+    $guiResult = Invoke-GuiSelfTest $gui $Channel
+    if ($guiResult.ExitCode -ne 0 -or $guiResult.Lines.Count -ne 1 -or
+        -not ($guiResult.Lines[0] | ConvertFrom-Json).success) {
+        throw "$Channel GUI companion failed its installed self-test (exit $($guiResult.ExitCode)): $($guiResult.ErrorText)"
+    }
+}
+
+function Start-InstalledGui([string]$Root, [string]$Context) {
+    $gui = Join-Path $Root 'app\sd300-gui.exe'
+    $process = Start-Process -FilePath $gui -WorkingDirectory (Split-Path -Parent $gui) -PassThru
+    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+        if ($process.HasExited) {
+            throw "$Context GUI exited before the lifecycle test could begin (exit $($process.ExitCode))"
+        }
+        if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) { return $process }
+        Start-Sleep -Milliseconds 100
+    }
+    throw "$Context GUI did not become observable"
+}
+
+function Assert-GuiStopped($Process, [string]$Context) {
+    [void]$Process.WaitForExit(10000)
+    if (-not $Process.HasExited) {
+        throw "$Context did not stop the GUI through its authenticated lifecycle endpoint"
+    }
 }
 
 function Remove-Inno([string]$Root) {
@@ -103,21 +167,33 @@ try {
     Set-ManagedFixture
     Invoke-Checked 'msiexec.exe' @('/i', $globalMsi, '/qn', '/norestart') @(0, 1641, 3010)
     Assert-NativeInstall (Join-Path $globalRoot 'bin\sd300.exe') 'msi-global'
+    $guiProcess = Start-InstalledGui $globalRoot 'Global MSI repair'
+    Invoke-Checked 'msiexec.exe' @('/i', $globalMsi, '/qn', '/norestart', 'REINSTALL=ALL', 'REINSTALLMODE=vomus') @(0, 1641, 3010)
+    Assert-GuiStopped $guiProcess 'Global MSI repair'
 
     $opposite = Invoke-Checked 'msiexec.exe' @('/i', $corporateMsi, '/qn', '/norestart') @(1603)
     if ($opposite -ne 1603 -or (Test-Path -LiteralPath (Join-Path $corporateRoot 'bin\sd300.exe'))) {
         throw 'Corporate MSI did not stop before mutation while Global was registered'
     }
 
+    $guiProcess = Start-InstalledGui $globalRoot 'Global MSI-to-EXE transition'
     Invoke-Checked $globalExe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+    Assert-GuiStopped $guiProcess 'Global MSI-to-EXE transition'
     Assert-NativeInstall (Join-Path $globalRoot 'bin\sd300.exe') 'exe-global'
+    $guiProcess = Start-InstalledGui $globalRoot 'Global EXE uninstall'
     Remove-Inno $globalRoot
+    Assert-GuiStopped $guiProcess 'Global EXE uninstall'
 
     Set-ManagedFixture
     Invoke-Checked 'msiexec.exe' @('/i', $corporateMsi, '/qn', '/norestart') @(0, 1641, 3010)
     Assert-NativeInstall (Join-Path $corporateRoot 'bin\sd300.exe') 'msi-corporate'
+    $guiProcess = Start-InstalledGui $corporateRoot 'Corporate MSI repair'
+    Invoke-Checked 'msiexec.exe' @('/i', $corporateMsi, '/qn', '/norestart', 'REINSTALL=ALL', 'REINSTALLMODE=vomus') @(0, 1641, 3010)
+    Assert-GuiStopped $guiProcess 'Corporate MSI repair'
 
+    $guiProcess = Start-InstalledGui $corporateRoot 'Corporate MSI-to-EXE transition'
     Invoke-Checked $corporateExe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+    Assert-GuiStopped $guiProcess 'Corporate MSI-to-EXE transition'
     Assert-NativeInstall (Join-Path $corporateRoot 'bin\sd300.exe') 'exe-corporate'
 } finally {
     Remove-Inno $globalRoot

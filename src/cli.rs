@@ -12,9 +12,17 @@ pub enum Command {
     Snapshot(ReportArgs),
     /// Show which diagnostic capabilities are available on this machine.
     Capabilities(ReportArgs),
+    /// Open or focus the installed SD-300 desktop monitor.
+    Gui,
     /// Installer-only cleanup used to make a fresh native install authoritative.
     #[command(hide = true)]
     MigrateCleanup(MigrateArgs),
+    /// Installer-only owned GUI state cleanup used by direct uninstallers.
+    #[command(hide = true)]
+    CleanupGuiState(CleanupGuiStateArgs),
+    /// Installer-only graceful GUI shutdown that preserves user preferences.
+    #[command(hide = true)]
+    StopGui(StopGuiArgs),
     /// Delete a renamed Windows live-image backup after a verified update.
     #[command(hide = true)]
     UpdateCleanup(UpdateCleanupArgs),
@@ -100,6 +108,20 @@ pub struct UpdateWorkerArgs {
     pub update_backup: std::path::PathBuf,
 }
 
+#[derive(Args, Debug, Clone, Default, PartialEq, Eq)]
+pub struct CleanupGuiStateArgs {
+    /// Suppress human-readable success output.
+    #[arg(long, hide = true)]
+    pub quiet: bool,
+}
+
+#[derive(Args, Debug, Clone, Default, PartialEq, Eq)]
+pub struct StopGuiArgs {
+    /// Suppress human-readable success output.
+    #[arg(long, hide = true)]
+    pub quiet: bool,
+}
+
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
 pub struct InstallWorkerArgs {
     /// Exact Global Windows channel selected by the unelevated parent.
@@ -152,6 +174,7 @@ EXAMPLES:
   sd300 update   Check for updates and install
   sd300 install  Install latest through the managed CLI channel
   sd300 uninstall Remove the proven installed channel
+  sd300 gui      Open or focus the installed desktop monitor
   sd300 snapshot --json       Redacted diagnostic snapshot
   sd300 capabilities --json   Capability and availability states
   sd300 --update Same as 'sd300 update' (legacy flag form)
@@ -349,6 +372,17 @@ mod tests {
             uninstall_worker.command,
             Some(Command::UninstallWorker(_))
         ));
+    }
+
+    #[test]
+    fn parses_additive_gui_action_without_changing_bare_launch() {
+        let gui = Cli::try_parse_from(["sd300", "gui"]).expect("GUI action should parse");
+        assert_eq!(gui.command, Some(Command::Gui));
+
+        let bare = Cli::try_parse_from(["sd300"]).expect("bare TUI launch should still parse");
+        assert_eq!(bare.command, None);
+        assert!(!bare.user);
+        assert!(!bare.tech);
     }
 
     #[test]

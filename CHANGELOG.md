@@ -2,6 +2,79 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [3.0.0] - Unreleased (qualification)
+
+This entry describes the v3 candidate and release contract. It is not evidence
+that hosted, native-hardware, installer, performance, or public-artifact
+qualification has completed.
+
+### Added
+
+- Added a native-rendered Vercel Native SDK desktop monitor alongside the
+  existing Rust CLI/Ratatui TUI, with Overview, CPU, Memory, Disk, GPU, Network,
+  Processes, Thermals, and Drivers surfaces backed by the same collector model.
+- Added `sd300 gui` to launch or focus the installed app without changing bare
+  `sd300`, which continues to open the existing User/Technician chooser.
+- Added a dynamically loaded Rust GUI engine with versioned, bounded,
+  latest-only projections, explicit ABI/schema/product/target checks, and
+  bundle-relative loading. The app owns a separate collector runtime; it does
+  not move or replace the TUI event loop.
+- Added GUI-only versioned preferences for mode, temperature unit, window
+  geometry, chart density, navigation, tray, close behavior, launch-at-login,
+  and reduced motion. These settings do not alter TUI startup or session
+  defaults.
+- Added Windows tray and macOS status-item lifecycles with Open and Quit, both
+  default off. Linux intentionally exits on close because Native SDK 0.5.4 does
+  not supply the required tray implementation.
+- Added the Warm Carbon visual system with a restrained black/charcoal/orange
+  field and subtle grid, bundled Makira for primary copy and major numerals, and
+  IBM Plex Mono for technical labels and compact measurements.
+- Added GUI self-test, product-version consistency, dependency lock,
+  developer-path leakage, performance, lifecycle, and compatibility
+  qualification surfaces.
+
+### Changed
+
+- Extended managed wrappers, Windows MSI/EXE packages, the macOS universal PKG,
+  and Linux managed packages to treat the CLI/TUI, GUI, Rust engine, assets,
+  integrations, and Linux private runtime as one composite product. Install and
+  update remain dormant: they never open the app automatically.
+- Extended proven-owner update, repair, rollback, and uninstall semantics to the
+  GUI companion. A complete same-version install is still a no-op; a missing or
+  corrupt GUI at the current version is a repair; uninstall removes owned CLI
+  and GUI state while preserving ambiguous paths and user-exported reports.
+- Defined the intentional Cargo v2 migration exception: the first update uses
+  Cargo to install the v3 CLI, and the second same-version update performs a
+  transactional managed CLI+GUI takeover. Later operations use the managed
+  owner.
+- Made GUI/TUI feature parity a release invariant. Collector, capability,
+  warning, provenance, redaction, and hardware-data improvements must be shared
+  rather than independently reimplemented in either frontend.
+- Preserved the 1/3/5/15/60-second engine cadences and required visible-window
+  fast-topic presentation at least once per second after renderer optimization;
+  only hidden/tray mode may coalesce to its required summaries.
+- Kept the six established release targets as hard gates:
+  `x86_64-pc-windows-msvc`, `x86_64-apple-darwin`,
+  `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu`, and `x86_64-unknown-linux-musl`. x86_64 covers
+  both Intel and AMD; this does not add a Windows ARM64 release.
+- Pinned the GUI distribution graph to `@native-sdk/cli` 0.5.4 and Zig 0.16.0,
+  including immutable package URLs, integrity/content hashes, per-host Zig
+  checksums, and the reviewed Native SDK renderer patch. Global installations
+  and developer-local dependency paths are rejected by distribution checks.
+
+### Release qualification
+
+- Requires the existing CLI/TUI contracts and lifecycle behavior to remain
+  compatible while qualifying the composite product on every release target.
+- Requires foreground, hidden/tray, and soak performance gates: at most 2% of
+  one logical core foreground, 1% hidden/tray, 150 MiB working set/RSS,
+  300 MiB private memory/commit, 16.7 ms frame-time p95, 50 ms input-response
+  p95 outside explicit scans, and no unbounded growth.
+- Requires SHA-256 sidecars, an SPDX SBOM, GitHub build-provenance and SBOM
+  attestations, exact-tag asset verification, and public-byte verification
+  before v3.0.0 is treated as released.
+
 ## [2.0.6] - 2026-07-19
 
 ### Fixed

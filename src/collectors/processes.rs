@@ -3,6 +3,14 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use sysinfo::System;
 
+use crate::types::ProcessSortKey;
+
+#[cfg(target_os = "windows")]
+#[path = "processes_windows.rs"]
+mod windows_gui;
+#[cfg(target_os = "windows")]
+pub use windows_gui::GuiProcessSampler;
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ProcessData {
     pub list: Vec<ProcessInfo>,
@@ -134,5 +142,160 @@ pub fn collect(sys: &System) -> ProcessData {
         list: processes,
         total_count,
         total_threads: 0,
+    }
+}
+
+fn is_ranked_consumer(pid: u32) -> bool {
+    pid != 0
+}
+
+#[cfg(any(target_os = "windows", test))]
+pub(super) fn sort_process_info_rows(rows: &mut [ProcessInfo], sort: ProcessSortKey) {
+    match sort {
+        ProcessSortKey::Cpu => rows.sort_by(|a, b| {
+            b.cpu_percent
+                .total_cmp(&a.cpu_percent)
+                .then_with(|| a.pid.cmp(&b.pid))
+        }),
+        ProcessSortKey::Memory => rows.sort_by(|a, b| {
+            b.memory_bytes
+                .cmp(&a.memory_bytes)
+                .then_with(|| a.pid.cmp(&b.pid))
+        }),
+        ProcessSortKey::Pid => rows.sort_by_key(|process| process.pid),
+        ProcessSortKey::Name => rows.sort_by_cached_key(|process| {
+            (
+                process.friendly_name.to_ascii_lowercase(),
+                process.name.to_ascii_lowercase(),
+                process.pid,
+            )
+        }),
+    }
+}
+
+/// Build the GUI's bounded process projection without allocating names and
+/// status strings for every process on the machine. The TUI keeps using
+/// `collect` above and retains its top-100 contract.
+pub fn collect_limited(sys: &System, limit: usize, sort: ProcessSortKey) -> ProcessData {
+    let total_memory = sys.total_memory();
+    let total_count = sys.processes().len();
+    // PID 0 is an operating-system idle accounting row on Windows, not a
+    // process consuming capacity. Keep it in the total inventory count but
+    // never rank it among actionable GUI consumers.
+    let mut ranked = sys
+        .processes()
+        .values()
+        .filter(|process| is_ranked_consumer(process.pid().as_u32()))
+        .collect::<Vec<_>>();
+    match sort {
+        ProcessSortKey::Cpu => ranked.sort_by(|a, b| {
+            b.cpu_usage()
+                .total_cmp(&a.cpu_usage())
+                .then_with(|| a.pid().as_u32().cmp(&b.pid().as_u32()))
+        }),
+        ProcessSortKey::Memory => ranked.sort_by(|a, b| {
+            b.memory()
+                .cmp(&a.memory())
+                .then_with(|| a.pid().as_u32().cmp(&b.pid().as_u32()))
+        }),
+        ProcessSortKey::Pid => ranked.sort_by_key(|process| process.pid().as_u32()),
+        ProcessSortKey::Name => ranked.sort_by_cached_key(|process| {
+            let name = process.name().to_string_lossy();
+            (
+                get_friendly_name(&name).to_ascii_lowercase(),
+                name.to_ascii_lowercase(),
+                process.pid().as_u32(),
+            )
+        }),
+    }
+    ranked.truncate(limit);
+
+    let list = ranked
+        .into_iter()
+        .map(|process| {
+            let name = process.name().to_string_lossy().to_string();
+            let memory_bytes = process.memory();
+            ProcessInfo {
+                pid: process.pid().as_u32(),
+                friendly_name: get_friendly_name(&name),
+                name,
+                cpu_percent: process.cpu_usage(),
+                memory_bytes,
+                memory_percent: if total_memory > 0 {
+                    (memory_bytes as f64 / total_memory as f64) * 100.0
+                } else {
+                    0.0
+                },
+                status: format!("{:?}", process.status()),
+            }
+        })
+        .collect();
+
+    ProcessData {
+        list,
+        total_count,
+        total_threads: 0,
+    }
+}
+
+#[cfg(test)]
+mod gui_projection_tests {
+    use super::*;
+
+    fn row(pid: u32, name: &str, friendly_name: &str, cpu: f32, memory: u64) -> ProcessInfo {
+        ProcessInfo {
+            pid,
+            name: name.into(),
+            friendly_name: friendly_name.into(),
+            cpu_percent: cpu,
+            memory_bytes: memory,
+            memory_percent: 0.0,
+            status: "Run".into(),
+        }
+    }
+
+    fn fixture() -> Vec<ProcessInfo> {
+        vec![
+            row(40, "zulu.exe", "Zulu", 20.0, 100),
+            row(20, "alpha-b.exe", "Alpha", 5.0, 900),
+            row(10, "alpha-a.exe", "Alpha", 20.0, 500),
+        ]
+    }
+
+    #[test]
+    fn gui_rows_support_all_full_inventory_sort_keys_with_stable_pid_ties() {
+        let mut rows = fixture();
+        sort_process_info_rows(&mut rows, ProcessSortKey::Cpu);
+        assert_eq!(
+            rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+            [10, 40, 20]
+        );
+
+        let mut rows = fixture();
+        sort_process_info_rows(&mut rows, ProcessSortKey::Memory);
+        assert_eq!(
+            rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+            [20, 10, 40]
+        );
+
+        let mut rows = fixture();
+        sort_process_info_rows(&mut rows, ProcessSortKey::Pid);
+        assert_eq!(
+            rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+            [10, 20, 40]
+        );
+
+        let mut rows = fixture();
+        sort_process_info_rows(&mut rows, ProcessSortKey::Name);
+        assert_eq!(
+            rows.iter().map(|row| row.pid).collect::<Vec<_>>(),
+            [10, 20, 40]
+        );
+    }
+
+    #[test]
+    fn pid_zero_is_inventory_only_and_never_an_actionable_consumer() {
+        assert!(!is_ranked_consumer(0));
+        assert!(is_ranked_consumer(4));
     }
 }

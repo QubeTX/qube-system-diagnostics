@@ -87,7 +87,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='SD-300 real-time interactive system diagnostic TUI (Corporate Edition, per-user install)'
+            Description='SD-300 terminal diagnostics and native desktop monitor (Corporate Edition, per-user install)'
             Manufacturer='Emmett S'
             InstallerVersion='450'
             Languages='1033'
@@ -117,6 +117,15 @@
 
         <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
         <Property Id='DiskPrompt' Value='sd300 (Corporate Edition) Installation'/>
+        <Property Id='SD300PRESERVEGUISTATE' Secure='yes'/>
+        <Property Id='SD300OWNEDNATIVEROOT'>
+            <RegistrySearch Id='FindOwnedCorporateNativeRoot'
+                Root='HKCU'
+                Key='Software\SD300'
+                Name='NativeInstallRootCorporate'
+                Type='directory'
+                Win64='yes'/>
+        </Property>
         <Property Id='CONFLICTING_INNO_UNINSTALL'>
             <RegistrySearch Id='FindConflictingCorporateInno'
                 Root='HKCU'
@@ -173,6 +182,15 @@
                             Type='string'
                             Value='msi-corporate'/>
                         </Component>
+                        <Component Id='NativeInstallRootMarker' Guid='9D185517-F4AC-470A-B1E5-F76262460F36' Win64='yes'>
+                            <RegistryValue
+                                Root='HKCU'
+                                Key='Software\SD300'
+                                Name='NativeInstallRootCorporate'
+                                Type='string'
+                                Value='[APPLICATIONFOLDER]'
+                                KeyPath='yes'/>
+                        </Component>
                         <Directory Id='Bin' Name='bin'>
                             <Component Id='Path' Guid='4CE5434A-02B8-45E8-A15F-D8FC9C1C609F' KeyPath='yes'>
                                 <!-- User PATH (HKCU\Environment\Path), not system PATH. -->
@@ -194,7 +212,75 @@
                                     KeyPath='yes'/>
                             </Component>
                         </Directory>
+                        <Directory Id='Gui' Name='app'>
+                            <Component Id='GuiBinaries' Guid='990B1377-72E1-456B-95FC-7E17E3D02818'>
+                                <File
+                                    Id='GuiExe'
+                                    Name='sd300-gui.exe'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\sd300-gui.exe'
+                                    KeyPath='yes'/>
+                                <File
+                                    Id='GuiEngine'
+                                    Name='sd300_engine.dll'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\sd300_engine.dll'/>
+                            </Component>
+                            <Directory Id='GuiAssets' Name='assets'>
+                                <Component Id='GuiIconAsset' Guid='9B9F4946-F13E-4C74-999C-9723231930D8'>
+                                    <File
+                                        Id='GuiIconPng'
+                                        Name='icon.png'
+                                        DiskId='1'
+                                        Source='$(var.NativeGuiBinDir)\assets\icon.png'
+                                        KeyPath='yes'/>
+                                </Component>
+                            </Directory>
+                            <Directory Id='GuiLicenses' Name='licenses'>
+                                <Component Id='GuiProductLicenseNotice' Guid='87549428-78A2-4F2F-A204-BEEA777CAD4E'>
+                                    <File Id='GuiProductLicense'
+                                        Name='PRODUCT-LICENSE.md'
+                                        DiskId='1'
+                                        Source='$(var.NativeGuiBinDir)\licenses\PRODUCT-LICENSE.md'
+                                        KeyPath='yes'/>
+                                </Component>
+                                <Component Id='GuiIbmPlexLicenseNotice' Guid='DA4FD596-C68E-406A-9B79-A8CD5919E063'>
+                                    <File Id='GuiIbmPlexLicense'
+                                        Name='IBM-PLEX-OFL-1.1.txt'
+                                        DiskId='1'
+                                        Source='$(var.NativeGuiBinDir)\licenses\IBM-PLEX-OFL-1.1.txt'
+                                        KeyPath='yes'/>
+                                </Component>
+                                <Component Id='GuiNativeSdkLicenseNotice' Guid='445BD442-AA51-4A15-8879-92514A5AE343'>
+                                    <File Id='GuiNativeSdkLicense'
+                                        Name='NATIVE-SDK-APACHE-2.0.txt'
+                                        DiskId='1'
+                                        Source='$(var.NativeGuiBinDir)\licenses\NATIVE-SDK-APACHE-2.0.txt'
+                                        KeyPath='yes'/>
+                                </Component>
+                            </Directory>
+                        </Directory>
                     </Directory>
+                </Directory>
+            </Directory>
+            <Directory Id='ProgramMenuFolder'>
+                <Directory Id='ApplicationProgramsFolder' Name='SD-300'>
+                    <Component Id='GuiStartMenuShortcut' Guid='5E8B607B-1C42-4762-8E07-3A3A1653F885'>
+                        <Shortcut
+                            Id='GuiStartMenuShortcutEntry'
+                            Name='SD-300'
+                            Description='Open the SD-300 native system monitor'
+                            Target='[Gui]sd300-gui.exe'
+                            WorkingDirectory='Gui'/>
+                        <RemoveFolder Id='RemoveApplicationProgramsFolder' On='uninstall'/>
+                        <RegistryValue
+                            Root='HKCU'
+                            Key='Software\SD300'
+                            Name='GuiStartMenuShortcut'
+                            Type='integer'
+                            Value='1'
+                            KeyPath='yes'/>
+                    </Component>
                 </Directory>
             </Directory>
         </Directory>
@@ -211,6 +297,13 @@
 
             <ComponentRef Id='binary0'/>
             <ComponentRef Id='InstallSourceMarker'/>
+            <ComponentRef Id='NativeInstallRootMarker'/>
+            <ComponentRef Id='GuiBinaries'/>
+            <ComponentRef Id='GuiIconAsset'/>
+            <ComponentRef Id='GuiProductLicenseNotice'/>
+            <ComponentRef Id='GuiIbmPlexLicenseNotice'/>
+            <ComponentRef Id='GuiNativeSdkLicenseNotice'/>
+            <ComponentRef Id='GuiStartMenuShortcut'/>
 
             <Feature
                 Id='Environment'
@@ -223,10 +316,15 @@
         </Feature>
 
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+        <SetProperty Id='StopGuiBeforeMutation'
+            Value='&quot;[SD300OWNEDNATIVEROOT]bin\sd300.exe&quot; stop-gui --quiet'
+            Sequence='execute'
+            Before='StopGuiBeforeMutation'/>
 
         <!-- MIC-1 strict convergence custom actions - see wix/main.wxs.
-             Deferred and impersonated; FileKey='exe0' avoids WixUtilExtension
-             (the Corporate MSI links only WixUIExtension). Return='check' makes
+             The lifecycle action uses WixQuietExec so its console-subsystem
+             helper remains hidden. Other actions are deferred and impersonated;
+             FileKey='exe0' runs the installed CLI. Return='check' makes
              incomplete ownership convergence fail the package transaction, and
              `NOT Installed` limits it to install/upgrade rather than uninstall or
              repair. -->
@@ -238,7 +336,7 @@
             Return='check'/>
         <CustomAction Id='RemoveConflictingInno'
             Directory='TARGETDIR'
-            ExeCommand='[CONFLICTING_INNO_UNINSTALL] /VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
+            ExeCommand='[CONFLICTING_INNO_UNINSTALL] /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /PRESERVEGUISTATE'
             Execute='deferred'
             Impersonate='yes'
             Return='check'/>
@@ -248,16 +346,47 @@
             Execute='deferred'
             Impersonate='yes'
             Return='check'/>
+        <CustomAction Id='StopGuiBeforeMutation'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
+        <CustomAction Id='VerifyGuiCompanion'
+            Directory='TARGETDIR'
+            ExeCommand='&quot;[Gui]sd300-gui.exe&quot; --self-test --json'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
+        <CustomAction Id='CleanupGuiState'
+            FileKey='exe0'
+            ExeCommand='cleanup-gui-state --quiet'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
 
         <InstallExecuteSequence>
+            <Custom Action='StopGuiBeforeMutation' Before='RemoveExistingProducts'>
+                <![CDATA[SD300OWNEDNATIVEROOT]]>
+            </Custom>
             <Custom Action='RemoveConflictingInno' Before='InstallFiles'>
                 <![CDATA[CONFLICTING_INNO_UNINSTALL AND NOT REMOVE~="ALL"]]>
             </Custom>
-            <Custom Action='CleanOtherEdition' Before='CleanCargoCopy'>
+            <!-- Qualify the newly installed companion before any cleanup that
+                 mutates pre-existing Cargo or other-edition ownership. If the
+                 self-test fails, MSI rollback can remove only this package and
+                 leave the user's prior command untouched. -->
+            <Custom Action='VerifyGuiCompanion' After='InstallFiles'>
+                <![CDATA[NOT REMOVE~="ALL"]]>
+            </Custom>
+            <Custom Action='CleanOtherEdition' After='VerifyGuiCompanion'>
                 <![CDATA[NOT Installed]]>
             </Custom>
-            <Custom Action='CleanCargoCopy' Before='InstallFinalize'>
+            <Custom Action='CleanCargoCopy' After='CleanOtherEdition'>
                 <![CDATA[NOT Installed]]>
+            </Custom>
+            <Custom Action='CleanupGuiState' Before='RemoveFiles'>
+                <![CDATA[REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE AND NOT SD300PRESERVEGUISTATE]]>
             </Custom>
         </InstallExecuteSequence>
 

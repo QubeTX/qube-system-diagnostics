@@ -1,0 +1,6 @@
+error: unrecognized subcommand 'definitely-not-command'
+
+Usage: sd300 [OPTIONS]
+       sd300 <COMMAND>
+
+For more information, try '--help'.

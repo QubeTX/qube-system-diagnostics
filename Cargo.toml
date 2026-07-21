@@ -1,6 +1,6 @@
 [package]
 name = "tr300-tui"
-version = "2.0.6"
+version = "3.0.0"
 edition = "2021"
 rust-version = "1.95"
 authors = ["Emmett S <hey@emmetts.dev>"]
@@ -60,9 +60,11 @@ winapi = { version = "0.3", features = [
     "errhandlingapi",
     "handleapi",
     "processthreadsapi",
+    "psapi",
     "shellapi",
     "sysinfoapi",
     "synchapi",
+    "tlhelp32",
     "winbase",
     "wincon",
     "winuser",
@@ -92,6 +94,9 @@ predicates = "3"
 inherits = "release"
 lto = "thin"
 
+[workspace]
+exclude = ["gui-engine"]
+
 # Config for 'dist'
 [workspace.metadata.dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
@@ -103,7 +108,11 @@ allow-dirty = ["ci", "msi"]
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
-installers = ["shell", "powershell", "msi"]
+# The composite Global/Corporate MSI lanes are built after the GUI companion
+# qualifies. Publishing cargo-dist's earlier CLI-only MSI would either fail on
+# the GUI-aware WiX template or expose an incomplete v3 product. The Windows
+# producer retains its historical filename as an exact-byte Global-MSI alias.
+installers = ["shell", "powershell"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
 # Which actions to run on pull requests

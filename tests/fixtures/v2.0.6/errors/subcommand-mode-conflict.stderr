@@ -1,0 +1,5 @@
+error: unexpected argument '--tech' found
+
+Usage: sd300 update [OPTIONS]
+
+For more information, try '--help'.

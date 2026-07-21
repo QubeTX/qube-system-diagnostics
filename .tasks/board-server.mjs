@@ -158,6 +158,16 @@ function sameRoot(a, b) {
   return norm(a) === norm(b);
 }
 
+function boardIdentity() {
+  const root = boardRoot();
+  const normalized = process.platform === 'win32' ? root.toLowerCase() : root;
+  return {
+    boardId: crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 16),
+    root,
+    tasksPath: path.join(root, 'TASKS.md'),
+  };
+}
+
 // Resolve "is OUR server already up?" — resolves with the state only when the responder on the
 // recorded port is a shaughv board serving THIS .tasks/ folder. A matching token with a different
 // root means another repo's board holds the port (our state file is stale): that is NOT ours, and
@@ -232,15 +242,32 @@ function resolveMemoryPath(relPath) {
 async function serve({ open = false, port: requested } = {}) {
   const port = await findFreePort(requested || DEFAULT_PORT);
   const sseClients = new Set();
-  let lastSelfWrite = 0; // suppress echo of our own writes
+  const lastSelfWrite = new Map(); // kind → {at, revision}; suppress only its watcher echo
+  const watcherDebounce = new Map();
 
-  function broadcast(kind) {
-    const payload = `event: change\ndata: ${JSON.stringify({ kind, at: Date.now() })}\n\n`;
+  function broadcast(kind, writer = '') {
+    const payload = `event: change\ndata: ${JSON.stringify({
+      kind, at: Date.now(), boardId: boardIdentity().boardId, writer,
+    })}\n\n`;
     for (const res of sseClients) { try { res.write(payload); } catch { /* dropped */ } }
   }
 
+  // A browser write must notify every *other* tab immediately. fs.watch echoes are suppressed
+  // for this kind only; the writing tab already has the state, while sibling tabs need the SSE.
+  function markSelfWrite(kind, writer = '', revision = 0) {
+    lastSelfWrite.set(kind, { at: Date.now(), revision: Number(revision) || 0 });
+    clearTimeout(watcherDebounce.get(kind));
+    watcherDebounce.delete(kind);
+    broadcast(kind, writer);
+  }
+
   function send(res, status, type, body, extra = {}) {
-    res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', ...extra });
+    res.writeHead(status, {
+      'Content-Type': type,
+      'Cache-Control': 'no-store',
+      'X-Board-Id': boardIdentity().boardId,
+      ...extra,
+    });
     res.end(body);
   }
 
@@ -270,12 +297,24 @@ async function serve({ open = false, port: requested } = {}) {
     try {
       const url = new URL(req.url, `http://127.0.0.1:${port}`);
       const pathname = url.pathname;
+      const identity = boardIdentity();
+
+      // A current dashboard names the board it expects on every mutation. If a long-lived
+      // localhost tab's port was inherited by another board, fail closed instead of writing
+      // into that other repo. Older dashboards omit the header and remain compatible.
+      const expectedBoardId = String(req.headers['x-expected-board-id'] || '');
+      if (req.method !== 'GET' && req.method !== 'HEAD'
+          && expectedBoardId && expectedBoardId !== identity.boardId) {
+        return send(res, 409, 'application/json', JSON.stringify({
+          error: 'board identity mismatch', expectedBoardId, actualBoardId: identity.boardId,
+        }));
+      }
 
       if (pathname === '/api/ping') {
         // Identity, not just liveness: multiple boards can share one machine, and a port can be
         // inherited by another repo's board. Clients must match `root` before trusting this server.
         return send(res, 200, 'application/json', JSON.stringify({
-          ok: PING_TOKEN, root: boardRoot(), pid: process.pid, port,
+          ok: PING_TOKEN, ...identity, pid: process.pid, port,
         }));
       }
 
@@ -316,8 +355,8 @@ async function serve({ open = false, port: requested } = {}) {
           const tmp = TASKS_MD + '.tmp';
           await fsp.writeFile(tmp, body, 'utf8');
           await fsp.rename(tmp, TASKS_MD);
-          lastSelfWrite = Date.now();
           const mtime = await fileMtimeMs(TASKS_MD);
+          markSelfWrite('tasks', String(req.headers['x-board-client'] || ''), mtime);
           return send(res, 200, 'application/json', JSON.stringify({ ok: true, mtime }), { 'X-Board-Mtime': String(mtime) });
         }
       }
@@ -343,8 +382,8 @@ async function serve({ open = false, port: requested } = {}) {
           const tmp = MILESTONES_MD + '.tmp';
           await fsp.writeFile(tmp, body, 'utf8');
           await fsp.rename(tmp, MILESTONES_MD);
-          lastSelfWrite = Date.now();
           const mtime = await fileMtimeMs(MILESTONES_MD);
+          markSelfWrite('milestones', String(req.headers['x-board-client'] || ''), mtime);
           return send(res, 200, 'application/json', JSON.stringify({ ok: true, mtime }), { 'X-Board-Mtime': String(mtime) });
         }
       }
@@ -372,7 +411,7 @@ async function serve({ open = false, port: requested } = {}) {
           const body = await readBody(req);
           await fsp.mkdir(path.dirname(target), { recursive: true });
           await fsp.writeFile(target, body, 'utf8');
-          lastSelfWrite = Date.now();
+          markSelfWrite('memory', String(req.headers['x-board-client'] || ''));
           return send(res, 200, 'application/json', JSON.stringify({ ok: true }));
         }
       }
@@ -392,14 +431,14 @@ async function serve({ open = false, port: requested } = {}) {
           const tmp = target + '.tmp';
           await fsp.writeFile(tmp, body, 'utf8');
           await fsp.rename(tmp, target);
-          lastSelfWrite = Date.now();
+          markSelfWrite('detail', String(req.headers['x-board-client'] || ''));
           return send(res, 200, 'application/json', JSON.stringify({ ok: true }));
         }
         if (req.method === 'DELETE') {
           // Called when a task is deleted, so its detail file can't outlive it (and a
           // future task that happens to reuse the id never inherits stale content).
           await fsp.unlink(target).catch(() => {});
-          lastSelfWrite = Date.now();
+          markSelfWrite('detail', String(req.headers['x-board-client'] || ''));
           return send(res, 200, 'application/json', JSON.stringify({ ok: true }));
         }
       }
@@ -421,12 +460,12 @@ async function serve({ open = false, port: requested } = {}) {
           const tmp = target + '.tmp';
           await fsp.writeFile(tmp, body, 'utf8');
           await fsp.rename(tmp, target);
-          lastSelfWrite = Date.now();
+          markSelfWrite('milestones', String(req.headers['x-board-client'] || ''));
           return send(res, 200, 'application/json', JSON.stringify({ ok: true }));
         }
         if (req.method === 'DELETE') {
           await fsp.unlink(target).catch(() => {});
-          lastSelfWrite = Date.now();
+          markSelfWrite('milestones', String(req.headers['x-board-client'] || ''));
           return send(res, 200, 'application/json', JSON.stringify({ ok: true }));
         }
       }
@@ -435,6 +474,7 @@ async function serve({ open = false, port: requested } = {}) {
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
+          'X-Board-Id': identity.boardId,
           Connection: 'keep-alive',
         });
         res.write('retry: 2000\n\n');
@@ -481,14 +521,28 @@ async function serve({ open = false, port: requested } = {}) {
 
   // Watch for external edits (e.g. an agent editing TASKS.md) and push to the browser.
   // Debounced; suppress the echo of our own POST writes.
-  let debounce = null;
-  const onChange = (kind) => {
-    if (Date.now() - lastSelfWrite < 800) return; // our own write — browser already has it
-    clearTimeout(debounce);
-    debounce = setTimeout(() => broadcast(kind), 150);
+  const onChange = (kind, revision = 0) => {
+    const selfWrite = lastSelfWrite.get(kind);
+    let observedRevision = Number(revision) || 0;
+    if (!observedRevision && (kind === 'tasks' || kind === 'milestones')) {
+      const target = kind === 'tasks' ? TASKS_MD : MILESTONES_MD;
+      try { observedRevision = fs.statSync(target).mtimeMs; } catch { /* file may be between renames */ }
+    }
+    if (selfWrite && observedRevision && selfWrite.revision) {
+      if (String(observedRevision) === String(selfWrite.revision)) {
+        return; // this exact file revision was already broadcast manually
+      }
+      lastSelfWrite.delete(kind); // a genuinely newer external revision
+    }
+    if (selfWrite && Date.now() - selfWrite.at < 800) return; // immediate recursive-watch echo
+    clearTimeout(watcherDebounce.get(kind));
+    watcherDebounce.set(kind, setTimeout(() => {
+      watcherDebounce.delete(kind);
+      broadcast(kind);
+    }, 150));
   };
-  try { fs.watchFile(TASKS_MD, { interval: 600 }, () => onChange('tasks')); } catch { /* */ }
-  try { fs.watchFile(MILESTONES_MD, { interval: 600 }, () => onChange('milestones')); } catch { /* */ }
+  try { fs.watchFile(TASKS_MD, { interval: 600 }, (curr) => onChange('tasks', curr.mtimeMs)); } catch { /* */ }
+  try { fs.watchFile(MILESTONES_MD, { interval: 600 }, (curr) => onChange('milestones', curr.mtimeMs)); } catch { /* */ }
   try { fs.watch(TASKS_DIR, { recursive: true }, (_e, name) => {
     if (!name) return onChange('memory');
     const n = String(name);

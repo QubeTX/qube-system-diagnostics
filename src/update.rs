@@ -149,6 +149,11 @@ pub fn run(json: bool) -> Result<i32> {
     };
 
     if !is_newer(VERSION, &release.version) {
+        if release.version == VERSION {
+            if let Err(reason) = crate::gui::verify_installed(VERSION) {
+                return repair_current_gui(json, &installation, &release, reason);
+            }
+        }
         return emit(
             json,
             LifecycleResult {
@@ -173,7 +178,25 @@ pub fn run(json: bool) -> Result<i32> {
         );
     }
     let strategy = installation.channel.label();
-    let outcome = perform_update(&installation, &release, json);
+    if let Err(message) = crate::gui::request_exit() {
+        return emit(
+            json,
+            LifecycleResult {
+                action: "update",
+                success: false,
+                current_version: VERSION,
+                target_version: Some(&release.version),
+                install_channel: Some(installation.channel),
+                strategy: Some(strategy),
+                message: format!(
+                    "The installed GUI could not be stopped safely before update: {message}"
+                ),
+            },
+            2,
+        );
+    }
+    let outcome = perform_update(&installation, &release, json)
+        .and_then(|()| crate::gui::verify_installed(&release.version));
     match outcome {
         Ok(()) => emit(
             json,
@@ -189,6 +212,95 @@ pub fn run(json: bool) -> Result<i32> {
                     release.version,
                     installation.channel.label()
                 ),
+            },
+            0,
+        ),
+        Err(message) => emit(
+            json,
+            LifecycleResult {
+                action: "update",
+                success: false,
+                current_version: VERSION,
+                target_version: Some(&release.version),
+                install_channel: Some(installation.channel),
+                strategy: Some(strategy),
+                message,
+            },
+            2,
+        ),
+    }
+}
+
+fn repair_current_gui(
+    json: bool,
+    installation: &Installation,
+    release: &Release,
+    reason: String,
+) -> Result<i32> {
+    let (strategy, target_channel) = if installation.channel == InstallChannel::Cargo {
+        (
+            "cargo-managed-completion",
+            if cfg!(windows) {
+                InstallChannel::PowerShellInstaller
+            } else {
+                InstallChannel::ShellInstaller
+            },
+        )
+    } else {
+        ("same-version-repair", installation.channel)
+    };
+    if !json {
+        println!(
+            "Repairing the SD-300 {VERSION} GUI companion through the {} path ({reason})...",
+            target_channel.label()
+        );
+    }
+    if let Err(message) = crate::gui::request_exit() {
+        return emit(
+            json,
+            LifecycleResult {
+                action: "update",
+                success: false,
+                current_version: VERSION,
+                target_version: Some(&release.version),
+                install_channel: Some(installation.channel),
+                strategy: Some(strategy),
+                message: format!(
+                    "The installed GUI could not be stopped safely before repair: {message}"
+                ),
+            },
+            2,
+        );
+    }
+
+    let repaired = if installation.channel == InstallChannel::Cargo {
+        perform_managed_install(target_channel, release, json)
+    } else {
+        perform_update(installation, release, json)
+    }
+    .and_then(|()| crate::gui::verify_installed(&release.version));
+
+    match repaired {
+        Ok(()) => emit(
+            json,
+            LifecycleResult {
+                action: "update",
+                success: true,
+                current_version: VERSION,
+                target_version: Some(&release.version),
+                install_channel: Some(installation.channel),
+                strategy: Some(strategy),
+                message: if installation.channel == InstallChannel::Cargo {
+                    format!(
+                        "Completed the same-version managed CLI+GUI takeover from Cargo through the {} channel",
+                        target_channel.label()
+                    )
+                } else {
+                    format!(
+                        "Repaired the missing or incompatible GUI companion without changing the {} channel",
+                        installation.channel.label()
+                    )
+                },
             },
             0,
         ),
@@ -232,6 +344,23 @@ pub fn install(json: bool) -> Result<i32> {
     } else {
         InstallChannel::ShellInstaller
     };
+    if let Err(message) = crate::gui::request_exit() {
+        return emit(
+            json,
+            LifecycleResult {
+                action: "install",
+                success: false,
+                current_version: VERSION,
+                target_version: Some(&release.version),
+                install_channel: Some(channel),
+                strategy: Some(channel.label()),
+                message: format!(
+                    "The installed GUI could not be stopped safely before installation: {message}"
+                ),
+            },
+            2,
+        );
+    }
     if !json {
         println!(
             "Installing SD-300 {} through the preferred {} channel...",
@@ -239,7 +368,8 @@ pub fn install(json: bool) -> Result<i32> {
             channel.label()
         );
     }
-    let outcome = perform_managed_install(channel, &release, json);
+    let outcome = perform_managed_install(channel, &release, json)
+        .and_then(|()| crate::gui::verify_installed(&release.version));
     match outcome {
         Ok(()) => emit(
             json,
@@ -290,7 +420,29 @@ pub fn uninstall(json: bool) -> Result<i32> {
         }
     };
     let strategy = installation.channel.label();
-    match execute_uninstall(&installation, json) {
+    if let Err(message) = crate::gui::request_exit() {
+        return emit(
+            json,
+            LifecycleResult {
+                action: "uninstall",
+                success: false,
+                current_version: VERSION,
+                target_version: None,
+                install_channel: Some(installation.channel),
+                strategy: Some(strategy),
+                message: format!(
+                    "The installed GUI could not be stopped safely before uninstall: {message}"
+                ),
+            },
+            2,
+        );
+    }
+    match execute_uninstall(&installation, json).and_then(|message| {
+        crate::settings::remove_owned_gui_state()?;
+        Ok(format!(
+            "{message}; owned GUI settings and launch-at-login integration were removed"
+        ))
+    }) {
         Ok(message) => emit(
             json,
             LifecycleResult {
@@ -317,6 +469,38 @@ pub fn uninstall(json: bool) -> Result<i32> {
             },
             2,
         ),
+    }
+}
+
+pub fn cleanup_owned_gui_state(quiet: bool) -> i32 {
+    let result =
+        crate::gui::request_exit().and_then(|()| crate::settings::remove_owned_gui_state());
+    match result {
+        Ok(()) => {
+            if !quiet {
+                println!("Owned SD-300 GUI settings and startup integration were removed");
+            }
+            0
+        }
+        Err(message) => {
+            eprintln!("SD-300 GUI state cleanup failed safely: {message}");
+            2
+        }
+    }
+}
+
+pub fn stop_gui(quiet: bool) -> i32 {
+    match crate::gui::request_exit() {
+        Ok(()) => {
+            if !quiet {
+                println!("The SD-300 GUI is stopped");
+            }
+            0
+        }
+        Err(message) => {
+            eprintln!("SD-300 GUI shutdown failed safely: {message}");
+            2
+        }
     }
 }
 
@@ -1618,7 +1802,7 @@ fn verify_version(path: &Path, expected: &str) -> std::result::Result<(), String
         return Err(format!("Installed binary is missing: {}", path.display()));
     }
     let output = run_output(
-        &path.to_string_lossy(),
+        path.as_os_str(),
         ["--version"],
         CommandTimeout::Custom(std::time::Duration::from_secs(15)),
     )
@@ -1844,6 +2028,26 @@ fn detect_installation() -> std::result::Result<Installation, String> {
         "Install origin is unknown for {}. No mutation was attempted. Run the preferred fresh installer from the website to make the latest intent authoritative.",
         current.display()
     ))
+}
+
+/// Return true only for the deliberate intermediate state created by the
+/// immutable v2 Cargo updater: the running v3 binary is still authoritatively
+/// Cargo-owned and the separately installed desktop companion is absent.
+///
+/// Ambiguous or unknown ownership fails closed to `false`; ordinary TUI
+/// launches must never turn ownership uncertainty into a new warning or a
+/// lifecycle mutation.
+pub fn cargo_gui_completion_needed() -> bool {
+    cargo_gui_completion_needed_for(detect_installation(), crate::gui::companion_path_present())
+}
+
+fn cargo_gui_completion_needed_for(
+    installation: std::result::Result<Installation, String>,
+    companion_present: bool,
+) -> bool {
+    installation.is_ok_and(|installation| {
+        installation.channel == InstallChannel::Cargo && !companion_present
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2307,10 +2511,165 @@ fn uninstall_managed(installation: &Installation) -> std::result::Result<String,
 
 #[cfg(not(windows))]
 fn uninstall_managed(installation: &Installation) -> std::result::Result<String, String> {
+    let gui = prove_unix_managed_gui_install()?;
+    if let Some(gui) = &gui {
+        let marker_removed_with_root = gui.owner_marker.starts_with(&gui.root);
+        std::fs::remove_dir_all(&gui.root)
+            .map_err(|error| format!("Could not remove the managed GUI payload: {error}"))?;
+        // Linux deliberately keeps its ownership marker inside the managed
+        // payload root. `remove_dir_all` already removed it; attempting a
+        // second removal turns every successful Linux uninstall into a false
+        // failure and strands the remaining CLI/integrations. macOS keeps the
+        // marker outside the signed .app bundle and still removes it here.
+        if !marker_removed_with_root {
+            std::fs::remove_file(&gui.owner_marker).map_err(|error| {
+                format!("Could not remove the managed GUI ownership marker: {error}")
+            })?;
+        }
+        if let Some(desktop) = &gui.desktop_entry {
+            std::fs::remove_file(desktop)
+                .map_err(|error| format!("Could not remove the managed desktop entry: {error}"))?;
+        }
+    }
     std::fs::remove_file(&installation.binary_path)
         .map_err(|error| format!("Could not remove managed binary: {error}"))?;
     remove_managed_receipt()?;
-    Ok("Managed SD-300 binary and receipt were removed".into())
+    Ok(if gui.is_some() {
+        "Managed SD-300 CLI, GUI, integrations, and receipt were removed".into()
+    } else {
+        "Managed SD-300 binary and receipt were removed".into()
+    })
+}
+
+#[cfg(test)]
+mod managed_gui_path_tests {
+    use super::*;
+
+    #[test]
+    fn linux_owner_marker_is_removed_with_its_payload_root() {
+        let root = PathBuf::from("/home/test/.local/share/sd300");
+        let marker = root.join(".sd300-managed-owner.json");
+        assert!(marker.starts_with(&root));
+    }
+
+    #[test]
+    fn macos_owner_marker_remains_outside_the_signed_app_bundle() {
+        let root = PathBuf::from("/Users/test/Applications/SD-300.app");
+        let marker = PathBuf::from(
+            "/Users/test/Library/Application Support/SD-300/managed-install-owner.json",
+        );
+        assert!(!marker.starts_with(&root));
+    }
+}
+
+#[cfg(not(windows))]
+#[derive(serde::Deserialize)]
+struct UnixManagedGuiOwner {
+    schema: u32,
+    product: String,
+    owner: String,
+}
+
+#[cfg(not(windows))]
+struct UnixManagedGuiInstall {
+    root: PathBuf,
+    owner_marker: PathBuf,
+    desktop_entry: Option<PathBuf>,
+}
+
+#[cfg(not(windows))]
+fn prove_unix_managed_gui_install() -> std::result::Result<Option<UnixManagedGuiInstall>, String> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is unavailable for managed GUI cleanup".to_string())?;
+    #[cfg(target_os = "macos")]
+    let (root, owner_marker, desktop_entry) = (
+        home.join("Applications").join("SD-300.app"),
+        home.join("Library")
+            .join("Application Support")
+            .join("SD-300")
+            .join("managed-install-owner.json"),
+        None::<PathBuf>,
+    );
+    #[cfg(target_os = "linux")]
+    let (root, owner_marker, desktop_entry) = {
+        let data = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local").join("share"));
+        (
+            data.join("sd300"),
+            data.join("sd300").join(".sd300-managed-owner.json"),
+            Some(data.join("applications").join("sd300.desktop")),
+        )
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    return Ok(None);
+
+    if !root.exists() {
+        if owner_marker.exists() {
+            return Err(format!(
+                "The managed GUI ownership marker exists without its payload at {}; it was preserved",
+                owner_marker.display()
+            ));
+        }
+        return Ok(None);
+    }
+    let metadata = std::fs::symlink_metadata(&root)
+        .map_err(|error| format!("Could not inspect the managed GUI root: {error}"))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(format!(
+            "The managed GUI root is not an owned directory: {}",
+            root.display()
+        ));
+    }
+    let parent = root
+        .parent()
+        .ok_or_else(|| "The managed GUI root has no parent".to_string())?;
+    let canonical_root = std::fs::canonicalize(&root)
+        .map_err(|error| format!("Could not resolve the managed GUI root: {error}"))?;
+    let canonical_parent = std::fs::canonicalize(parent)
+        .map_err(|error| format!("Could not resolve the managed GUI parent: {error}"))?;
+    if canonical_root.parent() != Some(canonical_parent.as_path()) {
+        return Err(format!(
+            "The managed GUI root escaped its exact owned parent: {}",
+            canonical_root.display()
+        ));
+    }
+    let owner: UnixManagedGuiOwner =
+        serde_json::from_slice(&std::fs::read(&owner_marker).map_err(|error| {
+            format!(
+                "The managed GUI root has no readable ownership marker at {}: {error}",
+                owner_marker.display()
+            )
+        })?)
+        .map_err(|error| format!("The managed GUI ownership marker is invalid: {error}"))?;
+    if owner.schema != 1 || owner.product != "SD-300" || owner.owner != "shell-installer" {
+        return Err("The managed GUI ownership marker is ambiguous; it was preserved".into());
+    }
+    if let Some(desktop) = &desktop_entry {
+        match std::fs::read_to_string(desktop) {
+            Ok(contents) if contents.contains("# SD-300 managed desktop entry") => {}
+            Ok(_) => {
+                return Err(format!(
+                    "The Linux desktop entry at {} is not SD-300-owned; it was preserved",
+                    desktop.display()
+                ))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "Could not inspect the Linux desktop entry at {}: {error}",
+                    desktop.display()
+                ))
+            }
+        }
+    }
+    let desktop_entry = desktop_entry.filter(|desktop| desktop.exists());
+    Ok(Some(UnixManagedGuiInstall {
+        root,
+        owner_marker,
+        desktop_entry,
+    }))
 }
 
 #[cfg(not(windows))]
@@ -2353,6 +2712,11 @@ fn schedule_windows_file_cleanup(
     cargo_owned: bool,
 ) -> std::result::Result<(), String> {
     let receipt = receipt_path();
+    let managed_gui = if cargo_owned {
+        None
+    } else {
+        prove_windows_managed_gui_root()?
+    };
     let mut commands = format!(
         "Wait-Process -Id {} -ErrorAction SilentlyContinue; ",
         std::process::id()
@@ -2364,6 +2728,21 @@ fn schedule_windows_file_cleanup(
         "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
         powershell_escape(&installation.binary_path.to_string_lossy())
     ));
+    if let Some(root) = managed_gui {
+        commands.push_str(&format!(
+            "Remove-Item -LiteralPath '{}' -Recurse -Force -ErrorAction Stop; ",
+            powershell_escape(&root.to_string_lossy())
+        ));
+        if let Some(shortcut) = windows_managed_gui_shortcut() {
+            commands.push_str(&format!(
+                "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
+                powershell_escape(&shortcut.to_string_lossy())
+            ));
+        }
+        commands.push_str(
+            "Remove-Item -LiteralPath 'Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SD-300-Managed' -Recurse -Force -ErrorAction SilentlyContinue; ",
+        );
+    }
     if let Some(receipt) = receipt {
         commands.push_str(&format!(
             "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
@@ -2393,6 +2772,60 @@ fn schedule_windows_file_cleanup(
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("Could not schedule post-exit cleanup: {error}"))
+}
+
+#[cfg(windows)]
+#[derive(serde::Deserialize)]
+struct ManagedGuiOwner {
+    schema: u32,
+    product: String,
+    owner: String,
+}
+
+#[cfg(windows)]
+fn prove_windows_managed_gui_root() -> std::result::Result<Option<PathBuf>, String> {
+    let Some(local_app_data) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) else {
+        return Err("LOCALAPPDATA is unavailable for managed GUI cleanup".into());
+    };
+    let programs = local_app_data.join("Programs");
+    let root = programs.join("SD-300");
+    if !root.exists() {
+        return Ok(None);
+    }
+    let root = std::fs::canonicalize(&root)
+        .map_err(|error| format!("Could not resolve the managed GUI root: {error}"))?;
+    let programs = std::fs::canonicalize(&programs)
+        .map_err(|error| format!("Could not resolve the per-user Programs root: {error}"))?;
+    if !root.starts_with(&programs) || root.parent() != Some(programs.as_path()) {
+        return Err(format!(
+            "Refused a managed GUI root outside the exact per-user Programs directory: {}",
+            root.display()
+        ));
+    }
+    let owner_path = root.join(".sd300-managed-owner.json");
+    let bytes = std::fs::read(&owner_path).map_err(|error| {
+        format!(
+            "The managed GUI root exists without a readable ownership marker at {}: {error}",
+            owner_path.display()
+        )
+    })?;
+    let owner: ManagedGuiOwner = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("The managed GUI ownership marker is invalid: {error}"))?;
+    if owner.schema != 1 || owner.product != "SD-300" || owner.owner != "powershell-installer" {
+        return Err("The managed GUI root ownership marker is ambiguous; it was preserved".into());
+    }
+    Ok(Some(root))
+}
+
+#[cfg(windows)]
+fn windows_managed_gui_shortcut() -> Option<PathBuf> {
+    std::env::var_os("APPDATA").map(PathBuf::from).map(|root| {
+        root.join("Microsoft")
+            .join("Windows")
+            .join("Start Menu")
+            .join("Programs")
+            .join("SD-300.lnk")
+    })
 }
 
 #[cfg(windows)]
@@ -2507,13 +2940,13 @@ fn parse_quoted_executable(command_line: &str) -> Option<PathBuf> {
 fn uninstall_macos_pkg(quiet_stdout: bool) -> std::result::Result<String, String> {
     remove_empty_managed_receipt_directory()?;
     let script = format!(
-        "rm -f /usr/local/bin/sd300 '/Library/Application Support/SD300/install-receipt.json'; rmdir '/Library/Application Support/SD300' 2>/dev/null || true; pkgutil --forget {MAC_PKG_ID} >/dev/null"
+        "rm -f /usr/local/bin/sd300 '/Library/Application Support/SD300/install-receipt.json'; rm -rf /Applications/SD-300.app; rmdir '/Library/Application Support/SD300' 2>/dev/null || true; pkgutil --forget {MAC_PKG_ID} >/dev/null"
     );
     run_status(
         Command::new("sudo").args(["sh", "-c", &script]),
         quiet_stdout,
     )?;
-    Ok("macOS PKG payload and receipt were removed".into())
+    Ok("macOS PKG CLI, application, and receipt were removed".into())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -2564,6 +2997,31 @@ mod tests {
     }
 
     #[test]
+    fn cargo_completion_hint_fails_closed_and_only_names_the_missing_companion_state() {
+        let installation = |channel| Installation {
+            channel,
+            binary_path: PathBuf::from("sd300"),
+        };
+
+        assert!(cargo_gui_completion_needed_for(
+            Ok(installation(InstallChannel::Cargo)),
+            false
+        ));
+        assert!(!cargo_gui_completion_needed_for(
+            Ok(installation(InstallChannel::Cargo)),
+            true
+        ));
+        assert!(!cargo_gui_completion_needed_for(
+            Ok(installation(InstallChannel::ShellInstaller)),
+            false
+        ));
+        assert!(!cargo_gui_completion_needed_for(
+            Err("ambiguous ownership".into()),
+            false
+        ));
+    }
+
+    #[test]
     fn public_lifecycle_asset_names_are_versionless() {
         for name in [
             POWERSHELL_WRAPPER,
@@ -2611,6 +3069,40 @@ mod tests {
                 .and_then(|value| value.as_bool()),
             Some(false)
         );
+    }
+
+    #[test]
+    fn lifecycle_json_preserves_the_v2_0_6_one_object_contract() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/v2.0.6/lifecycle-result.json"
+        ))
+        .unwrap();
+        for (action, target_version) in [
+            ("update", Some("3.0.0")),
+            ("install", Some("3.0.0")),
+            ("uninstall", None),
+        ] {
+            let result = LifecycleResult {
+                action,
+                success: false,
+                current_version: "2.0.6",
+                target_version,
+                install_channel: Some(InstallChannel::PowerShellInstaller),
+                strategy: Some("managed-wrapper"),
+                message: "fixture failure".into(),
+            };
+            let serialized = serialize_lifecycle_result(&result, 2);
+            assert!(
+                !serialized.contains(['\r', '\n']),
+                "{action} stdout payload must stay on one line"
+            );
+
+            let actual: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+            let mut expected = fixture.clone();
+            expected["action"] = action.into();
+            expected["target_version"] = target_version.into();
+            assert_eq!(actual, expected, "{action} JSON contract drifted");
+        }
     }
 
     #[test]

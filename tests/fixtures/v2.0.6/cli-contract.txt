@@ -1,0 +1,39 @@
+# Stable v2.0.6 help-contract lines. New additive commands may be present, but
+# every existing command, flag, keybinding, and section must remain documented.
+SD-300 is a live, interactive terminal user interface for real-time
+Usage: sd300
+update        Check for updates and install the latest release
+install       Install the latest release through the preferred managed CLI channel
+uninstall     Remove SD-300 through its proven installation owner
+snapshot      Collect one redacted noninteractive diagnostic snapshot
+capabilities  Show which diagnostic capabilities are available on this machine
+--user
+--tech
+--update
+sd300          Choose a diagnostic mode interactively
+sd300 --user   Launch directly into User Mode
+sd300 --tech   Launch directly into Technician Mode
+sd300 update   Check for updates and install
+sd300 install  Install latest through the managed CLI channel
+sd300 uninstall Remove the proven installed channel
+sd300 snapshot --json       Redacted diagnostic snapshot
+sd300 capabilities --json   Capability and availability states
+sd300 --update Same as 'sd300 update' (legacy flag form)
+1-9          Switch to section
+q / Esc      Quit
+Ctrl+C       Quit to shell
+m            Return to mode selection
+?            Help overlay
+f            Toggle temperature unit (C/F)
+j / k        Scroll (Processes, Connections, Drivers, Disk)
+c / M / p / n  Sort processes by CPU / Memory / PID / Name
+r            Refresh drivers (Drivers section)
+1 Overview    System health dashboard / identity and gauges
+2 CPU         Load, sparkline, per-core utilization
+3 Memory      Usage, swap, top consumers
+4 Disk        Drive health, partitions, SMART data
+5 GPU         Utilization, VRAM, temperature
+6 Network     Connectivity, interfaces, active connections
+7 Processes   Running apps / sortable process table
+8 Thermals    Temperature, fans, battery, power
+9 Drivers     Device health, driver versions, services

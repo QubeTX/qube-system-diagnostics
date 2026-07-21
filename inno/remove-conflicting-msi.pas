@@ -173,6 +173,12 @@ begin
     exit;
   end;
 
+  { Shutdown is deliberately independent from /PRESERVEGUISTATE: that switch
+    preserves preferences during a channel transition, never a live process
+    whose image is about to be replaced. StopExistingGui uses SW_HIDE and the
+    CLI's authenticated lifecycle endpoint, and fails before file mutation. }
+  StopExistingGui;
+
   AddMatchingMsiProducts(HKEY_LOCAL_MACHINE_64, ProductCodes);
   AddMatchingMsiProducts(HKEY_LOCAL_MACHINE_32, ProductCodes);
   AddMatchingMsiProducts(HKEY_CURRENT_USER_64, ProductCodes);
@@ -188,7 +194,7 @@ begin
   for Index := 0 to GetArrayLength(ProductCodes) - 1 do
   begin
     ProductCode := ProductCodes[Index];
-    Args := '/x "' + ProductCode + '" /qn /norestart';
+    Args := '/x "' + ProductCode + '" /qn /norestart SD300PRESERVEGUISTATE=1';
     Log('Removing same-edition MSI before changing the install channel: ' + ProductCode);
     if not Exec(ExpandConstant('{sys}\msiexec.exe'), Args, '', SW_HIDE,
         ewWaitUntilTerminated, ExitCode) then

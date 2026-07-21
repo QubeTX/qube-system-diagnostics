@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "native_sdk": {
+    "package": "@native-sdk/cli",
+    "version": "0.5.4",
+    "tarball": "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
+    "npm_integrity": "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
+    "npm_git_head": "349618a1385dedea361fbfe3b74ddba40ab6ee66",
+    "zig_content_hash": "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
+    "renderer_patch": "patches/native-sdk-0.5.4-software-render.patch",
+    "renderer_patch_sha256": "32ca4fc9a6bf2d2a0933d5bf2b9db5d4b3c3736f27ffcbe4938f76998a350fc1"
+  },
+  "zig": {
+    "version": "0.16.0",
+    "official_index": "https://ziglang.org/download/index.json",
+    "archives": {
+      "x86_64-windows": {
+        "url": "https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip",
+        "sha256": "68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e"
+      },
+      "x86_64-macos": {
+        "url": "https://ziglang.org/download/0.16.0/zig-x86_64-macos-0.16.0.tar.xz",
+        "sha256": "0387557ed1877bc6a2e1802c8391953baddba76081876301c522f52977b52ba7"
+      },
+      "aarch64-macos": {
+        "url": "https://ziglang.org/download/0.16.0/zig-aarch64-macos-0.16.0.tar.xz",
+        "sha256": "b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489"
+      },
+      "x86_64-linux": {
+        "url": "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz",
+        "sha256": "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
+      },
+      "aarch64-linux": {
+        "url": "https://ziglang.org/download/0.16.0/zig-aarch64-linux-0.16.0.tar.xz",
+        "sha256": "ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17"
+      }
+    }
+  },
+  "rust": {
+    "channel": "1.95",
+    "github_action": "dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4",
+    "manifest": "../rust-toolchain.toml"
+  },
+  "fonts": {
+    "makira": {
+      "sha256": "604208d36c63edfd703b2286bd4b43907b283d352020fab1d54360b5129570bc",
+      "source": "licensed-repository-secret"
+    }
+  }
+}

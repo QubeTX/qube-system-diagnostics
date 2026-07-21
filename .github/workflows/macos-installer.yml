@@ -31,6 +31,7 @@ jobs:
       ready: ${{ steps.meta.outputs.ready }}
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
       source_ref: ${{ steps.meta.outputs.source_ref }}
     steps:
       - uses: actions/checkout@v6
@@ -41,23 +42,48 @@ jobs:
         name: Resolve qualification draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          PREFLIGHT_ONLY: ${{ inputs.preflight_only }}
+          EXPECTED_SOURCE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          TRIGGER_SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
         shell: bash
         run: |
           set -euo pipefail
+          source_sha=$(git rev-parse HEAD)
+          [[ $source_sha == "$EXPECTED_SOURCE_SHA" ]] || {
+            echo "checkout $source_sha does not match triggering source $EXPECTED_SOURCE_SHA" >&2
+            exit 1
+          }
+          source_ref=${TRIGGER_SOURCE_REF:-$source_sha}
           version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
-          if [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
-            tag='${{ inputs.tag }}'
+          if [[ $EVENT_NAME == workflow_dispatch ]]; then
+            tag=$DISPATCH_TAG
           else
             tag="v${version}"
           fi
           [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
-          state=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)
-          if [[ '${{ github.event_name }}' == workflow_dispatch && '${{ inputs.preflight_only }}' == true ]]; then
+          release_json=$(gh release view "$tag" --json isDraft,tagName,targetCommitish 2>/dev/null || true)
+          state=$(jq -r '.isDraft // empty' <<< "$release_json")
+          if [[ $EVENT_NAME == workflow_dispatch && $PREFLIGHT_ONLY == true ]]; then
             ready=true
             echo "Running the requested credential-only preflight for $tag."
           elif [[ $state == true ]]; then
             ready=true
-          elif [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
+            release_tag=$(jq -r '.tagName // empty' <<< "$release_json")
+            target_commitish=$(jq -r '.targetCommitish // empty' <<< "$release_json")
+            [[ $release_tag == "$tag" ]] || { echo "release tag $release_tag does not match requested tag $tag" >&2; exit 1; }
+            [[ $target_commitish == "$source_sha" ]] || {
+              echo "release $tag targets $target_commitish, but this producer checkout is $source_sha" >&2
+              exit 1
+            }
+            git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+            tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
+            [[ $tag_sha == "$source_sha" ]] || {
+              echo "tag $tag resolves to $tag_sha, but this producer checkout is $source_sha" >&2
+              exit 1
+            }
+          elif [[ $EVENT_NAME == workflow_dispatch ]]; then
             echo "$tag is not an unpublished qualification draft" >&2
             exit 1
           else
@@ -68,8 +94,17 @@ jobs:
             echo "ready=$ready"
             echo "tag=$tag"
             echo "version=$version"
-            echo "source_ref=$(git rev-parse HEAD)"
+            echo "source_sha=$source_sha"
+            echo "source_ref=$source_ref"
           } >> "$GITHUB_OUTPUT"
+          {
+            echo '### macOS producer source identity'
+            echo
+            echo "- Source ref: \`$source_ref\`"
+            echo "- Source SHA: \`$source_sha\`"
+            echo "- Release tag: \`$tag\`"
+            echo "- Producer enabled: \`$ready\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   credential-preflight:
     needs: draft-check
@@ -87,8 +122,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.draft-check.outputs.source_ref }}
+          ref: ${{ needs.draft-check.outputs.source_sha }}
           persist-credentials: false
+      - name: Verify exact source checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = '${{ needs.draft-check.outputs.source_sha }}'
       - name: Import Installer identity and sign disposable PKG
         env:
           APPLE_INSTALLER_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_P12_BASE64 }}
@@ -98,19 +136,100 @@ jobs:
         shell: bash
         run: bash scripts/verify-apple-installer-identity.sh
 
+  build-gui-arch:
+    needs: draft-check
+    if: ${{ needs.draft-check.outputs.ready == 'true' && (github.event_name == 'workflow_run' || inputs.preflight_only == false) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple Silicon
+            runner: macos-15
+            gui_target: macos-arm64
+            engine: libsd300_engine.dylib
+          - name: Intel
+            runner: macos-15-intel
+            gui_target: macos-x86_64
+            engine: libsd300_engine.dylib
+    name: Build native GUI (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.draft-check.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify exact source checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = '${{ needs.draft-check.outputs.source_sha }}'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: "1.95"
+      - name: Verify coordinated product version
+        run: node scripts/check-product-version-consistency.mjs --expected-target '${{ needs.draft-check.outputs.version }}'
+      - name: Verify clean-cache and warmed-offline Native SDK restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/sd300-native-npm-cache"
+          rm -rf gui/node_modules "$cache"
+          npm --prefix gui ci --ignore-scripts --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
+          rm -rf gui/node_modules
+          npm --prefix gui ci --ignore-scripts --offline --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
+      - name: Build, test, and audit architecture-native GUI
+        shell: bash
+        env:
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+        run: |
+          set -euo pipefail
+          SD300_SKIP_NPM_CI=1 bash scripts/build-native-gui.sh '${{ matrix.gui_target }}'
+          bin="target/native-gui-stage/${{ matrix.gui_target }}/app/zig-out/bin"
+          test -x "$bin/sd300-gui"
+          test -f "$bin/${{ matrix.engine }}"
+          mkdir -p raw
+          COPYFILE_DISABLE=1 tar -czf \
+            "raw/sd300-gui-${{ matrix.gui_target }}-raw.tar.gz" \
+            -C "$bin" sd300-gui '${{ matrix.engine }}' licenses
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sd300-gui-${{ matrix.gui_target }}-${{ needs.draft-check.outputs.tag }}
+          if-no-files-found: error
+          path: raw/sd300-gui-${{ matrix.gui_target }}-raw.tar.gz
+
   build:
-    needs: [draft-check, credential-preflight]
-    if: ${{ needs.draft-check.outputs.ready == 'true' && needs.credential-preflight.result == 'success' && (github.event_name == 'workflow_run' || inputs.preflight_only == false) }}
+    needs: [draft-check, credential-preflight, build-gui-arch]
+    if: ${{ needs.draft-check.outputs.ready == 'true' && needs.credential-preflight.result == 'success' && needs.build-gui-arch.result == 'success' && (github.event_name == 'workflow_run' || inputs.preflight_only == false) }}
     runs-on: macos-15-intel
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
       source_ref: ${{ steps.meta.outputs.source_ref }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.draft-check.outputs.source_ref }}
+          ref: ${{ needs.draft-check.outputs.source_sha }}
           persist-credentials: false
+      - name: Verify exact source checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = '${{ needs.draft-check.outputs.source_sha }}'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Verify coordinated product version
+        run: node scripts/check-product-version-consistency.mjs --expected-target '${{ needs.draft-check.outputs.version }}'
       - id: meta
         name: Resolve draft metadata
         shell: bash
@@ -119,6 +238,7 @@ jobs:
           {
             echo "tag=${{ needs.draft-check.outputs.tag }}"
             echo "version=${{ needs.draft-check.outputs.version }}"
+            echo "source_sha=${{ needs.draft-check.outputs.source_sha }}"
             echo "source_ref=${{ needs.draft-check.outputs.source_ref }}"
           } >> "$GITHUB_OUTPUT"
 
@@ -132,6 +252,15 @@ jobs:
             --pattern 'tr300-tui-aarch64-apple-darwin.tar.xz*' \
             --pattern 'tr300-tui-x86_64-apple-darwin.tar.xz*'
           (cd upstream && shasum -a 256 -c ./*.sha256)
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: sd300-gui-macos-arm64-${{ steps.meta.outputs.tag }}
+          path: gui-arm64
+      - uses: actions/download-artifact@v7
+        with:
+          name: sd300-gui-macos-x86_64-${{ steps.meta.outputs.tag }}
+          path: gui-x86_64
 
       - name: Build, sign, notarize, and staple direct PKG
         timeout-minutes: 45
@@ -152,13 +281,17 @@ jobs:
             '${{ steps.meta.outputs.version }}' \
             upstream/tr300-tui-aarch64-apple-darwin.tar.xz \
             upstream/tr300-tui-x86_64-apple-darwin.tar.xz \
+            gui-arm64/sd300-gui-macos-arm64-raw.tar.gz \
+            gui-x86_64/sd300-gui-macos-x86_64-raw.tar.gz \
             output
 
       - uses: actions/upload-artifact@v6
         with:
           name: sd300-macos-universal-${{ steps.meta.outputs.tag }}
           if-no-files-found: error
-          path: output/sd300-macos-universal.pkg*
+          path: |
+            output/sd300-macos-universal.pkg*
+            output/sd300-gui-macos-universal.zip*
 
   validate:
     needs: build
@@ -177,9 +310,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.build.outputs.source_ref }}
+          ref: ${{ needs.build.outputs.source_sha }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify exact source checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = '${{ needs.build.outputs.source_sha }}'
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: "1.95"
       - name: Build synthetic prior-version updater
         shell: bash
         run: |
@@ -198,7 +336,9 @@ jobs:
         shell: bash
         run: |
           gh release download '${{ needs.build.outputs.tag }}' \
-            --pattern 'tr300-tui-${{ matrix.target }}.tar.xz' --dir fixture
+            --pattern 'tr300-tui-${{ matrix.target }}.tar.xz' \
+            --pattern 'tr300-tui-${{ matrix.target }}.tar.xz.sha256' --dir fixture
+          (cd fixture && shasum -a 256 -c 'tr300-tui-${{ matrix.target }}.tar.xz.sha256')
           mkdir fixture/extracted
           tar -xJf fixture/tr300-tui-${{ matrix.target }}.tar.xz -C fixture/extracted
 
@@ -210,6 +350,7 @@ jobs:
           set -euo pipefail
           pkg="$PWD/artifact/sd300-macos-universal.pkg"
           (cd artifact && shasum -a 256 -c sd300-macos-universal.pkg.sha256)
+          (cd artifact && shasum -a 256 -c sd300-gui-macos-universal.zip.sha256)
           signature=$(pkgutil --check-signature "$pkg" 2>&1)
           grep -Fq 'Status: signed by a developer certificate' <<< "$signature"
           grep -Fq '${{ vars.APPLE_INSTALLER_SIGNING_IDENTITY }}' <<< "$signature"
@@ -251,9 +392,45 @@ jobs:
           test ! -e "$HOME/.config/sd300/sd300-receipt.json"
           test "$(/usr/local/bin/sd300 --version)" = 'sd300 ${{ needs.build.outputs.version }}'
           lipo /usr/local/bin/sd300 -verify_arch arm64 x86_64
+          app='/Applications/SD-300.app'
+          gui="$app/Contents/MacOS/sd300-gui"
+          engine="$app/Contents/MacOS/libsd300_engine.dylib"
+          test -x "$gui"
+          test -f "$engine"
+          for notice in PRODUCT-LICENSE.md IBM-PLEX-OFL-1.1.txt NATIVE-SDK-APACHE-2.0.txt; do
+            test -s "$app/Contents/Resources/licenses/$notice"
+            pkgutil --files com.qubetx.sd300.pkg | grep -Fqx \
+              "Applications/SD-300.app/Contents/Resources/licenses/$notice"
+          done
+          lipo "$gui" -verify_arch arm64 x86_64
+          lipo "$engine" -verify_arch arm64 x86_64
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'dev.qubetx.sd300'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Contents/Info.plist")" = 'SD-300'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = '${{ needs.build.outputs.version }}'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = '${{ needs.build.outputs.version }}'
+          codesign --verify --deep --strict --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          self_test=$($gui --self-test --json)
+          jq -e --arg version '${{ needs.build.outputs.version }}' '
+            .success == true and .product == "SD-300" and
+            .product_version == $version and .abi_version == 1
+          ' <<< "$self_test"
           pkgutil --pkg-info com.qubetx.sd300.pkg | grep -Fqx 'package-id: com.qubetx.sd300.pkg'
           pkgutil --files com.qubetx.sd300.pkg | grep -Fqx 'usr/local/bin/sd300'
+          pkgutil --files com.qubetx.sd300.pkg | grep -Fqx 'Applications/SD-300.app/Contents/MacOS/sd300-gui'
           codesign --verify --strict --verbose=4 /usr/local/bin/sd300
+
+          /usr/local/bin/sd300 gui
+          for attempt in {1..30}; do
+            pgrep -f '^/Applications/SD-300.app/Contents/MacOS/sd300-gui$' >/dev/null && break
+            [[ $attempt -lt 30 ]] || { echo 'installed GUI did not remain running' >&2; exit 1; }
+            sleep 1
+          done
+          first_pid=$(pgrep -f '^/Applications/SD-300.app/Contents/MacOS/sd300-gui$')
+          /usr/local/bin/sd300 gui
+          sleep 2
+          test "$(pgrep -f '^/Applications/SD-300.app/Contents/MacOS/sd300-gui$')" = "$first_pid"
 
           /usr/local/bin/sd300 snapshot --json > snapshot.json
           jq -e '.target_os == "macos" and (.capabilities | length) >= 10' snapshot.json
@@ -269,13 +446,23 @@ jobs:
             .success == true and .install_channel == "mac-pkg" and .target_version == $version
           ' <<< "$update"
           test "$(/usr/local/bin/sd300 --version)" = 'sd300 ${{ needs.build.outputs.version }}'
+          ! pgrep -f '^/Applications/SD-300.app/Contents/MacOS/sd300-gui$' >/dev/null
+          test -x /Applications/SD-300.app/Contents/MacOS/sd300-gui
           lipo /usr/local/bin/sd300 -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=4 /usr/local/bin/sd300
 
+          /usr/local/bin/sd300 gui
+          for attempt in {1..30}; do
+            pgrep -f '^/Applications/SD-300.app/Contents/MacOS/sd300-gui$' >/dev/null && break
+            [[ $attempt -lt 30 ]] || { echo 'updated GUI did not remain running' >&2; exit 1; }
+            sleep 1
+          done
           uninstall=$(/usr/local/bin/sd300 uninstall --json)
           test "$(printf '%s\n' "$uninstall" | wc -l | tr -d ' ')" -eq 1
           jq -e '.success == true and .install_channel == "mac-pkg"' <<< "$uninstall"
+          ! pgrep -f '^/Applications/SD-300.app/Contents/MacOS/sd300-gui$' >/dev/null
           test ! -e /usr/local/bin/sd300
+          test ! -e /Applications/SD-300.app
           test ! -e '/Library/Application Support/SD300'
           ! pkgutil --pkg-info com.qubetx.sd300.pkg >/dev/null 2>&1
 
@@ -284,6 +471,13 @@ jobs:
     if: ${{ needs.build.result == 'success' && needs.validate.result == 'success' }}
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify exact source checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = '${{ needs.build.outputs.source_sha }}'
       - uses: actions/download-artifact@v7
         with:
           name: sd300-macos-universal-${{ needs.build.outputs.tag }}
@@ -291,4 +485,19 @@ jobs:
       - name: Attach qualified PKG to draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload '${{ needs.build.outputs.tag }}' artifact/sd300-macos-universal.pkg* --repo '${{ github.repository }}' --clobber
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='${{ needs.build.outputs.tag }}'
+          expected='${{ needs.build.outputs.source_sha }}'
+          release_json=$(gh release view "$tag" --json isDraft,tagName,targetCommitish)
+          test "$(jq -r .isDraft <<< "$release_json")" = true
+          test "$(jq -r .tagName <<< "$release_json")" = "$tag"
+          test "$(jq -r .targetCommitish <<< "$release_json")" = "$expected"
+          git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+          tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
+          test "$tag_sha" = "$expected"
+          gh release upload '${{ needs.build.outputs.tag }}' \
+            artifact/sd300-macos-universal.pkg* \
+            artifact/sd300-gui-macos-universal.zip* \
+            --repo '${{ github.repository }}' --clobber

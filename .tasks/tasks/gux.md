@@ -1,0 +1,34 @@
+TT;DR: Build the complete Native SDK GUI after the vertical slice proves the architecture. Every current SD-300 diagnostic and both audience modes must be represented with richer native charts, tables, detail, and honest availability.
+
+## Why
+Direct operator order. The GUI should make the existing diagnostics more legible without replacing or altering the TUI.
+
+## Plan
+Translate the QubeTX design tokens into Native SDK themes; inventory all existing TUI/report fields; implement Overview, CPU, Memory, Disk, GPU, Network, Processes, Thermals, and Drivers; add virtualized lists, charts, details, exports, GUI-only settings, keyboard/accessibility behavior, and supported Windows/macOS tray integration.
+
+## Impact
+Adds the primary user-facing desktop experience. Risks include parity omissions, excessive retained nodes, decorative resource use, and platform capability overclaims.
+
+## Acceptance
+The parity inventory is complete in User and Technician modes, all platform gaps are honest, and the strict CPU/memory/frame/input budgets pass.
+
+## Verification
+- [x] Native SDK model/markup strict checks and GUI unit tests pass
+- [ ] Automation covers every section, both modes, keyboard paths, scaling, exports, and unavailable states
+- [ ] Foreground, hidden/tray, and soak performance budgets pass
+
+## Status
+Active. The approved Warm Carbon design is running in the real Native SDK renderer with bundled Makira primary and IBM Plex Mono technical typography. All nine navigation destinations render bounded live data from the shared Rust collectors. User and Technician modes now change the information hierarchy; process sorting/search/warm-up state, warning shown/total counts, active-topic freshness/provenance, network adapter/connection filtering, display active state, battery/power detail, disk capacity/activity/reliability separation, physical-drive health, GPU and thermal availability, driver filtering/service detail, GUI help, GUI-only persisted settings, manual driver scan, and redacted snapshot/capabilities exports are implemented. Fixed 60-sample histories now cover CPU, memory, swap, network down/up, disk read/write, GPU, and temperature. The app restores its last section and collection profile, publishes a richer tray summary, and has returned to one-second visible latest-only presentation after a production-shaped retained-renderer benchmark measured 0.857 ms average/1.365 ms p95 rendering with byte equality through the release-shaped patched graph. Strict checks and 24 GUI tests pass; physical keyboard/scaling/accessibility/export exercise, restart-sensitive tray/autostart behavior, a clean staged one-second product build, and the mandatory sustained performance runs remain open.
+
+## Activity
+- 2026-07-20 21:26 — created from the approved v3 implementation plan (agent: codex)
+- 2026-07-21 00:04 — selected and implemented the operator-approved Warm Carbon composition from the generated mockup; the actual Native SDK screenshot was accepted as the visual baseline (agent: codex)
+- 2026-07-21 00:18 — made Overview, CPU, Memory, Disk, GPU, Network, Processes, Thermals, and Drivers real destinations backed by fixed-capacity topic projections; passed 12 native tests/strict checks and live-rendered all sections with zero dispatch errors (agent: codex)
+- 2026-07-21 01:30 — documented a research-backed status/evidence/cause/inventory hierarchy for every page; kept one-second collection and foreground presentation while optimizing the retained renderer, clarified process CPU as percent of one logical core, and added stable ranked-row behavior plus primary/on-demand density (agent: codex)
+- 2026-07-21 03:15 — preserved one-second engine sampling but moved ordinary visible presentation to the latest bounded sample every eight seconds, split per-page collector subscriptions, and stabilized process row identity over 30 samples; production Overview now passes the CPU budget while Processes remains 0.63 percentage points over target (agent: codex)
+- 2026-07-21 03:36 — the reproducible cold-built Processes artifact passed the short foreground average CPU gate at 1.92% of one logical core while preserving one-second sampling; the mandatory 15-minute/hidden/two-hour qualification remains open (agent: codex)
+- 2026-07-21 05:20 — added meaningful User/Technician information hierarchies, sortable process projections, warnings/capabilities/provenance, additional hardware details, persisted GUI-only settings, and asynchronous redacted snapshot/capabilities exports; a fresh staged Windows build passed strict distribution checks, 20 Zig tests, 6 engine tests, and live CPU/memory self-test (agent: codex)
+- 2026-07-21 06:58 — isolated the Processes spike with Native SDK frame instrumentation: Rust process collection averaged 12.37 ms/sample and Windows host pixel upload took 0.6–1.0 ms, while the patched software raster path spent 136–215 ms replaying the command list across eight dirty rectangles. A single union repaint regressed the one-minute Processes run to 7.99% of one logical core, proving that neither extreme is acceptable; multi-region one-pass damage rendering is under implementation. The 77% report remains a real release blocker until the packaged sustained gate passes (agent: codex)
+- 2026-07-21 08:18 — completed a field-by-field parity audit against every TUI section and collector surface. The audit confirms real coverage for all nine destinations while keeping disk activity/reliability detail, non-CPU histories, driver services, table filtering/paging, topic freshness/provenance, and GUI interaction help explicitly open rather than treating exports or bounded rows as silent parity (agent: codex)
+- 2026-07-21 08:33 — implemented the audited parity gaps: active-topic freshness/provenance rail; memory/swap, network, disk-I/O, GPU, and temperature histories; disk throughput/queue/latency/error availability; hypervisor/removable/display-active/media-state details; CPU/memory cause jumps; process/connection/driver search and filtering; process warm-up, shown/total semantics, driver services, and interaction help. Native strict checks and 23 tests pass. Restored one-second visible presentation after the retained glyph/base-fragment renderer measured 1.112 ms average and 1.598 ms p95 with direct/cached byte equality; staged-product and sustained gates remain open (agent: codex)
+- 2026-07-21 08:41 — added a repository-owned release-shaped Native SDK test wrapper so the immutable URL/hash manifest remains clean while `native test` consumes the hash-verified downstream renderer through a generated relative dependency. `$env:SD300_RENDER_BENCH='1'; npm test -- -Doptimize=ReleaseFast` passed 24/24 tests with direct/cached byte equality, 0.857 ms average/1.365 ms p95 cached rendering, 1,275 command-memo hits, and zero warmed command misses (agent: codex)

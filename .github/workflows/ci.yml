@@ -86,6 +86,160 @@ jobs:
       - name: Dist plan
         run: dist plan
 
+  native-gui:
+    name: Native GUI (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x86-64
+            os: windows-2025
+            target: windows-x86_64
+          - name: macOS Apple Silicon
+            os: macos-15
+            target: macos-arm64
+          - name: macOS Intel
+            os: macos-15-intel
+            target: macos-x86_64
+          - name: Linux GNU x86-64
+            os: ubuntu-22.04
+            target: linux-gnu-x86_64
+          - name: Linux GNU ARM64
+            os: ubuntu-22.04-arm
+            target: linux-gnu-arm64
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Install Rust 1.95
+        shell: bash
+        run: |
+          rustup toolchain install 1.95 --profile minimal --component rustfmt,clippy
+          rustup default 1.95
+      - name: Install Linux native build inputs
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libglib2.0-dev libgdk-pixbuf-2.0-dev \
+            patchelf pax-utils xz-utils
+      - id: product
+        name: Resolve product version
+        shell: bash
+        run: |
+          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Verify coordinated product version
+        run: node scripts/check-product-version-consistency.mjs --expected-target '${{ steps.product.outputs.version }}'
+      - name: Verify clean-cache and warmed-offline Native SDK restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/sd300-native-npm-cache"
+          rm -rf gui/node_modules "$cache"
+          npm --prefix gui ci --ignore-scripts --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
+          rm -rf gui/node_modules
+          npm --prefix gui ci --ignore-scripts --offline --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
+      - name: Build and test Windows native GUI
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        env:
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+        run: scripts\build-native-gui.ps1 -Target '${{ matrix.target }}' -SkipNpmCi
+      - name: Build and test macOS/Linux native GUI
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        env:
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+        run: SD300_SKIP_NPM_CI=1 bash scripts/build-native-gui.sh '${{ matrix.target }}'
+      - name: Package and verify Windows payload
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          scripts\package-native-gui.ps1 `
+            -Target '${{ matrix.target }}' -Version '${{ steps.product.outputs.version }}'
+      - name: Package and verify Linux private GTK payload
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          mkdir output
+          bash scripts/package-native-gui-linux.sh \
+            '${{ matrix.target }}' "$PWD/output" '${{ steps.product.outputs.version }}'
+          (cd output && sha256sum -c "sd300-gui-${{ matrix.target }}.tar.xz.sha256")
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sd300-native-gui-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            target/native-gui-stage/${{ matrix.target }}/app/zig-out/bin/**
+            target/native-gui-packages/sd300-gui-${{ matrix.target }}.zip*
+            output/sd300-gui-${{ matrix.target }}.tar.xz*
+
+  native-gui-musl:
+    name: Native GUI (Linux musl x86-64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - id: product
+        name: Resolve and verify product version
+        shell: bash
+        run: |
+          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
+          node scripts/check-product-version-consistency.mjs --expected-target "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Prepare licensed Makira build input
+        env:
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+        run: node scripts/prepare-makira-font.mjs gui
+      - name: Build and package in pinned Alpine 3.20
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir output
+          docker run --rm \
+            -e HOME=/tmp/sd300-home -e RUNNER_TEMP=/tmp \
+            -v "$PWD:/work" -w /work alpine:3.20 \
+            sh -ceu 'apk add --no-cache bash; exec bash scripts/build-native-gui-musl-container.sh "$@"' \
+              sh '${{ steps.product.outputs.version }}' /work/output
+          (cd output && sha256sum -c sd300-gui-linux-musl-x86_64.tar.xz.sha256)
+      - name: Validate private GTK closure on a blank Alpine host
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" -w /work alpine:3.20 sh -ceu '
+              apk add --no-cache bash binutils dbus jq python3 xauth xvfb xz
+              ! apk info -e gtk4.0
+              bash scripts/validate-native-gui-linux-package.sh \
+                output/sd300-gui-linux-musl-x86_64.tar.xz '${{ steps.product.outputs.version }}'
+            '
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sd300-native-gui-linux-musl-x86_64
+          if-no-files-found: error
+          path: output/sd300-gui-linux-musl-x86_64.tar.xz*
+
   audit:
     name: Security audit
     runs-on: ubuntu-24.04
