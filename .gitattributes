@@ -1,0 +1,6 @@
+# Build inputs whose exact bytes are part of the reviewed dependency lock.
+gui/patches/*.patch text eol=lf
+
+# Embedded binary assets must never pass through Git text conversion.
+*.ttf -text
+*.png -text
