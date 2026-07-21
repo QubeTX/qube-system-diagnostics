@@ -69,6 +69,10 @@ pub struct GuiProcessSampler {
     handles: HashMap<u32, ProcessHandle>,
     previous_process_times: HashMap<u32, ProcessTimes>,
     previous_global_time: Option<u64>,
+    process_buffer: Vec<u8>,
+    batched_rows: Vec<BatchedProcessRow>,
+    ranked_rows: Vec<RankedBatchedRow>,
+    seen_pids: HashSet<u32>,
 }
 
 impl GuiProcessSampler {
@@ -102,19 +106,18 @@ impl GuiProcessSampler {
             .map(|count| count.get() as f32)
             .unwrap_or(1.0);
 
-        let snapshot = query_system_processes()?;
-        let total_count = snapshot.rows.len();
-        let total_threads = snapshot
-            .rows
+        let valid_len = query_system_processes(&mut self.process_buffer, &mut self.batched_rows)?;
+        let process_buffer = &self.process_buffer[..valid_len];
+        let total_count = self.batched_rows.len();
+        let total_threads = self
+            .batched_rows
             .iter()
             .fold(0usize, |total, row| total.saturating_add(row.thread_count));
-        let seen = snapshot
-            .rows
-            .iter()
-            .map(|row| row.pid)
-            .collect::<HashSet<_>>();
-        let mut ranked = Vec::with_capacity(snapshot.rows.len().saturating_sub(1));
-        for row in snapshot.rows {
+        self.seen_pids.clear();
+        self.seen_pids
+            .extend(self.batched_rows.iter().map(|row| row.pid));
+        self.ranked_rows.clear();
+        for row in self.batched_rows.iter().copied() {
             let current = ProcessTimes {
                 creation: row.creation,
                 total: row.total_time,
@@ -134,7 +137,7 @@ impl GuiProcessSampler {
                 .unwrap_or(0.0);
             self.previous_process_times.insert(row.pid, current);
             if is_ranked_consumer(row.pid) {
-                ranked.push(RankedBatchedRow {
+                self.ranked_rows.push(RankedBatchedRow {
                     row,
                     cpu_percent,
                     name: None,
@@ -143,23 +146,23 @@ impl GuiProcessSampler {
             }
         }
         self.previous_process_times
-            .retain(|pid, _| seen.contains(pid));
-        self.handles.retain(|pid, _| seen.contains(pid));
+            .retain(|pid, _| self.seen_pids.contains(pid));
+        self.handles.retain(|pid, _| self.seen_pids.contains(pid));
         if sort == ProcessSortKey::Name {
-            for candidate in &mut ranked {
-                let name = decode_process_name(&snapshot.buffer, &candidate.row);
+            for candidate in &mut self.ranked_rows {
+                let name = decode_process_name(process_buffer, &candidate.row);
                 candidate.friendly_name = Some(get_friendly_name(&name));
                 candidate.name = Some(name);
             }
         }
-        sort_batched_rows(&mut ranked, sort);
-        ranked.truncate(limit);
-        let rows = ranked
-            .into_iter()
+        retain_best_batched_rows(&mut self.ranked_rows, sort, limit);
+        let rows = self
+            .ranked_rows
+            .drain(..)
             .map(|candidate| {
                 let name = candidate
                     .name
-                    .unwrap_or_else(|| decode_process_name(&snapshot.buffer, &candidate.row));
+                    .unwrap_or_else(|| decode_process_name(process_buffer, &candidate.row));
                 let friendly_name = candidate
                     .friendly_name
                     .unwrap_or_else(|| get_friendly_name(&name));
@@ -296,7 +299,12 @@ impl GuiProcessSampler {
 
 const SYSTEM_PROCESS_INFORMATION_CLASS: u32 = 5;
 const STATUS_INFO_LENGTH_MISMATCH: i32 = 0xC000_0004_u32 as i32;
-const INITIAL_PROCESS_BUFFER_BYTES: usize = 1024 * 1024;
+// A 1 MiB first attempt is already too small on ordinary Windows developer
+// systems (roughly 500 processes / 1.06 MiB on the qualification host). That
+// forced NtQuerySystemInformation to walk and copy the complete process table
+// twice every second. Start at 2 MiB so the common path is one kernel query;
+// the bounded growth loop still handles unusually large inventories safely.
+const INITIAL_PROCESS_BUFFER_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PROCESS_BUFFER_BYTES: usize = 64 * 1024 * 1024;
 
 #[link(name = "ntdll")]
@@ -350,7 +358,7 @@ const _: () = assert!(size_of::<usize>() == 8);
 const _: () = assert!(std::mem::offset_of!(NativeProcessInformation, image_name) == 56);
 const _: () = assert!(std::mem::offset_of!(NativeProcessInformation, working_set_size) == 144);
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct BatchedProcessRow {
     pid: u32,
     name_offset: Option<usize>,
@@ -372,47 +380,60 @@ struct RankedBatchedRow {
     friendly_name: Option<String>,
 }
 
-struct BatchedProcessSnapshot {
-    buffer: Vec<u8>,
-    rows: Vec<BatchedProcessRow>,
+fn sort_batched_rows(rows: &mut [RankedBatchedRow], sort: ProcessSortKey) {
+    rows.sort_by(|left, right| compare_batched_rows(left, right, sort));
 }
 
-fn sort_batched_rows(rows: &mut [RankedBatchedRow], sort: ProcessSortKey) {
+fn compare_batched_rows(
+    left: &RankedBatchedRow,
+    right: &RankedBatchedRow,
+    sort: ProcessSortKey,
+) -> std::cmp::Ordering {
     match sort {
-        ProcessSortKey::Cpu => rows.sort_by(|a, b| {
-            b.cpu_percent
-                .total_cmp(&a.cpu_percent)
-                .then_with(|| a.row.pid.cmp(&b.row.pid))
-        }),
-        ProcessSortKey::Memory => rows.sort_by(|a, b| {
-            b.row
-                .working_set_bytes
-                .cmp(&a.row.working_set_bytes)
-                .then_with(|| a.row.pid.cmp(&b.row.pid))
-        }),
-        ProcessSortKey::Pid => rows.sort_by_key(|candidate| candidate.row.pid),
-        ProcessSortKey::Name => rows.sort_by(|a, b| {
-            let a_friendly = a
+        ProcessSortKey::Cpu => right
+            .cpu_percent
+            .total_cmp(&left.cpu_percent)
+            .then_with(|| left.row.pid.cmp(&right.row.pid)),
+        ProcessSortKey::Memory => right
+            .row
+            .working_set_bytes
+            .cmp(&left.row.working_set_bytes)
+            .then_with(|| left.row.pid.cmp(&right.row.pid)),
+        ProcessSortKey::Pid => left.row.pid.cmp(&right.row.pid),
+        ProcessSortKey::Name => {
+            let left_friendly = left
                 .friendly_name
                 .as_deref()
                 .expect("name ranking populates friendly names first");
-            let b_friendly = b
+            let right_friendly = right
                 .friendly_name
                 .as_deref()
                 .expect("name ranking populates friendly names first");
-            let a_name = a
+            let left_name = left
                 .name
                 .as_deref()
                 .expect("name ranking decodes process names first");
-            let b_name = b
+            let right_name = right
                 .name
                 .as_deref()
                 .expect("name ranking decodes process names first");
-            ascii_case_insensitive_cmp(a_friendly, b_friendly)
-                .then_with(|| ascii_case_insensitive_cmp(a_name, b_name))
-                .then_with(|| a.row.pid.cmp(&b.row.pid))
-        }),
+            ascii_case_insensitive_cmp(left_friendly, right_friendly)
+                .then_with(|| ascii_case_insensitive_cmp(left_name, right_name))
+                .then_with(|| left.row.pid.cmp(&right.row.pid))
+        }
     }
+}
+
+fn retain_best_batched_rows(rows: &mut Vec<RankedBatchedRow>, sort: ProcessSortKey, limit: usize) {
+    if limit == 0 {
+        rows.clear();
+        return;
+    }
+    if rows.len() > limit {
+        rows.select_nth_unstable_by(limit, |left, right| compare_batched_rows(left, right, sort));
+        rows.truncate(limit);
+    }
+    sort_batched_rows(rows, sort);
 }
 
 fn ascii_case_insensitive_cmp(left: &str, right: &str) -> std::cmp::Ordering {
@@ -421,10 +442,15 @@ fn ascii_case_insensitive_cmp(left: &str, right: &str) -> std::cmp::Ordering {
         .cmp(right.bytes().map(|byte| byte.to_ascii_lowercase()))
 }
 
-fn query_system_processes() -> Option<BatchedProcessSnapshot> {
-    let mut capacity = INITIAL_PROCESS_BUFFER_BYTES;
+fn query_system_processes(
+    buffer: &mut Vec<u8>,
+    rows: &mut Vec<BatchedProcessRow>,
+) -> Option<usize> {
+    let mut capacity = buffer.len().max(INITIAL_PROCESS_BUFFER_BYTES);
     loop {
-        let mut buffer = vec![0u8; capacity];
+        if buffer.len() != capacity {
+            buffer.resize(capacity, 0);
+        }
         let mut required = 0u32;
         let status = unsafe {
             NtQuerySystemInformation(
@@ -450,17 +476,16 @@ fn query_system_processes() -> Option<BatchedProcessSnapshot> {
         } else {
             usize::try_from(required).ok()?.min(buffer.len())
         };
-        buffer.truncate(valid_len);
-        let rows = parse_system_processes(&buffer)?;
-        return Some(BatchedProcessSnapshot { buffer, rows });
+        parse_system_processes(&buffer[..valid_len], rows)?;
+        return Some(valid_len);
     }
 }
 
-fn parse_system_processes(buffer: &[u8]) -> Option<Vec<BatchedProcessRow>> {
+fn parse_system_processes(buffer: &[u8], rows: &mut Vec<BatchedProcessRow>) -> Option<()> {
     let start = buffer.as_ptr() as usize;
     let end = start.checked_add(buffer.len())?;
     let mut offset = 0usize;
-    let mut rows = Vec::new();
+    rows.clear();
     loop {
         let record_end = offset.checked_add(size_of::<NativeProcessInformation>())?;
         if record_end > buffer.len() {
@@ -519,7 +544,7 @@ fn parse_system_processes(buffer: &[u8]) -> Option<Vec<BatchedProcessRow>> {
             return None;
         }
     }
-    Some(rows)
+    Some(())
 }
 
 fn decode_process_name(buffer: &[u8], row: &BatchedProcessRow) -> String {
@@ -701,5 +726,20 @@ mod tests {
         let mut rows = fixture();
         sort_batched_rows(&mut rows, ProcessSortKey::Name);
         assert_eq!(pids(&rows), [10, 20, 40]);
+    }
+
+    #[test]
+    fn batched_inventory_selects_only_the_requested_best_rows() {
+        let cases = [
+            (ProcessSortKey::Cpu, vec![10, 40]),
+            (ProcessSortKey::Memory, vec![20, 10]),
+            (ProcessSortKey::Pid, vec![10, 20]),
+            (ProcessSortKey::Name, vec![10, 20]),
+        ];
+        for (sort, expected) in cases {
+            let mut rows = fixture();
+            retain_best_batched_rows(&mut rows, sort, 2);
+            assert_eq!(pids(&rows), expected);
+        }
     }
 }

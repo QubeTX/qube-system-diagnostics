@@ -37,6 +37,9 @@ const PROCESS_SORT_CPU: u8 = 0;
 const PROCESS_SORT_MEMORY: u8 = 1;
 const PROCESS_SORT_PID: u8 = 2;
 const PROCESS_SORT_NAME: u8 = 3;
+const PROCESS_SUMMARY_ROWS: usize = 16;
+const PROCESS_NAME_BYTES: usize = 96;
+const PROCESS_STATUS_BYTES: usize = 32;
 const EXPORT_NONE: u8 = 0;
 const EXPORT_SNAPSHOT: u8 = 1;
 const EXPORT_CAPABILITIES: u8 = 2;
@@ -125,6 +128,66 @@ pub struct TraySummary {
     pub reserved: u32,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ProcessRowSummary {
+    pub pid: u32,
+    pub cpu_percent: f32,
+    pub memory_bytes: u64,
+    pub memory_percent: f64,
+    pub name_len: u32,
+    pub friendly_name_len: u32,
+    pub status_len: u32,
+    pub reserved: u32,
+    pub name: [u8; PROCESS_NAME_BYTES],
+    pub friendly_name: [u8; PROCESS_NAME_BYTES],
+    pub status: [u8; PROCESS_STATUS_BYTES],
+}
+
+impl Default for ProcessRowSummary {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            cpu_percent: 0.0,
+            memory_bytes: 0,
+            memory_percent: 0.0,
+            name_len: 0,
+            friendly_name_len: 0,
+            status_len: 0,
+            reserved: 0,
+            name: [0; PROCESS_NAME_BYTES],
+            friendly_name: [0; PROCESS_NAME_BYTES],
+            status: [0; PROCESS_STATUS_BYTES],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ProcessSummary {
+    pub sequence: u64,
+    pub captured_unix_ms: u64,
+    pub total_count: u32,
+    pub total_threads: u32,
+    pub row_count: u32,
+    pub reserved: u32,
+    pub rows: [ProcessRowSummary; PROCESS_SUMMARY_ROWS],
+}
+
+impl Default for ProcessSummary {
+    fn default() -> Self {
+        Self {
+            sequence: 0,
+            captured_unix_ms: 0,
+            total_count: 0,
+            total_threads: 0,
+            row_count: 0,
+            reserved: 0,
+            rows: [ProcessRowSummary::default(); PROCESS_SUMMARY_ROWS],
+        }
+    }
+}
+
 #[derive(Default)]
 struct LatestTopic {
     sequence: u64,
@@ -143,6 +206,7 @@ struct Shared {
     topics: Mutex<[LatestTopic; TOPIC_COUNT]>,
     summary: Mutex<FastSummary>,
     tray_summary: Mutex<TraySummary>,
+    process_summary: Mutex<ProcessSummary>,
     last_error: Mutex<Vec<u8>>,
     export_status: Mutex<Vec<u8>>,
 }
@@ -161,6 +225,7 @@ impl Default for Shared {
             topics: Mutex::new(std::array::from_fn(|_| LatestTopic::default())),
             summary: Mutex::new(FastSummary::default()),
             tray_summary: Mutex::new(TraySummary::default()),
+            process_summary: Mutex::new(ProcessSummary::default()),
             last_error: Mutex::new(Vec::new()),
             export_status: Mutex::new(br#"{"state":"idle"}"#.to_vec()),
         }
@@ -257,6 +322,32 @@ struct MediumProjection<'a> {
     listening_ports: &'a [collectors::network_diag::ConnectionInfo],
 }
 
+#[derive(Serialize)]
+struct TopicEnvelope<'a, T: ?Sized> {
+    schema_version: u32,
+    product_version: &'static str,
+    target: &'static str,
+    topic: &'static str,
+    sequence: u64,
+    captured_unix_ms: u64,
+    freshness_ms: u64,
+    availability: &'static str,
+    provenance: &'static str,
+    warnings: &'a [DiagnosticWarning],
+    data: &'a T,
+}
+
+fn target_label() -> &'static str {
+    match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("x86_64", "windows") => "x86_64-windows",
+        ("x86_64", "macos") => "x86_64-macos",
+        ("aarch64", "macos") => "aarch64-macos",
+        ("x86_64", "linux") => "x86_64-linux",
+        ("aarch64", "linux") => "aarch64-linux",
+        _ => "unsupported-target",
+    }
+}
+
 fn unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -274,20 +365,20 @@ fn publish<T: Serialize>(shared: &Shared, topic: Topic, data: &T, warnings: &[Di
     let state = &mut topics[topic as usize];
     state.sequence = state.sequence.saturating_add(1);
     let captured_unix_ms = unix_ms();
-    let value = json!({
-        "schema_version": SCHEMA_VERSION,
-        "product_version": env!("CARGO_PKG_VERSION"),
-        "target": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
-        "topic": topic.name(),
-        "sequence": state.sequence,
-        "captured_unix_ms": captured_unix_ms,
-        "freshness_ms": 0,
-        "availability": "available",
-        "provenance": topic.provenance(),
-        "warnings": warnings,
-        "data": data,
-    });
-    match serde_json::to_vec(&value) {
+    let envelope = TopicEnvelope {
+        schema_version: SCHEMA_VERSION,
+        product_version: env!("CARGO_PKG_VERSION"),
+        target: target_label(),
+        topic: topic.name(),
+        sequence: state.sequence,
+        captured_unix_ms,
+        freshness_ms: 0,
+        availability: "available",
+        provenance: topic.provenance(),
+        warnings,
+        data,
+    };
+    match serde_json::to_vec(&envelope) {
         Ok(json) => state.json = json,
         Err(error) => set_error(
             shared,
@@ -325,6 +416,55 @@ fn update_fast_summary(shared: &Shared, snapshot: &SystemSnapshot) {
             warning_count: snapshot.warnings.len().try_into().unwrap_or(u32::MAX),
         };
     }
+}
+
+fn copy_summary_text<const N: usize>(destination: &mut [u8; N], text: &str) -> u32 {
+    let mut length = text.len().min(N);
+    while length > 0 && !text.is_char_boundary(length) {
+        length -= 1;
+    }
+    destination[..length].copy_from_slice(&text.as_bytes()[..length]);
+    length.try_into().unwrap_or(u32::MAX)
+}
+
+fn update_process_summary(shared: &Shared, snapshot: &SystemSnapshot) {
+    let Ok(mut summary) = shared.process_summary.lock() else {
+        return;
+    };
+    let sequence = summary.sequence.saturating_add(1);
+    let mut next = ProcessSummary {
+        sequence,
+        captured_unix_ms: unix_ms(),
+        total_count: snapshot
+            .processes
+            .total_count
+            .try_into()
+            .unwrap_or(u32::MAX),
+        total_threads: snapshot
+            .processes
+            .total_threads
+            .try_into()
+            .unwrap_or(u32::MAX),
+        row_count: snapshot
+            .processes
+            .list
+            .len()
+            .min(PROCESS_SUMMARY_ROWS)
+            .try_into()
+            .unwrap_or(PROCESS_SUMMARY_ROWS as u32),
+        ..ProcessSummary::default()
+    };
+    for (destination, source) in next.rows.iter_mut().zip(&snapshot.processes.list) {
+        destination.pid = source.pid;
+        destination.cpu_percent = source.cpu_percent;
+        destination.memory_bytes = source.memory_bytes;
+        destination.memory_percent = source.memory_percent;
+        destination.name_len = copy_summary_text(&mut destination.name, &source.name);
+        destination.friendly_name_len =
+            copy_summary_text(&mut destination.friendly_name, &source.friendly_name);
+        destination.status_len = copy_summary_text(&mut destination.status, &source.status);
+    }
+    *summary = next;
 }
 
 fn update_tray_summary(shared: &Shared, snapshot: &SystemSnapshot) {
@@ -514,12 +654,14 @@ fn collect_loop(shared: &Shared) {
 
     if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {
         snapshot.refresh_processes_gui(selected_process_sort(shared));
+        update_process_summary(shared, &snapshot);
     } else {
         snapshot.refresh_fast_gui_summary();
     }
     thread::sleep(Duration::from_millis(250));
     if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {
         snapshot.refresh_processes_gui(selected_process_sort(shared));
+        update_process_summary(shared, &snapshot);
     } else {
         snapshot.refresh_fast_gui_summary();
     }
@@ -590,6 +732,7 @@ fn collect_loop(shared: &Shared) {
                 update_fast_summary(shared, &snapshot);
             } else if process_view {
                 snapshot.refresh_processes_gui(selected_process_sort(shared));
+                update_process_summary(shared, &snapshot);
                 publish_fast(shared, &snapshot);
             } else {
                 snapshot.refresh_fast_gui_summary();
@@ -722,7 +865,20 @@ fn collect_loop(shared: &Shared) {
                 &snapshot.warnings,
             );
         }
-        thread::sleep(Duration::from_millis(50));
+        if process_view && !driver_running && !diag_running && !health_running {
+            // The Processes profile has no command-backed background jobs to
+            // poll. Profile/sort/export/stop setters all signal this condvar,
+            // so sleep directly until the next one-second sample instead of
+            // waking the collector worker twenty times per second.
+            wait_for_wake(
+                shared,
+                next_fast.saturating_duration_since(Instant::now()),
+            );
+        } else {
+            // Detailed pages can have driver, connectivity, or disk-health
+            // workers completing on channels that do not own the wake handle.
+            thread::sleep(Duration::from_millis(50));
+        }
     }
 }
 
@@ -1263,6 +1419,31 @@ pub extern "C" fn sd300_engine_read_tray_summary(
 }
 
 #[no_mangle]
+pub extern "C" fn sd300_engine_read_process_summary(
+    handle: *mut c_void,
+    after_sequence: u64,
+    out_summary: *mut ProcessSummary,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        if out_summary.is_null() {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let Some(engine) = engine_from_handle(handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Ok(summary) = engine.shared.process_summary.lock() else {
+            return STATUS_INTERNAL_ERROR;
+        };
+        if summary.sequence == 0 || summary.sequence == after_sequence {
+            return STATUS_UNCHANGED;
+        }
+        *out_summary = *summary;
+        STATUS_OK
+    }))
+    .unwrap_or(STATUS_PANIC)
+}
+
+#[no_mangle]
 pub extern "C" fn sd300_engine_last_error(
     handle: *mut c_void,
     buffer: *mut c_char,
@@ -1341,11 +1522,79 @@ mod tests {
     }
 
     #[test]
+    fn typed_topic_envelope_preserves_the_versioned_json_contract() {
+        let shared = Shared::default();
+        let warnings = [DiagnosticWarning {
+            source: "Test".into(),
+            message: "bounded warning".into(),
+            severity: WarningSeverity::Warning,
+        }];
+        let data = ["first", "second"];
+
+        publish(&shared, Topic::Warnings, &data, &warnings);
+
+        let topics = shared.topics.lock().expect("topic lock");
+        let state = &topics[Topic::Warnings as usize];
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&state.json).expect("valid topic JSON");
+        assert_eq!(envelope["schema_version"], SCHEMA_VERSION);
+        assert_eq!(envelope["product_version"], "3.0.0");
+        assert_eq!(envelope["target"], target_label());
+        assert_eq!(envelope["topic"], "warnings");
+        assert_eq!(envelope["sequence"], 1);
+        assert_eq!(envelope["freshness_ms"], 0);
+        assert_eq!(envelope["availability"], "available");
+        assert_eq!(envelope["warnings"][0]["source"], "Test");
+        assert_eq!(envelope["data"], serde_json::json!(["first", "second"]));
+    }
+
+    #[test]
     fn fast_summary_layout_is_fixed_for_the_zig_boundary() {
         assert_eq!(std::mem::size_of::<FastSummary>(), 48);
         assert_eq!(std::mem::align_of::<FastSummary>(), 8);
         assert_eq!(std::mem::size_of::<TraySummary>(), 32);
         assert_eq!(std::mem::align_of::<TraySummary>(), 8);
+        assert_eq!(std::mem::size_of::<ProcessRowSummary>(), 264);
+        assert_eq!(std::mem::align_of::<ProcessRowSummary>(), 8);
+        assert_eq!(std::mem::size_of::<ProcessSummary>(), 4256);
+        assert_eq!(std::mem::align_of::<ProcessSummary>(), 8);
+    }
+
+    #[test]
+    fn process_summary_is_latest_only_and_caller_owned() {
+        let engine = Engine::new();
+        let handle = (&engine as *const Engine).cast_mut().cast::<c_void>();
+        let mut source = ProcessSummary {
+            sequence: 11,
+            captured_unix_ms: 22,
+            total_count: 3,
+            total_threads: 4,
+            row_count: 1,
+            ..ProcessSummary::default()
+        };
+        source.rows[0].pid = 42;
+        source.rows[0].name_len = copy_summary_text(&mut source.rows[0].name, "native.exe");
+        *engine
+            .shared
+            .process_summary
+            .lock()
+            .expect("process summary lock") = source;
+
+        let mut destination = ProcessSummary::default();
+        assert_eq!(
+            sd300_engine_read_process_summary(handle, 0, &mut destination),
+            STATUS_OK
+        );
+        assert_eq!(destination.sequence, 11);
+        assert_eq!(destination.rows[0].pid, 42);
+        assert_eq!(
+            &destination.rows[0].name[..destination.rows[0].name_len as usize],
+            b"native.exe"
+        );
+        assert_eq!(
+            sd300_engine_read_process_summary(handle, 11, &mut destination),
+            STATUS_UNCHANGED
+        );
     }
 
     #[test]

@@ -107,6 +107,12 @@ npm test -- -Doptimize=ReleaseFast
 $env:SD300_RENDER_BENCH = "1"; npm test -- -Doptimize=ReleaseFast
 ```
 
+Release-shaped builds also pass `-Dtrace=off`. Native SDK 0.5.4 defaults to
+serializing every runtime event for development; SD-300 keeps panic capture,
+engine self-testing, and explicit qualification telemetry without paying that
+continuous foreground/tray cost. Diagnostic builds can opt back into SDK trace
+levels explicitly.
+
 The wrapper still executes `native test`; it never rewrites the checked-in
 manifest or Zig's content-addressed package cache.
 

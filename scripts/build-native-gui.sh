@@ -88,7 +88,10 @@ fi
 # of host GTK/libc headers. The Rust-host equality check above still fails
 # closed if a workflow schedules the wrong architecture or libc.
 zig_build_target=native
-zig_build_args=(-Dtarget="$zig_build_target" -Dcpu=baseline -Doptimize=ReleaseFast)
+# Native SDK defaults to per-event tracing for development. Release products
+# retain panic capture and self-test reporting but do not serialize every
+# timer/GPU-surface event to stdout and JSON logs.
+zig_build_args=(-Dtarget="$zig_build_target" -Dcpu=baseline -Doptimize=ReleaseFast -Dtrace=off)
 if [[ $host_os == Linux ]]; then
   gtk_lib_dir=$(pkg-config --variable=libdir gtk4)
   [[ -n $gtk_lib_dir && -d $gtk_lib_dir ]] || {
@@ -140,6 +143,20 @@ if [[ $skip_tests != 1 ]]; then
   # command while keeping the checked-in dependency URL/hash pinned.
   (cd "$gui_root" && npx --no-install native test "$app_stage" --yes "${zig_build_args[@]}")
 fi
+
+# Remove checkout/profile paths from the linked Unix executable only after the
+# Native SDK strict graph has compiled its analysis object. Marking the shared
+# Zig root module as stripped makes Zig 0.16.0 propagate `-fstrip` into that
+# analysis-only build and can terminate the compiler with SIGSEGV on macOS and
+# Linux. Post-link stripping preserves the same distributable bytes contract
+# without weakening strict validation.
+native_executable="$app_stage/zig-out/bin/sd300-gui"
+[[ -f $native_executable ]] || { echo "native GUI executable missing: $native_executable" >&2; exit 1; }
+if [[ $host_os == Darwin ]]; then
+  strip -S "$native_executable"
+else
+  strip --strip-debug "$native_executable"
+fi
 notices="$app_stage/zig-out/bin/licenses"
 mkdir -p "$notices"
 install -m 644 "$repo_root/LICENSE.md" "$notices/PRODUCT-LICENSE.md"
@@ -150,5 +167,5 @@ find "$app_stage/zig-out" -type d -name '*.dSYM' -prune -exec rm -rf {} + 2>/dev
 node "$script_root/check-native-distribution.mjs" "$gui_root" "$app_stage/zig-out"
 
 engine_sha=$(sha256sum "$engine_artifact" | awk '{print $1}')
-node -e 'const r=JSON.parse(process.argv[1]); console.log(JSON.stringify({schema:1,target:process.argv[2],zig_target:process.argv[3],zig_build_target:process.argv[4],zig_cpu:"baseline",zig_optimize:"ReleaseFast",zig_version:"0.16.0",rust_version:process.argv[5],rust_target:process.argv[6],rust_host:process.argv[6],native_sdk_cli:"0.5.4",native_sdk_patch:r.renderer_patch_sha256,engine_sha256:process.argv[7],package_root:process.argv[8]}))' \
+node -e 'const r=JSON.parse(process.argv[1]); console.log(JSON.stringify({schema:1,target:process.argv[2],zig_target:process.argv[3],zig_build_target:process.argv[4],zig_cpu:"baseline",zig_optimize:"ReleaseFast",native_sdk_trace:"off",zig_version:"0.16.0",rust_version:process.argv[5],rust_target:process.argv[6],rust_host:process.argv[6],native_sdk_cli:"0.5.4",native_sdk_patch:r.renderer_patch_sha256,engine_sha256:process.argv[7],package_root:process.argv[8]}))' \
   "$patch_receipt" "$target" "$zig_target" "$zig_build_target" "$rust_version" "$rust_target" "$engine_sha" "$app_stage/zig-out"

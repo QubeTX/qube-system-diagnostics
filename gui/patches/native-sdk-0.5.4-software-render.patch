@@ -1,4 +1,5 @@
 diff --git a/build/app.zig b/build/app.zig
+index 05facc3..8164d2f 100644
 --- a/build/app.zig
 +++ b/build/app.zig
 @@ -669,7 +669,12 @@ pub fn addAppArtifacts(b: *std.Build, dep: *std.Build.Dependency, app_options: A
@@ -16,7 +17,7 @@ diff --git a/build/app.zig b/build/app.zig
      const contract_step = b.step("model-contract", "Emit zig-out/model-contract.zon for `native check`");
      contract_step.dependOn(&contract_run.step);
 diff --git a/src/app_runner/root.zig b/src/app_runner/root.zig
-index 248fb21c925a9c6033288bbf48ade4ce4531da1f..bf16c888d2a449a94c84e4469eb2b67c3d8119a4 100644
+index 248fb21..bf16c88 100644
 --- a/src/app_runner/root.zig
 +++ b/src/app_runner/root.zig
 @@ -597,6 +597,11 @@ fn runLinux(app: native_sdk.App, options: RunOptions, init: std.process.Init) !v
@@ -61,11 +62,323 @@ index 248fb21c925a9c6033288bbf48ade4ce4531da1f..bf16c888d2a449a94c84e4469eb2b67c
          .security = options.security,
          .menus = options.menus,
          .shortcuts = shortcuts,
+diff --git a/src/platform/linux/gtk_host.c b/src/platform/linux/gtk_host.c
+index 06fcb48..767ae24 100644
+--- a/src/platform/linux/gtk_host.c
++++ b/src/platform/linux/gtk_host.c
+@@ -2412,11 +2412,13 @@ static gboolean native_sdk_frame_tick(gpointer data) {
+      * re-fires notify::default-width for it), so poll for allocation/scale
+      * changes here and re-emit resize + window frame events; shell layout
+      * depends on a non-zero surface size. */
++    int waiting_for_allocation = 0;
+     for (int i = 0; i < host->window_count; i++) {
+         native_sdk_gtk_window_t *win = &host->windows[i];
+         if (!win->gtk_window) continue;
+         const double w = (double)gtk_widget_get_width(GTK_WIDGET(win->gtk_window));
+         const double h = (double)gtk_widget_get_height(GTK_WIDGET(win->gtk_window));
++        if (w <= 0 || h <= 0) waiting_for_allocation = 1;
+         GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(win->gtk_window));
+         const double scale = surface ? gdk_surface_get_scale_factor(surface) : 1.0;
+         if (w > 0 && h > 0 && (w != win->emitted_width || h != win->emitted_height || scale != win->emitted_scale)) {
+@@ -2428,7 +2430,13 @@ static gboolean native_sdk_frame_tick(gpointer data) {
+         }
+     }
+     native_sdk_emit(host, (native_sdk_gtk_event_t){ .kind = NATIVE_SDK_GTK_EVENT_FRAME });
+-    return G_SOURCE_CONTINUE;
++    if (waiting_for_allocation) return G_SOURCE_CONTINUE;
++    /* Resize/scale signals, effect wakes, application timers, automation
++     * requests, and each gpu surface's one-shot scheduler now own steady
++     * state. Retire this startup allocation probe instead of waking GTK at
++     * 60 Hz for an unchanged retained canvas. */
++    host->frame_timer = 0;
++    return G_SOURCE_REMOVE;
+ }
+
+ static void on_resize(GtkWidget *widget, GParamSpec *pspec, gpointer data) {
+@@ -5515,6 +5523,7 @@ static char *native_sdk_bytes_to_string(const char *bytes, size_t len) {
+     return bytes && len > 0 ? native_sdk_strndup(bytes, len) : NULL;
+ }
+
++#if GTK_CHECK_VERSION(4, 10, 0)
+ static void native_sdk_open_dialog_done(GObject *source, GAsyncResult *result, gpointer data) {
+     native_sdk_file_dialog_state_t *state = data;
+     GError *error = NULL;
+@@ -5626,12 +5635,141 @@ size_t native_sdk_gtk_show_save_dialog(native_sdk_gtk_host_t *host, const native
+     g_object_unref(dialog);
+     return written;
+ }
++#else
++/* GtkFileDialog was introduced in GTK 4.10. Keep the Native SDK dialog
++ * contract available on the Ubuntu 22.04 compatibility floor through the
++ * GTK 4.0 GtkFileChooserNative API. The public result encoding remains
++ * identical; only the platform presentation primitive changes. */
++static void native_sdk_legacy_open_dialog_done(GtkNativeDialog *source, gint response, gpointer data) {
++    native_sdk_file_dialog_state_t *state = data;
++    if (response == GTK_RESPONSE_ACCEPT) {
++        state->files = gtk_file_chooser_get_files(GTK_FILE_CHOOSER(source));
++    }
++    g_main_loop_quit(state->loop);
++}
++
++static void native_sdk_legacy_save_dialog_done(GtkNativeDialog *source, gint response, gpointer data) {
++    native_sdk_file_dialog_state_t *state = data;
++    if (response == GTK_RESPONSE_ACCEPT) {
++        state->file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(source));
++    }
++    g_main_loop_quit(state->loop);
++}
++
++native_sdk_gtk_open_dialog_result_t native_sdk_gtk_show_open_dialog(native_sdk_gtk_host_t *host, const native_sdk_gtk_open_dialog_opts_t *opts, char *buffer, size_t buffer_len) {
++    native_sdk_gtk_open_dialog_result_t result = {0};
++    char *title = native_sdk_bytes_to_string(opts->title, opts->title_len);
++    GtkFileChooserAction action = opts->allow_directories
++        ? GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER
++        : GTK_FILE_CHOOSER_ACTION_OPEN;
++    GtkFileChooserNative *dialog = gtk_file_chooser_native_new(
++        title ? title : "Open",
++        native_sdk_parent_window(host),
++        action,
++        "_Open",
++        "_Cancel");
++    if (!dialog) {
++        if (title) free(title);
++        return result;
++    }
++    gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), TRUE);
++    native_sdk_file_dialog_state_t state = { .loop = g_main_loop_new(NULL, FALSE) };
++    if (!state.loop) {
++        if (title) free(title);
++        g_object_unref(dialog);
++        return result;
++    }
++    g_signal_connect(dialog, "response", G_CALLBACK(native_sdk_legacy_open_dialog_done), &state);
++    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dialog));
++    g_main_loop_run(state.loop);
++    g_main_loop_unref(state.loop);
++    if (state.files) {
++        size_t offset = 0;
++        int overflow = 0;
++        guint count = g_list_model_get_n_items(state.files);
++        for (guint i = 0; i < count; i++) {
++            GFile *file = G_FILE(g_list_model_get_item(state.files, i));
++            char *path = g_file_get_path(file);
++            if (path) {
++                size_t len = strlen(path);
++                size_t needed = len + (result.count > 0 ? 1 : 0);
++                if (needed <= buffer_len - offset) {
++                    if (result.count > 0) buffer[offset++] = '\n';
++                    memcpy(buffer + offset, path, len);
++                    offset += len;
++                    result.count++;
++                } else {
++                    overflow = 1;
++                }
++                g_free(path);
++            }
++            g_object_unref(file);
++            if (overflow) break;
++        }
++        result.bytes_written = overflow ? native_sdk_overflow_size(buffer_len) : offset;
++        g_object_unref(state.files);
++    }
++    if (title) free(title);
++    g_object_unref(dialog);
++    return result;
++}
++
++size_t native_sdk_gtk_show_save_dialog(native_sdk_gtk_host_t *host, const native_sdk_gtk_save_dialog_opts_t *opts, char *buffer, size_t buffer_len) {
++    char *title = native_sdk_bytes_to_string(opts->title, opts->title_len);
++    char *default_name = native_sdk_bytes_to_string(opts->default_name, opts->default_name_len);
++    GtkFileChooserNative *dialog = gtk_file_chooser_native_new(
++        title ? title : "Save",
++        native_sdk_parent_window(host),
++        GTK_FILE_CHOOSER_ACTION_SAVE,
++        "_Save",
++        "_Cancel");
++    if (!dialog) {
++        if (title) free(title);
++        if (default_name) free(default_name);
++        return 0;
++    }
++    if (default_name) {
++        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), default_name);
++    }
++    native_sdk_file_dialog_state_t state = { .loop = g_main_loop_new(NULL, FALSE) };
++    if (!state.loop) {
++        if (title) free(title);
++        if (default_name) free(default_name);
++        g_object_unref(dialog);
++        return 0;
++    }
++    g_signal_connect(dialog, "response", G_CALLBACK(native_sdk_legacy_save_dialog_done), &state);
++    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dialog));
++    g_main_loop_run(state.loop);
++    g_main_loop_unref(state.loop);
++    size_t written = 0;
++    if (state.file) {
++        char *path = g_file_get_path(state.file);
++        if (path) {
++            size_t len = strlen(path);
++            if (len > buffer_len) {
++                written = native_sdk_overflow_size(buffer_len);
++            } else {
++                written = len;
++                memcpy(buffer, path, written);
++            }
++            g_free(path);
++        }
++        g_object_unref(state.file);
++    }
++    if (title) free(title);
++    if (default_name) free(default_name);
++    g_object_unref(dialog);
++    return written;
++}
++#endif
+
+ typedef struct native_sdk_alert_state {
+     GMainLoop *loop;
+     int response;
+ } native_sdk_alert_state_t;
+
++#if GTK_CHECK_VERSION(4, 10, 0)
+ static void native_sdk_alert_done(GObject *source, GAsyncResult *result, gpointer data) {
+     native_sdk_alert_state_t *state = data;
+     GError *error = NULL;
+@@ -5674,3 +5812,52 @@ int native_sdk_gtk_show_message_dialog(native_sdk_gtk_host_t *host, const native
+     if (state.response == 1) return 1;
+     return 2;
+ }
++#else
++static void native_sdk_legacy_alert_done(GtkDialog *source, gint response, gpointer data) {
++    (void)source;
++    native_sdk_alert_state_t *state = data;
++    state->response = response;
++    g_main_loop_quit(state->loop);
++}
++
++int native_sdk_gtk_show_message_dialog(native_sdk_gtk_host_t *host, const native_sdk_gtk_message_dialog_opts_t *opts) {
++    char *title = native_sdk_bytes_to_string(opts->title, opts->title_len);
++    char *message = native_sdk_bytes_to_string(opts->message, opts->message_len);
++    char *informative = native_sdk_bytes_to_string(opts->informative_text, opts->informative_text_len);
++    char *primary = native_sdk_bytes_to_string(opts->primary_button, opts->primary_button_len);
++    char *secondary = native_sdk_bytes_to_string(opts->secondary_button, opts->secondary_button_len);
++    char *tertiary = native_sdk_bytes_to_string(opts->tertiary_button, opts->tertiary_button_len);
++    GtkWidget *widget = gtk_message_dialog_new(
++        native_sdk_parent_window(host),
++        GTK_DIALOG_MODAL,
++        GTK_MESSAGE_INFO,
++        GTK_BUTTONS_NONE,
++        "%s",
++        title ? title : (message ? message : ""));
++    GtkDialog *dialog = GTK_DIALOG(widget);
++    const char *detail = informative ? informative : (title && message ? message : NULL);
++    if (detail) {
++        gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s", detail);
++    }
++    gtk_dialog_add_button(dialog, primary ? primary : "OK", 0);
++    if (secondary) gtk_dialog_add_button(dialog, secondary, 1);
++    if (tertiary) gtk_dialog_add_button(dialog, tertiary, 2);
++    native_sdk_alert_state_t state = { .loop = g_main_loop_new(NULL, FALSE), .response = 0 };
++    if (state.loop) {
++        g_signal_connect(dialog, "response", G_CALLBACK(native_sdk_legacy_alert_done), &state);
++        gtk_window_present(GTK_WINDOW(dialog));
++        g_main_loop_run(state.loop);
++        g_main_loop_unref(state.loop);
++    }
++    gtk_window_destroy(GTK_WINDOW(dialog));
++    if (title) free(title);
++    if (message) free(message);
++    if (informative) free(informative);
++    if (primary) free(primary);
++    if (secondary) free(secondary);
++    if (tertiary) free(tertiary);
++    if (state.response <= 0) return 0;
++    if (state.response == 1) return 1;
++    return 2;
++}
++#endif
 diff --git a/src/platform/windows/webview2_host.cpp b/src/platform/windows/webview2_host.cpp
-index 5ad29323f8ccb5a3a9d9cf772765a1482574b46c..d92ee9a2bea0d16c423c11d1149bf9def3c430b6 100644
+index 5ad2932..2d1e6a6 100644
 --- a/src/platform/windows/webview2_host.cpp
 +++ b/src/platform/windows/webview2_host.cpp
-@@ -5876,12 +5876,6 @@ int native_sdk_windows_note_gpu_surface_input(Host *host, uint64_t window_id, co
+@@ -369,6 +369,20 @@ struct ChildWebView {
+ #endif
+ };
+
++struct GpuDibSurface {
++    HDC dc = nullptr;
++    HBITMAP bitmap = nullptr;
++    HGDIOBJ previous = nullptr;
++    uint8_t *bits = nullptr;
++    size_t byte_len = 0;
++
++    ~GpuDibSurface() {
++        if (dc && previous) SelectObject(dc, previous);
++        if (bitmap) DeleteObject(bitmap);
++        if (dc) DeleteDC(dc);
++    }
++};
++
+ struct NativeView {
+     uint64_t window_id = 1;
+     HWND hwnd = nullptr;
+@@ -390,6 +404,7 @@ struct NativeView {
+     bool explicit_text = false;
+     /* gpu_surface (software canvas) state */
+     std::vector<uint8_t> gpu_bgra;
++    std::shared_ptr<GpuDibSurface> gpu_dib;
+     int gpu_buf_width = 0;
+     int gpu_buf_height = 0;
+     /* ONE frame-event scheduler per surface (the macOS design): every
+@@ -2494,13 +2509,30 @@ static void gpuSurfaceScheduleFrameEmission(Host *host, NativeView &view) {
+ }
+
+ static void paintGpuSurface(NativeView &view, HWND hwnd, HDC dc) {
+-    if (view.gpu_bgra.empty() || view.gpu_buf_width <= 0 || view.gpu_buf_height <= 0) return;
++    if ((!view.gpu_dib || !view.gpu_dib->dc) && view.gpu_bgra.empty()) return;
++    if (view.gpu_buf_width <= 0 || view.gpu_buf_height <= 0) return;
+     RECT rect = {};
+     GetClientRect(hwnd, &rect);
+     const int client_width = rect.right - rect.left;
+     const int client_height = rect.bottom - rect.top;
+     if (client_width <= 0 || client_height <= 0) return;
+
++    /* Keep the decoded frame selected into a persistent memory DC. This
++     * makes steady-state paints a device-to-device blit instead of asking
++     * GDI to interpret and upload the full DIB byte buffer on every
++     * WM_PAINT. The present path still updates only the reported damage. */
++    if (view.gpu_dib && view.gpu_dib->dc) {
++        if (client_width == view.gpu_buf_width && client_height == view.gpu_buf_height) {
++            BitBlt(dc, 0, 0, client_width, client_height, view.gpu_dib->dc, 0, 0, SRCCOPY);
++            return;
++        }
++        SetStretchBltMode(dc, HALFTONE);
++        SetBrushOrgEx(dc, 0, 0, nullptr);
++        StretchBlt(dc, 0, 0, client_width, client_height, view.gpu_dib->dc,
++            0, 0, view.gpu_buf_width, view.gpu_buf_height, SRCCOPY);
++        return;
++    }
++
+     BITMAPINFO info = {};
+     info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+     info.bmiHeader.biWidth = view.gpu_buf_width;
+@@ -5072,7 +5104,13 @@ static bool createNativeWindow(Host *host, Window &window) {
+     }
+     ShowWindow(hwnd, SW_SHOW);
+     UpdateWindow(hwnd);
+-    SetTimer(hwnd, kFrameTimerId, 16, nullptr);
++    /* One startup turn installs the runtime scene after the host window is
++     * live. Everything after that is demand-driven: effect workers post
++     * kWakeMessage, automation posts kRequestFrameMessage, platform timers
++     * emit directly, and gpu surfaces own their paced one-shot scheduler.
++     * A permanent 16 ms top-level WM_TIMER used a logical core even while a
++     * retained SD-300 canvas and its tray window were completely idle. */
++    PostMessageW(hwnd, kRequestFrameMessage, 0, 0);
+     return true;
+ }
+
+@@ -5876,12 +5914,6 @@ int native_sdk_windows_note_gpu_surface_input(Host *host, uint64_t window_id, co
  }
 
  int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id, const char *label, size_t label_len, size_t width, size_t height, double scale, int has_dirty_rect, double dirty_x, double dirty_y, double dirty_width, double dirty_height, const uint8_t *rgba8, size_t rgba8_len) {
@@ -78,12 +391,21 @@ index 5ad29323f8ccb5a3a9d9cf772765a1482574b46c..d92ee9a2bea0d16c423c11d1149bf9de
      if (!host || label_len == 0) return 0;
      auto found = host->native_views.find(nativeViewKey(window_id, slice(label, label_len)));
      if (found == host->native_views.end() || found->second.kind != kViewGpuSurface || !found->second.hwnd) return 0;
-@@ -5898,15 +5892,43 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
+@@ -5898,15 +5930,73 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
       * the redirection surface's alpha is 0 — the app's pixels must read
       * as opaque there or the whole header band would vanish under DWM
       * chrome (only the punched button hole yields on purpose). */
 -    view.gpu_bgra.resize(width * height * 4);
-+    const bool size_changed = view.gpu_bgra.size() != rgba8_len ||
+-    uint8_t *dst = view.gpu_bgra.data();
+-    const size_t pixel_count = width * height;
+-    for (size_t index = 0; index < pixel_count; index++) {
+-        const uint8_t *src = rgba8 + index * 4;
+-        dst[index * 4 + 0] = src[2];
+-        dst[index * 4 + 1] = src[1];
+-        dst[index * 4 + 2] = src[0];
+-        dst[index * 4 + 3] = 255;
++    const size_t current_byte_len = view.gpu_dib ? view.gpu_dib->byte_len : view.gpu_bgra.size();
++    const bool size_changed = current_byte_len != rgba8_len ||
 +        view.gpu_buf_width != (int)width || view.gpu_buf_height != (int)height;
 +    const double pixel_scale = std::isfinite(scale) && scale > 0.0 ? scale : 1.0;
 +    bool partial_copy = !size_changed && has_dirty_rect != 0 &&
@@ -109,15 +431,37 @@ index 5ad29323f8ccb5a3a9d9cf772765a1482574b46c..d92ee9a2bea0d16c423c11d1149bf9de
 +        }
 +    }
 +
-+    view.gpu_bgra.resize(rgba8_len);
-     uint8_t *dst = view.gpu_bgra.data();
--    const size_t pixel_count = width * height;
--    for (size_t index = 0; index < pixel_count; index++) {
--        const uint8_t *src = rgba8 + index * 4;
--        dst[index * 4 + 0] = src[2];
--        dst[index * 4 + 1] = src[1];
--        dst[index * 4 + 2] = src[0];
--        dst[index * 4 + 3] = 255;
++    if (size_changed) {
++        BITMAPINFO info = {};
++        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
++        info.bmiHeader.biWidth = (LONG)width;
++        info.bmiHeader.biHeight = -(LONG)height;
++        info.bmiHeader.biPlanes = 1;
++        info.bmiHeader.biBitCount = 32;
++        info.bmiHeader.biCompression = BI_RGB;
++
++        auto replacement = std::make_shared<GpuDibSurface>();
++        replacement->dc = CreateCompatibleDC(nullptr);
++        void *bits = nullptr;
++        if (replacement->dc) {
++            replacement->bitmap = CreateDIBSection(replacement->dc, &info, DIB_RGB_COLORS,
++                &bits, nullptr, 0);
++        }
++        if (replacement->bitmap && bits) {
++            replacement->previous = SelectObject(replacement->dc, replacement->bitmap);
++            replacement->bits = static_cast<uint8_t *>(bits);
++            replacement->byte_len = rgba8_len;
++            view.gpu_dib = replacement;
++            view.gpu_bgra.clear();
++        } else {
++            /* Preserve the existing portable SetDIBitsToDevice path if the
++             * process is temporarily unable to allocate a compatible DIB. */
++            view.gpu_dib.reset();
++            view.gpu_bgra.resize(rgba8_len);
++        }
++    }
++
++    uint8_t *dst = view.gpu_dib ? view.gpu_dib->bits : view.gpu_bgra.data();
 +    for (size_t y = copy_y0; y < copy_y1; y++) {
 +        for (size_t x = copy_x0; x < copy_x1; x++) {
 +            const size_t index = y * width + x;
@@ -130,7 +474,7 @@ index 5ad29323f8ccb5a3a9d9cf772765a1482574b46c..d92ee9a2bea0d16c423c11d1149bf9de
      }
      view.gpu_buf_width = (int)width;
      view.gpu_buf_height = (int)height;
-@@ -5926,7 +5948,17 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
+@@ -5926,7 +6016,17 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
          view.gpu_sample_color = ((uint32_t)sa << 24) | ((uint32_t)sr << 16) | ((uint32_t)sg << 8) | (uint32_t)sb;
      }
 
@@ -150,7 +494,7 @@ index 5ad29323f8ccb5a3a9d9cf772765a1482574b46c..d92ee9a2bea0d16c423c11d1149bf9de
       * frame-event scheduler: the completion event it arms is what
       * drives the runtime's frame loop (an armed animation presents,
 diff --git a/src/primitives/canvas/reference.zig b/src/primitives/canvas/reference.zig
-index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f69368d24 100644
+index bbf819b..981199f 100644
 --- a/src/primitives/canvas/reference.zig
 +++ b/src/primitives/canvas/reference.zig
 @@ -84,6 +84,56 @@ const referenceDistanceToSegment = reference_paths.referenceDistanceToSegment;
@@ -350,7 +694,7 @@ index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f
      pub fn clear(self: ReferenceRenderSurface, color: Color) void {
          const pixel = colorToRgba8(color);
          var index: usize = 0;
-@@ -283,6 +459,56 @@ pub const ReferenceRenderSurface = struct {
+@@ -283,6 +459,204 @@ pub const ReferenceRenderSurface = struct {
          for (pass.commands) |command| try self.renderCommand(referenceScaleCommand(command, scale), scissor);
      }
 
@@ -404,10 +748,237 @@ index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f
 +        return .damage;
 +    }
 +
++    /// Render a retained canvas whose leading chrome commands are immutable
++    /// between model updates. The prefix is cached as exact RGBA bytes, then
++    /// restored only inside the canonical dirty fragments before replaying the
++    /// dynamic suffix. Unsupported prefixes fall back to the ordinary damage
++    /// path; no approximate pixels or additional presentation regions escape.
++    pub fn renderPassDamageWithStaticPrefix(
++        self: ReferenceRenderSurface,
++        pass: CanvasRenderPass,
++        clear_color: Color,
++        damage_rects: []const geometry.RectF,
++        prefix_command_count: usize,
++    ) Error!ReferenceDamageRenderMode {
++        const memo = self.render_memo orelse return self.renderPassDamage(pass, clear_color, damage_rects);
++        if (prefix_command_count == 0 or prefix_command_count > pass.commands.len) {
++            return self.renderPassDamage(pass, clear_color, damage_rects);
++        }
++        const prefix_commands = pass.commands[0..prefix_command_count];
++        for (prefix_commands) |command| {
++            switch (command.command) {
++                .fill_rect => {},
++                else => return self.renderPassDamage(pass, clear_color, damage_rects),
++            }
++        }
++
++        const fingerprint = referenceStaticPrefixFingerprint(self.width, self.height, pass.scale, clear_color, prefix_commands);
++        const prefix_pixels = memo.findStaticPrefix(self.width, self.height, fingerprint) orelse cache: {
++            const buffer = memo.prepareStaticPrefix(self.width, self.height) orelse {
++                return self.renderPassDamage(pass, clear_color, damage_rects);
++            };
++            var prefix_surface = try ReferenceRenderSurface.init(self.width, self.height, buffer);
++            prefix_surface.scratch = self.scratch;
++            prefix_surface.images = self.images;
++            prefix_surface.fonts = self.fonts;
++            var prefix_pass = pass;
++            prefix_pass.full_repaint = true;
++            prefix_pass.dirty_bounds = null;
++            prefix_pass.commands = prefix_commands;
++            try prefix_surface.renderPass(prefix_pass, clear_color);
++            memo.commitStaticPrefix(fingerprint);
++            break :cache buffer;
++        };
++
++        ensureSrgbToLinearByteTable();
++        ensureLinearToSrgbTable();
++        memo.image_scale_fills_this_pass = 0;
++        const dynamic_commands = pass.commands[prefix_command_count..];
++        const scale = referencePassScale(pass.scale);
++
++        if (pass.loadAction() == .clear) {
++            @memcpy(self.pixels, prefix_pixels);
++            for (dynamic_commands, 0..) |command, index| {
++                const scaled = referenceScaleCommand(command, scale);
++                const next = if (index + 1 < dynamic_commands.len)
++                    referenceScaleCommand(dynamic_commands[index + 1], scale)
++                else
++                    null;
++                try self.renderCommandOcclusionAware(scaled, next, null);
++            }
++            return .damage;
++        }
++        if (pass.loadAction() != .load) return .fallback;
++
++        var fragment_safe = true;
++        for (dynamic_commands) |command| {
++            switch (command.command) {
++                .blur => fragment_safe = false,
++                else => {},
++            }
++        }
++        const regions = if (fragment_safe)
++            referenceCanonicalDamageRegions(pass, damage_rects, self.width, self.height)
++        else
++            null;
++        if (regions) |resolved| {
++            for (resolved.rects[0..resolved.count]) |region| self.restoreStaticPrefixRect(prefix_pixels, region);
++            for (dynamic_commands, 0..) |command, index| {
++                const scaled = referenceScaleCommand(command, scale);
++                const next = if (index + 1 < dynamic_commands.len)
++                    referenceScaleCommand(dynamic_commands[index + 1], scale)
++                else
++                    null;
++                for (resolved.rects[0..resolved.count]) |region| try self.renderCommandOcclusionAware(scaled, next, region);
++            }
++            return .damage;
++        }
++
++        const logical_scissor = pass.scissorBounds() orelse return self.renderPassDamage(pass, clear_color, damage_rects);
++        const scissor = referenceScaleRect(logical_scissor, scale);
++        self.restoreStaticPrefixRect(prefix_pixels, scissor);
++        for (dynamic_commands, 0..) |command, index| {
++            const scaled = referenceScaleCommand(command, scale);
++            const next = if (index + 1 < dynamic_commands.len)
++                referenceScaleCommand(dynamic_commands[index + 1], scale)
++            else
++                null;
++            try self.renderCommandOcclusionAware(scaled, next, scissor);
++        }
++        return .fallback;
++    }
++
++    /// A shadow immediately followed by an opaque rounded fill cannot survive
++    /// inside the fill's guaranteed opaque core. Split only the visible
++    /// perimeter into disjoint scissors; every retained output byte is equal
++    /// to ordinary shadow-then-fill compositing.
++    fn renderCommandOcclusionAware(
++        self: ReferenceRenderSurface,
++        command: RenderCommand,
++        next: ?RenderCommand,
++        scissor: ?geometry.RectF,
++    ) Error!void {
++        const following = next orelse return self.renderCommand(command, scissor);
++        switch (command.command) {
++            .shadow => {},
++            else => return self.renderCommand(command, scissor),
++        }
++        const fill = switch (following.command) {
++            .fill_rounded_rect => |value| value,
++            else => return self.renderCommand(command, scissor),
++        };
++        const interior = referenceOpaqueRoundedInterior(following, fill) orelse {
++            return self.renderCommand(command, scissor);
++        };
++        const surface_bounds = geometry.RectF.init(0, 0, @floatFromInt(self.width), @floatFromInt(self.height));
++        const target = geometry.RectF.intersection(scissor orelse surface_bounds, surface_bounds);
++        const covered = geometry.RectF.intersection(target, interior);
++        if (covered.isEmpty()) return self.renderCommand(command, scissor);
++        if (covered.containsRect(target)) return;
++
++        const top = geometry.RectF.init(target.x, target.y, target.width, @max(0, covered.y - target.y));
++        const bottom = geometry.RectF.init(target.x, covered.maxY(), target.width, @max(0, target.maxY() - covered.maxY()));
++        const middle_height = covered.height;
++        const left = geometry.RectF.init(target.x, covered.y, @max(0, covered.x - target.x), middle_height);
++        const right = geometry.RectF.init(covered.maxX(), covered.y, @max(0, target.maxX() - covered.maxX()), middle_height);
++        for ([_]geometry.RectF{ top, bottom, left, right }) |visible| {
++            if (!visible.isEmpty()) try self.renderCommand(command, visible);
++        }
++    }
++
++    fn restoreStaticPrefixRect(self: ReferenceRenderSurface, prefix_pixels: []const u8, rect: geometry.RectF) void {
++        const pixel_rect = referencePixelRect(rect, self.width, self.height) orelse return;
++        var row: usize = 0;
++        while (row < pixel_rect.height) : (row += 1) {
++            const offset = ((pixel_rect.y + row) * self.width + pixel_rect.x) * 4;
++            const byte_len = pixel_rect.width * 4;
++            @memcpy(self.pixels[offset .. offset + byte_len], prefix_pixels[offset .. offset + byte_len]);
++        }
++    }
++
      pub fn pixelRgba8(self: ReferenceRenderSurface, x: usize, y: usize) [4]u8 {
          if (x >= self.width or y >= self.height) return .{ 0, 0, 0, 0 };
          const index = (y * self.width + x) * 4;
-@@ -865,12 +1091,50 @@ pub const ReferenceRenderSurface = struct {
+@@ -342,6 +716,13 @@ pub const ReferenceRenderSurface = struct {
+         // test (bit-identical on integer bounds); rounded fills take
+         // the anti-aliased signed-distance coverage.
+         const binary = referenceRadiusIsZero(radius);
++        if (!binary) {
++            if (referenceOpaqueSolidColor(value.fill, command.opacity)) |color| {
++                self.fillRoundedOpaqueSolid(pixel_rect, rect, radius, color);
++                self.memoStore(probe, pixel_rect);
++                return;
++            }
++        }
+         var y = pixel_rect.y;
+         while (y < pixel_rect.y + pixel_rect.height) : (y += 1) {
+             var x = pixel_rect.x;
+@@ -358,6 +739,46 @@ pub const ReferenceRenderSurface = struct {
+         self.memoStore(probe, pixel_rect);
+     }
+
++    /// Opaque rounded fills need coverage work only at their two row edges.
++    /// Coverage-one pixels are exact replacement bytes, not blended output.
++    fn fillRoundedOpaqueSolid(
++        self: ReferenceRenderSurface,
++        pixel_rect: ReferencePixelRect,
++        rect: geometry.RectF,
++        radius: Radius,
++        color: Color,
++    ) void {
++        const rgba = colorToRgba8(color);
++        const x_end = pixel_rect.x + pixel_rect.width;
++        var y = pixel_rect.y;
++        while (y < pixel_rect.y + pixel_rect.height) : (y += 1) {
++            var left = pixel_rect.x;
++            while (left < x_end) : (left += 1) {
++                const coverage = referenceRoundedRectCoverage(referencePixelCenter(left, y), rect, radius);
++                if (coverage >= 1) break;
++                if (coverage > 0) self.blendPixelCoverage(left, y, color, coverage, 1, .linear_light);
++            }
++
++            var right = x_end;
++            while (right > left) {
++                const x = right - 1;
++                const coverage = referenceRoundedRectCoverage(referencePixelCenter(x, y), rect, radius);
++                if (coverage >= 1) break;
++                if (coverage > 0) self.blendPixelCoverage(x, y, color, coverage, 1, .linear_light);
++                right -= 1;
++            }
++
++            var x = left;
++            while (x < right) : (x += 1) {
++                const index = (y * self.width + x) * 4;
++                self.pixels[index + 0] = rgba[0];
++                self.pixels[index + 1] = rgba[1];
++                self.pixels[index + 2] = rgba[2];
++                self.pixels[index + 3] = rgba[3];
++            }
++        }
++    }
++
+     fn strokeRect(self: ReferenceRenderSurface, command: RenderCommand, value: StrokeRect, draw_bounds: geometry.RectF) Error!void {
+         const stroke_width = nonNegative(value.stroke.width) * referenceTransformScale(command.transform);
+         if (stroke_width <= 0) return;
+@@ -368,6 +789,7 @@ pub const ReferenceRenderSurface = struct {
+         const radius = referenceScaleRadius(value.radius, command.transform);
+         const outer_radius = referenceOutsetRadius(radius, half_width);
+         const inner_radius = referenceInsetRadius(radius, half_width);
++        const inner_core = referenceRoundedCore(inner, inner_radius, 0.5);
+         const pixel_rect = referencePixelRect(draw_bounds, self.width, self.height) orelse return;
+         // Render memo: a rounded border's pixel rect spans the WHOLE
+         // stroked rect (a dialog outline covers the dialog), and every
+@@ -388,6 +810,9 @@ pub const ReferenceRenderSurface = struct {
+             var x = pixel_rect.x;
+             while (x < pixel_rect.x + pixel_rect.width) : (x += 1) {
+                 const point = referencePixelCenter(x, y);
++                if (inner_core) |core| {
++                    if (core.containsPoint(point)) continue;
++                }
+                 if (binary) {
+                     if (referencePointInRoundedRect(point, outer, outer_radius) and !referencePointInRoundedRect(point, inner, inner_radius)) {
+                         self.blendPixel(@intCast(x), @intCast(y), referenceSampleFill(value.stroke.fill, command.transform, point), command.opacity);
+@@ -865,12 +1290,50 @@ pub const ReferenceRenderSurface = struct {
          // placement, then apply the command transform on top.
          const local = Affine{ .a = scale, .b = 0, .c = 0, .d = -scale, .tx = pen_x + cell_inset, .ty = baseline };
          const total = command.transform.multiply(local);
@@ -459,7 +1030,7 @@ index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f
          // Glyph coverage blends in sRGB, not linear light (see
          // `CoverageBlend`): apparent text weight is set by how edge
          // pixels darken, and re-blending them in linear light thins
-@@ -881,6 +1145,7 @@ pub const ReferenceRenderSurface = struct {
+@@ -881,6 +1344,7 @@ pub const ReferenceRenderSurface = struct {
              .transform = command.transform,
              .opacity = command.opacity,
              .coverage_blend = .srgb,
@@ -467,7 +1038,7 @@ index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f
          };
          // The outline is already in device space; TrueType interiorness
          // is the nonzero rule. The glyph raster budgets are derived from
-@@ -898,6 +1163,8 @@ pub const ReferenceRenderSurface = struct {
+@@ -898,6 +1362,8 @@ pub const ReferenceRenderSurface = struct {
              referenceVectorClip(pixel_rect),
              &sink,
          ) catch return false;
@@ -476,7 +1047,37 @@ index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f
          return true;
      }
 
-@@ -988,8 +1255,10 @@ const ReferenceCoverageSink = struct {
+@@ -915,6 +1381,14 @@ pub const ReferenceRenderSurface = struct {
+
+     fn blendPixel(self: ReferenceRenderSurface, x: usize, y: usize, color: Color, opacity: f32) void {
+         const index = (y * self.width + x) * 4;
++        if (opacity >= 1 and color.a >= 1) {
++            const out = colorToRgba8(color);
++            self.pixels[index + 0] = out[0];
++            self.pixels[index + 1] = out[1];
++            self.pixels[index + 2] = out[2];
++            self.pixels[index + 3] = out[3];
++            return;
++        }
+         const dst = [4]u8{
+             self.pixels[index + 0],
+             self.pixels[index + 1],
+@@ -934,6 +1408,14 @@ pub const ReferenceRenderSurface = struct {
+     /// `CoverageBlend`).
+     fn blendPixelCoverage(self: ReferenceRenderSurface, x: usize, y: usize, color: Color, coverage: f32, opacity: f32, blend: CoverageBlend) void {
+         const index = (y * self.width + x) * 4;
++        if (coverage >= 1 and opacity >= 1 and color.a >= 1) {
++            const out = colorToRgba8(color);
++            self.pixels[index + 0] = out[0];
++            self.pixels[index + 1] = out[1];
++            self.pixels[index + 2] = out[2];
++            self.pixels[index + 3] = out[3];
++            return;
++        }
+         const dst = [4]u8{
+             self.pixels[index + 0],
+             self.pixels[index + 1],
+@@ -988,8 +1470,10 @@ const ReferenceCoverageSink = struct {
      transform: Affine,
      opacity: f32,
      coverage_blend: CoverageBlend,
@@ -487,7 +1088,7 @@ index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f
          if (x < 0 or y < 0) return;
          const px: usize = @intCast(x);
          const py: usize = @intCast(y);
-@@ -1000,6 +1269,22 @@ const ReferenceCoverageSink = struct {
+@@ -1000,6 +1484,22 @@ const ReferenceCoverageSink = struct {
      }
  };
 
@@ -510,10 +1111,72 @@ index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f
  fn referenceVectorClip(pixel_rect: ReferencePixelRect) vector.ClipRect {
      return .{
          .x0 = @intCast(pixel_rect.x),
-@@ -1047,6 +1332,18 @@ fn referenceMemoParamsHash(kind: u8, command: RenderCommand, value: anytype) u64
+@@ -1047,6 +1547,80 @@ fn referenceMemoParamsHash(kind: u8, command: RenderCommand, value: anytype) u64
      return hasher.final();
  }
 
++fn referenceStaticPrefixFingerprint(
++    width: usize,
++    height: usize,
++    scale: f32,
++    clear_color: Color,
++    commands: []const RenderCommand,
++) u64 {
++    var hasher = std.hash.Wyhash.init(0x51a7_1c3d);
++    referenceMemoHashValue(&hasher, width);
++    referenceMemoHashValue(&hasher, height);
++    referenceMemoHashValue(&hasher, scale);
++    referenceMemoHashValue(&hasher, clear_color);
++    referenceMemoHashValue(&hasher, commands.len);
++    for (commands) |command| {
++        referenceMemoHashValue(&hasher, command.opacity);
++        referenceMemoHashValue(&hasher, command.clip);
++        referenceMemoHashValue(&hasher, command.transform);
++        referenceMemoHashValue(&hasher, render_fingerprints.renderCommandFingerprint(command));
++    }
++    return hasher.final();
++}
++
++fn referenceOpaqueSolidColor(fill: Fill, opacity: f32) ?Color {
++    if (opacity < 1) return null;
++    return switch (fill) {
++        .color => |color| if (color.a >= 1) color else null,
++        else => null,
++    };
++}
++
++fn referenceRoundedCore(rect: geometry.RectF, radius: Radius, safety: f32) ?geometry.RectF {
++    const normalized = rect.normalized();
++    if (normalized.isEmpty()) return null;
++    const left = @max(radius.top_left, radius.bottom_left) + safety;
++    const right = @max(radius.top_right, radius.bottom_right) + safety;
++    const top = @max(radius.top_left, radius.top_right) + safety;
++    const bottom = @max(radius.bottom_left, radius.bottom_right) + safety;
++    if (left + right >= normalized.width or top + bottom >= normalized.height) return null;
++    return geometry.RectF.init(
++        normalized.x + left,
++        normalized.y + top,
++        normalized.width - left - right,
++        normalized.height - top - bottom,
++    );
++}
++
++fn referenceOpaqueRoundedInterior(command: RenderCommand, value: FillRoundedRect) ?geometry.RectF {
++    if (command.opacity < 1) return null;
++    const color = switch (value.fill) {
++        .color => |resolved| resolved,
++        else => return null,
++    };
++    if (color.a < 1) return null;
++    const rect = command.transform.transformRect(value.rect).normalized();
++    if (rect.isEmpty()) return null;
++    const radius = referenceScaleRadius(value.radius, command.transform);
++    const rounded_core = referenceRoundedCore(rect, radius, 0.5) orelse return null;
++    const command_core = command.bounds.normalized().deflate(geometry.InsetsF.all(0.5));
++    const interior = geometry.RectF.intersection(rounded_core, command_core);
++    return if (interior.isEmpty()) null else interior;
++}
++
 +fn referenceGlyphMemoParamsHash(value: DrawText, command: RenderCommand, glyph: u16, total: Affine) u64 {
 +    var hasher = std.hash.Wyhash.init(0xc42a_719d);
 +    referenceMemoHashValue(&hasher, @as(u8, 6));
@@ -529,7 +1192,7 @@ index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f
  /// Recursively hash a plain value BIT-EXACTLY: floats hash their bit
  /// patterns (so -0.0 and 0.0, or two NaNs, are distinct keys — stricter
  /// than `==`, which can only cause a spurious miss, never a wrong hit).
-@@ -1124,6 +1421,93 @@ fn referenceScaleRect(rect: geometry.RectF, scale: f32) geometry.RectF {
+@@ -1124,6 +1698,93 @@ fn referenceScaleRect(rect: geometry.RectF, scale: f32) geometry.RectF {
      return geometry.RectF.init(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale);
  }
 
@@ -624,7 +1287,7 @@ index bbf819b583b28eb21eead3f69fb1baec6c92cfc1..23321c2a787e0407bc51a729a864659f
  fn referencePixelCenter(x: usize, y: usize) geometry.PointF {
      return geometry.PointF.init(@as(f32, @floatFromInt(x)) + 0.5, @as(f32, @floatFromInt(y)) + 0.5);
 diff --git a/src/primitives/canvas/reference_memo.zig b/src/primitives/canvas/reference_memo.zig
-index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2a6dcf97c 100644
+index cca05e7..f3070d6 100644
 --- a/src/primitives/canvas/reference_memo.zig
 +++ b/src/primitives/canvas/reference_memo.zig
 @@ -42,7 +42,22 @@ pub const ReferenceRenderMemo = struct {
@@ -715,7 +1378,7 @@ index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2
      /// Hit/miss counters: observability for tests and profiling only.
      hits: u64 = 0,
      misses: u64 = 0,
-@@ -101,6 +164,10 @@ pub const ReferenceRenderMemo = struct {
+@@ -101,6 +164,15 @@ pub const ReferenceRenderMemo = struct {
      /// frame re-misses anyway. Beyond the budget, draws sample directly
      /// — the exact pixels either way, only the caching stops.
      image_scale_fills_this_pass: u64 = 0,
@@ -723,10 +1386,15 @@ index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2
 +    glyph_misses: u64 = 0,
 +    glyph_mask_hits: u64 = 0,
 +    glyph_mask_misses: u64 = 0,
++    static_prefix_pixels: []u8 = &.{},
++    static_prefix_width: usize = 0,
++    static_prefix_height: usize = 0,
++    static_prefix_fingerprint: u64 = 0,
++    static_prefix_valid: bool = false,
 
      pub fn init(allocator: std.mem.Allocator) ReferenceRenderMemo {
          return .{ .allocator = allocator };
-@@ -111,6 +178,16 @@ pub const ReferenceRenderMemo = struct {
+@@ -111,6 +183,22 @@ pub const ReferenceRenderMemo = struct {
              if (entry.pixels.len > 0) self.allocator.free(entry.pixels);
              entry.* = .{};
          }
@@ -740,10 +1408,55 @@ index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2
 +            entry.* = .{};
 +        }
 +        self.glyph_mask_total_bytes = 0;
++        if (self.static_prefix_pixels.len > 0) self.allocator.free(self.static_prefix_pixels);
++        self.static_prefix_pixels = &.{};
++        self.static_prefix_width = 0;
++        self.static_prefix_height = 0;
++        self.static_prefix_fingerprint = 0;
++        self.static_prefix_valid = false;
          for (&self.image_scale_entries) |*entry| {
              if (entry.pixels.len > 0) self.allocator.free(entry.pixels);
              entry.* = .{};
-@@ -135,8 +212,55 @@ pub const ReferenceRenderMemo = struct {
+@@ -118,6 +206,38 @@ pub const ReferenceRenderMemo = struct {
+         self.image_scale_total_bytes = 0;
+     }
+
++    pub fn findStaticPrefix(self: *const ReferenceRenderMemo, width: usize, height: usize, fingerprint: u64) ?[]const u8 {
++        if (!self.static_prefix_valid or
++            self.static_prefix_width != width or
++            self.static_prefix_height != height or
++            self.static_prefix_fingerprint != fingerprint)
++        {
++            return null;
++        }
++        return self.static_prefix_pixels;
++    }
++
++    pub fn prepareStaticPrefix(self: *ReferenceRenderMemo, width: usize, height: usize) ?[]u8 {
++        const pixel_count = std.math.mul(usize, width, height) catch return null;
++        const byte_len = std.math.mul(usize, pixel_count, 4) catch return null;
++        if (byte_len == 0 or byte_len > 64 * 1024 * 1024) return null;
++        self.static_prefix_valid = false;
++        if (self.static_prefix_pixels.len != byte_len) {
++            const replacement = self.allocator.alloc(u8, byte_len) catch return null;
++            if (self.static_prefix_pixels.len > 0) self.allocator.free(self.static_prefix_pixels);
++            self.static_prefix_pixels = replacement;
++        }
++        self.static_prefix_width = width;
++        self.static_prefix_height = height;
++        return self.static_prefix_pixels;
++    }
++
++    pub fn commitStaticPrefix(self: *ReferenceRenderMemo, fingerprint: u64) void {
++        if (self.static_prefix_pixels.len == 0) return;
++        self.static_prefix_fingerprint = fingerprint;
++        self.static_prefix_valid = true;
++    }
++
+     /// Build the key for a command about to run: hashes the destination
+     /// rows it can read (rect expanded vertically by `apron_rows`,
+     /// clamped to the surface). `source` is the surface's pixel buffer
+@@ -135,8 +255,23 @@ pub const ReferenceRenderMemo = struct {
      ) Key {
          const apron_top = rect_y -| apron_rows;
          const apron_bottom = @min(surface_height, rect_y + rect_height + apron_rows);
@@ -766,14 +1479,14 @@ index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2
 +            const row_bytes = surface_width * 4;
 +            source_hasher.update(source[apron_top * row_bytes .. apron_bottom * row_bytes]);
 +        }
-+        return .{
-+            .surface_width = surface_width,
-+            .surface_height = surface_height,
-+            .rect_x = rect_x,
-+            .rect_y = rect_y,
-+            .rect_width = rect_width,
-+            .rect_height = rect_height,
-+            .params_hash = params_hash,
+         return .{
+             .surface_width = surface_width,
+             .surface_height = surface_height,
+@@ -145,7 +280,39 @@ pub const ReferenceRenderMemo = struct {
+             .rect_width = rect_width,
+             .rect_height = rect_height,
+             .params_hash = params_hash,
+-            .source_hash = std.hash.Wyhash.hash(0x5c72_11b8, hashed),
 +            .source_hash = source_hasher.final(),
 +        };
 +    }
@@ -798,19 +1511,19 @@ index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2
 +            const offset = ((rect_y + row) * surface_width + rect_x) * 4;
 +            source_hasher.update(source[offset .. offset + rect_width * 4]);
 +        }
-         return .{
-             .surface_width = surface_width,
-             .surface_height = surface_height,
-@@ -145,7 +269,7 @@ pub const ReferenceRenderMemo = struct {
-             .rect_width = rect_width,
-             .rect_height = rect_height,
-             .params_hash = params_hash,
--            .source_hash = std.hash.Wyhash.hash(0x5c72_11b8, hashed),
++        return .{
++            .surface_width = surface_width,
++            .surface_height = surface_height,
++            .rect_x = rect_x,
++            .rect_y = rect_y,
++            .rect_width = rect_width,
++            .rect_height = rect_height,
++            .params_hash = params_hash,
 +            .source_hash = source_hasher.final(),
          };
      }
 
-@@ -169,8 +293,9 @@ pub const ReferenceRenderMemo = struct {
+@@ -169,8 +336,9 @@ pub const ReferenceRenderMemo = struct {
      /// recently used entry when full; returns null when the allocator
      /// cannot supply the buffer (the command simply stays unmemoized).
      pub fn store(self: *ReferenceRenderMemo, key: Key) ?[]u8 {
@@ -822,7 +1535,7 @@ index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2
          var victim: *Entry = &self.entries[0];
          for (&self.entries) |*entry| {
              if (!entry.used) {
-@@ -180,10 +305,13 @@ pub const ReferenceRenderMemo = struct {
+@@ -180,10 +348,13 @@ pub const ReferenceRenderMemo = struct {
              if (entry.stamp < victim.stamp) victim = entry;
          }
          if (victim.pixels.len != byte_len) {
@@ -839,7 +1552,7 @@ index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2
          }
          self.clock += 1;
          victim.key = key;
-@@ -192,6 +320,151 @@ pub const ReferenceRenderMemo = struct {
+@@ -192,6 +363,150 @@ pub const ReferenceRenderMemo = struct {
          return victim.pixels;
      }
 
@@ -987,15 +1700,14 @@ index cca05e7805b9aa5c79f94e641c2aed3f677bdd46..db0956ba76d06b49b1d42bb475dbefe2
 +        return @intCast(hasher.final() % max_glyph_mask_entries);
 +    }
 +
-+
      // ------------------------------------------------ scaled-image samples
      //
      // Scale-once pool for `draw_image`: at integer device alignment a
 diff --git a/src/primitives/canvas/reference_tests.zig b/src/primitives/canvas/reference_tests.zig
-index 1e4fb9acb77578c8748bf46c80696c08973545c4..ec44eeda8b6531e8378b9f42a89b94596e6a2445 100644
+index 1e4fb9a..1968c74 100644
 --- a/src/primitives/canvas/reference_tests.zig
 +++ b/src/primitives/canvas/reference_tests.zig
-@@ -489,6 +489,257 @@ test "reference renderer clears dirty rect on retained load" {
+@@ -489,6 +489,364 @@ test "reference renderer clears dirty rect on retained load" {
      try expectPixelRgba8(.{ 0, 0, 255, 255 }, surface, 3, 3);
  }
 
@@ -1134,6 +1846,113 @@ index 1e4fb9acb77578c8748bf46c80696c08973545c4..ec44eeda8b6531e8378b9f42a89b9459
 +    }
 +}
 +
++test "static chrome prefix damage rendering stays byte equal and invalidates exactly" {
++    const width = 24;
++    const height = 16;
++    const surface_bounds = geometry.RectF.init(0, 0, width, height);
++    const panel_bounds = geometry.RectF.init(2, 2, 20, 12);
++    const indicator_bounds = geometry.RectF.init(7, 6, 10, 4);
++    const clear = Color.rgb8(1, 2, 3);
++
++    const Harness = struct {
++        fn commands(background: Color, indicator: Color) [4]RenderCommand {
++            return .{
++                .{
++                    .command = .{ .fill_rect = .{
++                        .id = 1,
++                        .rect = surface_bounds,
++                        .fill = .{ .color = background },
++                    } },
++                    .local_bounds = surface_bounds,
++                    .bounds = surface_bounds,
++                },
++                .{
++                    .command = .{ .shadow = .{
++                        .id = 2,
++                        .rect = panel_bounds,
++                        .radius = Radius.all(2),
++                        .offset = .{ .dx = 0, .dy = 1 },
++                        .blur = 2,
++                        .spread = 0,
++                        .color = Color.rgba8(0, 0, 0, 160),
++                    } },
++                    .local_bounds = surface_bounds,
++                    .bounds = surface_bounds,
++                },
++                .{
++                    .command = .{ .fill_rounded_rect = .{
++                        .id = 3,
++                        .rect = panel_bounds,
++                        .radius = Radius.all(2),
++                        .fill = .{ .color = Color.rgb8(18, 18, 18) },
++                    } },
++                    .local_bounds = panel_bounds,
++                    .bounds = panel_bounds,
++                },
++                .{
++                    .command = .{ .fill_rounded_rect = .{
++                        .id = 4,
++                        .rect = indicator_bounds,
++                        .radius = Radius.all(1.5),
++                        .fill = .{ .color = indicator },
++                    } },
++                    .local_bounds = indicator_bounds,
++                    .bounds = indicator_bounds,
++                },
++            };
++        }
++
++        fn fullPass(render_commands: []const RenderCommand) CanvasRenderPass {
++            return .{
++                .surface_size = geometry.SizeF.init(width, height),
++                .full_repaint = true,
++                .commands = render_commands,
++            };
++        }
++
++        fn damagePass(render_commands: []const RenderCommand) CanvasRenderPass {
++            return .{
++                .surface_size = geometry.SizeF.init(width, height),
++                .dirty_bounds = indicator_bounds,
++                .commands = render_commands,
++            };
++        }
++    };
++
++    var direct_pixels: [width * height * 4]u8 = undefined;
++    var retained_pixels: [width * height * 4]u8 = undefined;
++    const direct = try ReferenceRenderSurface.init(width, height, &direct_pixels);
++    var memo = canvas.ReferenceRenderMemo.init(std.testing.allocator);
++    defer memo.deinit();
++    memo.min_pixels = 0;
++    const retained = (try ReferenceRenderSurface.init(width, height, &retained_pixels)).withRenderMemo(&memo);
++
++    const initial = Harness.commands(Color.rgb8(9, 9, 9), Color.rgb8(255, 94, 26));
++    const initial_pass = Harness.fullPass(&initial);
++    try direct.renderPass(initial_pass, clear);
++    try std.testing.expectEqual(.damage, try retained.renderPassDamageWithStaticPrefix(initial_pass, clear, &.{}, 1));
++    try std.testing.expectEqualSlices(u8, &direct_pixels, &retained_pixels);
++
++    // The cache hit restores only the dirty indicator region, then the
++    // shadow/fill suffix replays. Occluded shadow pixels and opaque fill fast
++    // paths must remain byte-for-byte identical to the ordinary renderer.
++    const changed = Harness.commands(Color.rgb8(9, 9, 9), Color.rgb8(255, 180, 32));
++    direct.clear(clear);
++    try direct.renderPass(Harness.fullPass(&changed), clear);
++    const changed_pass = Harness.damagePass(&changed);
++    try std.testing.expectEqual(.fallback, try retained.renderPassDamageWithStaticPrefix(changed_pass, clear, &.{indicator_bounds}, 1));
++    try std.testing.expectEqualSlices(u8, &direct_pixels, &retained_pixels);
++
++    // Any prefix byte change produces a new fingerprint and a complete cache
++    // replacement; dimensions/scale/clear color participate in the same key.
++    const rebranded = Harness.commands(Color.rgb8(12, 8, 4), Color.rgb8(255, 180, 32));
++    direct.clear(clear);
++    try direct.renderPass(Harness.fullPass(&rebranded), clear);
++    const rebranded_pass = Harness.fullPass(&rebranded);
++    try std.testing.expectEqual(.damage, try retained.renderPassDamageWithStaticPrefix(rebranded_pass, clear, &.{}, 1));
++    try std.testing.expectEqualSlices(u8, &direct_pixels, &retained_pixels);
++}
++
 +test "reference damage rendering transitively merges snapped overlaps before translucent draws" {
 +    const commands = [_]RenderCommand{.{
 +        .command = .{ .fill_rect = .{
@@ -1253,7 +2072,7 @@ index 1e4fb9acb77578c8748bf46c80696c08973545c4..ec44eeda8b6531e8378b9f42a89b9459
  test "reference renderer captures Phase 2 primitive signature" {
      const stops = [_]GradientStop{
          .{ .offset = 0, .color = Color.rgb8(248, 250, 252) },
-@@ -1462,6 +1713,66 @@ test "reference renderer draws proxy text runs" {
+@@ -1462,6 +1820,66 @@ test "reference renderer draws proxy text runs" {
      try expectPixelRgba8(.{ 0, 0, 0, 255 }, surface, 1, 3);
  }
 
@@ -1321,10 +2140,10 @@ index 1e4fb9acb77578c8748bf46c80696c08973545c4..ec44eeda8b6531e8378b9f42a89b9459
      const commands = [_]CanvasCommand{.{ .draw_text = .{
          .id = 1,
 diff --git a/src/runtime/canvas_frame.zig b/src/runtime/canvas_frame.zig
-index ed90a45bfaa5e53a77a93b49270af27b1a6377ee..b2e3d590c9d9e12bc4a2066788cc3e21210b0b71 100644
+index ed90a45..58a846c 100644
 --- a/src/runtime/canvas_frame.zig
 +++ b/src/runtime/canvas_frame.zig
-@@ -401,7 +401,11 @@ pub fn RuntimeCanvasFrames(comptime Runtime: type) type {
+@@ -401,7 +401,20 @@ pub fn RuntimeCanvasFrames(comptime Runtime: type) type {
              // equivalent of the packet host's decode+draw).
              const present_begin = self.frame_profile.begin();
              defer self.frame_profile.end(.present, present_begin);
@@ -1333,11 +2152,20 @@ index ed90a45bfaa5e53a77a93b49270af27b1a6377ee..b2e3d590c9d9e12bc4a2066788cc3e21
 +            // but sparse frames rasterize their canonical dirty fragments in
 +            // one command-major pass. The renderer falls back to the ordinary
 +            // union whenever the refinement cannot prove equivalence.
-+            _ = try surface.renderPassDamage(canvas_frame.renderPass(), clear_color, canvas_frame.dirtyRects());
++            const prefix_command_count = if (runtimeFindViewIndex(self, window_id, label)) |index|
++                self.views[index].canvas_widget_display_list_prefix_count
++            else
++                0;
++            _ = try surface.renderPassDamageWithStaticPrefix(
++                canvas_frame.renderPass(),
++                clear_color,
++                canvas_frame.dirtyRects(),
++                prefix_command_count,
++            );
              try self.options.platform.services.presentGpuSurfacePixels(.{
                  .window_id = window_id,
                  .label = label,
-@@ -1391,38 +1395,64 @@ const CanvasPacketPatchDirty = struct {
+@@ -1391,38 +1404,64 @@ const CanvasPacketPatchDirty = struct {
      rects: [canvas.max_canvas_frame_dirty_rects]geometry.RectF = undefined,
      rect_count: usize = 0,
 
@@ -1423,7 +2251,7 @@ index ed90a45bfaa5e53a77a93b49270af27b1a6377ee..b2e3d590c9d9e12bc4a2066788cc3e21
  fn canvasPacketPatchDirtyBounds(view: anytype, current: []const CanvasPacketCurrentCommand) ?CanvasPacketPatchDirty {
      const baseline_count = view.canvas_packet_baseline_count;
      const baseline_keys = view.canvas_packet_baseline_keys[0..baseline_count];
-@@ -1768,3 +1798,17 @@ fn canvasRotationCircumscribedBounds(rect: geometry.RectF, center: geometry.Poin
+@@ -1768,3 +1807,17 @@ fn canvasRotationCircumscribedBounds(rect: geometry.RectF, center: geometry.Poin
      }
      return geometry.RectF.init(center.x - radius, center.y - radius, radius * 2, radius * 2);
  }
@@ -1442,7 +2270,7 @@ index ed90a45bfaa5e53a77a93b49270af27b1a6377ee..b2e3d590c9d9e12bc4a2066788cc3e21
 +    try std.testing.expectEqualDeep(geometry.RectF.init(0, 0, 30, 10), dirty.bounds.?);
 +}
 diff --git a/src/runtime/canvas_frame_patch_tests.zig b/src/runtime/canvas_frame_patch_tests.zig
-index ec2aa238b6601f6f3edd655a6f592974288479a1..5b65626a3858bd53e893ae630c7bcfe34d7afa3b 100644
+index ec2aa23..5b65626 100644
 --- a/src/runtime/canvas_frame_patch_tests.zig
 +++ b/src/runtime/canvas_frame_patch_tests.zig
 @@ -336,13 +336,15 @@ fn buildScriptScene(
@@ -1512,211 +2340,3 @@ index ec2aa238b6601f6f3edd655a6f592974288479a1..5b65626a3858bd53e893ae630c7bcfe3
      try std.testing.expectEqual(canvas.binary_packet_load_action_patch, harness.null_platform.gpu_surface_packet_present_binary_load_action);
      try std.testing.expectEqual(platform.GpuPresentPacketMode.patch, harness.runtime.views[0].gpu_present_packet_mode);
  }
-
-diff --git a/src/platform/linux/gtk_host.c b/src/platform/linux/gtk_host.c
-index 06fcb48..74fd8bb 100644
---- a/src/platform/linux/gtk_host.c
-+++ b/src/platform/linux/gtk_host.c
-@@ -5515,6 +5515,7 @@ static char *native_sdk_bytes_to_string(const char *bytes, size_t len) {
-     return bytes && len > 0 ? native_sdk_strndup(bytes, len) : NULL;
- }
-
-+#if GTK_CHECK_VERSION(4, 10, 0)
- static void native_sdk_open_dialog_done(GObject *source, GAsyncResult *result, gpointer data) {
-     native_sdk_file_dialog_state_t *state = data;
-     GError *error = NULL;
-@@ -5626,12 +5627,141 @@ size_t native_sdk_gtk_show_save_dialog(native_sdk_gtk_host_t *host, const native
-     g_object_unref(dialog);
-     return written;
- }
-+#else
-+/* GtkFileDialog was introduced in GTK 4.10. Keep the Native SDK dialog
-+ * contract available on the Ubuntu 22.04 compatibility floor through the
-+ * GTK 4.0 GtkFileChooserNative API. The public result encoding remains
-+ * identical; only the platform presentation primitive changes. */
-+static void native_sdk_legacy_open_dialog_done(GtkNativeDialog *source, gint response, gpointer data) {
-+    native_sdk_file_dialog_state_t *state = data;
-+    if (response == GTK_RESPONSE_ACCEPT) {
-+        state->files = gtk_file_chooser_get_files(GTK_FILE_CHOOSER(source));
-+    }
-+    g_main_loop_quit(state->loop);
-+}
-+
-+static void native_sdk_legacy_save_dialog_done(GtkNativeDialog *source, gint response, gpointer data) {
-+    native_sdk_file_dialog_state_t *state = data;
-+    if (response == GTK_RESPONSE_ACCEPT) {
-+        state->file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(source));
-+    }
-+    g_main_loop_quit(state->loop);
-+}
-+
-+native_sdk_gtk_open_dialog_result_t native_sdk_gtk_show_open_dialog(native_sdk_gtk_host_t *host, const native_sdk_gtk_open_dialog_opts_t *opts, char *buffer, size_t buffer_len) {
-+    native_sdk_gtk_open_dialog_result_t result = {0};
-+    char *title = native_sdk_bytes_to_string(opts->title, opts->title_len);
-+    GtkFileChooserAction action = opts->allow_directories
-+        ? GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER
-+        : GTK_FILE_CHOOSER_ACTION_OPEN;
-+    GtkFileChooserNative *dialog = gtk_file_chooser_native_new(
-+        title ? title : "Open",
-+        native_sdk_parent_window(host),
-+        action,
-+        "_Open",
-+        "_Cancel");
-+    if (!dialog) {
-+        if (title) free(title);
-+        return result;
-+    }
-+    gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), TRUE);
-+    native_sdk_file_dialog_state_t state = { .loop = g_main_loop_new(NULL, FALSE) };
-+    if (!state.loop) {
-+        if (title) free(title);
-+        g_object_unref(dialog);
-+        return result;
-+    }
-+    g_signal_connect(dialog, "response", G_CALLBACK(native_sdk_legacy_open_dialog_done), &state);
-+    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dialog));
-+    g_main_loop_run(state.loop);
-+    g_main_loop_unref(state.loop);
-+    if (state.files) {
-+        size_t offset = 0;
-+        int overflow = 0;
-+        guint count = g_list_model_get_n_items(state.files);
-+        for (guint i = 0; i < count; i++) {
-+            GFile *file = G_FILE(g_list_model_get_item(state.files, i));
-+            char *path = g_file_get_path(file);
-+            if (path) {
-+                size_t len = strlen(path);
-+                size_t needed = len + (result.count > 0 ? 1 : 0);
-+                if (needed <= buffer_len - offset) {
-+                    if (result.count > 0) buffer[offset++] = '\n';
-+                    memcpy(buffer + offset, path, len);
-+                    offset += len;
-+                    result.count++;
-+                } else {
-+                    overflow = 1;
-+                }
-+                g_free(path);
-+            }
-+            g_object_unref(file);
-+            if (overflow) break;
-+        }
-+        result.bytes_written = overflow ? native_sdk_overflow_size(buffer_len) : offset;
-+        g_object_unref(state.files);
-+    }
-+    if (title) free(title);
-+    g_object_unref(dialog);
-+    return result;
-+}
-+
-+size_t native_sdk_gtk_show_save_dialog(native_sdk_gtk_host_t *host, const native_sdk_gtk_save_dialog_opts_t *opts, char *buffer, size_t buffer_len) {
-+    char *title = native_sdk_bytes_to_string(opts->title, opts->title_len);
-+    char *default_name = native_sdk_bytes_to_string(opts->default_name, opts->default_name_len);
-+    GtkFileChooserNative *dialog = gtk_file_chooser_native_new(
-+        title ? title : "Save",
-+        native_sdk_parent_window(host),
-+        GTK_FILE_CHOOSER_ACTION_SAVE,
-+        "_Save",
-+        "_Cancel");
-+    if (!dialog) {
-+        if (title) free(title);
-+        if (default_name) free(default_name);
-+        return 0;
-+    }
-+    if (default_name) {
-+        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), default_name);
-+    }
-+    native_sdk_file_dialog_state_t state = { .loop = g_main_loop_new(NULL, FALSE) };
-+    if (!state.loop) {
-+        if (title) free(title);
-+        if (default_name) free(default_name);
-+        g_object_unref(dialog);
-+        return 0;
-+    }
-+    g_signal_connect(dialog, "response", G_CALLBACK(native_sdk_legacy_save_dialog_done), &state);
-+    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dialog));
-+    g_main_loop_run(state.loop);
-+    g_main_loop_unref(state.loop);
-+    size_t written = 0;
-+    if (state.file) {
-+        char *path = g_file_get_path(state.file);
-+        if (path) {
-+            size_t len = strlen(path);
-+            if (len > buffer_len) {
-+                written = native_sdk_overflow_size(buffer_len);
-+            } else {
-+                written = len;
-+                memcpy(buffer, path, written);
-+            }
-+            g_free(path);
-+        }
-+        g_object_unref(state.file);
-+    }
-+    if (title) free(title);
-+    if (default_name) free(default_name);
-+    g_object_unref(dialog);
-+    return written;
-+}
-+#endif
-
- typedef struct native_sdk_alert_state {
-     GMainLoop *loop;
-     int response;
- } native_sdk_alert_state_t;
-
-+#if GTK_CHECK_VERSION(4, 10, 0)
- static void native_sdk_alert_done(GObject *source, GAsyncResult *result, gpointer data) {
-     native_sdk_alert_state_t *state = data;
-     GError *error = NULL;
-@@ -5674,3 +5804,52 @@ int native_sdk_gtk_show_message_dialog(native_sdk_gtk_host_t *host, const native
-     if (state.response == 1) return 1;
-     return 2;
- }
-+#else
-+static void native_sdk_legacy_alert_done(GtkDialog *source, gint response, gpointer data) {
-+    (void)source;
-+    native_sdk_alert_state_t *state = data;
-+    state->response = response;
-+    g_main_loop_quit(state->loop);
-+}
-+
-+int native_sdk_gtk_show_message_dialog(native_sdk_gtk_host_t *host, const native_sdk_gtk_message_dialog_opts_t *opts) {
-+    char *title = native_sdk_bytes_to_string(opts->title, opts->title_len);
-+    char *message = native_sdk_bytes_to_string(opts->message, opts->message_len);
-+    char *informative = native_sdk_bytes_to_string(opts->informative_text, opts->informative_text_len);
-+    char *primary = native_sdk_bytes_to_string(opts->primary_button, opts->primary_button_len);
-+    char *secondary = native_sdk_bytes_to_string(opts->secondary_button, opts->secondary_button_len);
-+    char *tertiary = native_sdk_bytes_to_string(opts->tertiary_button, opts->tertiary_button_len);
-+    GtkWidget *widget = gtk_message_dialog_new(
-+        native_sdk_parent_window(host),
-+        GTK_DIALOG_MODAL,
-+        GTK_MESSAGE_INFO,
-+        GTK_BUTTONS_NONE,
-+        "%s",
-+        title ? title : (message ? message : ""));
-+    GtkDialog *dialog = GTK_DIALOG(widget);
-+    const char *detail = informative ? informative : (title && message ? message : NULL);
-+    if (detail) {
-+        gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s", detail);
-+    }
-+    gtk_dialog_add_button(dialog, primary ? primary : "OK", 0);
-+    if (secondary) gtk_dialog_add_button(dialog, secondary, 1);
-+    if (tertiary) gtk_dialog_add_button(dialog, tertiary, 2);
-+    native_sdk_alert_state_t state = { .loop = g_main_loop_new(NULL, FALSE), .response = 0 };
-+    if (state.loop) {
-+        g_signal_connect(dialog, "response", G_CALLBACK(native_sdk_legacy_alert_done), &state);
-+        gtk_window_present(GTK_WINDOW(dialog));
-+        g_main_loop_run(state.loop);
-+        g_main_loop_unref(state.loop);
-+    }
-+    gtk_window_destroy(GTK_WINDOW(dialog));
-+    if (title) free(title);
-+    if (message) free(message);
-+    if (informative) free(informative);
-+    if (primary) free(primary);
-+    if (secondary) free(secondary);
-+    if (tertiary) free(tertiary);
-+    if (state.response <= 0) return 0;
-+    if (state.response == 1) return 1;
-+    return 2;
-+}
-+#endif

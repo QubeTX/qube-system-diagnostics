@@ -441,6 +441,7 @@ test "boot arms exactly one live foreground render timer" {
     try testing.expectEqual(@as(usize, 1), fx.pendingTimerCount());
     const timer = fx.pendingTimerAt(0).?;
     try testing.expectEqual(@as(u64, 1000), timer.interval_ms);
+    try testing.expectEqual(native_sdk.TimerMode.repeating, timer.mode);
     try testing.expect(!model.engine_ready);
     try testing.expect(std.mem.indexOf(u8, model.status(), "Engine unavailable") != null);
 }

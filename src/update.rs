@@ -699,6 +699,14 @@ fn execute_windows_msi(
             &staged.path.to_string_lossy(),
             "/passive",
             "/norestart",
+            // An update is always dispatched through an already proven MSI
+            // owner. Explicit reinstall semantics make a same-version repair
+            // restore missing GUI/engine files instead of letting `/i` treat
+            // the registered package as a no-op. `vomus` is Microsoft's
+            // documented complete-reinstall mode and also re-caches the exact
+            // staged package for ordinary version transitions.
+            "REINSTALL=ALL",
+            "REINSTALLMODE=vomus",
         ]),
         quiet_stdout,
     )

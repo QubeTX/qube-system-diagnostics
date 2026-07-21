@@ -252,17 +252,13 @@ impl SystemSnapshot {
     }
 
     /// Refresh the one-second process projection only while its GUI page is
-    /// subscribed. Aggregate CPU/memory remain current, while unrelated
-    /// network and command-backed collectors stay dormant.
+    /// subscribed. The page consumes per-process CPU/memory from the platform
+    /// sampler, not the aggregate CPU and memory projections. Leaving those
+    /// cached avoids a second set of system queries every second; selecting a
+    /// page that displays them changes the engine profile and refreshes them
+    /// immediately. Unrelated network and command-backed collectors stay
+    /// dormant as before.
     pub fn refresh_processes_gui(&mut self, sort: crate::types::ProcessSortKey) {
-        self.sys.refresh_cpu_usage();
-        self.sys.refresh_memory();
-        self.cpu = cpu::collect(&self.sys);
-        let modules = std::mem::take(&mut self.memory.modules);
-        let module_status = self.memory.module_status.clone();
-        self.memory = memory::collect(&self.sys);
-        self.memory.modules = modules;
-        self.memory.module_status = module_status;
         #[cfg(target_os = "windows")]
         {
             self.processes = self

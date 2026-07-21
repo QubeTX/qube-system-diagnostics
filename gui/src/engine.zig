@@ -58,12 +58,46 @@ pub const TraySummary = extern struct {
     reserved: u32 = 0,
 };
 
+pub const process_summary_rows: usize = 16;
+pub const process_name_bytes: usize = 96;
+pub const process_status_bytes: usize = 32;
+
+pub const ProcessRowSummary = extern struct {
+    pid: u32 = 0,
+    cpu_percent: f32 = 0,
+    memory_bytes: u64 = 0,
+    memory_percent: f64 = 0,
+    name_len: u32 = 0,
+    friendly_name_len: u32 = 0,
+    status_len: u32 = 0,
+    reserved: u32 = 0,
+    name: [process_name_bytes]u8 = [_]u8{0} ** process_name_bytes,
+    friendly_name: [process_name_bytes]u8 = [_]u8{0} ** process_name_bytes,
+    status: [process_status_bytes]u8 = [_]u8{0} ** process_status_bytes,
+};
+
+pub const ProcessSummary = extern struct {
+    sequence: u64 = 0,
+    captured_unix_ms: u64 = 0,
+    total_count: u32 = 0,
+    total_threads: u32 = 0,
+    row_count: u32 = 0,
+    reserved: u32 = 0,
+    rows: [process_summary_rows]ProcessRowSummary = [_]ProcessRowSummary{.{}} ** process_summary_rows,
+};
+
 comptime {
     if (@sizeOf(FastSummary) != 48 or @alignOf(FastSummary) != 8) {
         @compileError("FastSummary no longer matches the SD-300 Rust ABI");
     }
     if (@sizeOf(TraySummary) != 32 or @alignOf(TraySummary) != 8) {
         @compileError("TraySummary no longer matches the SD-300 Rust ABI");
+    }
+    if (@sizeOf(ProcessRowSummary) != 264 or @alignOf(ProcessRowSummary) != 8) {
+        @compileError("ProcessRowSummary no longer matches the SD-300 Rust ABI");
+    }
+    if (@sizeOf(ProcessSummary) != 4256 or @alignOf(ProcessSummary) != 8) {
+        @compileError("ProcessSummary no longer matches the SD-300 Rust ABI");
     }
 }
 
@@ -79,6 +113,7 @@ const SetProfileFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
 const SetProcessSortFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
 const ReadFastSummaryFn = *const fn (?*anyopaque, *FastSummary) callconv(.c) i32;
 const ReadTraySummaryFn = *const fn (?*anyopaque, *TraySummary) callconv(.c) i32;
+const ReadProcessSummaryFn = *const fn (?*anyopaque, u64, *ProcessSummary) callconv(.c) i32;
 const ReadTopicFn = *const fn (?*anyopaque, u32, u64, ?[*]u8, usize, *usize, *u64) callconv(.c) i32;
 
 const profile_overview: u32 = 2;
@@ -152,6 +187,7 @@ pub const Runtime = struct {
     request_driver_scan_fn: HandleFn,
     read_fast_summary_fn: ReadFastSummaryFn,
     read_tray_summary_fn: ReadTraySummaryFn,
+    read_process_summary_fn: ReadProcessSummaryFn,
     read_topic_fn: ReadTopicFn,
     read_settings_fn: MetadataFn,
     write_settings_fn: WriteSettingsFn,
@@ -159,6 +195,7 @@ pub const Runtime = struct {
     request_export_fn: RequestExportFn,
     read_export_status_fn: ReadExportStatusFn,
     topic_sequences: [9]u64 = [_]u64{0} ** 9,
+    process_summary_sequence: u64 = 0,
 
     pub fn init(io: std.Io, allocator: std.mem.Allocator) !Runtime {
         const exe_dir = try std.process.executableDirPathAlloc(io, allocator);
@@ -182,6 +219,7 @@ pub const Runtime = struct {
         const destroy_fn = try library.lookup(HandleFn, "sd300_engine_destroy");
         const read_fast_summary_fn = try library.lookup(ReadFastSummaryFn, "sd300_engine_read_fast_summary");
         const read_tray_summary_fn = try library.lookup(ReadTraySummaryFn, "sd300_engine_read_tray_summary");
+        const read_process_summary_fn = try library.lookup(ReadProcessSummaryFn, "sd300_engine_read_process_summary");
         const read_topic_fn = try library.lookup(ReadTopicFn, "sd300_engine_read_topic");
         const read_settings_fn = try library.lookup(MetadataFn, "sd300_engine_read_settings");
         const write_settings_fn = try library.lookup(WriteSettingsFn, "sd300_engine_write_settings");
@@ -218,6 +256,7 @@ pub const Runtime = struct {
             .request_driver_scan_fn = request_driver_scan_fn,
             .read_fast_summary_fn = read_fast_summary_fn,
             .read_tray_summary_fn = read_tray_summary_fn,
+            .read_process_summary_fn = read_process_summary_fn,
             .read_topic_fn = read_topic_fn,
             .read_settings_fn = read_settings_fn,
             .write_settings_fn = write_settings_fn,
@@ -250,6 +289,17 @@ pub const Runtime = struct {
         if (status == status_ok) return summary;
         if (status == status_unchanged) return error.EngineDataPending;
         return error.EngineReadFailed;
+    }
+
+    pub fn readProcessSummary(self: *Runtime) !?ProcessSummary {
+        var summary = ProcessSummary{};
+        const status = self.read_process_summary_fn(self.handle, self.process_summary_sequence, &summary);
+        if (status == status_unchanged) return null;
+        if (status != status_ok or summary.row_count > process_summary_rows) {
+            return error.EngineReadFailed;
+        }
+        self.process_summary_sequence = summary.sequence;
+        return summary;
     }
 
     pub fn readTopicAlloc(self: *Runtime, allocator: std.mem.Allocator, topic: Topic) !?TopicPayload {
@@ -308,8 +358,7 @@ pub const Runtime = struct {
         else if (section == 6)
             profile_processes
         else
-            profile_foreground
-        ;
+            profile_foreground;
         if (self.set_profile_fn(self.handle, profile) != status_ok) {
             return error.EngineProfileFailed;
         }
@@ -431,4 +480,8 @@ extern "kernel32" fn FreeLibrary(module: windows.HMODULE) callconv(.winapi) wind
 test "fast summary ABI is stable" {
     try std.testing.expectEqual(@as(usize, 48), @sizeOf(FastSummary));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(FastSummary));
+    try std.testing.expectEqual(@as(usize, 264), @sizeOf(ProcessRowSummary));
+    try std.testing.expectEqual(@as(usize, 8), @alignOf(ProcessRowSummary));
+    try std.testing.expectEqual(@as(usize, 4256), @sizeOf(ProcessSummary));
+    try std.testing.expectEqual(@as(usize, 8), @alignOf(ProcessSummary));
 }

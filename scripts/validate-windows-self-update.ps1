@@ -184,7 +184,7 @@ function Assert-SameVersionGuiRepair([string]$Binary, [string]$Channel, [string]
     $lines = @(& $Binary update --json)
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0 -or $lines.Count -ne 1) {
-        throw "$Channel same-version repair did not return one successful JSON object (exit $exitCode, lines $($lines.Count))"
+        throw "$Channel same-version repair did not return one successful JSON object (exit $exitCode, lines $($lines.Count)): $($lines -join ' | ')"
     }
     $result = $lines[0] | ConvertFrom-Json
     if (-not $result.success -or $result.action -ne 'update' -or

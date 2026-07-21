@@ -242,7 +242,16 @@ finally {
     Pop-Location
 }
 
-$zigBuildArguments = @("build", "-Dtarget=$($contract.Zig)", "-Dcpu=baseline", "-Doptimize=ReleaseFast")
+$zigBuildArguments = @(
+    "build",
+    "-Dtarget=$($contract.Zig)",
+    "-Dcpu=baseline",
+    "-Doptimize=ReleaseFast",
+    # Native SDK defaults to high-frequency runtime event tracing. Release
+    # products retain panic capture and explicit self-tests but compile that
+    # development telemetry out of the sink filter.
+    "-Dtrace=off"
+)
 Invoke-StagedZigBuild -WorkingDirectory $appStage -Arguments $zigBuildArguments
 
 if (-not $SkipTests) {
@@ -255,7 +264,8 @@ if (-not $SkipTests) {
             "--no-install", "native", "test", $appStage, "--yes",
             "-Dtarget=$($contract.Zig)",
             "-Dcpu=baseline",
-            "-Doptimize=ReleaseFast"
+            "-Doptimize=ReleaseFast",
+            "-Dtrace=off"
         )
         Invoke-Checked npx @testArgs
     }
@@ -288,6 +298,7 @@ $receipt = [ordered]@{
     zig_target = $contract.Zig
     zig_cpu = "baseline"
     zig_optimize = "ReleaseFast"
+    native_sdk_trace = "off"
     zig_version = $zigVersion
     rust_version = $rustVersion
     rust_target = $contract.Rust

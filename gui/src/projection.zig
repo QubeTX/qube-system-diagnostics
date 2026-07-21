@@ -1,5 +1,6 @@
 const std = @import("std");
 const native_sdk = @import("native_sdk");
+const engine = @import("engine.zig");
 
 const canvas = native_sdk.canvas;
 
@@ -799,22 +800,77 @@ pub const Projection = struct {
             self.interface_rows[index] = row;
         }
 
-        self.process_total_count = saturatedU32(data.processes.total_count);
-        self.process_total_threads = saturatedU32(data.processes.total_threads);
-        if (data.processes.total_count > 0) {
+        const candidate_count = @min(data.processes.list.len, max_processes);
+        var candidate_rows = [_]ProcessRow{.{}} ** max_processes;
+        for (data.processes.list[0..candidate_count], 0..) |item, index| {
+            candidate_rows[index] = processRow(item);
+        }
+        self.applyProcessRows(
+            envelope.sequence,
+            saturatedU32(data.processes.total_count),
+            saturatedU32(data.processes.total_threads),
+            candidate_rows[0..candidate_count],
+        );
+    }
+
+    pub fn applyProcessSummary(self: *Projection, summary: engine.ProcessSummary) void {
+        var meta = self.topic_meta[1];
+        meta.ready = true;
+        meta.schema_version = 1;
+        meta.sequence = summary.sequence;
+        meta.captured_unix_ms = summary.captured_unix_ms;
+        meta.freshness_ms = 0;
+        meta.topic_buffer.set("fast");
+        meta.availability_buffer.set("available");
+        meta.provenance_buffer.set("SD-300 platform process collector");
+        if (!self.topic_meta[1].ready) {
+            meta.target_buffer.set(if (self.topic_meta[0].ready) self.topic_meta[0].target() else "active target");
+        }
+        self.topic_meta[1] = meta;
+        self.fast_ready = true;
+
+        const candidate_count = @min(@as(usize, @intCast(summary.row_count)), max_processes);
+        var candidate_rows = [_]ProcessRow{.{}} ** max_processes;
+        for (summary.rows[0..candidate_count], 0..) |item, index| {
+            var row = ProcessRow{ .id = item.pid, .pid = item.pid };
+            row.name_buffer.set(summaryText(&item.name, item.name_len));
+            row.friendly_buffer.set(summaryText(&item.friendly_name, item.friendly_name_len));
+            row.status_buffer.set(summaryText(&item.status, item.status_len));
+            row.cpu_percent = item.cpu_percent;
+            row.memory_mib = @as(f64, @floatFromInt(item.memory_bytes)) / (1024.0 * 1024.0);
+            row.memory_percent = item.memory_percent;
+            candidate_rows[index] = row;
+        }
+        self.applyProcessRows(
+            summary.sequence,
+            summary.total_count,
+            summary.total_threads,
+            candidate_rows[0..candidate_count],
+        );
+    }
+
+    fn applyProcessRows(
+        self: *Projection,
+        sequence: u64,
+        total_count: u32,
+        total_threads: u32,
+        candidates: []const ProcessRow,
+    ) void {
+        self.process_total_count = total_count;
+        self.process_total_threads = total_threads;
+        if (total_count > 0) {
             self.process_samples_observed +|= 1;
             self.process_values_warmed = self.process_samples_observed >= 2;
         }
-        const candidate_count = @min(data.processes.list.len, max_processes);
-        const candidates = data.processes.list[0..candidate_count];
+        const candidate_count = candidates.len;
         const reorder_due = self.process_count == 0 or
-            envelope.sequence <= self.process_order_sequence or
-            envelope.sequence - self.process_order_sequence >= process_rank_reconcile_samples;
+            sequence <= self.process_order_sequence or
+            sequence - self.process_order_sequence >= process_rank_reconcile_samples;
         if (reorder_due) {
             self.process_count = candidate_count;
-            self.process_order_sequence = envelope.sequence;
+            self.process_order_sequence = sequence;
             for (candidates, 0..) |item, index| {
-                self.process_rows[index] = processRow(item);
+                self.process_rows[index] = item;
             }
         } else {
             // Live CPU and memory values still update every fast sample. Keep
@@ -830,7 +886,7 @@ pub const Projection = struct {
             for (previous_rows[0..previous_count]) |previous| {
                 for (candidates, 0..) |item, candidate_index| {
                     if (!used[candidate_index] and item.pid == previous.pid) {
-                        next_rows[next_count] = processRow(item);
+                        next_rows[next_count] = item;
                         used[candidate_index] = true;
                         next_count += 1;
                         break;
@@ -840,7 +896,7 @@ pub const Projection = struct {
             for (candidates, 0..) |item, candidate_index| {
                 if (next_count >= candidate_count) break;
                 if (used[candidate_index]) continue;
-                next_rows[next_count] = processRow(item);
+                next_rows[next_count] = item;
                 next_count += 1;
             }
             self.process_rows = next_rows;
@@ -1084,6 +1140,10 @@ fn processRow(item: ProcessJson) ProcessRow {
     row.memory_mib = @as(f64, @floatFromInt(item.memory_bytes)) / (1024.0 * 1024.0);
     row.memory_percent = item.memory_percent;
     return row;
+}
+
+fn summaryText(bytes: []const u8, length: u32) []const u8 {
+    return bytes[0..@min(bytes.len, @as(usize, @intCast(length)))];
 }
 
 fn Envelope(comptime Data: type) type {
@@ -1391,6 +1451,42 @@ test "fast topic projection is bounded and copies borrowed strings" {
     try std.testing.expectEqual(@as(usize, 2), projection.cpuCores().len);
     try std.testing.expectEqual(@as(u64, 3300), projection.cpuCores()[1].frequency_mhz);
     try std.testing.expectEqualStrings("Test", projection.processes()[0].friendlyName());
+}
+
+test "typed process summary preserves bounded live process parity" {
+    var summary = engine.ProcessSummary{
+        .sequence = 9,
+        .captured_unix_ms = 1_777_777_777_000,
+        .total_count = 321,
+        .total_threads = 4_567,
+        .row_count = 1,
+    };
+    const name = "native.exe";
+    const friendly = "Native Monitor";
+    const status = "Run";
+    @memcpy(summary.rows[0].name[0..name.len], name);
+    @memcpy(summary.rows[0].friendly_name[0..friendly.len], friendly);
+    @memcpy(summary.rows[0].status[0..status.len], status);
+    summary.rows[0].pid = 42;
+    summary.rows[0].cpu_percent = 7.5;
+    summary.rows[0].memory_bytes = 128 * 1024 * 1024;
+    summary.rows[0].memory_percent = 0.4;
+    summary.rows[0].name_len = @intCast(name.len);
+    summary.rows[0].friendly_name_len = @intCast(friendly.len);
+    summary.rows[0].status_len = @intCast(status.len);
+
+    var projection = Projection{};
+    projection.applyProcessSummary(summary);
+
+    try std.testing.expectEqual(@as(u32, 321), projection.process_total_count);
+    try std.testing.expectEqual(@as(u32, 4_567), projection.process_total_threads);
+    try std.testing.expectEqual(@as(usize, 1), projection.processes().len);
+    try std.testing.expectEqual(@as(u32, 42), projection.processes()[0].pid);
+    try std.testing.expectEqualStrings(name, projection.processes()[0].name());
+    try std.testing.expectEqualStrings(friendly, projection.processes()[0].friendlyName());
+    try std.testing.expectEqualStrings(status, projection.processes()[0].status());
+    try std.testing.expectEqual(@as(f64, 128), projection.processes()[0].memory_mib);
+    try std.testing.expectEqual(@as(u64, 9), projection.topicMeta(1).sequence);
 }
 
 test "process values stay live while rank order reconciles every thirty samples" {

@@ -393,9 +393,9 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .refresh_now => sampleEngine(model),
         .refresh_tick => |timer| {
             if (timer.outcome == .fired) {
-                applyWindowVisibility(model, window_visibility.mainWindowVisible());
+                const visibility_changed = applyWindowVisibility(model, window_visibility.mainWindowVisible());
                 sampleEngine(model);
-                scheduleRefresh(fx, model.window_visible);
+                if (visibility_changed) scheduleRefresh(fx, model.window_visible);
             }
         },
         .select_overview => selectSection(model, 0),
@@ -510,7 +510,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .content_scrolled => |state| model.scroll_top = state.offset,
         .scan_drivers => requestDriverScan(model),
         .open_window => {
-            applyWindowVisibility(model, true);
+            _ = applyWindowVisibility(model, true);
             sampleEngine(model);
             scheduleRefresh(fx, true);
             fx.showWindow("main");
@@ -526,7 +526,7 @@ pub fn onCommand(name: []const u8) ?Msg {
 }
 
 pub fn initEffects(model: *Model, fx: *Effects) void {
-    applyWindowVisibility(model, window_visibility.mainWindowVisible());
+    _ = applyWindowVisibility(model, window_visibility.mainWindowVisible());
     if (active_engine) |runtime| runtime.setView(model.window_visible, model.active_section) catch {};
     sampleEngine(model);
     scheduleRefresh(fx, model.window_visible);
@@ -540,7 +540,11 @@ fn scheduleRefresh(fx: *Effects, visible: bool) void {
     fx.startTimer(.{
         .key = refresh_timer_key,
         .interval_ms = refreshIntervalMs(visible),
-        .mode = .one_shot,
+        // A repeating timer preserves the one-second presentation cadence
+        // without retiring and rebuilding the effect slot after every sample.
+        // Re-registering the same key on a visibility transition atomically
+        // replaces it with the 30-second hidden cadence.
+        .mode = .repeating,
         .on_fire = Effects.timerMsg(.refresh_tick),
     });
 }
@@ -554,10 +558,11 @@ fn scheduleExportPoll(fx: *Effects) void {
     });
 }
 
-fn applyWindowVisibility(model: *Model, visible: bool) void {
-    if (model.window_visible == visible) return;
+fn applyWindowVisibility(model: *Model, visible: bool) bool {
+    if (model.window_visible == visible) return false;
     model.window_visible = visible;
     if (active_engine) |runtime| runtime.setView(visible, model.active_section) catch {};
+    return true;
 }
 
 fn selectSection(model: *Model, section: u8) void {
@@ -778,7 +783,9 @@ fn sampleEngine(model: *Model) void {
     sampleTopic(runtime, model, std.heap.page_allocator, .static);
     sampleTopic(runtime, model, std.heap.page_allocator, .warnings);
     sampleTopic(runtime, model, std.heap.page_allocator, .capabilities);
-    if (model.active_section == 0) {
+    if (model.active_section == 6) {
+        sampleProcessSummary(runtime, model);
+    } else if (model.active_section == 0) {
         sampleTopic(runtime, model, std.heap.page_allocator, .fast);
     } else {
         sampleDetailedTopics(runtime, model);
@@ -804,10 +811,22 @@ fn sampleDetailedTopics(runtime: *engine.Runtime, model: *Model) void {
             sampleTopic(runtime, model, allocator, .medium);
             sampleTopic(runtime, model, allocator, .diagnostics);
         },
-        6 => sampleTopic(runtime, model, allocator, .fast),
         7 => sampleTopic(runtime, model, allocator, .slow),
         8 => sampleTopic(runtime, model, allocator, .drivers),
         else => {},
+    }
+}
+
+fn sampleProcessSummary(runtime: *engine.Runtime, model: *Model) void {
+    const summary = runtime.readProcessSummary() catch {
+        model.status_buffer.set("The bounded process projection could not be read; the last complete sample remains visible.");
+        return;
+    } orelse return;
+    model.detail.applyProcessSummary(summary);
+    if (model.process_sort != .cpu) {
+        sortProcesses(model);
+    } else {
+        rebuildProcessFilter(model);
     }
 }
 
@@ -1271,10 +1290,10 @@ fn runSelfTest(init: std.process.Init) u8 {
             .live_sequence = summary.sequence,
             .logical_processors = summary.logical_processors,
             .memory_total_bytes = summary.memory_total_bytes,
-        // Windows Installer starts GUI-subsystem custom actions without an
-        // attached stdout handle. Reporting must not turn a successful engine
-        // qualification into a package failure; callers that redirect stdout
-        // still receive and validate the JSON object.
+            // Windows Installer starts GUI-subsystem custom actions without an
+            // attached stdout handle. Reporting must not turn a successful engine
+            // qualification into a package failure; callers that redirect stdout
+            // still receive and validate the JSON object.
         }) catch {};
         return 0;
     }
