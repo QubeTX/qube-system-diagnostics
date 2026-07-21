@@ -10,6 +10,11 @@ on:
         description: "Draft release tag to qualify"
         required: true
         type: string
+      qualification_only:
+        description: "Build and exercise installers from this ref without a release draft"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -28,6 +33,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       source_sha: ${{ steps.meta.outputs.source_sha }}
       source_ref: ${{ steps.meta.outputs.source_ref }}
+      qualification_only: ${{ steps.meta.outputs.qualification_only }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -39,6 +45,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_TAG: ${{ inputs.tag }}
+          QUALIFICATION_ONLY: ${{ inputs.qualification_only }}
           EXPECTED_SOURCE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           TRIGGER_SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
         shell: bash
@@ -59,7 +66,12 @@ jobs:
           [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
           release_json=$(gh release view "$tag" --json isDraft,tagName,targetCommitish 2>/dev/null || true)
           state=$(jq -r '.isDraft // empty' <<< "$release_json")
-          if [[ $state == true ]]; then
+          qualification_only=false
+          if [[ $EVENT_NAME == workflow_dispatch && $QUALIFICATION_ONLY == true ]]; then
+            ready=true
+            qualification_only=true
+            echo "Running branch-only Windows installer qualification for $source_sha; no release assets will be replaced."
+          elif [[ $state == true ]]; then
             ready=true
             release_tag=$(jq -r '.tagName // empty' <<< "$release_json")
             target_commitish=$(jq -r '.targetCommitish // empty' <<< "$release_json")
@@ -87,6 +99,7 @@ jobs:
             echo "version=$version"
             echo "source_sha=$source_sha"
             echo "source_ref=$source_ref"
+            echo "qualification_only=$qualification_only"
           } >> "$GITHUB_OUTPUT"
           {
             echo '### Windows producer source identity'
@@ -95,6 +108,7 @@ jobs:
             echo "- Source SHA: \`$source_sha\`"
             echo "- Release tag: \`$tag\`"
             echo "- Producer enabled: \`$ready\`"
+            echo "- Qualification only: \`$qualification_only\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   build-test-upload:
@@ -299,8 +313,31 @@ jobs:
           foreach ($name in @(
               'sd300-cli-installer.ps1', 'sd300-cli-installer.ps1.sha256'
           )) {
-            gh release download '${{ steps.meta.outputs.tag }}' --pattern $name --dir target\candidate-assets
-            if ($LASTEXITCODE -ne 0) { throw "could not download candidate $name" }
+            if ('${{ needs.draft-check.outputs.qualification_only }}' -eq 'true') {
+              if ($name -eq 'sd300-cli-installer.ps1') {
+                $wrapper = (Get-Content scripts\managed-installers\sd300-installer.ps1 -Raw) `
+                  .Replace('@SD300_TAG@', '${{ steps.meta.outputs.tag }}') `
+                  .Replace('@SD300_VERSION@', '${{ steps.meta.outputs.version }}')
+                [IO.File]::WriteAllText(
+                  (Join-Path $PWD 'target\candidate-assets\sd300-cli-installer.ps1'),
+                  $wrapper,
+                  [Text.UTF8Encoding]::new($false)
+                )
+              }
+              else {
+                $wrapperPath = Join-Path $PWD 'target\candidate-assets\sd300-cli-installer.ps1'
+                $wrapperHash = (Get-FileHash -LiteralPath $wrapperPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                [IO.File]::WriteAllText(
+                  (Join-Path $PWD 'target\candidate-assets\sd300-cli-installer.ps1.sha256'),
+                  "$wrapperHash *sd300-cli-installer.ps1`n",
+                  [Text.Encoding]::ASCII
+                )
+              }
+            }
+            else {
+              gh release download '${{ steps.meta.outputs.tag }}' --pattern $name --dir target\candidate-assets
+              if ($LASTEXITCODE -ne 0) { throw "could not download candidate $name" }
+            }
           }
           @'
           param([switch]$NoModifyPath)
@@ -338,6 +375,7 @@ jobs:
             target/native/tr300-tui-x86_64-pc-windows-msvc.msi*
 
       - name: Attach qualified Windows assets to draft
+        if: ${{ needs.draft-check.outputs.qualification_only != 'true' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
