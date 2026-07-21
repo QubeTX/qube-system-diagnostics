@@ -12,7 +12,7 @@ output_dir=${2:-}
   echo 'the Alpine musl qualification build requires native Linux x86_64' >&2
   exit 1
 }
-grep -Fqx '3.20' /etc/alpine-release || {
+grep -Eq '^3\.20([.]|$)' /etc/alpine-release || {
   echo "the musl package must be built in Alpine 3.20; found $(cat /etc/alpine-release)" >&2
   exit 1
 }
