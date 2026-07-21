@@ -36,7 +36,15 @@ patch_receipt=$(node "$script_root/prepare-native-sdk.mjs" "$gui_root")
 profile_root=${HOME:-}
 remap="--remap-path-prefix=$repo_root=/src/sd300"
 if [[ -n $profile_root ]]; then remap="$remap --remap-path-prefix=$profile_root=/build-user"; fi
-RUSTFLAGS="${RUSTFLAGS:-} $remap" cargo build \
+rust_flags="${RUSTFLAGS:-} $remap"
+if [[ $target == linux-musl-x86_64 ]]; then
+  # The stock musl target defaults to a static C runtime, which makes rustc
+  # reject cdylib output even though the target explicitly supports dynamic
+  # linking. Alpine supplies the matching dynamic musl runtime; disabling only
+  # crt-static keeps the same C ABI/shared-engine architecture as GNU Linux.
+  rust_flags="$rust_flags -C target-feature=-crt-static"
+fi
+RUSTFLAGS="$rust_flags" cargo build \
   --manifest-path "$engine_root/Cargo.toml" --release --locked --target "$rust_target"
 engine_artifact="$engine_root/target/$rust_target/release/$engine"
 [[ -f $engine_artifact ]] || { echo "engine missing: $engine_artifact" >&2; exit 1; }
