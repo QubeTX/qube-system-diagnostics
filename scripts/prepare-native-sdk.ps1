@@ -15,7 +15,7 @@ $requiredVersion = "0.5.4"
 $requiredTarball = "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz"
 $requiredIntegrity = "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA=="
 $requiredZigHash = "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb"
-$requiredPatchHash = "32ca4fc9a6bf2d2a0933d5bf2b9db5d4b3c3736f27ffcbe4938f76998a350fc1"
+$requiredPatchHash = "ff4c8944d3d1981c5f13242fda1468b0baa6de2463c7c8bd94426768cdd83fd8"
 
 if (-not (Test-Path -LiteralPath $sdkRoot -PathType Container)) {
     throw "The project-local Native SDK is missing. Run npm ci in '$gui' first."
@@ -46,6 +46,10 @@ $files = [ordered]@{
     "src/app_runner/root.zig" = @{
         Pristine = "e085afe9f414a5ef0c21388e0bb1436bf05cb346349d6e87ca7e352c38b0c4e0"
         Patched = "5a3cbdbe53a4a68c93a49defb6024d20f335bda176697342a3c79163ce880340"
+    }
+    "src/platform/linux/gtk_host.c" = @{
+        Pristine = "da73fa340df0f577cc09873ae0c6d5e6d94bc7ca8024a68ad51d2df94cd93af7"
+        Patched = "1a99d8edaba90152a39ae01b76152eb2ce6b5ec513f04c1780a0f1c34044e442"
     }
     "src/platform/windows/webview2_host.cpp" = @{
         Pristine = "93d9843a411de4364310bbd4f87be19381c085828152b1c975249064d0c6e8a3"

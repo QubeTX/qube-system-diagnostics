@@ -17,11 +17,12 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "32ca4fc9a6bf2d2a0933d5bf2b9db5d4b3c3736f27ffcbe4938f76998a350fc1",
+  patchHash: "ff4c8944d3d1981c5f13242fda1468b0baa6de2463c7c8bd94426768cdd83fd8",
 };
 
 const files = new Map([
   ["src/app_runner/root.zig", ["e085afe9f414a5ef0c21388e0bb1436bf05cb346349d6e87ca7e352c38b0c4e0", "5a3cbdbe53a4a68c93a49defb6024d20f335bda176697342a3c79163ce880340"]],
+  ["src/platform/linux/gtk_host.c", ["da73fa340df0f577cc09873ae0c6d5e6d94bc7ca8024a68ad51d2df94cd93af7", "1a99d8edaba90152a39ae01b76152eb2ce6b5ec513f04c1780a0f1c34044e442"]],
   ["src/platform/windows/webview2_host.cpp", ["93d9843a411de4364310bbd4f87be19381c085828152b1c975249064d0c6e8a3", "7410ad7d8e2f6ddd97d78614967473f67934c7eed7fb1202af0e7a21ef9cbe2a"]],
   ["src/primitives/canvas/reference_memo.zig", ["ebb7d49035d993b11b30c784e362f9cb12ed625a5e6ce19a44059bb20b34d592", "7a496d84accbbf780e5dbbdc2b12b6e3abc7977d4397f673dffcddf3be018c34"]],
   ["src/primitives/canvas/reference.zig", ["56ef9cec4f76ee6cbff8a56dc5f579d3b9ee2daa79ad4cdb1f40073c3a053ecb", "a4c297c8e04114213adb1c042bb70833b9e1c7cbdd39755fd9383b4bbe743cbe"]],

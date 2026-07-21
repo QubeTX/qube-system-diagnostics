@@ -24,7 +24,9 @@ pub fn build(b: *std.Build) void {
         if (b.option([]const u8, "system-lib-dir", "Target-native GTK/system library directory")) |dir| {
             const library_path: std.Build.LazyPath = .{ .cwd_relative = dir };
             app.exe.root_module.addLibraryPath(library_path);
-            app.tests.root_module.addLibraryPath(library_path);
+            if (app.tests.root_module != app.exe.root_module) {
+                app.tests.root_module.addLibraryPath(library_path);
+            }
         }
     } else if (os == .macos) {
         // Explicit architecture targets do not inherit every Xcode SDK search
@@ -33,12 +35,16 @@ pub fn build(b: *std.Build) void {
         if (b.option([]const u8, "system-include-dir", "Target macOS SDK system include directory")) |dir| {
             const include_path: std.Build.LazyPath = .{ .cwd_relative = dir };
             app.exe.root_module.addSystemIncludePath(include_path);
-            app.tests.root_module.addSystemIncludePath(include_path);
+            if (app.tests.root_module != app.exe.root_module) {
+                app.tests.root_module.addSystemIncludePath(include_path);
+            }
         }
         if (b.option([]const u8, "system-framework-dir", "Target macOS SDK framework directory")) |dir| {
             const framework_path: std.Build.LazyPath = .{ .cwd_relative = dir };
             app.exe.root_module.addSystemFrameworkPath(framework_path);
-            app.tests.root_module.addSystemFrameworkPath(framework_path);
+            if (app.tests.root_module != app.exe.root_module) {
+                app.tests.root_module.addSystemFrameworkPath(framework_path);
+            }
         }
     }
     const engine_name = switch (os) {
@@ -53,16 +59,20 @@ pub fn build(b: *std.Build) void {
         const visibility_source = b.path("src/platform/window_visibility_macos.m");
         const lifecycle_source = b.path("src/platform/lifecycle_unix.c");
         app.exe.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{ "-fobjc-arc", "-fblocks" } });
-        app.tests.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{ "-fobjc-arc", "-fblocks" } });
         app.exe.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
-        app.tests.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
+        if (app.tests.root_module != app.exe.root_module) {
+            app.tests.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{ "-fobjc-arc", "-fblocks" } });
+            app.tests.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
+        }
     } else if (builtin.os.tag == .linux) {
         const visibility_source = b.path("src/platform/window_visibility_linux.c");
         const lifecycle_source = b.path("src/platform/lifecycle_unix.c");
         app.exe.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{} });
-        app.tests.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{} });
         app.exe.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
-        app.tests.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
+        if (app.tests.root_module != app.exe.root_module) {
+            app.tests.root_module.addCSourceFile(.{ .file = visibility_source, .flags = &.{} });
+            app.tests.root_module.addCSourceFile(.{ .file = lifecycle_source, .flags = &.{} });
+        }
     }
     app.install.step.dependOn(&install_engine.step);
     app.install.step.dependOn(&install_icon.step);

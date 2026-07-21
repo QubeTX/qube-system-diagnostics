@@ -112,7 +112,10 @@ const Library = struct {
         defer allocator.free(path_z);
         const mode: std.c.RTLD = switch (builtin.os.tag) {
             .macos => .{ .NOW = true, .LOCAL = true },
-            .linux => .{ .NOW = true, .LOCAL = true },
+            // POSIX RTLD_LOCAL is the zero/default state on Linux. Zig's
+            // typed Linux RTLD flags therefore expose GLOBAL but no LOCAL
+            // field; requesting NOW without GLOBAL retains local scope.
+            .linux => .{ .NOW = true },
             else => @compileError("SD-300 GUI supports only Windows, macOS, and Linux"),
         };
         const handle = std.c.dlopen(path_z.ptr, mode) orelse

@@ -277,6 +277,17 @@ jobs:
             $destination = Join-Path $priorDefinitions ([IO.Path]::GetFileName($path))
             [IO.File]::WriteAllText($destination, (($contents -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
           }
+          # The v2 Inno files resolve LicenseFile relative to their own
+          # directory. Recreate that immutable source layout instead of
+          # accidentally depending on a checkout-root path that exists only
+          # in developer builds.
+          $priorLicense = @(git show 'v2.0.6:LICENSE.md')
+          if ($LASTEXITCODE -ne 0) { throw 'could not read v2.0.6:LICENSE.md' }
+          [IO.File]::WriteAllText(
+            (Join-Path $priorDefinitions '..\LICENSE.md'),
+            (($priorLicense -join "`n") + "`n"),
+            [Text.UTF8Encoding]::new($false)
+          )
 
           $candle = "$env:WIX\bin\candle.exe"
           $light = "$env:WIX\bin\light.exe"

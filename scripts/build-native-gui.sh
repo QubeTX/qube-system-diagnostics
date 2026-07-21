@@ -77,7 +77,12 @@ ZON
 if [[ $skip_tests != 1 ]]; then
   (cd "$gui_root" && npx --no-install native check . --strict)
 fi
-zig_build_args=(-Dtarget="$zig_target" -Dcpu=baseline -Doptimize=ReleaseFast)
+# Every supported non-Windows lane runs on its exact target architecture and
+# libc. Let Zig resolve that native ABI so its C compiler uses one coherent set
+# of host GTK/libc headers. The Rust-host equality check above still fails
+# closed if a workflow schedules the wrong architecture or libc.
+zig_build_target=native
+zig_build_args=(-Dtarget="$zig_build_target" -Dcpu=baseline -Doptimize=ReleaseFast)
 if [[ $host_os == Linux ]]; then
   gtk_lib_dir=$(pkg-config --variable=libdir gtk4)
   [[ -n $gtk_lib_dir && -d $gtk_lib_dir ]] || {
@@ -139,5 +144,5 @@ find "$app_stage/zig-out" -type d -name '*.dSYM' -prune -exec rm -rf {} + 2>/dev
 node "$script_root/check-native-distribution.mjs" "$gui_root" "$app_stage/zig-out"
 
 engine_sha=$(sha256sum "$engine_artifact" | awk '{print $1}')
-node -e 'const r=JSON.parse(process.argv[1]); console.log(JSON.stringify({schema:1,target:process.argv[2],zig_target:process.argv[3],zig_cpu:"baseline",zig_optimize:"ReleaseFast",zig_version:"0.16.0",rust_version:process.argv[4],rust_target:process.argv[5],rust_host:process.argv[5],native_sdk_cli:"0.5.4",native_sdk_patch:r.renderer_patch_sha256,engine_sha256:process.argv[6],package_root:process.argv[7]}))' \
-  "$patch_receipt" "$target" "$zig_target" "$rust_version" "$rust_target" "$engine_sha" "$app_stage/zig-out"
+node -e 'const r=JSON.parse(process.argv[1]); console.log(JSON.stringify({schema:1,target:process.argv[2],zig_target:process.argv[3],zig_build_target:process.argv[4],zig_cpu:"baseline",zig_optimize:"ReleaseFast",zig_version:"0.16.0",rust_version:process.argv[5],rust_target:process.argv[6],rust_host:process.argv[6],native_sdk_cli:"0.5.4",native_sdk_patch:r.renderer_patch_sha256,engine_sha256:process.argv[7],package_root:process.argv[8]}))' \
+  "$patch_receipt" "$target" "$zig_target" "$zig_build_target" "$rust_version" "$rust_target" "$engine_sha" "$app_stage/zig-out"

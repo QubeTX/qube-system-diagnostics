@@ -1495,3 +1495,211 @@ index ec2aa238b6601f6f3edd655a6f592974288479a1..5b65626a3858bd53e893ae630c7bcfe3
      try std.testing.expectEqual(canvas.binary_packet_load_action_patch, harness.null_platform.gpu_surface_packet_present_binary_load_action);
      try std.testing.expectEqual(platform.GpuPresentPacketMode.patch, harness.runtime.views[0].gpu_present_packet_mode);
  }
+
+diff --git a/src/platform/linux/gtk_host.c b/src/platform/linux/gtk_host.c
+index 06fcb48..74fd8bb 100644
+--- a/src/platform/linux/gtk_host.c
++++ b/src/platform/linux/gtk_host.c
+@@ -5515,6 +5515,7 @@ static char *native_sdk_bytes_to_string(const char *bytes, size_t len) {
+     return bytes && len > 0 ? native_sdk_strndup(bytes, len) : NULL;
+ }
+
++#if GTK_CHECK_VERSION(4, 10, 0)
+ static void native_sdk_open_dialog_done(GObject *source, GAsyncResult *result, gpointer data) {
+     native_sdk_file_dialog_state_t *state = data;
+     GError *error = NULL;
+@@ -5626,12 +5627,141 @@ size_t native_sdk_gtk_show_save_dialog(native_sdk_gtk_host_t *host, const native
+     g_object_unref(dialog);
+     return written;
+ }
++#else
++/* GtkFileDialog was introduced in GTK 4.10. Keep the Native SDK dialog
++ * contract available on the Ubuntu 22.04 compatibility floor through the
++ * GTK 4.0 GtkFileChooserNative API. The public result encoding remains
++ * identical; only the platform presentation primitive changes. */
++static void native_sdk_legacy_open_dialog_done(GtkNativeDialog *source, gint response, gpointer data) {
++    native_sdk_file_dialog_state_t *state = data;
++    if (response == GTK_RESPONSE_ACCEPT) {
++        state->files = gtk_file_chooser_get_files(GTK_FILE_CHOOSER(source));
++    }
++    g_main_loop_quit(state->loop);
++}
++
++static void native_sdk_legacy_save_dialog_done(GtkNativeDialog *source, gint response, gpointer data) {
++    native_sdk_file_dialog_state_t *state = data;
++    if (response == GTK_RESPONSE_ACCEPT) {
++        state->file = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(source));
++    }
++    g_main_loop_quit(state->loop);
++}
++
++native_sdk_gtk_open_dialog_result_t native_sdk_gtk_show_open_dialog(native_sdk_gtk_host_t *host, const native_sdk_gtk_open_dialog_opts_t *opts, char *buffer, size_t buffer_len) {
++    native_sdk_gtk_open_dialog_result_t result = {0};
++    char *title = native_sdk_bytes_to_string(opts->title, opts->title_len);
++    GtkFileChooserAction action = opts->allow_directories
++        ? GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER
++        : GTK_FILE_CHOOSER_ACTION_OPEN;
++    GtkFileChooserNative *dialog = gtk_file_chooser_native_new(
++        title ? title : "Open",
++        native_sdk_parent_window(host),
++        action,
++        "_Open",
++        "_Cancel");
++    if (!dialog) {
++        if (title) free(title);
++        return result;
++    }
++    gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), TRUE);
++    native_sdk_file_dialog_state_t state = { .loop = g_main_loop_new(NULL, FALSE) };
++    if (!state.loop) {
++        if (title) free(title);
++        g_object_unref(dialog);
++        return result;
++    }
++    g_signal_connect(dialog, "response", G_CALLBACK(native_sdk_legacy_open_dialog_done), &state);
++    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dialog));
++    g_main_loop_run(state.loop);
++    g_main_loop_unref(state.loop);
++    if (state.files) {
++        size_t offset = 0;
++        int overflow = 0;
++        guint count = g_list_model_get_n_items(state.files);
++        for (guint i = 0; i < count; i++) {
++            GFile *file = G_FILE(g_list_model_get_item(state.files, i));
++            char *path = g_file_get_path(file);
++            if (path) {
++                size_t len = strlen(path);
++                size_t needed = len + (result.count > 0 ? 1 : 0);
++                if (needed <= buffer_len - offset) {
++                    if (result.count > 0) buffer[offset++] = '\n';
++                    memcpy(buffer + offset, path, len);
++                    offset += len;
++                    result.count++;
++                } else {
++                    overflow = 1;
++                }
++                g_free(path);
++            }
++            g_object_unref(file);
++            if (overflow) break;
++        }
++        result.bytes_written = overflow ? native_sdk_overflow_size(buffer_len) : offset;
++        g_object_unref(state.files);
++    }
++    if (title) free(title);
++    g_object_unref(dialog);
++    return result;
++}
++
++size_t native_sdk_gtk_show_save_dialog(native_sdk_gtk_host_t *host, const native_sdk_gtk_save_dialog_opts_t *opts, char *buffer, size_t buffer_len) {
++    char *title = native_sdk_bytes_to_string(opts->title, opts->title_len);
++    char *default_name = native_sdk_bytes_to_string(opts->default_name, opts->default_name_len);
++    GtkFileChooserNative *dialog = gtk_file_chooser_native_new(
++        title ? title : "Save",
++        native_sdk_parent_window(host),
++        GTK_FILE_CHOOSER_ACTION_SAVE,
++        "_Save",
++        "_Cancel");
++    if (!dialog) {
++        if (title) free(title);
++        if (default_name) free(default_name);
++        return 0;
++    }
++    if (default_name) {
++        gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), default_name);
++    }
++    native_sdk_file_dialog_state_t state = { .loop = g_main_loop_new(NULL, FALSE) };
++    if (!state.loop) {
++        if (title) free(title);
++        if (default_name) free(default_name);
++        g_object_unref(dialog);
++        return 0;
++    }
++    g_signal_connect(dialog, "response", G_CALLBACK(native_sdk_legacy_save_dialog_done), &state);
++    gtk_native_dialog_show(GTK_NATIVE_DIALOG(dialog));
++    g_main_loop_run(state.loop);
++    g_main_loop_unref(state.loop);
++    size_t written = 0;
++    if (state.file) {
++        char *path = g_file_get_path(state.file);
++        if (path) {
++            size_t len = strlen(path);
++            if (len > buffer_len) {
++                written = native_sdk_overflow_size(buffer_len);
++            } else {
++                written = len;
++                memcpy(buffer, path, written);
++            }
++            g_free(path);
++        }
++        g_object_unref(state.file);
++    }
++    if (title) free(title);
++    if (default_name) free(default_name);
++    g_object_unref(dialog);
++    return written;
++}
++#endif
+
+ typedef struct native_sdk_alert_state {
+     GMainLoop *loop;
+     int response;
+ } native_sdk_alert_state_t;
+
++#if GTK_CHECK_VERSION(4, 10, 0)
+ static void native_sdk_alert_done(GObject *source, GAsyncResult *result, gpointer data) {
+     native_sdk_alert_state_t *state = data;
+     GError *error = NULL;
+@@ -5674,3 +5804,52 @@ int native_sdk_gtk_show_message_dialog(native_sdk_gtk_host_t *host, const native
+     if (state.response == 1) return 1;
+     return 2;
+ }
++#else
++static void native_sdk_legacy_alert_done(GtkDialog *source, gint response, gpointer data) {
++    (void)source;
++    native_sdk_alert_state_t *state = data;
++    state->response = response;
++    g_main_loop_quit(state->loop);
++}
++
++int native_sdk_gtk_show_message_dialog(native_sdk_gtk_host_t *host, const native_sdk_gtk_message_dialog_opts_t *opts) {
++    char *title = native_sdk_bytes_to_string(opts->title, opts->title_len);
++    char *message = native_sdk_bytes_to_string(opts->message, opts->message_len);
++    char *informative = native_sdk_bytes_to_string(opts->informative_text, opts->informative_text_len);
++    char *primary = native_sdk_bytes_to_string(opts->primary_button, opts->primary_button_len);
++    char *secondary = native_sdk_bytes_to_string(opts->secondary_button, opts->secondary_button_len);
++    char *tertiary = native_sdk_bytes_to_string(opts->tertiary_button, opts->tertiary_button_len);
++    GtkWidget *widget = gtk_message_dialog_new(
++        native_sdk_parent_window(host),
++        GTK_DIALOG_MODAL,
++        GTK_MESSAGE_INFO,
++        GTK_BUTTONS_NONE,
++        "%s",
++        title ? title : (message ? message : ""));
++    GtkDialog *dialog = GTK_DIALOG(widget);
++    const char *detail = informative ? informative : (title && message ? message : NULL);
++    if (detail) {
++        gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s", detail);
++    }
++    gtk_dialog_add_button(dialog, primary ? primary : "OK", 0);
++    if (secondary) gtk_dialog_add_button(dialog, secondary, 1);
++    if (tertiary) gtk_dialog_add_button(dialog, tertiary, 2);
++    native_sdk_alert_state_t state = { .loop = g_main_loop_new(NULL, FALSE), .response = 0 };
++    if (state.loop) {
++        g_signal_connect(dialog, "response", G_CALLBACK(native_sdk_legacy_alert_done), &state);
++        gtk_window_present(GTK_WINDOW(dialog));
++        g_main_loop_run(state.loop);
++        g_main_loop_unref(state.loop);
++    }
++    gtk_window_destroy(GTK_WINDOW(dialog));
++    if (title) free(title);
++    if (message) free(message);
++    if (informative) free(informative);
++    if (primary) free(primary);
++    if (secondary) free(secondary);
++    if (tertiary) free(tertiary);
++    if (state.response <= 0) return 0;
++    if (state.response == 1) return 1;
++    return 2;
++}
++#endif
