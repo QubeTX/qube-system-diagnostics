@@ -12,6 +12,7 @@ gui/*.pdb
 gui/sd300_engine.dll
 gui/libsd300_engine.dylib
 gui/libsd300_engine.so
+inno/Output/
 # Commercial build input. CI reconstructs the licensed Makira face from
 # encrypted repository secrets and verifies the reviewed digest.
 gui/src/fonts/Makira-Regular.ttf

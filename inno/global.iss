@@ -121,6 +121,7 @@ var
   ExitCode: Integer;
   CliBinary: String;
   GuiBinary: String;
+  Started: Boolean;
 begin
   Root := RemoveBackslashUnlessRoot(Root);
   GuiBinary := Root + '\app\sd300-gui.exe';
@@ -129,8 +130,17 @@ begin
   CliBinary := Root + '\bin\{#MyAppExeName}';
   if not FileExists(CliBinary) then
     RaiseException('An owned SD-300 GUI exists without its lifecycle CLI. Setup stopped before changing files.');
-  if not ExecAsOriginalUser(CliBinary, 'stop-gui --quiet', ExtractFileDir(CliBinary),
-      SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+  { Inno does not support ExecAsOriginalUser from an uninstaller. Normal
+    setup/update work still targets the pre-UAC user; the proven Global
+    uninstaller uses its current elevated split token to stop the same user's
+    per-session GUI before removing the owned machine image. }
+  if IsUninstaller then
+    Started := Exec(CliBinary, 'stop-gui --quiet', ExtractFileDir(CliBinary),
+      SW_HIDE, ewWaitUntilTerminated, ExitCode)
+  else
+    Started := ExecAsOriginalUser(CliBinary, 'stop-gui --quiet', ExtractFileDir(CliBinary),
+      SW_HIDE, ewWaitUntilTerminated, ExitCode);
+  if not Started then
     RaiseException('Could not start the hidden SD-300 GUI lifecycle request. Setup stopped safely.');
   if ExitCode <> 0 then
     RaiseException('The SD-300 GUI did not stop safely (exit ' + IntToStr(ExitCode) + ').');
@@ -209,7 +219,9 @@ begin
     exit;
   end;
   CliBinary := ExpandConstant('{app}\bin\{#MyAppExeName}');
-  if not ExecAsOriginalUser(CliBinary, 'cleanup-gui-state --quiet',
+  { ExecAsOriginalUser is unavailable at uninstall time. This procedure is
+    uninstall-only, so run through the proven elevated product owner. }
+  if not Exec(CliBinary, 'cleanup-gui-state --quiet',
       ExpandConstant('{app}\bin'), SW_HIDE, ewWaitUntilTerminated, ExitCode) then
     RaiseException('Could not start SD-300 GUI state cleanup. Uninstall stopped safely.');
   if ExitCode <> 0 then
