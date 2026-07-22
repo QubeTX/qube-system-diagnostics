@@ -557,8 +557,15 @@ jobs:
             if ((& $installedCli --version).Trim() -ne 'sd300 ${{ steps.meta.outputs.version }}') {
               throw 'legacy Cargo MSI takeover installed the wrong CLI version'
             }
-            $selfTest = ((& $installedGui --self-test --json) -join "`n") | ConvertFrom-Json
-            if (-not $selfTest.success -or $selfTest.product_version -ne '${{ steps.meta.outputs.version }}') {
+            $selfTestRaw = @(& $installedGui --self-test --json 2>&1)
+            $selfTestExit = $LASTEXITCODE
+            $selfTest = $null
+            try { $selfTest = ($selfTestRaw -join "`n") | ConvertFrom-Json } catch {}
+            if (-not $selfTest -or -not $selfTest.success -or $selfTest.product_version -ne '${{ steps.meta.outputs.version }}') {
+              Write-Host "GUI-SELFTEST-EXIT: $selfTestExit"
+              Write-Host "GUI-SELFTEST-GUI-PRESENT: $(Test-Path -LiteralPath $installedGui)"
+              Write-Host "GUI-SELFTEST-ENGINE-PRESENT: $(Test-Path -LiteralPath (Join-Path $corporateRoot 'app\sd300_engine.dll'))"
+              $selfTestRaw | ForEach-Object { Write-Host "GUI-SELFTEST: $_" }
               throw 'legacy Cargo MSI takeover installed an invalid GUI companion'
             }
             $uninstall = (& $installedCli uninstall --json) | ConvertFrom-Json
