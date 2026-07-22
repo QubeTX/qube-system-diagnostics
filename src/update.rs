@@ -100,6 +100,7 @@ struct Release {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 enum WindowsInstallerCompletion {
     Complete,
     RebootRequired(i32),
