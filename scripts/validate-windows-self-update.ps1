@@ -83,7 +83,17 @@ function Remove-Inno([string]$Root) {
     $uninstaller = Get-ChildItem -LiteralPath $Root -Filter 'unins*.exe' -File -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if ($uninstaller) {
-        Invoke-Checked $uninstaller.FullName @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+        $innoLog = Join-Path ([IO.Path]::GetTempPath()) "sd300-inno-uninstall-$([Guid]::NewGuid().ToString('N')).log"
+        try {
+            Invoke-Checked $uninstaller.FullName @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$innoLog")
+        }
+        catch {
+            $tail = @(Get-Content -LiteralPath $innoLog -ErrorAction SilentlyContinue | Select-Object -Last 40)
+            throw "$($_.Exception.Message)`nInno uninstall log tail:`n$($tail -join "`n")"
+        }
+        finally {
+            Remove-Item -LiteralPath $innoLog -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
