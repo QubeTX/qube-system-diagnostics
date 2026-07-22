@@ -1226,7 +1226,7 @@ pub fn run_windows_uninstall_worker(channel: &str, backup: &Path) -> i32 {
             };
         }
     };
-    let verification = verify_windows_native_uninstalled(&installation);
+    let verification = verify_windows_native_uninstalled_converged(&installation);
     match handoff.finish_execution(execution, verification) {
         Ok(execution) => execution.worker_exit_code(),
         Err(message) => {
@@ -3697,7 +3697,7 @@ fn verify_windows_uninstall_completion(
             | InstallChannel::ExeGlobal
             | InstallChannel::ExeCorporate
     ) {
-        verify_windows_native_uninstalled(installation)?;
+        verify_windows_native_uninstalled_converged(installation)?;
     }
     Ok(())
 }
@@ -3770,7 +3770,7 @@ fn uninstall_windows_native(
             })
         }
     };
-    let verification = verify_windows_native_uninstalled(installation);
+    let verification = verify_windows_native_uninstalled_converged(installation);
     handoff.finish_execution(execution, verification)?;
     Ok(format!(
         "{} uninstall completed; final running-image cleanup was scheduled{}",
@@ -3890,6 +3890,26 @@ fn reap_orphaned_inno_uninstaller(executable: &Path) {
             let _ = std::fs::remove_dir(root);
         }
     }
+}
+
+/// Inno uninstallers finish through a relaunched temp copy whose final
+/// `usPostUninstall` work — including machine PATH removal — lands after the
+/// original uninstaller process returns, so owned-state verification is
+/// eventually consistent. Poll briefly before declaring residue; a clean
+/// state returns immediately (MSI removal is synchronous and unaffected).
+#[cfg(windows)]
+fn verify_windows_native_uninstalled_converged(
+    installation: &Installation,
+) -> std::result::Result<(), String> {
+    let mut last = verify_windows_native_uninstalled(installation);
+    for _ in 0..150 {
+        if last.is_ok() {
+            return last;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        last = verify_windows_native_uninstalled(installation);
+    }
+    last
 }
 
 #[cfg(windows)]

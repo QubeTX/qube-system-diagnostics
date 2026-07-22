@@ -212,6 +212,13 @@ qualification has completed.
   runaway momentum. Wheel momentum is disabled at the app design-token level
   (`wheel_velocity_scale = 0`), keeping the coalesced one-repaint burst while
   making every notch a bounded step in the wheel's direction.
+- Fixed Global EXE uninstall failing verification on fast machines: the Inno
+  uninstaller finishes through a relaunched copy whose final machine-PATH
+  removal lands after the original process returns, so owned-state
+  verification raced an eventually-consistent uninstall. Verification now
+  polls briefly for convergence, and elevated worker failures relay their
+  detail (including the uninstaller log tail) across the UAC boundary
+  through a report file instead of dying with an opaque exit code.
 - Fixed retiring a Global or Corporate EXE owner (channel takeover) stranding
   an orphaned, unrunnable `unins000.exe` in the retired root: Inno
   uninstallers self-delete through a relaunched temp copy after the original
