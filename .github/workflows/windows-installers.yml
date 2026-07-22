@@ -745,7 +745,9 @@ jobs:
             )
             $lines = @(& $Executable @Arguments)
             if ($LASTEXITCODE -ne 0) {
-              throw "SD-300 exited with $LASTEXITCODE while running $($Arguments -join ' '): $($lines -join ' | ')"
+              # Write-Host survives ConciseView truncation of long throw messages.
+              $lines | ForEach-Object { Write-Host "SD300-OUTPUT: $_" }
+              throw "SD-300 exited with $LASTEXITCODE while running $($Arguments -join ' ')"
             }
             if ($lines.Count -ne 1) {
               throw "SD-300 emitted $($lines.Count) stdout lines instead of one JSON object"
