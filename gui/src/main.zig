@@ -130,10 +130,26 @@ pub const Model = struct {
     driver_attention_only: bool = false,
     scroll_top: f64 = 0,
     detail: projection.Projection = .{},
+    // Presentation-active: the window is on screen OR minimized — i.e. NOT
+    // policy-hidden (close-to-tray). A minimized window stays presentation-active
+    // on purpose so it keeps the 1 s foreground cadence and engine profile and
+    // restore is instantly fresh; only a tray-hidden window is inactive (30 s).
+    // Every write derives this from `!mainWindowPolicyHidden()` (or `true` on an
+    // explicit open), never from raw visibility.
     window_visible: bool = true,
     audience_mode: settings.AudienceMode = .user,
     temperature_unit: settings.TemperatureUnit = .celsius,
     tray_enabled: bool = false,
+    // Whether a tray status item actually exists for THIS running session,
+    // fixed once at startup from the effective tray decision (tray_supported AND
+    // the persisted `tray_enabled`) that also gates status-item creation. This
+    // is deliberately distinct from `tray_enabled`: that field is the user's
+    // persisted preference for the NEXT launch and drives settings display and
+    // persistence, whereas a mid-session tray toggle only takes effect on
+    // relaunch (RESTART REQUIRED). Any decision that turns on the tray icon
+    // truly being present — chiefly whether a policy-hidden close may keep the
+    // process alive instead of quitting — must read this, never the preference.
+    tray_session_active: bool = false,
     launch_at_login: bool = false,
     reduced_motion: bool = true,
     chart_density: settings.ChartDensity = .balanced,
@@ -149,6 +165,7 @@ pub const Model = struct {
 
     pub const view_unbound = .{
         "window_visible",
+        "tray_session_active",
         "show_all_processes",
         "process_sort",
         "process_filter_buffer",
@@ -387,11 +404,28 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .refresh_now => sampleEngine(model),
         .refresh_tick => |timer| {
             if (timer.outcome == .fired) {
-                if (shouldQuitForHiddenWindow(model.tray_enabled, window_visibility.mainWindowPolicyHidden())) {
+                // Quit on a policy-hidden close only when NO tray status item
+                // exists this session. This must read the startup-effective
+                // presence, not the persisted `tray_enabled` preference: a
+                // mid-session toggle is RESTART REQUIRED, so enabling tray now
+                // must not strand a hidden, icon-less process, and disabling it
+                // now must not kill a still-live tray icon.
+                if (shouldQuitForHiddenWindow(model.tray_session_active, window_visibility.mainWindowPolicyHidden())) {
                     fx.quitApp();
                     return;
                 }
-                const visibility_changed = applyWindowVisibility(model, window_visibility.mainWindowVisible());
+                // Track PRESENTATION by policy-hidden (close-to-tray), not raw
+                // visibility. A minimized (iconic) window is a transient
+                // background state, not a request to stop collecting: restoring
+                // it from the taskbar emits no message, so dropping to the 30 s
+                // hidden cadence would show up to 30 s of stale data on restore.
+                // Treating iconic as foreground keeps the 1 s sampling cadence
+                // and the foreground engine profile, so restore is instantly
+                // fresh. This costs foreground-level CPU (~1.6% of one logical
+                // core) while minimized, which is acceptable for a transient
+                // state; a genuine tray-hidden window stays policy-hidden and
+                // keeps the cheaper 30 s cadence.
+                const visibility_changed = applyWindowVisibility(model, !window_visibility.mainWindowPolicyHidden());
                 sampleEngine(model);
                 if (visibility_changed) scheduleRefresh(fx, model.window_visible);
             }
@@ -541,7 +575,13 @@ pub fn initEffects(model: *Model, fx: *Effects) void {
     } else {
         window_visibility.hideMainWindow();
     }
-    _ = applyWindowVisibility(model, window_visibility.mainWindowVisible());
+    // `window_visible` means "presentation-active" — on screen OR minimized,
+    // i.e. NOT policy-hidden — so a minimized window keeps the foreground
+    // cadence and engine profile (see the refresh_tick handler). At startup the
+    // window is freshly shown or freshly policy-hidden and never iconic, so both
+    // predicates agree here; using policy-hidden keeps the field's meaning
+    // singular across every site that reads it.
+    _ = applyWindowVisibility(model, !window_visibility.mainWindowPolicyHidden());
     if (active_engine) |runtime| runtime.setView(model.window_visible, model.active_section) catch {};
     sampleEngine(model);
     scheduleRefresh(fx, model.window_visible);
@@ -566,11 +606,16 @@ pub fn refreshIntervalMs(visible: bool) u64 {
 }
 
 /// Windows and macOS use a host-level hide close policy so tray mode can keep
-/// collecting. With tray disabled, turn that same close into the normal,
-/// graceful quit on the next already-scheduled model tick. A minimized window
-/// is deliberately not policy-hidden and must never satisfy this predicate.
-pub fn shouldQuitForHiddenWindow(tray_enabled: bool, policy_hidden: bool) bool {
-    return !tray_enabled and policy_hidden;
+/// collecting. With no live tray status item THIS session, turn that same close
+/// into the normal, graceful quit on the next already-scheduled model tick. The
+/// first argument is the STARTUP-EFFECTIVE tray presence, never the persisted
+/// `tray_enabled` preference: a mid-session settings toggle only takes effect on
+/// the next launch (RESTART REQUIRED), so the icon's real existence — not a
+/// pending preference — governs whether a policy-hidden window may keep running.
+/// A minimized window is deliberately not policy-hidden and must never satisfy
+/// this predicate.
+pub fn shouldQuitForHiddenWindow(tray_session_active: bool, policy_hidden: bool) bool {
+    return !tray_session_active and policy_hidden;
 }
 
 fn scheduleRefresh(fx: *Effects, visible: bool) void {
@@ -1052,6 +1097,11 @@ pub fn initialModelWithSettings(document: settings.Document) Model {
         .audience_mode = document.gui.audience_mode,
         .temperature_unit = document.gui.temperature_unit,
         .tray_enabled = document.gui.tray_enabled,
+        // Session-effective tray presence, computed identically to `effective_tray`
+        // in main() (which gates status-item creation). Captured once here so the
+        // running session never conflates the persisted preference with the icon
+        // that actually exists on screen.
+        .tray_session_active = tray_supported and document.gui.tray_enabled,
         .launch_at_login = document.gui.launch_at_login,
         .reduced_motion = document.gui.reduced_motion,
         .chart_density = document.gui.chart_density,

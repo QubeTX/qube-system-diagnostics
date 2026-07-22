@@ -535,6 +535,76 @@ test "close-policy hide quits only when tray is disabled" {
     try testing.expect(!main.shouldQuitForHiddenWindow(false, false));
 }
 
+test "close-policy quit consults startup tray presence, not the live setting" {
+    // Session-effective tray presence is captured once from persisted settings,
+    // exactly like the effective_tray decision that gates the status item.
+    var tray_off = main.initialModelWithSettings(.{ .gui = .{ .tray_enabled = false } });
+    try testing.expect(!tray_off.tray_session_active);
+
+    const tray_supported = tray_off.trayAvailable();
+
+    var tray_on = main.initialModelWithSettings(.{ .gui = .{ .tray_enabled = true } });
+    // A tray icon exists this session only where the platform supports it.
+    try testing.expectEqual(tray_supported, tray_on.tray_session_active);
+
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+
+    // BUG 1 forward case: launch tray-OFF, then enable tray in settings. The
+    // pending preference flips on and RESTART REQUIRED is armed, but this
+    // session still has NO icon. A policy-hidden close must therefore still
+    // quit — reading the live setting would strand a hidden, icon-less ghost.
+    main.update(&tray_off, .toggle_tray, &fx);
+    if (tray_supported) {
+        try testing.expect(tray_off.tray_enabled);
+        try testing.expect(!tray_off.tray_session_active);
+        try testing.expect(tray_off.settings_restart_required);
+        try testing.expect(main.shouldQuitForHiddenWindow(tray_off.tray_session_active, true));
+        // The pre-fix input would have wrongly refused to quit.
+        try testing.expect(!main.shouldQuitForHiddenWindow(tray_off.tray_enabled, true));
+    }
+
+    // BUG 1 symmetric case: launch tray-ON, then disable tray in settings. The
+    // icon is still live this session, so a policy-hidden close must NOT quit
+    // (the tray can still reopen it) even though the preference is now off.
+    main.update(&tray_on, .toggle_tray, &fx);
+    if (tray_supported) {
+        try testing.expect(!tray_on.tray_enabled);
+        try testing.expect(tray_on.tray_session_active);
+        try testing.expect(!main.shouldQuitForHiddenWindow(tray_on.tray_session_active, true));
+        // The pre-fix input would have wrongly quit and killed a live icon.
+        try testing.expect(main.shouldQuitForHiddenWindow(tray_on.tray_enabled, true));
+    }
+}
+
+test "minimized window keeps foreground cadence via policy-hidden not visibility" {
+    const Probe = struct { visible: bool, policy_hidden: bool };
+    // Platform window-state truth table for the states the refresh tick sees,
+    // as (raw_visible, policy_hidden) reported by the window_visibility probes.
+    const on_screen = Probe{ .visible = true, .policy_hidden = false };
+    const minimized = Probe{ .visible = false, .policy_hidden = false };
+    const tray_hidden = Probe{ .visible = false, .policy_hidden = true };
+
+    // The fix derives presentation-active = !policy_hidden and feeds THAT to the
+    // cadence choice, so a minimized window (not policy-hidden) holds the 1 s
+    // foreground cadence and restore from the taskbar is instantly fresh.
+    try testing.expectEqual(@as(u64, 1000), main.refreshIntervalMs(!on_screen.policy_hidden));
+    try testing.expectEqual(@as(u64, 1000), main.refreshIntervalMs(!minimized.policy_hidden));
+    try testing.expectEqual(@as(u64, 30000), main.refreshIntervalMs(!tray_hidden.policy_hidden));
+
+    // Regression guard: the old raw-visibility derivation dropped a minimized
+    // window (raw visible = false) to the 30 s hidden cadence — the stale-on-
+    // restore bug this fix removes.
+    try testing.expectEqual(@as(u64, 30000), main.refreshIntervalMs(minimized.visible));
+
+    // The quit path is unaffected: a minimized window is never policy-hidden and
+    // so can never satisfy the quit predicate, while a real tray-hidden window
+    // still can when no session tray icon exists.
+    try testing.expect(!main.shouldQuitForHiddenWindow(false, minimized.policy_hidden));
+    try testing.expect(main.shouldQuitForHiddenWindow(false, tray_hidden.policy_hidden));
+}
+
 test "external singleton open enters the typed model update path" {
     var model = main.initialModel();
     model.window_visible = false;
