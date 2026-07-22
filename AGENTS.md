@@ -2,6 +2,30 @@
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
+## Read before a long session
+
+`docs/agents/2026-07-22-codex-loop-post-mortem.md` explains why the v3.0.0
+effort stalled for 24+ hours and the seven rules that closed it. The short
+version, which applies to every session here:
+
+- **Every cycle must produce information.** A cycle that ends with a staged-but-
+  uncommitted fix, a silent failure, or an unanswerable gate produced none.
+- **Land validated fixes immediately.** The hosted runner is the only oracle for
+  installer and shell behavior, and it cannot read your working tree.
+- **When a check fails without saying why, fix the reporting first** — print
+  payloads before throwing, capture GUI-subsystem output via file redirection,
+  relay cross-privilege failures through a report file.
+- **Success criteria have an owner.** If a gate is expensive, blocking, and not
+  essential to "does it work," surface the cost to the operator and honor the
+  answer with a dated waiver plus a backlog task.
+- **Prove runtime-specific behavior on that runtime** (Windows PowerShell 5.1
+  differs from pwsh 7 in exit codes, modules, cmdlets, and encoding).
+- **Eliminate observers before measuring**, and quarantine the machine for
+  unattended runs.
+- **Bound tool retries.** Computer Use is encouraged for GUI acceptance but
+  cannot see the Windows tray; tray work uses programmatic dispatch plus a
+  manual operator check.
+
 ## Task management system
 
 This repository uses the git-tracked `.tasks/` board for milestones, active work, verification, and cross-session handoff. At session start, read `.tasks/TASKS.md`, `.tasks/MILESTONES.md`, `.tasks/CLAUDE.md`, and every Active task's detail file. Keep each Active task's `## Status`, `## Verification`, and newest `## Activity` entry current as work progresses. Launch or repair the live board with `node .tasks/board-server.mjs ensure --open` and read its identity-bound port from `.tasks/.board-server.json`.
