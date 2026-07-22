@@ -786,8 +786,8 @@ jobs:
             throw 'Cargo managed completion returned the wrong contract'
           }
           $guiRoot = Join-Path $env:LOCALAPPDATA 'Programs\SD-300'
-          $gui = Join-Path $guiRoot 'sd300-gui.exe'
-          $engine = Join-Path $guiRoot 'sd300_engine.dll'
+          $gui = Join-Path $guiRoot 'app\sd300-gui.exe'
+          $engine = Join-Path $guiRoot 'app\sd300_engine.dll'
           $receipt = Join-Path $env:XDG_CONFIG_HOME 'sd300\sd300-receipt.json'
           if (-not (Test-Path $gui -PathType Leaf) -or -not (Test-Path $engine -PathType Leaf) -or
               -not (Test-Path $receipt -PathType Leaf)) {
