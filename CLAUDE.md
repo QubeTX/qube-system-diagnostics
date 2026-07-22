@@ -86,6 +86,140 @@ The binary is named `sd300` (not `sd-300`). The crates.io package name is `tr300
   tray, startup, close, and motion choices belong under `gui` and must never
   change TUI session defaults.
 
+## Dual-frontend editing model
+
+SD-300 is one product with two frontends over one collector core. The governing
+product model (operator, 2026-07-22): the TUI and the app surface the same
+information and serve the same function. They are installed together, updated
+together, and uninstalled together, but once installed each is usable
+independently. They expose all the same functions with one exception —
+uninstall is CLI-only. Treat any divergence in what the two frontends can
+observe as a defect unless it is deliberately documented as platform- or
+frontend-unavailable.
+
+The single source of truth is the `sd_300` Rust library. The TUI links it
+in-process; the GUI loads it as a separate engine dynamic library. Feature work
+changes the shared core once and wires the result into both frontends in the
+same change.
+
+### What the frontends share
+
+Both consume the same Rust collector truth; neither reinterprets it.
+
+- **Collectors and `SystemSnapshot`.** Every collector under `src/collectors/`
+  returns a typed struct; `SystemSnapshot` (`src/collectors/mod.rs`) owns them
+  and exposes the `refresh_*` methods. `SystemSnapshot` is not Clone (it owns
+  `sysinfo::System`). The GUI engine reuses these exact structs and refresh
+  methods rather than maintaining a parallel collector.
+- **Warning sources and deduplication.** Warnings carry a `source` and are
+  cleared per-source before re-collecting (`warnings.retain(|w| w.source !=
+  "Name")`, then extend). The engine's collect loop (`gui-engine/src/lib.rs`)
+  follows the identical pattern so warning identity and counts match the TUI.
+- **Observation states.** `src/observation.rs` defines `ObservationStatus`
+  (`Available`, `Unavailable`, `Unsupported`, `PermissionDenied`, `Error`,
+  `Contradictory`). Both frontends render these states rather than inventing
+  "missing" or zero placeholders.
+- **Capability and provenance model.** `report::capabilities_for(&snapshot)`
+  produces the capability records, and per-topic provenance strings live on the
+  engine's `Topic::provenance()`. Both frontends present capability and
+  provenance, not raw guesses.
+- **Redaction.** `report::DiagnosticReport::from_snapshot(snapshot,
+  include_sensitive)` and its `redact()` own the redaction rules and
+  `redacted_fields`. The CLI `snapshot`/`capabilities` exports and the GUI
+  engine's export requests both go through this one path.
+- **Product version.** `env!("CARGO_PKG_VERSION")` is stamped into engine
+  metadata and every topic envelope; `npm --prefix gui run
+  check:product-version` reconciles the crate, engine, npm, and Zig manifests to
+  one version.
+
+### What they do not share
+
+Processes, runtimes, mutable state, schedulers, and settings namespaces are
+deliberately separate.
+
+- **Processes and runtimes.** The TUI runs in-process: `App::run()` drives a
+  `tokio::select!` loop with the 1/3/5/15/60-second ticks (`src/app.rs`). The
+  GUI is a *separate process* that loads `sd300_engine.dll` /
+  `libsd300_engine.dylib` / `libsd300_engine.so` from an absolute
+  bundle-relative path. The engine owns its own non-cloneable `SystemSnapshot`
+  on a dedicated engine thread built from `std::thread`, `mpsc` channels, and a
+  `Condvar` wake — not a Tokio runtime (`gui-engine/src/lib.rs`). Slow probes
+  that the TUI runs via `spawn_blocking`, the engine runs on short-lived
+  `std::thread` workers joined before the library can unload.
+- **Mutable state and scheduling.** Neither frontend shares mutable state or a
+  scheduler with the other. The engine publishes bounded, latest-only,
+  versioned topic projections; the GUI consumes sequence changes and keeps its
+  own bounded histories. There is no shared buffer to mutate across the two.
+- **Settings namespaces.** `src/settings.rs` splits the document into `shared`
+  (currently empty) and `gui`. The TUI deliberately does not read this document;
+  its chooser, units, and session defaults are unchanged. GUI mode, unit, tray,
+  startup, close, chart density, navigation, and motion live under `gui` and
+  must never alter a TUI launch. Only settings deliberately introduced for both
+  frontends belong under `shared`.
+
+### Recipe: adding a data field or feature to both frontends
+
+Wire the change end to end, in this order.
+
+1. **Collector struct (`src/collectors/X.rs`).** Add the field to the
+   collector's typed struct and populate it in `collect()`. Represent absence
+   with an `Observation` or a warning (using the per-source dedup pattern),
+   never a silent zero.
+2. **TUI render (`src/ui/sections/X.rs`).** Each section's `render()` branches
+   into `render_user()` (plain language) and `render_tech()` (raw data). Wire
+   the field into both modes with the existing
+   `content_block`/`sub_block`/`COLOR_*` helpers.
+3. **Engine projection / ABI (`gui-engine/src/lib.rs`).** If the field already
+   sits inside a topic's `Serialize` projection struct (`FastProjection`,
+   `SlowProjection`, …), it crosses automatically because those borrow the live
+   `&snapshot`. A new fixed-layout summary field means extending the matching
+   `#[repr(C)]` struct *and* its `size_of`/`align_of` assertion test. ABI rules:
+   caller-owned buffers only (`copy_to_caller`); bounded, latest-only topics;
+   and no Rust panic, allocation, reference, or borrowed buffer across the ABI —
+   every `extern "C"` entry is `catch_unwind`-guarded and serializes to an owned
+   buffer.
+4. **GUI projection (`gui/src/projection.zig`).** Add the field to the matching
+   `*Json` parse struct and to `Projection`, then set it inside the matching
+   `apply*Json`. Fixed-capacity rules apply: text uses `canvas.TextBuffer(N)`;
+   lists use a `max_*` cap with a fixed array, a saturating total count, and a
+   `@min` clamp. No per-sample heap growth.
+5. **Model and sampling (`gui/src/main.zig`).** The projection lives at
+   `Model.detail`; add a `Model` accessor for any computed value the view needs.
+   Confirm the active section's `sampleDetailedTopics`/`sampleTopic` path
+   subscribes to the topic that now carries the field, and push into a bounded
+   history if it is charted.
+6. **Markup binding (`gui/src/app.native`).** Bind the value with `{accessor}`
+   or `{detail.field}`. `native check --strict` comptime-validates every `Model`
+   and `Msg` field against the view: a field the view does not bind must be added
+   to the relevant `view_unbound` tuple (one on `Msg`, one on `Model`) or the
+   strict check fails.
+7. **Tests.** Add or extend Rust unit tests (including the gui-engine ABI layout
+   assertions) run by `cargo test --locked`; keep the GUI strict check green
+   (`npm --prefix gui run check`); and exercise the native tests
+   (`npm --prefix gui test`).
+8. **Parity and changelog.** The same change must wire both frontends, or
+   explicitly document the field as platform/frontend-unavailable — parity is a
+   release invariant. Update `CHANGELOG.md` and `HUMAN_CHANGELOG.md` in lockstep.
+
+### Testing quick reference
+
+```bash
+cargo test --locked                                                  # Rust unit/integration + ABI layout
+npm --prefix gui run check                                           # Native SDK strict model/binding check
+SD300_RENDER_BENCH=1 npm --prefix gui test -- -Doptimize=ReleaseFast # native tests + render benchmark
+```
+
+The Native SDK is a pinned, patched dependency. Never edit the staged SDK under
+the npm or Zig caches directly; changes go through
+`gui/patches/native-sdk-0.5.4-software-render.patch`, both build preparers, and
+the hash pins in `gui/package-lock.json`, `gui/build.zig.zon`, and
+`gui/toolchain-lock.json`, which move together in one reviewed update.
+
+For GUI acceptance, Computer Use is encouraged to drive and verify the running
+app, with one exception in this repository: it cannot see the Windows tray, so
+tray interactions are verified by programmatic dispatch plus a manual operator
+test rather than by Computer Use.
+
 ## Release Process (cargo-dist + crates.io)
 
 The standard deploy path is a push to the repository default branch (`main`) with a new, unreleased `Cargo.toml` version. `.github/workflows/release.yml` is intentionally customized from cargo-dist output; do not overwrite it with a generated workflow unless you preserve the main-branch deployment gate, unpublished qualification draft, native matrices, and final crates.io/latest publish gate.
@@ -154,8 +288,9 @@ All system data lives in `App.snapshot: SystemSnapshot`, which holds a non-Clone
 
 The GUI loads the Rust library as `sd300_engine.dll`,
 `libsd300_engine.dylib`, or `libsd300_engine.so` from an absolute
-bundle-relative path. It owns a separate non-cloneable `SystemSnapshot` and
-Tokio runtime on a dedicated engine thread, publishes bounded/versioned topic
+bundle-relative path. It owns a separate non-cloneable `SystemSnapshot` on a
+dedicated engine thread built from `std::thread`, `mpsc` channels, and a
+`Condvar` wake — not a Tokio runtime — publishes bounded/versioned topic
 projections, and never shares mutable state or scheduling with the TUI process.
 
 ### Rendering Pipeline

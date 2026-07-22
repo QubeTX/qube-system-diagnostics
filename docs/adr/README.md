@@ -24,3 +24,18 @@ Rules:
 | [0003](0003-managed-uninstall-receipt-parent-cleanup.md) | Managed uninstall removes the receipt parent only when empty | Accepted |
 
 Planned: 0004 (v3.0.0 release-scope decisions — lands with the release).
+
+## Dual-frontend contract pointer
+
+The rules for changing SD-300 across its two frontends — what the TUI and native
+GUI share, what they keep separate, and the step-by-step recipe for wiring a
+field into both — live in the **Dual-frontend editing model** section of
+`CLAUDE.md` and `AGENTS.md` (identical in both). Read that before opening an ADR
+about collector, projection, or parity work.
+
+ADRs [0001](0001-soak-early-exit-attribution.md),
+[0002](0002-warmed-scroll-latency-root-cause.md), and
+[0003](0003-managed-uninstall-receipt-parent-cleanup.md) are the current worked
+examples of the evidence discipline these records demand: each traces a decision
+to measured or reproduced evidence rather than asserting a conclusion. ADR 0004
+(v3.0.0 release-scope decisions) joins them at release closure.

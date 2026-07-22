@@ -6,6 +6,12 @@ SD-300 v3. It is a native-rendered application: the view is declarative
 `src/main.zig`, and live diagnostics come from the bundle-relative Rust engine.
 There is no application WebView or JavaScript runtime.
 
+Editing this GUI almost always means editing the CLI/TUI in the same commit.
+Before changing collector-backed behavior, read the **Dual-frontend editing
+model** section in `AGENTS.md` (identical in `CLAUDE.md`): it defines what the
+two frontends share, the step-by-step recipe for wiring a field into both, and
+the release-blocking parity invariant.
+
 The v3 app is still in qualification. A successful local build or strict test
 does not prove another target, native installer, physical interaction,
 performance soak, or public release.
@@ -37,8 +43,9 @@ The GUI dynamically loads one target engine from the application bundle:
 
 The loader uses an absolute bundle-relative path, local symbol scope/restricted
 Windows search flags, and rejects ABI, schema, product version, or target
-mismatches before starting. The engine owns a dedicated Rust thread, Tokio
-runtime, and non-cloneable `SystemSnapshot`; it never shares state with the TUI.
+mismatches before starting. The engine owns a dedicated Rust thread
+(`std::thread` + `mpsc` channels + a `Condvar` wake, not a Tokio runtime) and a
+non-cloneable `SystemSnapshot`; it never shares state with the TUI.
 No Rust panic, allocation, reference, or borrowed buffer may cross the C ABI.
 
 The engine preserves the 1/3/5/15/60-second collector cadences and exposes
