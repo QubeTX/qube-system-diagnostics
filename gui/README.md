@@ -130,6 +130,20 @@ Tray and launch-at-login are independent and default off:
 - Linux has no tray under Native SDK 0.5.4. It uses its Linux manifest and exits
   on close. Launch-at-login must open visibly so no unreachable process remains.
 
+## Accessibility support
+
+The retained view declares semantic roles, names, focus order, text equivalents
+for charts, reduced-motion behavior, and keyboard activation on every target.
+Native SDK's deterministic automation snapshot exercises that semantic tree.
+
+Native SDK 0.5.4 currently bridges retained canvas-widget semantics into the
+operating-system accessibility tree on macOS only. Windows UI Automation and
+Linux AT-SPI expose the named SD-300 canvas, but not its individual retained
+controls. That is an explicit platform limitation, not a passed screen-reader
+claim. The unchanged terminal UI remains available on Windows and Linux when
+system screen-reader navigation is required. A future SDK upgrade must be
+physically qualified before this limitation is removed.
+
 ## Visual identity and typography
 
 The GUI uses Warm Carbon: deep black/charcoal surfaces, restrained orange and

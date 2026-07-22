@@ -133,13 +133,19 @@ impl UpdateExecution {
         }
     }
 
+    #[cfg(any(windows, test))]
     fn post_commit_failure(self, message: String) -> String {
-        if matches!(self, Self::WindowsMsiCommitted(_)) {
-            format!(
-                "{message}; Windows Installer already committed the product transaction, so the prior executable was not restored. Run the same update again to repair the composite installation"
-            )
-        } else {
-            message
+        match self {
+            Self::WindowsMsiCommitted(completion) => format!(
+                "{message}; Windows Installer already committed the product transaction, so the prior executable was not restored.{}",
+                match completion {
+                    WindowsInstallerCompletion::Complete => {
+                        " Run the same update again to repair the composite installation."
+                    }
+                    _ => windows_pending_verification_reboot_message(completion),
+                }
+            ),
+            Self::Standard => message,
         }
     }
 
@@ -148,6 +154,16 @@ impl UpdateExecution {
         match self {
             Self::WindowsMsiCommitted(WindowsInstallerCompletion::RebootRequired(code)) => code,
             _ => 0,
+        }
+    }
+
+    #[cfg(any(windows, test))]
+    fn committed_worker_failure_exit_code(self) -> i32 {
+        match self {
+            Self::WindowsMsiCommitted(completion) => {
+                windows_committed_worker_failure_exit_code(completion)
+            }
+            Self::Standard => 2,
         }
     }
 }
@@ -178,10 +194,67 @@ impl WindowsNativeUninstallExecution {
             _ => 0,
         }
     }
+
+    fn committed_worker_failure_exit_code(self) -> i32 {
+        match self {
+            Self::MsiCommitted(completion) => {
+                windows_committed_worker_failure_exit_code(completion)
+            }
+            Self::Exe => 2,
+        }
+    }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 const WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR: i32 = 200;
+#[cfg(any(windows, test))]
+const WINDOWS_WORKER_MSI_1641_COMMITTED_NEEDS_REPAIR: i32 = 201;
+#[cfg(any(windows, test))]
+const WINDOWS_WORKER_MSI_3010_COMMITTED_NEEDS_REPAIR: i32 = 202;
+
+#[cfg(any(windows, test))]
+fn windows_committed_worker_failure_exit_code(completion: WindowsInstallerCompletion) -> i32 {
+    match completion {
+        WindowsInstallerCompletion::Complete => WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR,
+        WindowsInstallerCompletion::RebootRequired(1641) => {
+            WINDOWS_WORKER_MSI_1641_COMMITTED_NEEDS_REPAIR
+        }
+        WindowsInstallerCompletion::RebootRequired(_) => {
+            WINDOWS_WORKER_MSI_3010_COMMITTED_NEEDS_REPAIR
+        }
+    }
+}
+
+#[cfg(any(windows, test))]
+fn windows_committed_worker_failure_completion(
+    exit_code: u32,
+) -> Option<WindowsInstallerCompletion> {
+    match i32::try_from(exit_code).ok()? {
+        WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR => Some(WindowsInstallerCompletion::Complete),
+        WINDOWS_WORKER_MSI_1641_COMMITTED_NEEDS_REPAIR => {
+            Some(WindowsInstallerCompletion::RebootRequired(1641))
+        }
+        WINDOWS_WORKER_MSI_3010_COMMITTED_NEEDS_REPAIR => {
+            Some(WindowsInstallerCompletion::RebootRequired(3010))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(any(windows, test))]
+fn windows_pending_verification_reboot_message(
+    completion: WindowsInstallerCompletion,
+) -> &'static str {
+    match completion {
+        WindowsInstallerCompletion::Complete => "",
+        WindowsInstallerCompletion::RebootRequired(1641) => {
+            " Windows Installer reported that a reboot was initiated; verify the composite installation after Windows restarts."
+        }
+        WindowsInstallerCompletion::RebootRequired(_) => {
+            " Windows Installer requires a reboot; restart Windows before verifying or repairing the composite installation."
+        }
+    }
+}
 
 #[derive(Debug, Serialize)]
 struct LifecycleResult<'a> {
@@ -279,11 +352,7 @@ pub fn run(json: bool) -> Result<i32> {
             2,
         );
     }
-    let outcome = perform_update(&installation, &release, json).and_then(|execution| {
-        crate::gui::verify_installed(&release.version)
-            .map_err(|message| execution.post_commit_failure(message))?;
-        Ok(execution)
-    });
+    let outcome = perform_update(&installation, &release, json);
     match outcome {
         Ok(execution) => emit(
             json,
@@ -365,12 +434,7 @@ fn repair_current_gui(
         perform_managed_install(target_channel, release, json).map(|()| UpdateExecution::Standard)
     } else {
         perform_update(installation, release, json)
-    }
-    .and_then(|execution| {
-        crate::gui::verify_installed(&release.version)
-            .map_err(|message| execution.post_commit_failure(message))?;
-        Ok(execution)
-    });
+    };
 
     match repaired {
         Ok(execution) => emit(
@@ -461,8 +525,7 @@ pub fn install(json: bool) -> Result<i32> {
             channel.label()
         );
     }
-    let outcome = perform_managed_install(channel, &release, json)
-        .and_then(|()| crate::gui::verify_installed(&release.version));
+    let outcome = perform_managed_install(channel, &release, json);
     match outcome {
         Ok(()) => emit(
             json,
@@ -531,7 +594,10 @@ pub fn uninstall(json: bool) -> Result<i32> {
         );
     }
     match execute_uninstall(&installation, json).and_then(|message| {
-        crate::settings::remove_owned_gui_state()?;
+        let cleanup = remove_owned_windows_startup(&installation)
+            .and_then(|()| crate::settings::remove_owned_gui_state())
+            .and_then(|()| verify_windows_uninstall_completion(&installation));
+        cleanup.map_err(|error| format!("{message}; post-uninstall cleanup failed: {error}"))?;
         Ok(format!(
             "{message}; owned GUI settings and launch-at-login integration were removed"
         ))
@@ -563,6 +629,18 @@ pub fn uninstall(json: bool) -> Result<i32> {
             2,
         ),
     }
+}
+
+#[cfg(not(windows))]
+fn remove_owned_windows_startup(_installation: &Installation) -> std::result::Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn verify_windows_uninstall_completion(
+    _installation: &Installation,
+) -> std::result::Result<(), String> {
+    Ok(())
 }
 
 pub fn cleanup_owned_gui_state(quiet: bool) -> i32 {
@@ -693,16 +771,21 @@ fn perform_update(
         };
         handoff.finish_execution(
             execution,
-            verify_version(&installation.binary_path, &release.version),
+            verify_composite_install(&installation.binary_path, &release.version),
         )
     }
 
     #[cfg(not(windows))]
     {
         let execution = execute_update(installation, release, quiet_stdout)?;
-        verify_version(&installation.binary_path, &release.version)?;
+        verify_composite_install(&installation.binary_path, &release.version)?;
         Ok(execution)
     }
+}
+
+fn verify_composite_install(binary: &Path, version: &str) -> std::result::Result<(), String> {
+    verify_version(binary, version)?;
+    crate::gui::verify_installed(version)
 }
 
 fn perform_managed_install(
@@ -715,7 +798,7 @@ fn perform_managed_install(
         let binary = managed_receipt_binary().ok_or_else(|| {
             "The managed installer finished without a matching receipt and binary".to_string()
         })?;
-        verify_version(&binary, &release.version)
+        verify_composite_install(&binary, &release.version)
     };
 
     #[cfg(windows)]
@@ -928,11 +1011,11 @@ fn with_elevated_windows_live_image_handoff(
         .ok_or_else(|| "Refused a non-Global elevated update request".to_string())?;
     let exit_code =
         launch_elevated_windows_update_worker(channel, &release.version, &handoff.backup)?;
-    if exit_code == WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR as u32 {
-        return Err(
-            "Windows Installer committed the Global MSI transaction, but post-install verification or cleanup failed; the prior executable was not restored. Run the same update again to repair the composite installation."
-                .into(),
-        );
+    if let Some(completion) = windows_committed_worker_failure_completion(exit_code) {
+        return Err(format!(
+            "Windows Installer committed the Global MSI transaction, but post-install verification or cleanup failed; the prior executable was not restored.{}",
+            windows_pending_verification_reboot_message(completion)
+        ));
     }
     let msi_completion = (installation.channel == InstallChannel::MsiGlobal)
         .then(|| {
@@ -957,7 +1040,7 @@ fn with_elevated_windows_live_image_handoff(
         ),
         _ => UpdateExecution::Standard,
     };
-    verify_version(&installation.binary_path, &release.version)
+    verify_composite_install(&installation.binary_path, &release.version)
         .map_err(|message| execution.post_commit_failure(message))?;
     Ok(execution)
 }
@@ -981,7 +1064,7 @@ fn with_elevated_windows_managed_install_handoff(
     let binary = managed_receipt_binary().ok_or_else(|| {
         "The elevated managed installer finished without a matching receipt and binary".to_string()
     })?;
-    verify_version(&binary, &release.version)
+    verify_composite_install(&binary, &release.version)
 }
 
 #[cfg(windows)]
@@ -1020,13 +1103,13 @@ pub fn run_windows_update_worker(channel: &str, version: &str, backup: &Path) ->
             }
         }
     };
-    let verification = verify_version(&handoff.original, version);
+    let verification = verify_composite_install(&handoff.original, version);
     match handoff.finish_execution(execution, verification) {
         Ok(execution) => execution.worker_exit_code(),
         Err(message) => {
             eprintln!("SD-300 update worker failed safely: {message}");
             if execution.windows_msi_committed() {
-                WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR
+                execution.committed_worker_failure_exit_code()
             } else {
                 2
             }
@@ -1067,7 +1150,7 @@ pub fn run_windows_install_worker(channel: &str, version: &str, backup: &Path) -
             let binary = managed_receipt_binary().ok_or_else(|| {
                 "The managed installer finished without a matching receipt and binary".to_string()
             })?;
-            verify_version(&binary, version)
+            verify_composite_install(&binary, version)
         });
     match handoff.finish_managed_takeover(outcome) {
         Ok(()) => 0,
@@ -1126,7 +1209,7 @@ pub fn run_windows_uninstall_worker(channel: &str, backup: &Path) -> i32 {
         Err(message) => {
             eprintln!("SD-300 uninstall worker failed safely: {message}");
             if execution.windows_msi_committed() {
-                WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR
+                execution.committed_worker_failure_exit_code()
             } else {
                 2
             }
@@ -2245,12 +2328,14 @@ fn detect_installation() -> std::result::Result<Installation, String> {
 
     let managed_receipt = receipt_path();
     let receipt_present = managed_receipt
-        .as_ref()
-        .is_some_and(|receipt| receipt.is_file());
+        .as_deref()
+        .map(|receipt| regular_file_presence(receipt, "managed receipt"))
+        .transpose()?
+        .unwrap_or(false);
     let managed_current = managed_receipt_is_current(
         &current,
         receipt_present,
-        managed_receipt_evidence(),
+        managed_receipt_evidence_regular()?,
         VERSION,
     )?;
     let cargo_current = cargo_install_is_current(&current, VERSION)?;
@@ -2258,7 +2343,7 @@ fn detect_installation() -> std::result::Result<Installation, String> {
         let receipt = managed_receipt
             .as_deref()
             .expect("a current managed receipt has a path");
-        let manifest = cargo_manifest_path()
+        let manifest = cargo_legacy_manifest_path()
             .ok_or_else(|| "Cargo ownership has no resolvable manifest path".to_string())?;
         return match newer_ownership_record(receipt, &manifest)? {
             OverlapOwner::Managed => Ok(Installation {
@@ -2415,12 +2500,47 @@ fn managed_receipt_binary() -> Option<PathBuf> {
 }
 
 fn managed_receipt_evidence() -> Option<(PathBuf, String)> {
-    let receipt = std::fs::read_to_string(receipt_path()?).ok()?;
-    let (prefix, version) = managed_receipt_fields(&receipt)?;
+    managed_receipt_evidence_regular().ok().flatten()
+}
+
+fn managed_receipt_evidence_regular() -> std::result::Result<Option<(PathBuf, String)>, String> {
+    let Some(receipt_path) = receipt_path() else {
+        return Ok(None);
+    };
+    if !regular_file_presence(&receipt_path, "managed receipt")? {
+        return Ok(None);
+    }
+    let receipt = std::fs::read_to_string(&receipt_path).map_err(|error| {
+        format!(
+            "Could not read managed receipt {}: {error}. No mutation was attempted.",
+            receipt_path.display()
+        )
+    })?;
+    let Some((prefix, version)) = managed_receipt_fields(&receipt) else {
+        return Ok(None);
+    };
     let binary = prefix
         .join("bin")
         .join(if cfg!(windows) { "sd300.exe" } else { "sd300" });
-    binary.is_file().then_some((binary, version))
+    if !regular_file_presence(&binary, "managed binary")? {
+        return Ok(None);
+    }
+    Ok(Some((binary, version)))
+}
+
+fn regular_file_presence(path: &Path, label: &str) -> std::result::Result<bool, String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(true),
+        Ok(_) => Err(format!(
+            "The {label} at {} is a symlink or special file. No mutation was attempted.",
+            path.display()
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!(
+            "Could not inspect the {label} at {}: {error}. No mutation was attempted.",
+            path.display()
+        )),
+    }
 }
 
 fn managed_receipt_fields(receipt: &str) -> Option<(PathBuf, String)> {
@@ -2461,6 +2581,35 @@ fn cargo_manifest_path() -> Option<PathBuf> {
     cargo_home().map(|root| root.join(".crates2.json"))
 }
 
+fn cargo_legacy_manifest_path() -> Option<PathBuf> {
+    cargo_home().map(|root| root.join(".crates.toml"))
+}
+
+fn read_cargo_ownership_file(path: &Path) -> std::result::Result<Option<String>, String> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Could not inspect Cargo ownership metadata {}: {error}. No mutation was attempted.",
+                path.display()
+            ));
+        }
+    };
+    if !metadata.file_type().is_file() {
+        return Err(format!(
+            "Cargo ownership metadata {} is a symlink or special file. No mutation was attempted.",
+            path.display()
+        ));
+    }
+    std::fs::read_to_string(path).map(Some).map_err(|error| {
+        format!(
+            "Could not read Cargo ownership metadata {}: {error}. No mutation was attempted.",
+            path.display()
+        )
+    })
+}
+
 fn cargo_install_is_current(
     current: &Path,
     current_version: &str,
@@ -2471,22 +2620,62 @@ fn cargo_install_is_current(
     if !path_eq(current, &expected_binary) {
         return Ok(false);
     }
-    let manifest_path =
-        cargo_manifest_path().expect("cargo home exists when its binary path exists");
-    let manifest = match std::fs::read_to_string(&manifest_path) {
-        Ok(manifest) => manifest,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => {
-            return Err(format!(
-                "The running path looks like Cargo, but {} could not be read: {}. No mutation was attempted.",
-                manifest_path.display(),
-                error
-            ));
-        }
+    let legacy_manifest_path =
+        cargo_legacy_manifest_path().expect("cargo home exists when its binary path exists");
+    let legacy_manifest = match read_cargo_ownership_file(&legacy_manifest_path)? {
+        Some(manifest) => manifest,
+        None => return Ok(false),
     };
-    cargo_manifest_matches_current(&manifest, current_version)
+    let manifest_path = cargo_manifest_path().expect("Cargo home exists for both manifests");
+    let v2_manifest = read_cargo_ownership_file(&manifest_path)?;
+    cargo_manifests_match_current(
+        &legacy_manifest,
+        v2_manifest.as_deref(),
+        current_version,
+        &legacy_manifest_path,
+        &manifest_path,
+    )
 }
 
+fn cargo_manifests_match_current(
+    legacy_manifest: &str,
+    v2_manifest: Option<&str>,
+    current_version: &str,
+    legacy_path: &Path,
+    v2_path: &Path,
+) -> std::result::Result<bool, String> {
+    let Some(legacy_package_id) =
+        crate::migrate::cargo_legacy_manifest_package_id(legacy_manifest)?
+    else {
+        return Ok(false);
+    };
+    let legacy_version = crate::migrate::cargo_legacy_manifest_version(legacy_manifest)?
+        .expect("a proven legacy PackageId has a version");
+    if legacy_version != current_version {
+        return Err(format!(
+            "Cargo records tr300-tui version {} in {}, but the running binary reports {}. No mutation was attempted.",
+            legacy_version,
+            legacy_path.display(),
+            current_version
+        ));
+    }
+    if let Some(manifest) = v2_manifest {
+        if let Some(package_id) = cargo_manifest_package_id(manifest)? {
+            if package_id != legacy_package_id {
+                return Err(format!(
+                    "Cargo ownership metadata conflicts between {} ({}) and {} ({}). No mutation was attempted.",
+                    legacy_path.display(),
+                    legacy_package_id,
+                    v2_path.display(),
+                    package_id
+                ));
+            }
+        }
+    }
+    Ok(true)
+}
+
+#[cfg(test)]
 fn cargo_manifest_matches_current(
     manifest: &str,
     current_version: &str,
@@ -2506,6 +2695,29 @@ fn cargo_manifest_matches_current(
 pub(crate) fn cargo_manifest_version(
     manifest: &str,
 ) -> std::result::Result<Option<String>, String> {
+    cargo_manifest_package_id(manifest)?
+        .map(|package_id| {
+            let remainder = package_id
+                .strip_prefix(&format!("{CRATE_NAME} "))
+                .ok_or_else(|| {
+                    "Cargo's .crates2.json ownership entry has no exact package name".to_string()
+                })?;
+            let version = remainder
+                .split_once(" (")
+                .map_or(remainder, |(version, _)| version);
+            if version.is_empty() {
+                return Err(
+                    "Cargo's .crates2.json ownership entry has no exact package version".into(),
+                );
+            }
+            Ok(version.to_string())
+        })
+        .transpose()
+}
+
+pub(crate) fn cargo_manifest_package_id(
+    manifest: &str,
+) -> std::result::Result<Option<String>, String> {
     let json: serde_json::Value = serde_json::from_str(manifest).map_err(|error| {
         format!("Cargo's .crates2.json is invalid: {error}. No mutation was attempted.")
     })?;
@@ -2517,28 +2729,66 @@ pub(crate) fn cargo_manifest_version(
         })?;
     let binary_name = if cfg!(windows) { "sd300.exe" } else { "sd300" };
     let prefix = format!("{CRATE_NAME} ");
-    let mut versions = installs.iter().filter_map(|(key, value)| {
-        let remainder = key.strip_prefix(&prefix)?;
-        let owns_binary = value
-            .get("bins")
-            .and_then(serde_json::Value::as_array)
-            .is_some_and(|bins| bins.iter().any(|bin| bin.as_str() == Some(binary_name)));
-        owns_binary
-            .then(|| {
-                remainder
-                    .split_once(" (")
-                    .map_or(remainder, |(version, _)| version)
-            })
-            .map(str::to_string)
-    });
-    let version = versions.next();
-    if versions.next().is_some() {
+    let mut matching = Vec::new();
+    let mut foreign_owners = Vec::new();
+    for (key, value) in installs {
+        let target_package = key.starts_with(&prefix);
+        let Some(bins_value) = value.get("bins") else {
+            if target_package {
+                return Err(format!(
+                    "Cargo's .crates2.json entry {key} has no bins array. No mutation was attempted."
+                ));
+            }
+            continue;
+        };
+        let Some(bins) = bins_value.as_array() else {
+            if target_package {
+                return Err(format!(
+                    "Cargo's .crates2.json entry {key} has a malformed bins value. No mutation was attempted."
+                ));
+            }
+            continue;
+        };
+        let Some(bin_names) = bins
+            .iter()
+            .map(serde_json::Value::as_str)
+            .collect::<Option<Vec<_>>>()
+        else {
+            if target_package {
+                return Err(format!(
+                    "Cargo's .crates2.json entry {key} contains a non-string binary name. No mutation was attempted."
+                ));
+            }
+            continue;
+        };
+        let owns_binary = bin_names.contains(&binary_name);
+        if !owns_binary {
+            continue;
+        }
+        if !target_package {
+            foreign_owners.push(key.as_str());
+            continue;
+        }
+        if bin_names.as_slice() != [binary_name] {
+            return Err(format!(
+                "Cargo's .crates2.json entry {key} owns additional binaries and cannot be treated as one SD-300 target. No mutation was attempted."
+            ));
+        }
+        matching.push(key.clone());
+    }
+    if !foreign_owners.is_empty() {
+        return Err(format!(
+            "Cargo's .crates2.json records foreign ownership of {binary_name}: {}. No mutation was attempted.",
+            foreign_owners.join(", ")
+        ));
+    }
+    if matching.len() > 1 {
         return Err(
             "Cargo records multiple tr300-tui installations owning sd300. No mutation was attempted."
                 .into(),
         );
     }
-    Ok(version)
+    Ok(matching.pop())
 }
 
 fn path_eq(left: &Path, right: &Path) -> bool {
@@ -2769,10 +3019,13 @@ fn execute_uninstall(
 #[cfg(windows)]
 fn uninstall_cargo(
     installation: &Installation,
-    _quiet_stdout: bool,
+    quiet_stdout: bool,
 ) -> std::result::Result<String, String> {
-    schedule_windows_file_cleanup(installation, true)?;
-    Ok("Cargo uninstall was scheduled for immediately after this process exits".into())
+    uninstall_windows_files(installation, true, quiet_stdout)?;
+    Ok(
+        "Cargo-owned SD-300 was removed; final running-image cleanup was scheduled and the Rust toolchain was preserved"
+            .into(),
+    )
 }
 
 #[cfg(not(windows))]
@@ -2790,8 +3043,11 @@ fn uninstall_cargo(
 
 #[cfg(windows)]
 fn uninstall_managed(installation: &Installation) -> std::result::Result<String, String> {
-    schedule_windows_file_cleanup(installation, false)?;
-    Ok("Managed SD-300 removal was scheduled for immediately after this process exits".into())
+    uninstall_windows_files(installation, false, true)?;
+    Ok(
+        "Managed SD-300 CLI, GUI, integrations, and receipt were removed; final running-image cleanup was scheduled"
+            .into(),
+    )
 }
 
 #[cfg(not(windows))]
@@ -2992,11 +3248,12 @@ fn remove_empty_managed_receipt_directory() -> std::result::Result<(), String> {
 }
 
 #[cfg(windows)]
-fn schedule_windows_file_cleanup(
+fn uninstall_windows_files(
     installation: &Installation,
     cargo_owned: bool,
+    quiet_stdout: bool,
 ) -> std::result::Result<(), String> {
-    let receipt = receipt_path();
+    let receipt = (!cargo_owned).then(receipt_path).flatten();
     let managed_gui = if cargo_owned {
         None
     } else {
@@ -3004,15 +3261,19 @@ fn schedule_windows_file_cleanup(
     };
     let shortcut = (!cargo_owned).then(windows_managed_gui_shortcut).flatten();
     let commands = windows_managed_cleanup_commands(
-        std::process::id(),
+        None,
         &installation.binary_path,
         managed_gui.as_deref(),
         shortcut.as_deref(),
         receipt.as_deref(),
         cargo_owned,
     );
-    Command::new("powershell.exe")
-        .args([
+    let handoff = WindowsUninstallImageHandoff::begin()?;
+    let powershell =
+        trusted_windows_system_executable(Path::new("WindowsPowerShell\\v1.0\\powershell.exe"))?;
+    let cleanup = run_status(
+        Command::new(powershell).args([
+            "-NoLogo",
             "-NoProfile",
             "-NonInteractive",
             "-ExecutionPolicy",
@@ -3021,25 +3282,33 @@ fn schedule_windows_file_cleanup(
             "Hidden",
             "-Command",
             &commands,
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("Could not schedule post-exit cleanup: {error}"))
+        ]),
+        quiet_stdout,
+    )
+    .and_then(|()| {
+        verify_windows_file_uninstalled(
+            installation,
+            managed_gui.as_deref(),
+            shortcut.as_deref(),
+            receipt.as_deref(),
+            cargo_owned,
+        )
+    });
+    handoff.finish(cleanup)
 }
 
 #[cfg(any(windows, test))]
 fn windows_managed_cleanup_commands(
-    process_id: u32,
+    process_id: Option<u32>,
     binary: &Path,
     managed_gui: Option<&Path>,
     shortcut: Option<&Path>,
     receipt: Option<&Path>,
     cargo_owned: bool,
 ) -> String {
-    let mut commands = format!("Wait-Process -Id {process_id} -ErrorAction SilentlyContinue; ");
+    let mut commands = process_id.map_or_else(String::new, |process_id| {
+        format!("Wait-Process -Id {process_id} -ErrorAction SilentlyContinue; ")
+    });
     if cargo_owned {
         commands.push_str("& cargo uninstall tr300-tui *> $null; ");
     }
@@ -3061,6 +3330,12 @@ fn windows_managed_cleanup_commands(
         commands.push_str(
             "Remove-Item -LiteralPath 'Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SD-300-Managed' -Recurse -Force -ErrorAction SilentlyContinue; ",
         );
+        if let Some(bin) = binary.parent() {
+            commands.push_str(&format!(
+                "$sd300Bin='{}'; $sd300Environment=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment',$true); if($null -ne $sd300Environment){{ try{{ $sd300Path=$sd300Environment.GetValue('Path',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames); if($null -ne $sd300Path){{ $sd300Kind=$sd300Environment.GetValueKind('Path'); $sd300Parts=@([string]$sd300Path -split ';' | Where-Object {{ $_.Trim().TrimEnd('\\','/') -ine $sd300Bin.TrimEnd('\\','/') }}); $sd300Environment.SetValue('Path',($sd300Parts -join ';'),$sd300Kind) }} }} finally {{ $sd300Environment.Dispose() }} }}; ",
+                powershell_escape(&bin.to_string_lossy())
+            ));
+        }
     }
     if let Some(root) = managed_gui {
         commands.push_str(&format!(
@@ -3081,6 +3356,137 @@ fn windows_managed_cleanup_commands(
         }
     }
     commands
+}
+
+#[cfg(windows)]
+fn verify_windows_file_uninstalled(
+    installation: &Installation,
+    managed_gui: Option<&Path>,
+    shortcut: Option<&Path>,
+    receipt: Option<&Path>,
+    cargo_owned: bool,
+) -> std::result::Result<(), String> {
+    let mut residual = Vec::new();
+    for path in [
+        Some(installation.binary_path.as_path()),
+        managed_gui,
+        shortcut,
+        receipt,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if std::fs::symlink_metadata(path).is_ok() {
+            residual.push(path.display().to_string());
+        }
+    }
+
+    if cargo_owned {
+        if let Some(manifest) = cargo_manifest_path() {
+            match read_cargo_ownership_file(&manifest)? {
+                Some(contents) if cargo_manifest_version(&contents)?.is_some() => {
+                    residual.push(format!("Cargo ownership in {}", manifest.display()));
+                }
+                Some(_) | None => {}
+            }
+        }
+        if let Some(manifest) = cargo_legacy_manifest_path() {
+            match read_cargo_ownership_file(&manifest)? {
+                Some(contents)
+                    if crate::migrate::cargo_legacy_manifest_version(&contents)?.is_some() =>
+                {
+                    residual.push(format!("Cargo ownership in {}", manifest.display()));
+                }
+                Some(_) | None => {}
+            }
+        }
+    } else {
+        if windows_managed_registration_exists()? {
+            residual.push("the managed Installed Apps registration".into());
+        }
+        if let Some(bin) = installation.binary_path.parent() {
+            if windows_path_registry_contains(InstallChannel::PowerShellInstaller, bin)? {
+                residual.push("the managed per-user PATH entry".into());
+            }
+        }
+    }
+
+    if residual.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Managed uninstall returned before all owned state was removed: {}",
+            residual.join(", ")
+        ))
+    }
+}
+
+#[cfg(windows)]
+fn windows_managed_registration_exists() -> std::result::Result<bool, String> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
+    use winreg::RegKey;
+
+    match RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(
+        r"Software\Microsoft\Windows\CurrentVersion\Uninstall\SD-300-Managed",
+        KEY_READ,
+    ) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!(
+            "Could not verify the managed Installed Apps registration: {error}"
+        )),
+    }
+}
+
+#[cfg(any(windows, test))]
+fn windows_path_value_contains(value: &str, expected: &Path) -> bool {
+    let expected = expected
+        .to_string_lossy()
+        .trim()
+        .trim_matches('"')
+        .trim_end_matches(['\\', '/'])
+        .replace('/', "\\");
+    value.split(';').any(|entry| {
+        entry
+            .trim()
+            .trim_matches('"')
+            .trim_end_matches(['\\', '/'])
+            .replace('/', "\\")
+            .eq_ignore_ascii_case(&expected)
+    })
+}
+
+#[cfg(windows)]
+fn windows_path_registry_contains(
+    channel: InstallChannel,
+    expected: &Path,
+) -> std::result::Result<bool, String> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
+    use winreg::RegKey;
+
+    let (root, key) = match channel {
+        InstallChannel::MsiGlobal | InstallChannel::ExeGlobal => (
+            RegKey::predef(HKEY_LOCAL_MACHINE),
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+        InstallChannel::MsiCorporate
+        | InstallChannel::ExeCorporate
+        | InstallChannel::PowerShellInstaller => {
+            (RegKey::predef(HKEY_CURRENT_USER), r"Environment")
+        }
+        _ => return Ok(false),
+    };
+    let environment = match root.open_subkey_with_flags(key, KEY_READ) {
+        Ok(environment) => environment,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("Could not inspect the Windows PATH owner: {error}")),
+    };
+    let value = match environment.get_value::<String, _>("Path") {
+        Ok(value) => value,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(format!("Could not inspect the Windows PATH value: {error}")),
+    };
+    Ok(windows_path_value_contains(&value, expected))
 }
 
 #[cfg(windows)]
@@ -3138,6 +3544,113 @@ fn windows_managed_gui_shortcut() -> Option<PathBuf> {
 }
 
 #[cfg(windows)]
+fn windows_gui_candidates(installation: &Installation) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(root) = installation.binary_path.parent().and_then(Path::parent) {
+        candidates.push(root.join("app").join("sd300-gui.exe"));
+    }
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) {
+        let managed = local_app_data
+            .join("Programs")
+            .join("SD-300")
+            .join("app")
+            .join("sd300-gui.exe");
+        if !candidates
+            .iter()
+            .any(|candidate| path_eq(candidate, &managed))
+        {
+            candidates.push(managed);
+        }
+    }
+    candidates
+}
+
+#[cfg(any(windows, test))]
+fn windows_startup_command_target(command: &str) -> Option<PathBuf> {
+    let remainder = command.strip_prefix('"')?;
+    let (path, arguments) = remainder.split_once('"')?;
+    matches!(arguments, " --startup" | " --startup --hidden").then(|| PathBuf::from(path))
+}
+
+#[cfg(windows)]
+fn remove_owned_windows_startup(installation: &Installation) -> std::result::Result<(), String> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
+    use winreg::RegKey;
+
+    const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+    const VALUE_NAME: &str = "SD-300";
+    let run = match RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(RUN_KEY, KEY_READ | KEY_WRITE)
+    {
+        Ok(run) => run,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("Could not inspect launch-at-login: {error}")),
+    };
+    let existing = match run.get_value::<String, _>(VALUE_NAME) {
+        Ok(existing) => existing,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("Could not inspect launch-at-login: {error}")),
+    };
+    let Some(target) = windows_startup_command_target(&existing) else {
+        return Err(
+            "The SD-300 startup value is ambiguous; it was preserved and uninstall is incomplete"
+                .into(),
+        );
+    };
+    if !windows_gui_candidates(installation)
+        .iter()
+        .any(|candidate| path_eq(candidate, &target))
+    {
+        return Err(
+            "The SD-300 startup value does not identify the proven GUI; it was preserved and uninstall is incomplete"
+                .into(),
+        );
+    }
+    run.delete_value(VALUE_NAME)
+        .map_err(|error| format!("Could not remove SD-300 launch-at-login: {error}"))
+}
+
+#[cfg(windows)]
+fn verify_windows_uninstall_completion(
+    installation: &Installation,
+) -> std::result::Result<(), String> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
+    use winreg::RegKey;
+
+    crate::gui::request_exit()
+        .map_err(|message| format!("An SD-300 GUI process remained after uninstall: {message}"))?;
+    match RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ)
+    {
+        Ok(run) => match run.get_value::<String, _>("SD-300") {
+            Ok(_) => return Err("The SD-300 launch-at-login value remained after uninstall".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "Could not verify SD-300 launch-at-login removal: {error}"
+                ))
+            }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "Could not inspect launch-at-login after uninstall: {error}"
+            ))
+        }
+    }
+    if matches!(
+        installation.channel,
+        InstallChannel::MsiGlobal
+            | InstallChannel::MsiCorporate
+            | InstallChannel::ExeGlobal
+            | InstallChannel::ExeCorporate
+    ) {
+        verify_windows_native_uninstalled(installation)?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
 fn uninstall_windows_native(
     installation: &Installation,
     quiet_stdout: bool,
@@ -3150,11 +3663,11 @@ fn uninstall_windows_native(
             .global_worker_id()
             .ok_or_else(|| "Refused a non-Global elevated uninstall request".to_string())?;
         let exit_code = launch_elevated_windows_uninstall_worker(channel, &handoff.backup)?;
-        if exit_code == WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR as u32 {
-            return Err(
-                "Windows Installer committed the Global MSI uninstall, but removal verification or final cleanup failed; the installed executable was not restored. Retry from Installed Apps or the original MSI if SD-300 remains discoverable."
-                .into(),
-            );
+        if let Some(completion) = windows_committed_worker_failure_completion(exit_code) {
+            return Err(format!(
+                "Windows Installer committed the Global MSI uninstall, but removal verification or final cleanup is pending; the installed executable was not restored.{}",
+                windows_pending_verification_reboot_message(completion)
+            ));
         }
         let msi_completion = (installation.channel == InstallChannel::MsiGlobal)
             .then(|| {
@@ -3274,13 +3787,190 @@ fn execute_windows_native_uninstaller(
 fn verify_windows_native_uninstalled(
     installation: &Installation,
 ) -> std::result::Result<(), String> {
+    let mut residual = Vec::new();
     if native_registrations()
         .iter()
         .any(|candidate| candidate.channel == installation.channel)
     {
-        return Err("The proven native registration remained after its uninstaller exited".into());
+        residual.push("the proven Installed Apps registration".to_string());
+    }
+    let root = installation
+        .binary_path
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| "The installed native root was invalid during verification".to_string())?;
+    let owned_payloads = [
+        installation.binary_path.clone(),
+        root.join("app").join("sd300-gui.exe"),
+        root.join("app").join("sd300_engine.dll"),
+        root.join("app").join("assets").join("icon.png"),
+        root.join("app").join("licenses").join("PRODUCT-LICENSE.md"),
+        root.join("app")
+            .join("licenses")
+            .join("IBM-PLEX-OFL-1.1.txt"),
+        root.join("app")
+            .join("licenses")
+            .join("NATIVE-SDK-APACHE-2.0.txt"),
+    ];
+    for path in owned_payloads {
+        if std::fs::symlink_metadata(&path).is_ok() {
+            residual.push(path.display().to_string());
+        }
+    }
+    if let Some(shortcut) = windows_native_gui_shortcut(installation.channel) {
+        if std::fs::symlink_metadata(&shortcut).is_ok() {
+            residual.push(shortcut.display().to_string());
+        }
+    }
+    if let Some(bin) = installation.binary_path.parent() {
+        if windows_path_registry_contains(installation.channel, bin)? {
+            residual.push("the native Windows PATH entry".into());
+        }
+    }
+    residual.extend(windows_native_marker_residuals(installation.channel, root)?);
+    if !residual.is_empty() {
+        return Err(format!(
+            "The native uninstaller returned before all owned state was removed: {}",
+            residual.join(", ")
+        ));
     }
     Ok(())
+}
+
+#[cfg(windows)]
+fn windows_native_gui_shortcut(channel: InstallChannel) -> Option<PathBuf> {
+    let programs = match channel {
+        InstallChannel::MsiGlobal | InstallChannel::ExeGlobal => std::env::var_os("ProgramData")
+            .map(PathBuf::from)
+            .map(|root| {
+                root.join("Microsoft")
+                    .join("Windows")
+                    .join("Start Menu")
+                    .join("Programs")
+            }),
+        InstallChannel::MsiCorporate | InstallChannel::ExeCorporate => {
+            std::env::var_os("APPDATA").map(PathBuf::from).map(|root| {
+                root.join("Microsoft")
+                    .join("Windows")
+                    .join("Start Menu")
+                    .join("Programs")
+            })
+        }
+        _ => None,
+    }?;
+    Some(programs.join("SD-300").join("SD-300.lnk"))
+}
+
+#[cfg(windows)]
+fn windows_native_marker_residuals(
+    channel: InstallChannel,
+    expected_root: &Path,
+) -> std::result::Result<Vec<String>, String> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
+    use winreg::RegKey;
+
+    let mut residual = Vec::new();
+    let channel_label = match channel {
+        InstallChannel::MsiGlobal => "msi-global",
+        InstallChannel::MsiCorporate => "msi-corporate",
+        InstallChannel::ExeGlobal => "exe-global",
+        InstallChannel::ExeCorporate => "exe-corporate",
+        _ => return Ok(residual),
+    };
+    let user_key = match RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(r"Software\SD300", KEY_READ)
+    {
+        Ok(key) => Some(key),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(format!(
+                "Could not inspect current-user native install markers: {error}"
+            ))
+        }
+    };
+    if let Some(key) = user_key {
+        match key.get_value::<String, _>("InstallSource") {
+            Ok(value) if value.eq_ignore_ascii_case(channel_label) => {
+                residual.push("the current-user install-source marker".into());
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "Could not verify the current-user install-source marker: {error}"
+                ))
+            }
+        }
+        let scoped_source = if matches!(
+            channel,
+            InstallChannel::MsiGlobal | InstallChannel::ExeGlobal
+        ) {
+            "InstallSourceGlobal"
+        } else {
+            "InstallSourceCorporate"
+        };
+        match key.get_value::<String, _>(scoped_source) {
+            Ok(_) => residual.push(format!("the {scoped_source} marker")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "Could not verify the {scoped_source} marker: {error}"
+                ))
+            }
+        }
+        let shortcut_marker = if matches!(
+            channel,
+            InstallChannel::MsiGlobal | InstallChannel::ExeGlobal
+        ) {
+            "GuiStartMenuShortcutGlobal"
+        } else {
+            "GuiStartMenuShortcut"
+        };
+        match key.get_raw_value(shortcut_marker) {
+            Ok(_) => residual.push(format!("the {shortcut_marker} marker")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "Could not verify the {shortcut_marker} marker: {error}"
+                ))
+            }
+        }
+    }
+    let (root, value_name) = if matches!(
+        channel,
+        InstallChannel::MsiGlobal | InstallChannel::ExeGlobal
+    ) {
+        (
+            RegKey::predef(HKEY_LOCAL_MACHINE),
+            "NativeInstallRootGlobal",
+        )
+    } else {
+        (
+            RegKey::predef(HKEY_CURRENT_USER),
+            "NativeInstallRootCorporate",
+        )
+    };
+    let root_key = match root.open_subkey_with_flags(r"Software\SD300", KEY_READ) {
+        Ok(key) => Some(key),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(format!(
+                "Could not inspect the native install-root marker owner: {error}"
+            ))
+        }
+    };
+    if let Some(key) = root_key {
+        match key.get_value::<String, _>(value_name) {
+            Ok(value) => residual.push(if path_eq(Path::new(&value), expected_root) {
+                format!("the {value_name} marker")
+            } else {
+                format!("the ambiguous {value_name} marker")
+            }),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("Could not verify the {value_name} marker: {error}")),
+        }
+    }
+    Ok(residual)
 }
 
 #[cfg(not(windows))]
@@ -3561,14 +4251,91 @@ mod tests {
         let wrong_package = format!(
             r#"{{"installs":{{"another-crate 2.0.0 (registry+https://example.invalid/index)":{{"bins":["{binary}"]}}}}}}"#
         );
-        assert_eq!(cargo_manifest_version(&wrong_package).unwrap(), None);
+        assert!(cargo_manifest_version(&wrong_package).is_err());
+
+        let unrelated_package = r#"{"installs":{"another-crate 2.0.0 (registry+https://example.invalid/index)":{"bins":["another"]}}}"#;
+        assert_eq!(cargo_manifest_version(unrelated_package).unwrap(), None);
 
         let wrong_binary = r#"{"installs":{"tr300-tui 2.0.0 (registry+https://example.invalid/index)":{"bins":["other"]}}}"#;
         assert_eq!(cargo_manifest_version(wrong_binary).unwrap(), None);
         assert!(cargo_manifest_version("not json").is_err());
-        assert!(!cargo_manifest_matches_current(&wrong_package, "2.0.0").unwrap());
+        assert!(cargo_manifest_matches_current(&wrong_package, "2.0.0").is_err());
+        assert!(!cargo_manifest_matches_current(unrelated_package, "2.0.0").unwrap());
         assert!(cargo_manifest_matches_current(&valid, "2.0.0").unwrap());
         assert!(cargo_manifest_matches_current(&valid, "1.9.9").is_err());
+
+        let multi_binary = format!(
+            r#"{{"installs":{{"tr300-tui 2.0.0 (registry+https://example.invalid/index)":{{"bins":["{binary}","other"]}}}}}}"#
+        );
+        assert!(cargo_manifest_version(&multi_binary).is_err());
+        for malformed in [
+            r#"{"installs":{"tr300-tui 2.0.0 (registry+https://example.invalid/index)":{}}}"#,
+            r#"{"installs":{"tr300-tui 2.0.0 (registry+https://example.invalid/index)":{"bins":"sd300"}}}"#,
+            r#"{"installs":{"tr300-tui 2.0.0 (registry+https://example.invalid/index)":{"bins":[7]}}}"#,
+        ] {
+            assert!(cargo_manifest_version(malformed).is_err(), "{malformed}");
+        }
+    }
+
+    #[test]
+    fn authoritative_legacy_manifest_drives_cargo_owner_detection() {
+        let binary = if cfg!(windows) { "sd300.exe" } else { "sd300" };
+        let legacy = format!(
+            "[v1]\n\"tr300-tui 2.0.6 (registry+https://example.invalid/index)\" = [\"{binary}\"]\n"
+        );
+        let unrelated_v2 = r#"{"installs":{"cargo-audit 0.22.2 (registry+https://example.invalid/index)":{"bins":["cargo-audit"]}}}"#;
+        assert!(cargo_manifests_match_current(
+            &legacy,
+            Some(unrelated_v2),
+            "2.0.6",
+            Path::new(".crates.toml"),
+            Path::new(".crates2.json")
+        )
+        .unwrap());
+        assert!(cargo_manifests_match_current(
+            &legacy,
+            None,
+            "2.0.6",
+            Path::new(".crates.toml"),
+            Path::new(".crates2.json")
+        )
+        .unwrap());
+
+        let conflicting_v2 = format!(
+            r#"{{"installs":{{"tr300-tui 2.0.5 (registry+https://example.invalid/index)":{{"bins":["{binary}"]}}}}}}"#
+        );
+        assert!(cargo_manifests_match_current(
+            &legacy,
+            Some(&conflicting_v2),
+            "2.0.6",
+            Path::new(".crates.toml"),
+            Path::new(".crates2.json")
+        )
+        .is_err());
+
+        let same_version_different_source = format!(
+            r#"{{"installs":{{"tr300-tui 2.0.6 (registry+https://different.invalid/index)":{{"bins":["{binary}"]}}}}}}"#
+        );
+        assert!(cargo_manifests_match_current(
+            &legacy,
+            Some(&same_version_different_source),
+            "2.0.6",
+            Path::new(".crates.toml"),
+            Path::new(".crates2.json")
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn ownership_evidence_requires_regular_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let special = temp.path().join("special");
+        std::fs::create_dir(&special).unwrap();
+        assert!(regular_file_presence(&special, "test evidence").is_err());
+        assert!(!regular_file_presence(&temp.path().join("missing"), "test evidence").unwrap());
+        let regular = temp.path().join("regular");
+        std::fs::write(&regular, b"evidence").unwrap();
+        assert!(regular_file_presence(&regular, "test evidence").unwrap());
     }
 
     #[test]
@@ -3666,11 +4433,37 @@ mod tests {
                 .worker_exit_code(),
             3010
         );
+        for completion in [
+            WindowsInstallerCompletion::Complete,
+            WindowsInstallerCompletion::RebootRequired(1641),
+            WindowsInstallerCompletion::RebootRequired(3010),
+        ] {
+            let encoded = windows_committed_worker_failure_exit_code(completion);
+            assert_eq!(
+                windows_committed_worker_failure_completion(encoded as u32),
+                Some(completion)
+            );
+            assert_eq!(
+                UpdateExecution::WindowsMsiCommitted(completion)
+                    .committed_worker_failure_exit_code(),
+                encoded
+            );
+        }
+        assert!(windows_pending_verification_reboot_message(
+            WindowsInstallerCompletion::RebootRequired(3010)
+        )
+        .contains("requires a reboot"));
         let committed_failure =
             UpdateExecution::WindowsMsiCommitted(WindowsInstallerCompletion::RebootRequired(3010))
                 .post_commit_failure("GUI verification failed".into());
         assert!(committed_failure.contains("already committed"));
         assert!(committed_failure.contains("prior executable was not restored"));
+        assert!(committed_failure.contains("requires a reboot"));
+        assert!(!committed_failure.contains("Run the same update again"));
+        let committed_without_reboot =
+            UpdateExecution::WindowsMsiCommitted(WindowsInstallerCompletion::Complete)
+                .post_commit_failure("GUI verification failed".into());
+        assert!(committed_without_reboot.contains("Run the same update again"));
         assert_eq!(
             UpdateExecution::Standard.post_commit_failure("ordinary failure".into()),
             "ordinary failure"
@@ -3689,7 +4482,7 @@ mod tests {
     #[test]
     fn managed_windows_cleanup_removes_integrations_when_gui_root_is_already_missing() {
         let commands = windows_managed_cleanup_commands(
-            42,
+            Some(42),
             Path::new(r"C:\Users\test\bin\sd300.exe"),
             None,
             Some(Path::new(
@@ -3701,13 +4494,15 @@ mod tests {
         assert!(commands.contains("SD-300.lnk"));
         assert!(commands.contains("Uninstall\\SD-300-Managed"));
         assert!(commands.contains("install-receipt.json"));
+        assert!(commands
+            .contains("[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames"));
         assert!(!commands.contains("$sd300Root="));
     }
 
     #[test]
     fn managed_windows_cleanup_retries_a_proven_gui_root() {
         let commands = windows_managed_cleanup_commands(
-            42,
+            Some(42),
             Path::new(r"C:\Users\test\bin\sd300.exe"),
             Some(Path::new(r"C:\Users\test\AppData\Local\Programs\SD-300")),
             None,
@@ -3717,6 +4512,44 @@ mod tests {
         assert!(commands.contains("for($i=0;$i -lt 50"));
         assert!(commands.contains("Test-Path -LiteralPath $sd300Root"));
         assert!(commands.contains("Uninstall\\SD-300-Managed"));
+    }
+
+    #[test]
+    fn synchronous_windows_cleanup_does_not_wait_for_the_calling_process() {
+        let commands = windows_managed_cleanup_commands(
+            None,
+            Path::new(r"C:\Users\test\bin\sd300.exe"),
+            None,
+            None,
+            None,
+            true,
+        );
+        assert!(!commands.contains("Wait-Process"));
+        assert!(commands.contains("cargo uninstall tr300-tui"));
+    }
+
+    #[test]
+    fn windows_uninstall_path_and_startup_matching_are_exact() {
+        assert!(windows_path_value_contains(
+            r"C:\Windows;C:\Users\test\bin\;C:\Tools",
+            Path::new(r"c:\users\test\bin")
+        ));
+        assert!(!windows_path_value_contains(
+            r"C:\Users\test\binary",
+            Path::new(r"C:\Users\test\bin")
+        ));
+        assert_eq!(
+            windows_startup_command_target(
+                r#""C:\Users\test\Programs\SD-300\app\sd300-gui.exe" --startup --hidden"#
+            ),
+            Some(PathBuf::from(
+                r"C:\Users\test\Programs\SD-300\app\sd300-gui.exe"
+            ))
+        );
+        assert!(windows_startup_command_target(
+            r#""C:\Users\test\Programs\SD-300\app\sd300-gui.exe" --unexpected"#
+        )
+        .is_none());
     }
 
     #[cfg(windows)]

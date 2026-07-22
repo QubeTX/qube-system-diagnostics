@@ -2,6 +2,7 @@ const std = @import("std");
 const native_sdk = @import("native_sdk");
 const main = @import("main.zig");
 const engine = @import("engine.zig");
+const window_visibility = @import("platform/window_visibility.zig");
 
 const canvas = native_sdk.canvas;
 const testing = std.testing;
@@ -179,6 +180,10 @@ test "a fast summary updates the native overview projection" {
     try testing.expectEqualStrings("CPU · 18.3%", model.tray_cpu_buffer.text());
     try testing.expectEqualStrings("Memory · 62.5%", model.tray_memory_buffer.text());
     try testing.expectEqual(@as(f64, 18.25), model.cpu_history[model.cpu_history.len - 1]);
+    try testing.expect(model.overview_topic_meta.ready);
+    try testing.expectEqualStrings("fast-summary", model.overview_topic_meta.topic());
+    try testing.expectEqualStrings("SD-300 platform CPU and memory collectors", model.overview_topic_meta.provenance());
+    try testing.expectEqual(@as(u64, 42), model.overview_topic_meta.sequence);
 
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
@@ -187,6 +192,86 @@ test "a fast summary updates the native overview projection" {
     _ = try expectByText(tree.root, .text, "18.3%");
     _ = try expectByText(tree.root, .text, "16.0 GiB used of 32.0 GiB");
     _ = try expectByText(tree.root, .badge, "3 WARNINGS");
+}
+
+test "re-reading one fast sequence does not invent another history sample" {
+    var model = main.initialModel();
+    const summary = engine.FastSummary{
+        .sequence = 9,
+        .captured_unix_ms = 1_777_777_777_000,
+        .cpu_percent = 37.5,
+        .memory_percent = 61.25,
+        .memory_used_bytes = 10 * 1024 * 1024 * 1024,
+        .memory_total_bytes = 16 * 1024 * 1024 * 1024,
+        .logical_processors = 8,
+        .warning_count = 0,
+    };
+    main.applySummary(&model, summary);
+    const cpu_history = model.cpu_history;
+    const memory_history = model.memory_history;
+
+    main.applySummary(&model, summary);
+
+    try testing.expectEqualSlices(f64, &cpu_history, &model.cpu_history);
+    try testing.expectEqualSlices(f64, &memory_history, &model.memory_history);
+    try testing.expectEqual(@as(u64, 1_777_777_777_000), model.overview_topic_meta.captured_unix_ms);
+}
+
+test "top sample state becomes stale until sequence and capture advance" {
+    var test_clock = native_sdk.TestClock{};
+    test_clock.setWallMs(1_777_777_777_000);
+    var model = main.initialModel();
+    model.clock = test_clock.clock();
+    const summary = engine.FastSummary{
+        .sequence = 9,
+        .captured_unix_ms = 1_777_777_777_000,
+        .cpu_percent = 37.5,
+        .memory_percent = 61.25,
+        .memory_used_bytes = 10 * 1024 * 1024 * 1024,
+        .memory_total_bytes = 16 * 1024 * 1024 * 1024,
+        .logical_processors = 8,
+        .warning_count = 0,
+    };
+    main.applySummary(&model, summary);
+    try testing.expect(model.summaryLive());
+
+    test_clock.advanceMs(2501);
+    main.applySummary(&model, summary);
+    try testing.expect(model.summaryStale());
+    try testing.expect(!model.summaryLive());
+
+    var arena_stale = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_stale.deinit();
+    const stale_tree = try buildTree(arena_stale.allocator(), &model);
+    _ = try expectByText(stale_tree.root, .badge, "STALE · SAMPLE 9");
+    try testing.expect(findByText(stale_tree.root, .badge, "LIVE · SAMPLE 9") == null);
+
+    var next = summary;
+    next.sequence = 10;
+    next.captured_unix_ms += 2501;
+    main.applySummary(&model, next);
+    try testing.expect(model.summaryLive());
+    try testing.expect(!model.summaryStale());
+}
+
+test "top sample state exposes collector failure without claiming live" {
+    var model = main.initialModel();
+    main.applySummary(&model, .{
+        .sequence = 7,
+        .cpu_percent = 10,
+        .memory_percent = 20,
+        .memory_total_bytes = 16 * 1024 * 1024 * 1024,
+        .logical_processors = 8,
+    });
+    main.markFastSummaryFailed(&model);
+    try testing.expect(model.summaryFailed());
+    try testing.expect(!model.summaryLive());
+
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const tree = try buildTree(arena_state.allocator(), &model);
+    _ = try expectByText(tree.root, .badge, "COLLECTOR FAILED · LAST SAMPLE 7");
+    try testing.expect(findByText(tree.root, .badge, "LIVE · SAMPLE 7") == null);
 }
 
 test "instrument trace remains a bounded real CPU history" {
@@ -396,6 +481,36 @@ test "tray commands map to real show and graceful quit effects" {
     main.update(&model, .quit_app, &fx);
     actions = fx.windowActionState();
     try testing.expectEqual(@as(u32, 1), actions.quit_count);
+}
+
+test "close-policy hide quits only when tray is disabled" {
+    try testing.expect(main.shouldQuitForHiddenWindow(false, true));
+    try testing.expect(!main.shouldQuitForHiddenWindow(true, true));
+    try testing.expect(!main.shouldQuitForHiddenWindow(false, false));
+}
+
+test "external singleton open enters the typed model update path" {
+    var model = main.initialModel();
+    model.window_visible = false;
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+
+    main.sd300_model_open();
+    main.initEffects(&model, &fx);
+
+    try testing.expect(model.window_visible);
+    const actions = fx.windowActionState();
+    try testing.expectEqual(@as(u32, 1), actions.show_count);
+    try testing.expectEqualStrings("main", actions.lastLabel());
+}
+
+test "singleton open remains pending beyond the former startup retry budget" {
+    var pending = true;
+    for (0..1000) |_| pending = window_visibility.openRequestPending(false, false);
+    try testing.expect(pending);
+    try testing.expect(!window_visibility.openRequestPending(true, false));
+    try testing.expect(!window_visibility.openRequestPending(false, true));
 }
 
 test "tray state exposes live summaries and explicit Open and Quit" {

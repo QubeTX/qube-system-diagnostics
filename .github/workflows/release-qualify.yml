@@ -252,6 +252,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SD300_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TR300_TUI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SD300_CI_RELEASE_TAG: ${{ steps.meta.outputs.tag }}
           SD300_CI_RELEASE_ASSET_DIR: ${{ github.workspace }}/qualification
         shell: bash
@@ -260,11 +261,15 @@ jobs:
 
           prior="$RUNNER_TEMP/sd300-v2.0.6"
           mkdir -p "$prior/archive" "$prior/extracted"
+          git fetch --force --depth=1 origin refs/tags/v2.0.6:refs/tags/v2.0.6
+          [[ $(git rev-list -n 1 refs/tags/v2.0.6) == a81d86cbd8c9617f84072d721e94040cc2a05dd2 ]]
           gh release download v2.0.6 --repo '${{ github.repository }}' \
             --dir "$prior/archive" \
             --pattern tr300-tui-x86_64-unknown-linux-gnu.tar.xz \
             --pattern tr300-tui-x86_64-unknown-linux-gnu.tar.xz.sha256
           (cd "$prior/archive" && sha256sum -c tr300-tui-x86_64-unknown-linux-gnu.tar.xz.sha256)
+          [[ $(sha256sum "$prior/archive/tr300-tui-x86_64-unknown-linux-gnu.tar.xz" | awk '{print $1}') == \
+            12cc56d891e9304181c677c19d03f307e2210be7e80932c89cc9f63b43f8a87a ]]
           tar -xJf "$prior/archive/tr300-tui-x86_64-unknown-linux-gnu.tar.xz" \
             -C "$prior/extracted"
           prior_binary=$(find "$prior/extracted" -type f -name sd300 -perm -111 -print -quit)
@@ -279,7 +284,8 @@ jobs:
           export XDG_DATA_HOME="$smoke_home/.local/share"
           export XDG_CACHE_HOME="$smoke_home/.cache"
           export XDG_RUNTIME_DIR="$smoke_home/.runtime"
-          mkdir -m 700 -p "$XDG_RUNTIME_DIR"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
           mkdir -p "$CARGO_HOME/bin" "$XDG_CONFIG_HOME/sd300"
           cp "$prior_binary" "$CARGO_HOME/bin/sd300"
           chmod 755 "$CARGO_HOME/bin/sd300"
@@ -507,6 +513,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SD300_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TR300_TUI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -527,11 +534,15 @@ jobs:
 
           prior="$RUNNER_TEMP/sd300-public-v2.0.6"
           mkdir -p "$prior/archive" "$prior/extracted"
+          git fetch --force --depth=1 origin refs/tags/v2.0.6:refs/tags/v2.0.6
+          [[ $(git rev-list -n 1 refs/tags/v2.0.6) == a81d86cbd8c9617f84072d721e94040cc2a05dd2 ]]
           gh release download v2.0.6 --repo '${{ github.repository }}' \
             --dir "$prior/archive" \
             --pattern tr300-tui-x86_64-unknown-linux-gnu.tar.xz \
             --pattern tr300-tui-x86_64-unknown-linux-gnu.tar.xz.sha256
           (cd "$prior/archive" && sha256sum -c tr300-tui-x86_64-unknown-linux-gnu.tar.xz.sha256)
+          [[ $(sha256sum "$prior/archive/tr300-tui-x86_64-unknown-linux-gnu.tar.xz" | awk '{print $1}') == \
+            12cc56d891e9304181c677c19d03f307e2210be7e80932c89cc9f63b43f8a87a ]]
           tar -xJf "$prior/archive/tr300-tui-x86_64-unknown-linux-gnu.tar.xz" \
             -C "$prior/extracted"
           prior_binary=$(find "$prior/extracted" -type f -name sd300 -perm -111 -print -quit)
@@ -546,7 +557,8 @@ jobs:
           export XDG_DATA_HOME="$smoke_home/.local/share"
           export XDG_CACHE_HOME="$smoke_home/.cache"
           export XDG_RUNTIME_DIR="$smoke_home/.runtime"
-          mkdir -m 700 -p "$XDG_RUNTIME_DIR"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
           mkdir -p "$CARGO_HOME/bin"
           cp "$prior_binary" "$CARGO_HOME/bin/sd300"
           chmod 755 "$CARGO_HOME/bin/sd300"

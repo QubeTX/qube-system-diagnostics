@@ -403,9 +403,19 @@ fn set_launch_at_login_for(
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn remove_owned_text_file(path: &Path, marker: &str) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if !metadata.file_type().is_file() || metadata.file_type().is_symlink() => {
+            return Err(format!(
+                "{} exists but is not a regular SD-300-owned file; it was preserved",
+                path.display()
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(format!("could not inspect {}: {error}", path.display())),
+    }
     let existing = match fs::read_to_string(path) {
         Ok(existing) => existing,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(format!("could not inspect {}: {error}", path.display())),
     };
     if !existing.contains(marker) {
@@ -741,6 +751,28 @@ mod tests {
             fs::read(&path).expect("read replaced entry"),
             b"# SD-300 managed\nnew"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn startup_file_removal_preserves_symlinks_even_when_target_has_marker() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let target = temp.path().join("owned-looking-target");
+        let path = temp.path().join("startup-entry");
+        fs::write(&target, b"# SD-300 managed\nuser target").expect("write target");
+        symlink(&target, &path).expect("create startup symlink");
+
+        let error = remove_owned_text_file(&path, "# SD-300 managed")
+            .expect_err("ambiguous symlink must be preserved");
+
+        assert!(error.contains("preserved"));
+        assert!(fs::symlink_metadata(&path)
+            .expect("symlink remains")
+            .file_type()
+            .is_symlink());
+        assert!(target.is_file());
     }
 
     #[test]

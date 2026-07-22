@@ -1,5 +1,7 @@
 #import <AppKit/AppKit.h>
 
+extern void sd300_model_open(void);
+
 int sd300_main_window_visible(void) {
     BOOL found = NO;
     for (NSWindow *window in NSApp.windows) {
@@ -10,13 +12,37 @@ int sd300_main_window_visible(void) {
     return found ? 0 : 1;
 }
 
-void sd300_platform_open(void) {
+int sd300_main_window_policy_hidden(void) {
+    for (NSWindow *window in NSApp.windows) {
+        if (!window.canBecomeMainWindow) continue;
+        return !window.isVisible && !window.isMiniaturized ? 1 : 0;
+    }
+    return 0;
+}
+
+void sd300_main_window_show(void) {
+    [NSApp activateIgnoringOtherApps:YES];
+    for (NSWindow *window in NSApp.windows) {
+        if (!window.canBecomeMainWindow) continue;
+        if (window.isMiniaturized) [window deminiaturize:nil];
+        [window makeKeyAndOrderFront:nil];
+        return;
+    }
+}
+
+void sd300_main_window_hide(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [NSApp activateIgnoringOtherApps:YES];
         for (NSWindow *window in NSApp.windows) {
             if (!window.canBecomeMainWindow) continue;
-            [window makeKeyAndOrderFront:nil];
+            [window orderOut:nil];
+            return;
         }
+    });
+}
+
+void sd300_platform_open(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        sd300_model_open();
     });
 }
 

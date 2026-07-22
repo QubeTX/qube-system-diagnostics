@@ -24,6 +24,7 @@ const export_timer_key: u64 = 301;
 // never build a renderer backlog.
 const visible_refresh_ms: u64 = 1000;
 const hidden_refresh_ms: u64 = 30000;
+const fast_summary_stale_after_ms: u64 = 2500;
 const history_sample_count: usize = 60;
 const primary_process_row_count: usize = 8;
 const tray_supported = builtin.os.tag == .windows or builtin.os.tag == .macos;
@@ -42,6 +43,9 @@ const shell_views = [_]native_sdk.ShellView{
     .{ .label = canvas_label, .kind = .gpu_surface, .fill = true, .role = "SD-300 system monitor", .accessibility_label = "Live SD-300 system diagnostics", .gpu_backend = .metal, .gpu_pixel_format = .bgra8_unorm, .gpu_present_mode = .timer, .gpu_alpha_mode = .@"opaque", .gpu_color_space = .srgb, .gpu_vsync = true },
 };
 var active_engine: ?*engine.Runtime = null;
+var active_app_state: ?*NativeApp = null;
+var external_open_pending = std.atomic.Value(bool).init(false);
+var startup_should_show = true;
 
 pub const Msg = union(enum) {
     refresh_now,
@@ -88,6 +92,10 @@ pub const Msg = union(enum) {
 
 pub const Model = struct {
     engine_ready: bool = false,
+    fast_summary_seen: bool = false,
+    fast_summary_failed: bool = false,
+    fast_summary_stale: bool = false,
+    fast_summary_last_advance_ms: u64 = 0,
     sequence: u64 = 0,
     cpu_percent: f64 = 0,
     memory_percent: f64 = 0,
@@ -95,6 +103,7 @@ pub const Model = struct {
     memory_total_gib: f64 = 0,
     logical_processors: u32 = 0,
     warning_count: u32 = 0,
+    overview_topic_meta: projection.TopicMeta = .{},
     cpu_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
     memory_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
     swap_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
@@ -106,8 +115,6 @@ pub const Model = struct {
     disk_read_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
     disk_write_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
     clock: native_sdk.Clock = .system,
-    active_topic_age_ms: u64 = 0,
-    active_topic_stale: bool = false,
     active_section: u8 = 0,
     show_all_processes: bool = false,
     process_sort: ProcessSort = .cpu,
@@ -164,6 +171,11 @@ pub const Model = struct {
         "tray_health_buffer",
         "last_monitor_section",
         "clock",
+        "engine_ready",
+        "fast_summary_failed",
+        "fast_summary_stale",
+        "fast_summary_last_advance_ms",
+        "overview_topic_meta",
     };
 
     pub fn status(model: *const Model) []const u8 {
@@ -299,32 +311,14 @@ pub const Model = struct {
     pub fn thermalHistoryAvailable(model: *const Model) bool {
         return model.detail.cpu_temperature_available or model.detail.gpu_temperature_available;
     }
-    pub fn activeTopicReady(model: *const Model) bool {
-        return model.activeTopicMeta().ready;
+    pub fn summaryLive(model: *const Model) bool {
+        return model.fast_summary_seen and model.engine_ready and !model.fast_summary_failed and !model.fast_summary_stale;
     }
-    pub fn activeTopicName(model: *const Model) []const u8 {
-        return model.activeTopicMeta().topic();
+    pub fn summaryStale(model: *const Model) bool {
+        return model.fast_summary_seen and model.fast_summary_stale and !model.fast_summary_failed;
     }
-    pub fn activeTopicAvailability(model: *const Model) []const u8 {
-        return model.activeTopicMeta().availability();
-    }
-    pub fn activeTopicProvenance(model: *const Model) []const u8 {
-        return model.activeTopicMeta().provenance();
-    }
-    pub fn activeTopicTarget(model: *const Model) []const u8 {
-        return model.activeTopicMeta().target();
-    }
-    pub fn activeTopicSequence(model: *const Model) u64 {
-        return model.activeTopicMeta().sequence;
-    }
-    pub fn activeTopicCapturedUnixMs(model: *const Model) u64 {
-        return model.activeTopicMeta().captured_unix_ms;
-    }
-    pub fn activeTopicSchema(model: *const Model) u32 {
-        return model.activeTopicMeta().schema_version;
-    }
-    fn activeTopicMeta(model: *const Model) *const projection.TopicMeta {
-        return model.detail.topicMeta(activeTopicIndex(model.active_section));
+    pub fn summaryFailed(model: *const Model) bool {
+        return model.fast_summary_failed;
     }
     pub fn cpuAssessment(model: *const Model) []const u8 {
         if (model.cpu_percent >= 90) return "CPU demand is critical right now; open Processes to identify sustained consumers.";
@@ -393,6 +387,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .refresh_now => sampleEngine(model),
         .refresh_tick => |timer| {
             if (timer.outcome == .fired) {
+                if (shouldQuitForHiddenWindow(model.tray_enabled, window_visibility.mainWindowPolicyHidden())) {
+                    fx.quitApp();
+                    return;
+                }
                 const visibility_changed = applyWindowVisibility(model, window_visibility.mainWindowVisible());
                 sampleEngine(model);
                 if (visibility_changed) scheduleRefresh(fx, model.window_visible);
@@ -513,6 +511,11 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             _ = applyWindowVisibility(model, true);
             sampleEngine(model);
             scheduleRefresh(fx, true);
+            // The SDK effect keeps its runtime window table coherent. The
+            // platform call is an idempotent safety net for a host-level
+            // close-policy hide, whose frame event may reach the model after
+            // a singleton or tray Open command is already being handled.
+            window_visibility.showMainWindow();
             fx.showWindow("main");
         },
         .quit_app => fx.quitApp(),
@@ -526,14 +529,48 @@ pub fn onCommand(name: []const u8) ?Msg {
 }
 
 pub fn initEffects(model: *Model, fx: *Effects) void {
+    // Install the Windows singleton-open message route from the actual SDK UI
+    // thread before an external instance is allowed to signal this window.
+    window_visibility.installOpenMessageRoute();
+    // Native SDK restores window geometry and may also restore a previous
+    // policy-hidden state. Startup intent wins: only the explicit managed
+    // `--startup --hidden` route may remain hidden; an ordinary launch must
+    // always put the monitor on screen.
+    if (startup_should_show) {
+        window_visibility.showMainWindow();
+    } else {
+        window_visibility.hideMainWindow();
+    }
     _ = applyWindowVisibility(model, window_visibility.mainWindowVisible());
     if (active_engine) |runtime| runtime.setView(model.window_visible, model.active_section) catch {};
     sampleEngine(model);
     scheduleRefresh(fx, model.window_visible);
+    if (external_open_pending.swap(false, .acq_rel)) {
+        update(model, .open_window, fx);
+    }
+}
+
+/// Platform singleton routing marshals this callback onto the Native SDK UI
+/// thread. Execute the same typed message as the tray command so visibility,
+/// engine profile, sampling cadence, and presentation change atomically.
+pub export fn sd300_model_open() callconv(.c) void {
+    if (active_app_state) |app_state| {
+        update(&app_state.model, .open_window, &app_state.effects);
+    } else {
+        external_open_pending.store(true, .release);
+    }
 }
 
 pub fn refreshIntervalMs(visible: bool) u64 {
     return if (visible) visible_refresh_ms else hidden_refresh_ms;
+}
+
+/// Windows and macOS use a host-level hide close policy so tray mode can keep
+/// collecting. With tray disabled, turn that same close into the normal,
+/// graceful quit on the next already-scheduled model tick. A minimized window
+/// is deliberately not policy-hidden and must never satisfy this predicate.
+pub fn shouldQuitForHiddenWindow(tray_enabled: bool, policy_hidden: bool) bool {
+    return !tray_enabled and policy_hidden;
 }
 
 fn scheduleRefresh(fx: *Effects, visible: bool) void {
@@ -765,15 +802,19 @@ fn pollExport(model: *Model, fx: *Effects) void {
 
 fn sampleEngine(model: *Model) void {
     const runtime = active_engine orelse {
-        model.engine_ready = false;
+        markFastSummaryFailed(model);
         model.status_buffer.set("Engine unavailable — run sd300 update to repair the GUI companion.");
         return;
     };
     const summary = runtime.readFastSummary() catch |err| {
-        model.engine_ready = false;
         if (err == error.EngineDataPending) {
-            model.status_buffer.set("Engine connected — waiting for the first live sample…");
+            updateFastSummaryFreshness(model);
+            if (!model.fast_summary_seen) {
+                model.engine_ready = false;
+                model.status_buffer.set("Engine connected — waiting for the first live sample…");
+            }
         } else {
+            markFastSummaryFailed(model);
             model.status_buffer.set("Engine read failed — collection remains isolated from the TUI.");
         }
         return;
@@ -790,7 +831,6 @@ fn sampleEngine(model: *Model) void {
     } else {
         sampleDetailedTopics(runtime, model);
     }
-    updateActiveTopicFreshness(model);
 }
 
 fn sampleDetailedTopics(runtime: *engine.Runtime, model: *Model) void {
@@ -900,7 +940,15 @@ fn sampleTopic(runtime: *engine.Runtime, model: *Model, allocator: std.mem.Alloc
 
 pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     const gib = 1024.0 * 1024.0 * 1024.0;
+    const sequence_advanced = summary.sequence != model.sequence;
+    const capture_advanced = summary.captured_unix_ms == 0 or
+        model.overview_topic_meta.captured_unix_ms == 0 or
+        summary.captured_unix_ms > model.overview_topic_meta.captured_unix_ms;
+    const sample_advanced = !model.fast_summary_seen or (sequence_advanced and capture_advanced);
     model.engine_ready = true;
+    model.fast_summary_seen = true;
+    model.fast_summary_failed = false;
+    if (sample_advanced) model.fast_summary_last_advance_ms = model.clock.monotonicMs();
     model.sequence = summary.sequence;
     model.cpu_percent = @as(f64, summary.cpu_percent);
     model.memory_percent = @as(f64, summary.memory_percent);
@@ -908,8 +956,22 @@ pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     model.memory_total_gib = @as(f64, @floatFromInt(summary.memory_total_bytes)) / gib;
     model.logical_processors = summary.logical_processors;
     model.warning_count = summary.warning_count;
-    pushHistory(&model.cpu_history, model.cpu_percent);
-    pushHistory(&model.memory_history, model.memory_percent);
+    var overview_meta = model.overview_topic_meta;
+    overview_meta.ready = true;
+    overview_meta.schema_version = 1;
+    overview_meta.sequence = summary.sequence;
+    overview_meta.captured_unix_ms = summary.captured_unix_ms;
+    overview_meta.freshness_ms = 0;
+    overview_meta.topic_buffer.set("fast-summary");
+    overview_meta.availability_buffer.set("available");
+    overview_meta.provenance_buffer.set("SD-300 platform CPU and memory collectors");
+    const static_meta = model.detail.topicMeta(0);
+    overview_meta.target_buffer.set(if (static_meta.ready) static_meta.target() else "active target");
+    model.overview_topic_meta = overview_meta;
+    if (sequence_advanced) {
+        pushHistory(&model.cpu_history, model.cpu_percent);
+        pushHistory(&model.memory_history, model.memory_percent);
+    }
     var cpu_text: [64]u8 = undefined;
     const cpu_label = std.fmt.bufPrint(&cpu_text, "CPU · {d:.1}%", .{model.cpu_percent}) catch "CPU · live";
     model.tray_cpu_buffer.set(cpu_label);
@@ -917,6 +979,30 @@ pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     var memory_text: [64]u8 = undefined;
     const memory_label = std.fmt.bufPrint(&memory_text, "Memory · {d:.1}%", .{model.memory_percent}) catch "Memory · live";
     model.tray_memory_buffer.set(memory_label);
+    updateFastSummaryFreshness(model);
+}
+
+/// A successful engine call is not enough to claim LIVE: the bounded fast
+/// projection must keep advancing. This monotonic observation clock catches a
+/// wedged collector even when the last payload remains readable, while the
+/// capture clock catches an already-old payload immediately after resume.
+pub fn updateFastSummaryFreshness(model: *Model) void {
+    if (!model.fast_summary_seen) {
+        model.fast_summary_stale = false;
+        return;
+    }
+    const monotonic_age = model.clock.monotonicMs() -| model.fast_summary_last_advance_ms;
+    const wall_ms = model.clock.wallMs();
+    const now: u64 = if (wall_ms <= 0) 0 else @intCast(wall_ms);
+    const captured = model.overview_topic_meta.captured_unix_ms;
+    const capture_age = if (captured == 0 or now == 0) 0 else now -| captured;
+    model.fast_summary_stale = monotonic_age > fast_summary_stale_after_ms or capture_age > fast_summary_stale_after_ms;
+}
+
+pub fn markFastSummaryFailed(model: *Model) void {
+    model.engine_ready = false;
+    model.fast_summary_failed = true;
+    updateFastSummaryFreshness(model);
 }
 
 pub fn applyTraySummary(model: *Model, summary: engine.TraySummary) void {
@@ -949,40 +1035,6 @@ fn pushHistory(history: *[history_sample_count]f64, sample: f64) void {
 fn pushHistoryRaw(history: *[history_sample_count]f64, sample: f64) void {
     std.mem.copyForwards(f64, history[0 .. history.len - 1], history[1..]);
     history[history.len - 1] = @max(sample, 0);
-}
-
-fn activeTopicIndex(section: u8) usize {
-    return switch (section) {
-        0, 1, 2, 6 => 1,
-        3, 4, 7 => 2,
-        5 => 3,
-        8 => 6,
-        9 => 8,
-        else => 0,
-    };
-}
-
-fn activeTopicStaleAfterMs(section: u8) u64 {
-    return switch (section) {
-        0, 1, 2, 6 => 2500,
-        3, 4, 7 => 12_000,
-        5 => 7000,
-        else => 0,
-    };
-}
-
-fn updateActiveTopicFreshness(model: *Model) void {
-    const meta = model.activeTopicMeta();
-    if (!meta.ready or meta.captured_unix_ms == 0) {
-        model.active_topic_age_ms = 0;
-        model.active_topic_stale = false;
-        return;
-    }
-    const wall_ms = model.clock.wallMs();
-    const now: u64 = if (wall_ms <= 0) 0 else @intCast(wall_ms);
-    model.active_topic_age_ms = now -| meta.captured_unix_ms;
-    const threshold = activeTopicStaleAfterMs(model.active_section);
-    model.active_topic_stale = threshold > 0 and model.active_topic_age_ms > threshold;
 }
 
 pub const AppUi = canvas.Ui(Msg);
@@ -1318,6 +1370,7 @@ pub fn main(init: std.process.Init) !void {
     defer window_visibility.releaseSingleInstance();
 
     try window_visibility.installOpenSignal();
+    defer window_visibility.uninstallOpenSignal();
     try window_visibility.installQuitSignal();
     var engine_runtime = engine.Runtime.init(init.io, std.heap.page_allocator) catch null;
     if (engine_runtime) |*runtime| active_engine = runtime;
@@ -1331,7 +1384,11 @@ pub fn main(init: std.process.Init) !void {
     else
         settings.Document{};
     const effective_tray = tray_supported and settings_document.gui.tray_enabled;
-    try window_visibility.installStartupHide(startsHidden(args) and effective_tray);
+    const start_hidden = startsHidden(args) and effective_tray;
+    startup_should_show = !start_hidden;
+    defer startup_should_show = true;
+    try window_visibility.installStartupHide(start_hidden);
+    defer window_visibility.uninstallOpenMessageRoute();
     const executable_dir = try std.process.executableDirPathAlloc(init.io, std.heap.page_allocator);
     defer std.heap.page_allocator.free(executable_dir);
     const icon_path = try iconPath(std.heap.page_allocator, executable_dir);
@@ -1342,7 +1399,11 @@ pub fn main(init: std.process.Init) !void {
         .width = window_width,
         .height = window_height,
         .restore_state = true,
-        .close_policy = if (effective_tray) .hide else .quit,
+        // The host window close policy is fixed when app.zon creates the
+        // scene-first window. Windows/macOS therefore always use `.hide` and
+        // the model converts it to a graceful quit when tray is disabled.
+        // Linux has no tray in Native SDK 0.5.4 and retains `.quit`.
+        .close_policy = if (tray_supported) .hide else .quit,
         .views = &shell_views,
     }};
     const dynamic_shell_scene: native_sdk.ShellConfig = .{ .windows = &dynamic_shell_windows };
@@ -1375,6 +1436,8 @@ pub fn main(init: std.process.Init) !void {
     });
     defer app_state.destroy();
     app_state.model = initialModelWithSettings(settings_document);
+    active_app_state = app_state;
+    defer active_app_state = null;
 
     try runner.runWithOptions(app_state.app(), .{
         .app_name = "SD-300",

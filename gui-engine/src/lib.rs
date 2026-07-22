@@ -535,8 +535,58 @@ fn selected_process_sort(shared: &Shared) -> ProcessSortKey {
         .unwrap_or(ProcessSortKey::Cpu)
 }
 
+struct CollectorWorkers<'a> {
+    shared: &'a Shared,
+    diagnostics: Option<JoinHandle<()>>,
+    health: Option<JoinHandle<()>>,
+    drivers: Option<JoinHandle<()>>,
+}
+
+impl<'a> CollectorWorkers<'a> {
+    fn new(shared: &'a Shared) -> Self {
+        Self {
+            shared,
+            diagnostics: None,
+            health: None,
+            drivers: None,
+        }
+    }
+
+    fn join_slot(shared: &Shared, slot: &mut Option<JoinHandle<()>>, label: &str) {
+        if let Some(handle) = slot.take() {
+            if handle.join().is_err() {
+                set_error(shared, &format!("{label} collector worker panicked"));
+            }
+        }
+    }
+
+    fn join_diagnostics(&mut self) {
+        Self::join_slot(self.shared, &mut self.diagnostics, "diagnostics");
+    }
+
+    fn join_health(&mut self) {
+        Self::join_slot(self.shared, &mut self.health, "health");
+    }
+
+    fn join_drivers(&mut self) {
+        Self::join_slot(self.shared, &mut self.drivers, "drivers");
+    }
+}
+
+impl Drop for CollectorWorkers<'_> {
+    fn drop(&mut self) {
+        // These probes execute code from the engine dynamic library. The
+        // top-level engine worker must not return (and let the GUI close the
+        // library) until every child has left that code.
+        self.join_diagnostics();
+        self.join_health();
+        self.join_drivers();
+    }
+}
+
 fn collect_loop(shared: &Shared) {
     let mut snapshot = SystemSnapshot::default();
+    let mut workers = CollectorWorkers::new(shared);
 
     // Static identity and display inventory are collected once on the engine
     // worker even for the lightweight Overview profile. They are part of the
@@ -621,13 +671,14 @@ fn collect_loop(shared: &Shared) {
             }
             if profile == PROFILE_HIDDEN && now >= next_hidden_health && !health_running {
                 let sender = health_tx.clone();
-                thread::spawn(move || {
+                workers.health = Some(thread::spawn(move || {
                     let _ = sender.send(collectors::disk_health::collect());
-                });
+                }));
                 health_running = true;
                 next_hidden_health = now + Duration::from_secs(60);
             }
             if let Ok((health, warnings)) = health_rx.try_recv() {
+                workers.join_health();
                 health_running = false;
                 snapshot.disk_health = health;
                 snapshot
@@ -771,29 +822,30 @@ fn collect_loop(shared: &Shared) {
         }
         if full_detail && now >= next_diag && !diag_running {
             let sender = diag_tx.clone();
-            thread::spawn(move || {
+            workers.diagnostics = Some(thread::spawn(move || {
                 let _ = sender.send(collectors::network_diag::collect_connectivity());
-            });
+            }));
             diag_running = true;
             next_diag = now + Duration::from_secs(15);
         }
         if full_detail && now >= next_health && !health_running {
             let sender = health_tx.clone();
-            thread::spawn(move || {
+            workers.health = Some(thread::spawn(move || {
                 let _ = sender.send(collectors::disk_health::collect());
-            });
+            }));
             health_running = true;
             next_health = now + Duration::from_secs(60);
         }
         if full_detail && shared.driver_request.swap(false, Ordering::AcqRel) && !driver_running {
             let sender = driver_tx.clone();
-            thread::spawn(move || {
+            workers.drivers = Some(thread::spawn(move || {
                 let _ = sender.send(collectors::drivers::collect());
-            });
+            }));
             driver_running = true;
         }
 
         if let Ok(drivers) = driver_rx.try_recv() {
+            workers.join_drivers();
             driver_running = false;
             snapshot.drivers = drivers;
             snapshot
@@ -817,6 +869,7 @@ fn collect_loop(shared: &Shared) {
             capability_state_changed = true;
         }
         if let Ok((diagnostics, warnings)) = diag_rx.try_recv() {
+            workers.join_diagnostics();
             diag_running = false;
             snapshot.network_diag.gateway = diagnostics.gateway;
             snapshot.network_diag.dns = diagnostics.dns;
@@ -834,6 +887,7 @@ fn collect_loop(shared: &Shared) {
             capability_state_changed = true;
         }
         if let Ok((health, warnings)) = health_rx.try_recv() {
+            workers.join_health();
             health_running = false;
             snapshot.disk_health = health;
             snapshot
@@ -870,10 +924,7 @@ fn collect_loop(shared: &Shared) {
             // poll. Profile/sort/export/stop setters all signal this condvar,
             // so sleep directly until the next one-second sample instead of
             // waking the collector worker twenty times per second.
-            wait_for_wake(
-                shared,
-                next_fast.saturating_duration_since(Instant::now()),
-            );
+            wait_for_wake(shared, next_fast.saturating_duration_since(Instant::now()));
         } else {
             // Detailed pages can have driver, connectivity, or disk-health
             // workers completing on channels that do not own the wake handle.
@@ -1465,6 +1516,21 @@ pub extern "C" fn sd300_engine_last_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn collector_worker_guard_joins_children_before_scope_exit() {
+        let shared = Shared::default();
+        let completed = Arc::new(AtomicBool::new(false));
+        {
+            let mut workers = CollectorWorkers::new(&shared);
+            let completed = Arc::clone(&completed);
+            workers.health = Some(thread::spawn(move || {
+                thread::sleep(Duration::from_millis(10));
+                completed.store(true, Ordering::Release);
+            }));
+        }
+        assert!(completed.load(Ordering::Acquire));
+    }
 
     #[test]
     fn metadata_uses_caller_owned_buffers() {

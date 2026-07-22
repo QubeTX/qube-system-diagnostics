@@ -272,6 +272,17 @@ if (-not $SkipTests) {
     finally {
         Pop-Location
     }
+
+    # `native test` emits the exact staged model contract. Re-run strict check
+    # after that generation step so a stale preflight contract can never leave
+    # a distribution build with only the structural fallback validated.
+    Push-Location $guiRoot
+    try {
+        Invoke-Checked npx --no-install native check $appStage --strict
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 $zigOutput = (Resolve-Path -LiteralPath (Join-Path $appStage "zig-out")).Path

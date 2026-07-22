@@ -54,6 +54,27 @@ pub const TopicMeta = struct {
     }
 };
 
+pub const ObservationView = struct {
+    available: bool = false,
+    status_buffer: canvas.TextBuffer(32) = canvas.TextBuffer(32).init("unavailable"),
+    source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("not_collected"),
+    detail_buffer: canvas.TextBuffer(192) = canvas.TextBuffer(192).init("The collector has not run yet"),
+    summary_buffer: canvas.TextBuffer(256) = canvas.TextBuffer(256).init("not_collected · The collector has not run yet"),
+
+    pub fn status(observation: *const ObservationView) []const u8 {
+        return observation.status_buffer.text();
+    }
+    pub fn source(observation: *const ObservationView) []const u8 {
+        return observation.source_buffer.text();
+    }
+    pub fn detail(observation: *const ObservationView) []const u8 {
+        return observation.detail_buffer.text();
+    }
+    pub fn summary(observation: *const ObservationView) []const u8 {
+        return observation.summary_buffer.text();
+    }
+};
+
 pub const DisplayRow = struct {
     id: u32 = 0,
     active: bool = false,
@@ -141,6 +162,7 @@ pub const CpuCoreRow = struct {
     id: u32 = 0,
     usage_percent: f64 = 0,
     frequency_mhz: u64 = 0,
+    frequency_available: bool = false,
 };
 
 pub const MemoryModuleRow = struct {
@@ -148,6 +170,8 @@ pub const MemoryModuleRow = struct {
     capacity_gib: f64 = 0,
     configured_speed_mt_s: u32 = 0,
     rated_speed_mt_s: u32 = 0,
+    configured_speed_available: bool = false,
+    rated_speed_available: bool = false,
     locator_buffer: canvas.TextBuffer(48) = canvas.TextBuffer(48).init("Module"),
     type_buffer: canvas.TextBuffer(32) = canvas.TextBuffer(32).init("Unknown"),
     manufacturer_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("Unknown"),
@@ -201,7 +225,12 @@ pub const GpuRow = struct {
     temperature_celsius: f64 = 0,
     refresh_rate_hz: u32 = 0,
     telemetry_available: bool = false,
+    utilization_available: bool = false,
+    memory_used_available: bool = false,
+    memory_total_available: bool = false,
     temperature_available: bool = false,
+    resolution_available: bool = false,
+    refresh_rate_available: bool = false,
     name_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("Graphics adapter"),
     driver_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("Not reported"),
     status_buffer: canvas.TextBuffer(48) = canvas.TextBuffer(48).init("Unknown"),
@@ -443,6 +472,7 @@ pub const Projection = struct {
     cpu_model_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("Waiting for CPU identity"),
     physical_core_count: u32 = 0,
     logical_thread_count: u32 = 0,
+    cpu_core_total_count: u32 = 0,
     memory_available_gib: f64 = 0,
     swap_used_gib: f64 = 0,
     swap_total_gib: f64 = 0,
@@ -488,23 +518,42 @@ pub const Projection = struct {
     driver_total_count: u32 = 0,
     driver_attention_count: u32 = 0,
     driver_scan_buffer: canvas.TextBuffer(96) = canvas.TextBuffer(96).init("not scanned"),
+    memory_module_observation: ObservationView = .{},
+    network_adapter_observation: ObservationView = .{},
+    display_inventory_observation: ObservationView = .{},
+    display_brightness_observation: ObservationView = .{},
+    gpu_inventory_observation: ObservationView = .{},
+    gpu_telemetry_observation: ObservationView = .{},
+    thermal_inventory_observation: ObservationView = .{},
+    cpu_temperature_observation: ObservationView = .{},
+    gpu_temperature_observation: ObservationView = .{},
+    fan_observation: ObservationView = .{},
+    battery_observation: ObservationView = .{},
+    disk_health_observation: ObservationView = .{},
+    disk_reliability_observation: ObservationView = .{},
     cpu_core_rows: [max_cpu_cores]CpuCoreRow = [_]CpuCoreRow{.{}} ** max_cpu_cores,
     cpu_core_count: usize = 0,
     memory_module_rows: [max_memory_modules]MemoryModuleRow = [_]MemoryModuleRow{.{}} ** max_memory_modules,
     memory_module_count: usize = 0,
+    memory_module_total_count: u32 = 0,
     disk_rows: [max_disks]DiskRow = [_]DiskRow{.{}} ** max_disks,
     disk_count: usize = 0,
+    disk_total_count: u32 = 0,
     gpu_rows: [max_gpus]GpuRow = [_]GpuRow{.{}} ** max_gpus,
     gpu_count: usize = 0,
+    gpu_total_count: u32 = 0,
     interface_rows: [max_interfaces]InterfaceRow = [_]InterfaceRow{.{}} ** max_interfaces,
     interface_count: usize = 0,
+    interface_total_count: u32 = 0,
     process_rows: [max_processes]ProcessRow = [_]ProcessRow{.{}} ** max_processes,
     process_count: usize = 0,
     process_order_sequence: u64 = 0,
     sensor_rows: [max_sensors]SensorRow = [_]SensorRow{.{}} ** max_sensors,
     sensor_count: usize = 0,
+    sensor_total_count: u32 = 0,
     fan_rows: [max_fans]FanRow = [_]FanRow{.{}} ** max_fans,
     fan_count: usize = 0,
+    fan_total_count: u32 = 0,
     connection_rows: [max_connections]ConnectionRow = [_]ConnectionRow{.{}} ** max_connections,
     connection_count: usize = 0,
     connection_total_count: u32 = 0,
@@ -513,6 +562,7 @@ pub const Projection = struct {
     driver_count: usize = 0,
     drive_health_rows: [max_drive_health]DriveHealthRow = [_]DriveHealthRow{.{}} ** max_drive_health,
     drive_health_count: usize = 0,
+    drive_health_total_count: u32 = 0,
     disk_io_available: bool = false,
     disk_read_mib_s: f64 = 0,
     disk_write_mib_s: f64 = 0,
@@ -524,15 +574,19 @@ pub const Projection = struct {
     disk_errors_available: bool = false,
     display_rows: [max_displays]DisplayRow = [_]DisplayRow{.{}} ** max_displays,
     display_count: usize = 0,
+    display_total_count: u32 = 0,
     warning_rows: [max_warnings]WarningRow = [_]WarningRow{.{}} ** max_warnings,
     warning_row_count: usize = 0,
     warning_total_count: u32 = 0,
     capability_rows: [max_capabilities]CapabilityRow = [_]CapabilityRow{.{}} ** max_capabilities,
     capability_count: usize = 0,
+    capability_total_count: u32 = 0,
     network_adapter_rows: [max_network_adapters]NetworkAdapterRow = [_]NetworkAdapterRow{.{}} ** max_network_adapters,
     network_adapter_count: usize = 0,
+    network_adapter_total_count: u32 = 0,
     service_rows: [max_services]ServiceRow = [_]ServiceRow{.{}} ** max_services,
     service_count: usize = 0,
+    service_total_count: u32 = 0,
 
     pub fn osName(self: *const Projection) []const u8 {
         return self.os_name_buffer.text();
@@ -567,6 +621,84 @@ pub const Projection = struct {
     }
     pub fn driverScanStatus(self: *const Projection) []const u8 {
         return self.driver_scan_buffer.text();
+    }
+    pub fn memoryModuleStatus(self: *const Projection) []const u8 {
+        return self.memory_module_observation.status();
+    }
+    pub fn memoryModuleObservation(self: *const Projection) []const u8 {
+        return self.memory_module_observation.summary();
+    }
+    pub fn networkAdapterStatus(self: *const Projection) []const u8 {
+        return self.network_adapter_observation.status();
+    }
+    pub fn networkAdapterObservation(self: *const Projection) []const u8 {
+        return self.network_adapter_observation.summary();
+    }
+    pub fn displayInventoryStatus(self: *const Projection) []const u8 {
+        return self.display_inventory_observation.status();
+    }
+    pub fn displayInventoryObservation(self: *const Projection) []const u8 {
+        return self.display_inventory_observation.summary();
+    }
+    pub fn displayBrightnessStatus(self: *const Projection) []const u8 {
+        return self.display_brightness_observation.status();
+    }
+    pub fn displayBrightnessObservation(self: *const Projection) []const u8 {
+        return self.display_brightness_observation.summary();
+    }
+    pub fn gpuInventoryStatus(self: *const Projection) []const u8 {
+        return self.gpu_inventory_observation.status();
+    }
+    pub fn gpuInventoryObservation(self: *const Projection) []const u8 {
+        return self.gpu_inventory_observation.summary();
+    }
+    pub fn gpuTelemetryStatus(self: *const Projection) []const u8 {
+        return self.gpu_telemetry_observation.status();
+    }
+    pub fn gpuTelemetryObservation(self: *const Projection) []const u8 {
+        return self.gpu_telemetry_observation.summary();
+    }
+    pub fn thermalInventoryStatus(self: *const Projection) []const u8 {
+        return self.thermal_inventory_observation.status();
+    }
+    pub fn thermalInventoryObservation(self: *const Projection) []const u8 {
+        return self.thermal_inventory_observation.summary();
+    }
+    pub fn cpuTemperatureStatus(self: *const Projection) []const u8 {
+        return self.cpu_temperature_observation.status();
+    }
+    pub fn cpuTemperatureObservation(self: *const Projection) []const u8 {
+        return self.cpu_temperature_observation.summary();
+    }
+    pub fn gpuTemperatureStatus(self: *const Projection) []const u8 {
+        return self.gpu_temperature_observation.status();
+    }
+    pub fn gpuTemperatureObservation(self: *const Projection) []const u8 {
+        return self.gpu_temperature_observation.summary();
+    }
+    pub fn fanStatus(self: *const Projection) []const u8 {
+        return self.fan_observation.status();
+    }
+    pub fn fanObservation(self: *const Projection) []const u8 {
+        return self.fan_observation.summary();
+    }
+    pub fn batteryStatus(self: *const Projection) []const u8 {
+        return self.battery_observation.status();
+    }
+    pub fn batteryObservation(self: *const Projection) []const u8 {
+        return self.battery_observation.summary();
+    }
+    pub fn diskHealthStatus(self: *const Projection) []const u8 {
+        return self.disk_health_observation.status();
+    }
+    pub fn diskHealthObservation(self: *const Projection) []const u8 {
+        return self.disk_health_observation.summary();
+    }
+    pub fn diskReliabilityStatus(self: *const Projection) []const u8 {
+        return self.disk_reliability_observation.status();
+    }
+    pub fn diskReliabilityObservation(self: *const Projection) []const u8 {
+        return self.disk_reliability_observation.summary();
     }
     pub fn powerSource(self: *const Projection) []const u8 {
         return self.power_source_buffer.text();
@@ -684,6 +816,13 @@ pub const Projection = struct {
         self.hypervisor_present = data.system.hypervisor_present orelse false;
         self.hypervisor_available = data.system.hypervisor_present != null;
 
+        setObservation(&self.memory_module_observation, data.memory_module_status);
+        self.memory_module_total_count = saturatedU32(data.memory_modules.len);
+        self.memory_module_count = @min(data.memory_modules.len, max_memory_modules);
+        copyMemoryModules(self, data.memory_modules[0..self.memory_module_count]);
+
+        setObservation(&self.network_adapter_observation, data.network_adapter_status);
+        self.network_adapter_total_count = saturatedU32(data.network_adapters.len);
         self.network_adapter_count = @min(data.network_adapters.len, max_network_adapters);
         for (data.network_adapters[0..self.network_adapter_count], 0..) |item, index| {
             var row = NetworkAdapterRow{ .id = @intCast(index) };
@@ -697,6 +836,9 @@ pub const Projection = struct {
             self.network_adapter_rows[index] = row;
         }
 
+        setObservation(&self.display_inventory_observation, data.displays.inventory_status);
+        setObservation(&self.display_brightness_observation, data.displays.brightness_status);
+        self.display_total_count = saturatedU32(data.displays.displays.len);
         self.display_count = @min(data.displays.displays.len, max_displays);
         for (data.displays.displays[0..self.display_count], 0..) |item, index| {
             var row = DisplayRow{ .id = @intCast(index) };
@@ -735,6 +877,7 @@ pub const Projection = struct {
         defer parsed.deinit();
         self.captureTopicMeta(8, parsed.value);
         self.capabilities_ready = true;
+        self.capability_total_count = saturatedU32(parsed.value.data.len);
         self.capability_count = @min(parsed.value.data.len, max_capabilities);
         for (parsed.value.data[0..self.capability_count], 0..) |item, index| {
             var row = CapabilityRow{ .id = @intCast(index) };
@@ -757,12 +900,20 @@ pub const Projection = struct {
         self.physical_core_count = saturatedU32(data.cpu.core_count);
         self.logical_thread_count = saturatedU32(data.cpu.thread_count);
 
+        self.cpu_core_total_count = saturatedU32(data.cpu.per_core_usage.len);
         self.cpu_core_count = @min(data.cpu.per_core_usage.len, max_cpu_cores);
         for (data.cpu.per_core_usage[0..self.cpu_core_count], 0..) |usage, index| {
+            const frequency = if (index < data.cpu.per_core_frequency.len)
+                data.cpu.per_core_frequency[index]
+            else
+                0;
             self.cpu_core_rows[index] = .{
                 .id = @intCast(index),
                 .usage_percent = usage,
-                .frequency_mhz = if (index < data.cpu.per_core_frequency.len) data.cpu.per_core_frequency[index] else 0,
+                .frequency_mhz = frequency,
+                // sysinfo uses zero when the platform cannot report a clock,
+                // while still returning one vector element per core.
+                .frequency_available = frequency > 0,
             };
         }
 
@@ -770,21 +921,15 @@ pub const Projection = struct {
         self.memory_available_gib = @as(f64, @floatFromInt(data.memory.available_bytes)) / gib;
         self.swap_used_gib = @as(f64, @floatFromInt(data.memory.swap_used_bytes)) / gib;
         self.swap_total_gib = @as(f64, @floatFromInt(data.memory.swap_total_bytes)) / gib;
+        setObservation(&self.memory_module_observation, data.memory.module_status);
+        self.memory_module_total_count = saturatedU32(data.memory.modules.len);
         self.memory_module_count = @min(data.memory.modules.len, max_memory_modules);
-        for (data.memory.modules[0..self.memory_module_count], 0..) |module, index| {
-            var row = MemoryModuleRow{ .id = @intCast(index) };
-            row.capacity_gib = @as(f64, @floatFromInt(module.capacity_bytes)) / gib;
-            row.configured_speed_mt_s = module.configured_speed_mt_s orelse 0;
-            row.rated_speed_mt_s = module.rated_speed_mt_s orelse 0;
-            row.locator_buffer.set(module.locator orelse "Module");
-            row.type_buffer.set(module.memory_type orelse "Unknown");
-            row.manufacturer_buffer.set(module.manufacturer orelse "Unknown");
-            row.part_buffer.set(module.part_number orelse "Not reported");
-            self.memory_module_rows[index] = row;
-        }
+        copyMemoryModules(self, data.memory.modules[0..self.memory_module_count]);
 
+        setObservation(&self.network_adapter_observation, data.network.adapter_status);
         self.total_download_kib_s = @as(f64, @floatFromInt(data.network.total_download_rate)) / 1024.0;
         self.total_upload_kib_s = @as(f64, @floatFromInt(data.network.total_upload_rate)) / 1024.0;
+        self.interface_total_count = saturatedU32(data.network.interfaces.len);
         self.interface_count = @min(data.network.interfaces.len, max_interfaces);
         for (data.network.interfaces[0..self.interface_count], 0..) |item, index| {
             var row = InterfaceRow{ .id = @intCast(index) };
@@ -912,6 +1057,7 @@ pub const Projection = struct {
         self.slow_ready = true;
         const gib = 1024.0 * 1024.0 * 1024.0;
 
+        self.disk_total_count = saturatedU32(data.disk.partitions.len);
         self.disk_count = @min(data.disk.partitions.len, max_disks);
         for (data.disk.partitions[0..self.disk_count], 0..) |item, index| {
             var row = DiskRow{ .id = @intCast(index), .removable = item.is_removable };
@@ -926,9 +1072,20 @@ pub const Projection = struct {
             self.disk_rows[index] = row;
         }
 
+        setObservation(&self.gpu_inventory_observation, data.gpu.inventory_status);
+        setObservation(&self.gpu_telemetry_observation, data.gpu.telemetry_status);
+        self.gpu_total_count = saturatedU32(data.gpu.adapters.len);
         self.gpu_count = @min(data.gpu.adapters.len, max_gpus);
         for (data.gpu.adapters[0..self.gpu_count], 0..) |item, index| {
-            var row = GpuRow{ .id = @intCast(index), .telemetry_available = item.telemetry_available };
+            var row = GpuRow{
+                .id = @intCast(index),
+                .telemetry_available = item.telemetry_available,
+                .utilization_available = item.utilization_percent != null,
+                .memory_used_available = item.memory_used_mb != null,
+                .memory_total_available = item.dedicated_memory_mb != null,
+                .resolution_available = item.current_resolution != null,
+                .refresh_rate_available = item.refresh_rate_hz != null,
+            };
             row.name_buffer.set(item.name);
             row.driver_buffer.set(item.driver_version orelse "Not reported");
             row.status_buffer.set(item.status orelse "Unknown");
@@ -943,6 +1100,11 @@ pub const Projection = struct {
             self.gpu_rows[index] = row;
         }
 
+        setObservation(&self.thermal_inventory_observation, data.thermals.temperature_status);
+        setObservation(&self.cpu_temperature_observation, data.thermals.cpu_temperature_status);
+        setObservation(&self.gpu_temperature_observation, data.thermals.gpu_temperature_status);
+        setObservation(&self.fan_observation, data.thermals.fan_status);
+        setObservation(&self.battery_observation, data.thermals.battery_status);
         self.cpu_temperature_celsius = data.thermals.cpu_temp orelse 0;
         self.gpu_temperature_celsius = data.thermals.gpu_temp orelse 0;
         self.cpu_temperature_available = data.thermals.cpu_temp != null;
@@ -964,6 +1126,7 @@ pub const Projection = struct {
         } else {
             self.battery_available = false;
         }
+        self.sensor_total_count = saturatedU32(data.thermals.sensors.len);
         self.sensor_count = @min(data.thermals.sensors.len, max_sensors);
         for (data.thermals.sensors[0..self.sensor_count], 0..) |item, index| {
             var row = SensorRow{ .id = @intCast(index) };
@@ -975,6 +1138,7 @@ pub const Projection = struct {
             row.critical_available = item.critical != null;
             self.sensor_rows[index] = row;
         }
+        self.fan_total_count = saturatedU32(data.thermals.fans.len);
         self.fan_count = @min(data.thermals.fans.len, max_fans);
         for (data.thermals.fans[0..self.fan_count], 0..) |item, index| {
             var row = FanRow{ .id = @intCast(index), .rpm = item.rpm };
@@ -1042,6 +1206,9 @@ pub const Projection = struct {
         self.disk_read_errors_total = 0;
         self.disk_write_errors_total = 0;
         self.disk_errors_available = false;
+        setObservation(&self.disk_health_observation, parsed.value.data.health_status);
+        setObservation(&self.disk_reliability_observation, parsed.value.data.reliability_status);
+        self.drive_health_total_count = saturatedU32(parsed.value.data.drives.len);
         self.drive_health_count = @min(parsed.value.data.drives.len, max_drive_health);
         for (parsed.value.data.drives[0..self.drive_health_count], 0..) |item, index| {
             var row = DriveHealthRow{ .id = @intCast(index) };
@@ -1121,6 +1288,7 @@ pub const Projection = struct {
                 }
             }
         }
+        self.service_total_count = saturatedU32(data.services.len);
         self.service_count = @min(data.services.len, max_services);
         for (data.services[0..self.service_count], 0..) |service, index| {
             var row = ServiceRow{ .id = @intCast(index), .running = service.is_running };
@@ -1183,11 +1351,23 @@ const DisplayJson = struct {
     physical_height_cm: ?u16 = null,
     source: []const u8 = "platform display provider",
 };
-const DisplaysJson = struct { displays: []const DisplayJson = &.{} };
+const ObservationJson = struct {
+    status: []const u8 = "unavailable",
+    source: []const u8 = "not_collected",
+    detail: ?[]const u8 = "The collector has not run yet",
+};
+const DisplaysJson = struct {
+    displays: []const DisplayJson = &.{},
+    inventory_status: ObservationJson = .{},
+    brightness_status: ObservationJson = .{},
+};
 const StaticDataJson = struct {
     system: SystemJson = .{},
     displays: DisplaysJson = .{},
+    memory_modules: []const MemoryModuleJson = &.{},
+    memory_module_status: ObservationJson = .{},
     network_adapters: []const NetworkAdapterJson = &.{},
+    network_adapter_status: ObservationJson = .{},
 };
 const NetworkAdapterJson = struct {
     name: []const u8 = "Adapter",
@@ -1230,6 +1410,7 @@ const MemoryJson = struct {
     swap_used_bytes: u64 = 0,
     swap_total_bytes: u64 = 0,
     modules: []const MemoryModuleJson = &.{},
+    module_status: ObservationJson = .{},
 };
 const InterfaceJson = struct {
     name: []const u8 = "",
@@ -1246,6 +1427,7 @@ const NetworkJson = struct {
     interfaces: []const InterfaceJson = &.{},
     total_download_rate: u64 = 0,
     total_upload_rate: u64 = 0,
+    adapter_status: ObservationJson = .{},
 };
 const ProcessJson = struct {
     pid: u32 = 0,
@@ -1292,7 +1474,11 @@ const GpuAdapterJson = struct {
     telemetry_available: bool = false,
     source: []const u8 = "platform inventory",
 };
-const GpuJson = struct { adapters: []const GpuAdapterJson = &.{} };
+const GpuJson = struct {
+    adapters: []const GpuAdapterJson = &.{},
+    inventory_status: ObservationJson = .{},
+    telemetry_status: ObservationJson = .{},
+};
 const SensorJson = struct {
     label: []const u8 = "",
     temperature: f64 = 0,
@@ -1312,6 +1498,11 @@ const ThermalsJson = struct {
     fans: []const FanJson = &.{},
     battery: ?BatteryJson = null,
     power_source: []const u8 = "unknown",
+    temperature_status: ObservationJson = .{},
+    cpu_temperature_status: ObservationJson = .{},
+    gpu_temperature_status: ObservationJson = .{},
+    fan_status: ObservationJson = .{},
+    battery_status: ObservationJson = .{},
 };
 const BatteryJson = struct {
     percent: f64 = 0,
@@ -1380,7 +1571,11 @@ const DiskIoJson = struct {
     avg_read_latency_ms: f64 = 0,
     avg_write_latency_ms: f64 = 0,
 };
-const HealthJson = struct { drives: []const DriveHealthJson = &.{} };
+const HealthJson = struct {
+    drives: []const DriveHealthJson = &.{},
+    health_status: ObservationJson = .{},
+    reliability_status: ObservationJson = .{},
+};
 const DriverJson = struct {
     name: []const u8 = "",
     driver_version: []const u8 = "",
@@ -1410,6 +1605,36 @@ const ServiceJson = struct {
 
 fn saturatedU32(value: anytype) u32 {
     return std.math.cast(u32, value) orelse std.math.maxInt(u32);
+}
+
+fn setObservation(destination: *ObservationView, source: ObservationJson) void {
+    destination.available = std.mem.eql(u8, source.status, "available");
+    destination.status_buffer.set(source.status);
+    destination.source_buffer.set(source.source);
+    destination.detail_buffer.set(source.detail orelse "No additional detail reported");
+    var scratch: [320]u8 = undefined;
+    const summary = if (source.detail) |detail|
+        std.fmt.bufPrint(&scratch, "{s} · {s}", .{ source.source, detail }) catch source.source
+    else
+        source.source;
+    destination.summary_buffer.set(summary);
+}
+
+fn copyMemoryModules(self: *Projection, modules: []const MemoryModuleJson) void {
+    const gib = 1024.0 * 1024.0 * 1024.0;
+    for (modules, 0..) |module, index| {
+        var row = MemoryModuleRow{ .id = @intCast(index) };
+        row.capacity_gib = @as(f64, @floatFromInt(module.capacity_bytes)) / gib;
+        row.configured_speed_mt_s = module.configured_speed_mt_s orelse 0;
+        row.rated_speed_mt_s = module.rated_speed_mt_s orelse 0;
+        row.configured_speed_available = module.configured_speed_mt_s != null;
+        row.rated_speed_available = module.rated_speed_mt_s != null;
+        row.locator_buffer.set(module.locator orelse "Module");
+        row.type_buffer.set(module.memory_type orelse "Unknown");
+        row.manufacturer_buffer.set(module.manufacturer orelse "Unknown");
+        row.part_buffer.set(module.part_number orelse "Not reported");
+        self.memory_module_rows[index] = row;
+    }
 }
 
 fn driverNeedsAttention(value: std.json.Value) bool {
@@ -1442,13 +1667,15 @@ fn setValueLabel(buffer: anytype, value: std.json.Value) void {
 
 test "fast topic projection is bounded and copies borrowed strings" {
     const fixture =
-        \\{"sequence":4,"data":{"cpu":{"total_usage":25.0,"per_core_usage":[10.0,20.0],"per_core_frequency":[3200,3300],"cpu_model":"Test CPU","core_count":1,"thread_count":2},"memory":{"available_bytes":8589934592,"swap_used_bytes":0,"swap_total_bytes":0,"modules":[]},"network":{"interfaces":[],"total_download_rate":1024,"total_upload_rate":2048},"processes":{"list":[{"pid":7,"name":"test.exe","friendly_name":"Test","cpu_percent":4.5,"memory_bytes":1048576,"memory_percent":1.0,"status":"Run"}],"total_count":1,"total_threads":3}}}
+        \\{"sequence":4,"data":{"cpu":{"total_usage":25.0,"per_core_usage":[10.0,20.0],"per_core_frequency":[0,3300],"cpu_model":"Test CPU","core_count":1,"thread_count":2},"memory":{"available_bytes":8589934592,"swap_used_bytes":0,"swap_total_bytes":0,"modules":[]},"network":{"interfaces":[],"total_download_rate":1024,"total_upload_rate":2048},"processes":{"list":[{"pid":7,"name":"test.exe","friendly_name":"Test","cpu_percent":4.5,"memory_bytes":1048576,"memory_percent":1.0,"status":"Run"}],"total_count":1,"total_threads":3}}}
     ;
     var projection = Projection{};
     try projection.applyFastJson(std.testing.allocator, fixture);
     try std.testing.expect(projection.fast_ready);
     try std.testing.expectEqualStrings("Test CPU", projection.cpuModel());
     try std.testing.expectEqual(@as(usize, 2), projection.cpuCores().len);
+    try std.testing.expect(!projection.cpuCores()[0].frequency_available);
+    try std.testing.expect(projection.cpuCores()[1].frequency_available);
     try std.testing.expectEqual(@as(u64, 3300), projection.cpuCores()[1].frequency_mhz);
     try std.testing.expectEqualStrings("Test", projection.processes()[0].friendlyName());
 }
@@ -1518,7 +1745,7 @@ test "process values stay live while rank order reconciles every thirty samples"
 
 test "static warnings and capability topics preserve explicit provenance" {
     const static_fixture =
-        \\{"sequence":1,"data":{"system":{"os_name":"Windows","os_version":"11","hostname":"ALIEN","cpu_model":"Test CPU","architecture":"x86_64","uptime_seconds":7200,"kernel_version":"10.0","manufacturer":"Dell","model":"Alienware","bios_version":"1.2.3","hypervisor_present":false},"displays":{"displays":[{"label":"Display 1","active":true,"connection":"DisplayPort","brightness_percent":80,"physical_width_cm":60,"physical_height_cm":34,"source":"fixture"}]}}}
+        \\{"sequence":1,"data":{"system":{"os_name":"Windows","os_version":"11","hostname":"ALIEN","cpu_model":"Test CPU","architecture":"x86_64","uptime_seconds":7200,"kernel_version":"10.0","manufacturer":"Dell","model":"Alienware","bios_version":"1.2.3","hypervisor_present":false},"memory_modules":[],"memory_module_status":{"status":"permission_denied","source":"Win32_PhysicalMemory","detail":"Access denied"},"network_adapters":[],"network_adapter_status":{"status":"unsupported","source":"MSFT_NetAdapter","detail":"Provider missing"},"displays":{"displays":[{"label":"Display 1","active":true,"connection":"DisplayPort","brightness_percent":80,"physical_width_cm":60,"physical_height_cm":34,"source":"fixture"}],"inventory_status":{"status":"available","source":"fixture"},"brightness_status":{"status":"available","source":"fixture brightness"}}}}
     ;
     const warning_fixture =
         \\{"sequence":1,"data":[{"source":"Thermals","message":"Provider denied access","severity":"warning"}]}
@@ -1533,6 +1760,11 @@ test "static warnings and capability topics preserve explicit provenance" {
     try std.testing.expect(value.static_ready);
     try std.testing.expectEqualStrings("Dell", value.manufacturer());
     try std.testing.expectEqualStrings("DisplayPort", value.displays()[0].connection());
+    try std.testing.expectEqual(@as(u32, 1), value.display_total_count);
+    try std.testing.expectEqualStrings("permission_denied", value.memoryModuleStatus());
+    try std.testing.expectEqualStrings("Win32_PhysicalMemory · Access denied", value.memoryModuleObservation());
+    try std.testing.expectEqualStrings("unsupported", value.networkAdapterStatus());
+    try std.testing.expectEqualStrings("available", value.displayInventoryStatus());
     try std.testing.expectEqualStrings("Provider denied access", value.warnings()[0].message());
     try std.testing.expectEqualStrings("permission_denied", value.capabilities()[0].status());
     try std.testing.expectEqualStrings("Run the provider with access", value.capabilities()[0].detail());
@@ -1540,7 +1772,7 @@ test "static warnings and capability topics preserve explicit provenance" {
 
 test "topic metadata disk reliability and driver services remain explicit" {
     const health_fixture =
-        \\{"schema_version":1,"target":"x86_64-windows","topic":"health","sequence":9,"captured_unix_ms":1777777777000,"freshness_ms":0,"availability":"available","provenance":"platform SMART and reliability provider","data":{"drives":[{"model":"Fixture NVMe","media_type":"nvme","health_status":"healthy","temperature_celsius":42.5,"read_errors_total":2,"write_errors_total":3,"io_stats":{"read_bytes_per_sec":1048576,"write_bytes_per_sec":2097152,"queue_depth":1.25,"avg_read_latency_ms":0.5,"avg_write_latency_ms":0.75},"health_source":"fixture"}]}}
+        \\{"schema_version":1,"target":"x86_64-windows","topic":"health","sequence":9,"captured_unix_ms":1777777777000,"freshness_ms":0,"availability":"available","provenance":"platform SMART and reliability provider","data":{"drives":[{"model":"Fixture NVMe","media_type":"nvme","health_status":"healthy","temperature_celsius":42.5,"read_errors_total":2,"write_errors_total":3,"io_stats":{"read_bytes_per_sec":1048576,"write_bytes_per_sec":2097152,"queue_depth":1.25,"avg_read_latency_ms":0.5,"avg_write_latency_ms":0.75},"health_source":"fixture"}],"health_status":{"status":"available","source":"SMART"},"reliability_status":{"status":"available","source":"MSFT_StorageReliabilityCounter"}}}
     ;
     const drivers_fixture =
         \\{"schema_version":1,"target":"x86_64-windows","topic":"drivers","sequence":4,"captured_unix_ms":1777777778000,"availability":"available","provenance":"SetupAPI","data":{"network":[],"bluetooth":[],"audio":[],"input":[],"display":[],"storage":[],"usb":[],"system":[],"other":[],"services":[{"name":"FixtureSvc","display_name":"Fixture Service","is_running":true}],"scan_status":"success"}}
@@ -1555,6 +1787,9 @@ test "topic metadata disk reliability and driver services remain explicit" {
     try std.testing.expectEqual(@as(f64, 2), value.disk_write_mib_s);
     try std.testing.expectEqual(@as(u64, 2), value.disk_read_errors_total);
     try std.testing.expectEqual(@as(u64, 3), value.disk_write_errors_total);
+    try std.testing.expectEqual(@as(u32, 1), value.drive_health_total_count);
+    try std.testing.expectEqualStrings("available", value.diskHealthStatus());
+    try std.testing.expectEqualStrings("available", value.diskReliabilityStatus());
     try std.testing.expectEqual(@as(usize, 1), value.services().len);
     try std.testing.expectEqualStrings("Fixture Service", value.services()[0].displayName());
     try std.testing.expectEqualStrings("running", value.services()[0].state());
@@ -1565,4 +1800,20 @@ test "topic metadata disk reliability and driver services remain explicit" {
     try std.testing.expectEqualStrings("health", health_meta.topic());
     try std.testing.expectEqualStrings("platform SMART and reliability provider", health_meta.provenance());
     try std.testing.expectEqualStrings("x86_64-windows", health_meta.target());
+}
+
+test "slow observations distinguish missing telemetry from numeric zero" {
+    const fixture =
+        \\{"schema_version":1,"topic":"slow","sequence":3,"data":{"disk":{"partitions":[]},"gpu":{"adapters":[{"name":"Inventory GPU","dedicated_memory_mb":8192,"telemetry_available":false,"source":"fixture"}],"inventory_status":{"status":"available","source":"fixture inventory"},"telemetry_status":{"status":"unsupported","source":"vendor telemetry","detail":"No supported telemetry API"}},"thermals":{"cpu_temp":null,"gpu_temp":null,"sensors":[],"fans":[],"battery":null,"power_source":"ac","temperature_status":{"status":"unavailable","source":"sensors","detail":"No sensors returned"},"cpu_temperature_status":{"status":"permission_denied","source":"WMI","detail":"Access denied"},"gpu_temperature_status":{"status":"unsupported","source":"vendor telemetry","detail":"No API"},"fan_status":{"status":"unavailable","source":"fan provider","detail":"No fans returned"},"battery_status":{"status":"unsupported","source":"battery provider","detail":"Desktop system"}}}}
+    ;
+    var value = Projection{};
+    try value.applySlowJson(std.testing.allocator, fixture);
+
+    try std.testing.expectEqual(@as(u32, 1), value.gpu_total_count);
+    try std.testing.expect(!value.gpus()[0].utilization_available);
+    try std.testing.expect(value.gpus()[0].memory_total_available);
+    try std.testing.expectEqualStrings("unsupported", value.gpuTelemetryStatus());
+    try std.testing.expectEqualStrings("permission_denied", value.cpuTemperatureStatus());
+    try std.testing.expectEqualStrings("WMI · Access denied", value.cpuTemperatureObservation());
+    try std.testing.expectEqualStrings("unsupported", value.batteryStatus());
 }

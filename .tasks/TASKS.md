@@ -11,15 +11,15 @@
 ## Active
 
 - [ ] **Prove the pinned Native SDK, shared Rust engine, and Windows MSI vertical slice** - establish v2 compatibility baselines, a native CPU/memory GUI, reproducible dependencies, and an installed Corporate MSI smoke before full UI work (ms #v3n) #nsp
-  - [ ] Capture immutable v2.0.6 CLI/TUI compatibility fixtures
-  - [ ] Scaffold the pinned native-rendered Zig application without a local-path dependency
-  - [ ] Export and dynamically load the bounded Rust monitoring ABI
+  - [x] Capture immutable v2.0.6 CLI/TUI compatibility fixtures
+  - [x] Scaffold the pinned native-rendered Zig application without a local-path dependency
+  - [x] Export and dynamically load the bounded Rust monitoring ABI
   - [ ] Exercise the GUI with Native SDK automation and performance profiling
   - [x] Build, install, launch, verify, and uninstall a Corporate MSI candidate
 - [ ] **Build the complete QubeTX-native diagnostic GUI** - implement all nine sections, both modes, settings, exports, accessibility, and supported tray behavior (needs #nsp) (ms #v3n) #gux
   - [x] Lock the approved Warm Carbon design and bundled font hierarchy
   - [x] Make all nine navigation destinations functional with bounded live projections
-  - [ ] Complete audience modes, settings, exports, sorting/filtering, and unavailable-state parity
+  - [x] Complete audience modes, settings, exports, sorting/filtering, and unavailable-state parity
   - [ ] Qualify keyboard, scaling, tray/autostart, and sustained renderer performance
 - [ ] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration (needs #nsp) (ms #v3n) #cpl
 

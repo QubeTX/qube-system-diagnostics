@@ -476,34 +476,13 @@ function Save-Sd300ManagedState([string]$BackupRoot, [object[]]$NativeProducts) 
         $null
     }
 
-    $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
-    $environmentKeyExisted = $null -ne $environmentKey
-    try {
-        $userPathName = if ($environmentKey) {
-            @($environmentKey.GetValueNames() | Where-Object {
-                $_.Equals('Path', [StringComparison]::OrdinalIgnoreCase)
-            }) | Select-Object -First 1
-        } else {
-            $null
-        }
-        $userPathExisted = $null -ne $userPathName
-        $userPathValue = if ($userPathExisted) {
-            $environmentKey.GetValue(
-                $userPathName,
-                $null,
-                [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
-            )
-        } else {
-            $null
-        }
-        $userPathKind = if ($userPathExisted) {
-            $environmentKey.GetValueKind($userPathName)
-        } else {
-            $null
-        }
-    } finally {
-        if ($environmentKey) { $environmentKey.Dispose() }
-    }
+    $userPathState = Get-Sd300UserPathState
+    $ownedBin = Join-Path (Get-Sd300InstallPrefix) 'bin'
+    $pathMutationAllowed = -not ($NoModifyPath -or
+        $env:TR300_TUI_NO_MODIFY_PATH -or
+        $env:INSTALLER_NO_MODIFY_PATH -or
+        $env:TR300_TUI_UNMANAGED_INSTALL -or
+        ($ownedBin -in @([string]$env:Path -split ';' -ne '')))
 
     $githubPath = if ([string]::IsNullOrWhiteSpace($env:GITHUB_PATH)) {
         $null
@@ -513,12 +492,8 @@ function Save-Sd300ManagedState([string]$BackupRoot, [object[]]$NativeProducts) 
     $githubPathExisted = $false
     $githubPathBackup = Join-Path $BackupRoot 'github-path'
     if ($githubPath) {
-        if (Test-Path -LiteralPath $githubPath) {
-            $githubPathItem = Get-Item -LiteralPath $githubPath -Force
-            if ($githubPathItem.PSIsContainer -or
-                ($githubPathItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "GITHUB_PATH is not a regular non-reparse file: $githubPath"
-            }
+        $githubPathState = Get-Sd300RegularFileState $githubPath
+        if ($githubPathState.Existed) {
             $githubPathExisted = $true
             Copy-Item -LiteralPath $githubPath -Destination $githubPathBackup
         }
@@ -540,61 +515,331 @@ function Save-Sd300ManagedState([string]$BackupRoot, [object[]]$NativeProducts) 
         UninstallKey = $uninstallKey
         UninstallKeyExisted = $uninstallKeyExisted
         UninstallProperties = $uninstallProperties
-        UserPathName = $userPathName
-        EnvironmentKeyExisted = $environmentKeyExisted
-        UserPathExisted = $userPathExisted
-        UserPathValue = $userPathValue
-        UserPathKind = $userPathKind
+        UserPathName = $userPathState.PathName
+        EnvironmentSubKey = 'Environment'
+        EnvironmentKeyExisted = $userPathState.EnvironmentKeyExisted
+        UserPathExisted = $userPathState.PathExisted
+        UserPathValue = $userPathState.PathValue
+        UserPathKind = $userPathState.PathKind
+        UserPathWrittenCaptured = $false
+        UserPathWrittenEnvironmentKeyExisted = $false
+        UserPathWrittenName = $null
+        UserPathWrittenExisted = $false
+        UserPathWrittenValue = $null
+        UserPathWrittenKind = $null
+        UserPathWrittenRecognized = $false
+        PathMutationAllowed = $pathMutationAllowed
         GithubPath = $githubPath
         GithubPathExisted = $githubPathExisted
         GithubPathBackup = $githubPathBackup
+        GithubPathWrittenCaptured = $false
+        GithubPathWrittenExisted = $false
+        GithubPathWrittenSha256 = $null
+        GithubPathWrittenRecognized = $false
+    }
+}
+
+function Get-Sd300UserPathState([string]$EnvironmentSubKey = 'Environment') {
+    $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($EnvironmentSubKey, $false)
+    try {
+        $pathName = if ($environmentKey) {
+            @($environmentKey.GetValueNames() | Where-Object {
+                $_.Equals('Path', [StringComparison]::OrdinalIgnoreCase)
+            }) | Select-Object -First 1
+        } else {
+            $null
+        }
+        $pathExisted = $null -ne $pathName
+        [pscustomobject]@{
+            EnvironmentKeyExisted = $null -ne $environmentKey
+            PathName = $pathName
+            PathExisted = $pathExisted
+            PathValue = if ($pathExisted) {
+                $environmentKey.GetValue(
+                    $pathName,
+                    $null,
+                    [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+                )
+            } else {
+                $null
+            }
+            PathKind = if ($pathExisted) { $environmentKey.GetValueKind($pathName) } else { $null }
+        }
+    } finally {
+        if ($environmentKey) { $environmentKey.Dispose() }
+    }
+}
+
+function Get-Sd300RegularFileState([string]$Path) {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (-not $item) {
+        return [pscustomobject]@{ Existed = $false; Sha256 = $null }
+    }
+    if ($item.PSIsContainer -or
+        ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "PATH/profile location is not a regular non-reparse file: $Path"
+    }
+    return [pscustomobject]@{
+        Existed = $true
+        Sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    }
+}
+
+function Test-Sd300OrdinalValueEqual($Left, $Right) {
+    if ($null -eq $Left -or $null -eq $Right) { return $null -eq $Left -and $null -eq $Right }
+    if ($Left.GetType() -ne $Right.GetType()) { return $false }
+    if ($Left -is [Array]) {
+        if ($Left.Length -ne $Right.Length) { return $false }
+        for ($index = 0; $index -lt $Left.Length; $index++) {
+            if (-not (Test-Sd300OrdinalValueEqual $Left.GetValue($index) $Right.GetValue($index))) {
+                return $false
+            }
+        }
+        return $true
+    }
+    if ($Left -is [string]) {
+        return [string]::Equals([string]$Left, [string]$Right, [StringComparison]::Ordinal)
+    }
+    return $Left.Equals($Right)
+}
+
+function Test-Sd300UserPathStateEqual($Left, $Right) {
+    if ($Left.EnvironmentKeyExisted -ne $Right.EnvironmentKeyExisted -or
+        $Left.PathExisted -ne $Right.PathExisted) {
+        return $false
+    }
+    if (-not $Left.PathExisted) { return $true }
+    return ((Test-Sd300OrdinalValueEqual $Left.PathName $Right.PathName) -and
+        $Left.PathKind -eq $Right.PathKind -and
+        (Test-Sd300OrdinalValueEqual $Left.PathValue $Right.PathValue))
+}
+
+function Test-Sd300UserPathRecognizedTransform($State, $Written) {
+    $prior = [pscustomobject]@{
+        EnvironmentKeyExisted = $State.EnvironmentKeyExisted
+        PathName = $State.UserPathName
+        PathExisted = $State.UserPathExisted
+        PathValue = $State.UserPathValue
+        PathKind = $State.UserPathKind
+    }
+    if (Test-Sd300UserPathStateEqual $prior $Written) { return $true }
+    if ($State.PSObject.Properties['PathMutationAllowed'] -and
+        -not $State.PathMutationAllowed) {
+        return $false
+    }
+
+    # cargo-dist 0.31.0 only creates/rewrites user PATH as REG_EXPAND_SZ,
+    # prepending the selected bin directory after dropping empty segments.
+    if ($prior.PathExisted -and $prior.PathValue -isnot [string]) {
+        return $false
+    }
+    $ownedBin = Join-Path (Get-Sd300InstallPrefix) 'bin'
+    $priorDirectories = if ($prior.PathExisted) {
+        @([string]$prior.PathValue -split ';' -ne '')
+    } else {
+        @()
+    }
+    if ($ownedBin -in $priorDirectories) { return $false }
+    $expectedValue = (@($ownedBin) + $priorDirectories) -join ';'
+    $expectedName = if ($prior.PathExisted) { $prior.PathName } else { 'Path' }
+    return ($Written.EnvironmentKeyExisted -and
+        $Written.PathExisted -and
+        (Test-Sd300OrdinalValueEqual $Written.PathName $expectedName) -and
+        $Written.PathKind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString -and
+        (Test-Sd300OrdinalValueEqual $Written.PathValue $expectedValue))
+}
+
+function Test-Sd300BytesEqual([byte[]]$Left, [byte[]]$Right) {
+    if ($Left.Length -ne $Right.Length) { return $false }
+    for ($index = 0; $index -lt $Left.Length; $index++) {
+        if ($Left[$index] -ne $Right[$index]) { return $false }
+    }
+    return $true
+}
+
+function Join-Sd300Bytes([byte[]]$Left, [byte[]]$Right) {
+    $joined = New-Object byte[] ($Left.Length + $Right.Length)
+    [Array]::Copy($Left, 0, $joined, 0, $Left.Length)
+    [Array]::Copy($Right, 0, $joined, $Left.Length, $Right.Length)
+    return $joined
+}
+
+function Test-Sd300GithubPathRecognizedTransform($State) {
+    $written = if ($State.GithubPathWrittenExisted) {
+        [IO.File]::ReadAllBytes($State.GithubPath)
+    } else {
+        [byte[]]@()
+    }
+    $prior = if ($State.GithubPathExisted) {
+        [IO.File]::ReadAllBytes($State.GithubPathBackup)
+    } else {
+        [byte[]]@()
+    }
+    if ($State.GithubPathWrittenExisted -eq $State.GithubPathExisted -and
+        (Test-Sd300BytesEqual $written $prior)) {
+        return $true
+    }
+    if ($State.PSObject.Properties['PathMutationAllowed'] -and
+        -not $State.PathMutationAllowed) {
+        return $false
+    }
+    if (-not $State.GithubPathWrittenExisted) { return $false }
+
+    $ownedBin = Join-Path (Get-Sd300InstallPrefix) 'bin'
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $bom = [byte[]](0xEF, 0xBB, 0xBF)
+    foreach ($newline in @("`r`n", "`n")) {
+        $line = $utf8.GetBytes($ownedBin + $newline)
+        if (Test-Sd300BytesEqual $written (Join-Sd300Bytes $prior $line)) { return $true }
+        if ($prior.Length -eq 0 -and
+            (Test-Sd300BytesEqual $written (Join-Sd300Bytes $bom $line))) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Set-Sd300ManagedWrittenState($State) {
+    $environmentSubKey = if ($State.PSObject.Properties['EnvironmentSubKey']) {
+        [string]$State.EnvironmentSubKey
+    } else {
+        'Environment'
+    }
+    $pathState = Get-Sd300UserPathState $environmentSubKey
+    $State.UserPathWrittenEnvironmentKeyExisted = $pathState.EnvironmentKeyExisted
+    $State.UserPathWrittenName = $pathState.PathName
+    $State.UserPathWrittenExisted = $pathState.PathExisted
+    $State.UserPathWrittenValue = $pathState.PathValue
+    $State.UserPathWrittenKind = $pathState.PathKind
+    $State.UserPathWrittenRecognized = Test-Sd300UserPathRecognizedTransform $State $pathState
+    $State.UserPathWrittenCaptured = $true
+
+    if ($State.GithubPath) {
+        $githubState = Get-Sd300RegularFileState $State.GithubPath
+        $State.GithubPathWrittenExisted = $githubState.Existed
+        $State.GithubPathWrittenSha256 = $githubState.Sha256
+        $State.GithubPathWrittenRecognized = Test-Sd300GithubPathRecognizedTransform $State
+        $State.GithubPathWrittenCaptured = $true
+    }
+}
+
+function Test-Sd300UserPathMatchesWrittenState($State, $Current) {
+    if (-not $State.UserPathWrittenCaptured -or -not $State.UserPathWrittenRecognized) { return $false }
+    if ($Current.EnvironmentKeyExisted -ne $State.UserPathWrittenEnvironmentKeyExisted -or
+        $Current.PathExisted -ne $State.UserPathWrittenExisted) {
+        return $false
+    }
+    if (-not $Current.PathExisted) { return $true }
+    return ((Test-Sd300OrdinalValueEqual $Current.PathName $State.UserPathWrittenName) -and
+        $Current.PathKind -eq $State.UserPathWrittenKind -and
+        (Test-Sd300OrdinalValueEqual $Current.PathValue $State.UserPathWrittenValue))
+}
+
+function Test-Sd300RegularFileMatchesWrittenState(
+    [string]$Path,
+    [bool]$WrittenCaptured,
+    [bool]$WrittenExisted,
+    [string]$WrittenSha256,
+    [bool]$WrittenRecognized
+) {
+    if (-not $WrittenCaptured -or -not $WrittenRecognized) { return $false }
+    try {
+        $current = Get-Sd300RegularFileState $Path
+        return $current.Existed -eq $WrittenExisted -and
+            (-not $current.Existed -or
+                (Test-Sd300OrdinalValueEqual $current.Sha256 $WrittenSha256))
+    } catch {
+        return $false
     }
 }
 
 function Restore-Sd300ManagedState($State) {
-    if ($State.EnvironmentKeyExisted) {
-        $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
-        try {
-            if ($State.UserPathExisted) {
-                $environmentKey.SetValue(
-                    $State.UserPathName,
-                    $State.UserPathValue,
-                    [Microsoft.Win32.RegistryValueKind]$State.UserPathKind
-                )
-            } else {
-                $environmentKey.DeleteValue('Path', $false)
-            }
-        } finally {
-            $environmentKey.Dispose()
-        }
+    $environmentSubKey = if ($State.PSObject.Properties['EnvironmentSubKey']) {
+        [string]$State.EnvironmentSubKey
     } else {
-        $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
-        if ($environmentKey) {
+        'Environment'
+    }
+    $currentPathState = Get-Sd300UserPathState $environmentSubKey
+    $userPathRestored = $false
+    if (Test-Sd300UserPathMatchesWrittenState $State $currentPathState) {
+        if ($State.EnvironmentKeyExisted) {
+            $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($environmentSubKey)
             try {
-                $environmentKey.DeleteValue('Path', $false)
-                if ($environmentKey.ValueCount -ne 0 -or $environmentKey.SubKeyCount -ne 0) {
-                    throw 'refusing to remove a concurrently populated user Environment key during rollback'
+                if ($State.UserPathExisted) {
+                    $environmentKey.SetValue(
+                        $State.UserPathName,
+                        $State.UserPathValue,
+                        [Microsoft.Win32.RegistryValueKind]$State.UserPathKind
+                    )
+                } else {
+                    $environmentKey.DeleteValue('Path', $false)
                 }
             } finally {
                 $environmentKey.Dispose()
             }
-            [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey('Environment', $false)
-        }
-    }
-    $dummyName = 'sd300-rollback-' + [guid]::NewGuid().ToString('N')
-    [Environment]::SetEnvironmentVariable($dummyName, 'sd300-rollback', 'User')
-    [Environment]::SetEnvironmentVariable($dummyName, $null, 'User')
-
-    if ($State.GithubPath) {
-        if (Test-Path -LiteralPath $State.GithubPath) {
-            $githubPathItem = Get-Item -LiteralPath $State.GithubPath -Force
-            if ($githubPathItem.PSIsContainer -or
-                ($githubPathItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                throw "refusing to overwrite an unexpected GITHUB_PATH object during rollback: $($State.GithubPath)"
+            $userPathRestored = $true
+        } else {
+            $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($environmentSubKey, $true)
+            if ($environmentKey) {
+                $removeEnvironmentKey = $false
+                try {
+                    $environmentKey.DeleteValue('Path', $false)
+                    $removeEnvironmentKey = $environmentKey.ValueCount -eq 0 -and
+                        $environmentKey.SubKeyCount -eq 0
+                } finally {
+                    $environmentKey.Dispose()
+                }
+                $userPathRestored = $true
+                if ($removeEnvironmentKey) {
+                    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($environmentSubKey, $false)
+                } else {
+                    [Console]::Error.WriteLine(
+                        'SD-300 warning: preserving a concurrently populated user Environment key during rollback'
+                    )
+                }
             }
         }
-        if ($State.GithubPathExisted) {
-            $null = New-Item -ItemType Directory -Path (Split-Path -Parent $State.GithubPath) -Force
+    } elseif (-not $State.UserPathWrittenCaptured) {
+        [Console]::Error.WriteLine(
+            'SD-300 warning: preserving user PATH because its post-install state was not captured'
+        )
+    } elseif (-not $State.UserPathWrittenRecognized) {
+        [Console]::Error.WriteLine(
+            'SD-300 warning: preserving user PATH because its post-install change was not attributable solely to cargo-dist'
+        )
+    } else {
+        [Console]::Error.WriteLine(
+            'SD-300 warning: preserving a concurrently changed user PATH during rollback'
+        )
+    }
+    if ($userPathRestored -and $environmentSubKey -eq 'Environment') {
+        $dummyName = 'sd300-rollback-' + [guid]::NewGuid().ToString('N')
+        [Environment]::SetEnvironmentVariable($dummyName, 'sd300-rollback', 'User')
+        [Environment]::SetEnvironmentVariable($dummyName, $null, 'User')
+    }
+
+    if ($State.GithubPath) {
+        $githubPathMatches = Test-Sd300RegularFileMatchesWrittenState `
+            $State.GithubPath `
+            $State.GithubPathWrittenCaptured `
+            $State.GithubPathWrittenExisted `
+            $State.GithubPathWrittenSha256 `
+            $State.GithubPathWrittenRecognized
+        if (-not $State.GithubPathWrittenCaptured) {
+            [Console]::Error.WriteLine(
+                "SD-300 warning: preserving GITHUB_PATH because its post-install state was not captured: $($State.GithubPath)"
+            )
+        } elseif (-not $State.GithubPathWrittenRecognized) {
+            [Console]::Error.WriteLine(
+                "SD-300 warning: preserving GITHUB_PATH because its post-install change was not attributable solely to cargo-dist: $($State.GithubPath)"
+            )
+        } elseif (-not $githubPathMatches) {
+            [Console]::Error.WriteLine(
+                "SD-300 warning: preserving a concurrently changed GITHUB_PATH during rollback: $($State.GithubPath)"
+            )
+        } elseif ($State.GithubPathExisted) {
+            $parent = Split-Path -Parent $State.GithubPath
+            if ($parent) { $null = New-Item -ItemType Directory -Path $parent -Force }
             Copy-Item -LiteralPath $State.GithubPathBackup -Destination $State.GithubPath -Force
         } else {
             Remove-Item -LiteralPath $State.GithubPath -Force -ErrorAction SilentlyContinue
@@ -742,8 +987,10 @@ try {
     $childArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $distInstaller)
     if ($NoModifyPath) { $childArgs += '-NoModifyPath' }
     & $launcher @childArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "cargo-dist installation exited with code $LASTEXITCODE"
+    $distExitCode = $LASTEXITCODE
+    Set-Sd300ManagedWrittenState $managedState
+    if ($distExitCode -ne 0) {
+        throw "cargo-dist installation exited with code $distExitCode"
     }
 
     $binary = Get-Sd300ManagedBinary

@@ -212,6 +212,14 @@ otherwise it exits. Native SDK 0.5.4 does not provide the required Linux tray,
 so Linux closes normally and launch-at-login must open a visible window rather
 than leave an undiscoverable background process.
 
+The GUI provides keyboard navigation, visible focus, text equivalents for
+charts, reduced motion, and an internally audited semantic tree on every target.
+With the pinned Native SDK 0.5.4, individual retained canvas controls reach the
+operating-system accessibility tree on macOS only; Windows and Linux expose the
+named application canvas but not its child controls. Use the unchanged terminal
+UI when system screen-reader navigation is required on those platforms. This is
+a documented SDK limitation, not a successful Windows/Linux screen-reader claim.
+
 ## Keybindings
 
 | Key | Action |

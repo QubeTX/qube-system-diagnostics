@@ -17,7 +17,12 @@
                 .height = 760,
                 .restore_state = true,
                 .restore_policy = "center_on_primary",
-                .close_policy = "quit",
+                // Windows and macOS keep the host window alive long enough
+                // for the model to distinguish an ordinary close from tray
+                // mode. When tray is disabled the next model tick requests a
+                // graceful quit; when enabled the hidden collector remains
+                // reachable from the status item and singleton launch path.
+                .close_policy = "hide",
                 .views = .{
                     .{ .label = "main-canvas", .kind = "gpu_surface", .fill = true, .role = "SD-300 diagnostics canvas", .accessibility_label = "Live system diagnostics", .gpu_backend = "metal", .gpu_pixel_format = "bgra8_unorm", .gpu_present_mode = "timer", .gpu_alpha_mode = "opaque", .gpu_color_space = "srgb", .gpu_vsync = true },
                 },

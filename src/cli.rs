@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -15,7 +15,7 @@ pub enum Command {
     /// Open or focus the installed SD-300 desktop monitor.
     Gui,
     /// Installer-only cleanup used to make a fresh native install authoritative.
-    #[command(hide = true)]
+    #[command(alias = "mc", hide = true)]
     MigrateCleanup(MigrateArgs),
     /// Installer-only owned GUI state cleanup used by direct uninstallers.
     #[command(hide = true)]
@@ -58,7 +58,7 @@ pub struct ReportArgs {
 #[derive(Args, Debug, Clone, Default, PartialEq, Eq)]
 pub struct MigrateArgs {
     /// Remove an allowlisted SD-300 copy from the invoking user's Cargo home.
-    #[arg(long = "cargo-copy", hide = true)]
+    #[arg(short = 'c', long = "cargo-copy", hide = true)]
     pub cargo_copy: bool,
 
     /// Remove an unregistered executable left in the other Windows edition path.
@@ -66,7 +66,7 @@ pub struct MigrateArgs {
     pub other_edition: bool,
 
     /// Require every requested cleanup target to converge.
-    #[arg(long, hide = true)]
+    #[arg(short = 's', long, hide = true)]
     pub strict: bool,
 
     /// Suppress human-readable output.
@@ -78,12 +78,35 @@ pub struct MigrateArgs {
     pub dry_run: bool,
 
     /// Cargo home belonging to the user who launched the installer.
-    #[arg(long = "cargo-home", value_name = "PATH", hide = true)]
+    #[arg(short = 'g', long = "cargo-home", value_name = "PATH", hide = true)]
     pub cargo_home: Option<std::path::PathBuf>,
 
     /// Profile belonging to the user who launched the installer.
-    #[arg(long = "user-profile", value_name = "PATH", hide = true)]
+    #[arg(short = 'u', long = "user-profile", value_name = "PATH", hide = true)]
     pub user_profile: Option<std::path::PathBuf>,
+
+    /// Participate in the Windows Installer Cargo takeover transaction.
+    #[arg(short = 'a', long = "msi-cargo-action", value_enum, hide = true)]
+    pub msi_cargo_action: Option<MsiCargoAction>,
+
+    /// Private journal path supplied through Windows Installer CustomActionData.
+    #[arg(
+        short = 'j',
+        long = "msi-cargo-journal",
+        value_name = "PATH",
+        hide = true
+    )]
+    pub msi_cargo_journal: Option<std::path::PathBuf>,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MsiCargoAction {
+    #[value(alias = "p")]
+    Prepare,
+    #[value(alias = "r")]
+    Rollback,
+    #[value(alias = "c")]
+    Commit,
 }
 
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
@@ -371,6 +394,34 @@ mod tests {
         assert!(matches!(
             uninstall_worker.command,
             Some(Command::UninstallWorker(_))
+        ));
+    }
+
+    #[test]
+    fn parses_compact_msi_cargo_transaction_action() {
+        let cleanup = Cli::try_parse_from([
+            "sd300",
+            "mc",
+            "-s",
+            "-c",
+            "-a",
+            "r",
+            "-g",
+            r"C:\Users\owner\.cargo",
+            "-u",
+            r"C:\Users\owner",
+            "-j",
+            r"C:\Users\owner\AppData\Local\SD300\Transactions\cargo.json",
+        ])
+        .expect("compact MSI Cargo transaction action should parse");
+        assert!(matches!(
+            cleanup.command,
+            Some(Command::MigrateCleanup(MigrateArgs {
+                cargo_copy: true,
+                strict: true,
+                msi_cargo_action: Some(MsiCargoAction::Rollback),
+                ..
+            }))
         ));
     }
 

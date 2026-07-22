@@ -302,9 +302,11 @@ jobs:
           - name: Apple Silicon
             runner: macos-15
             target: aarch64-apple-darwin
+            prior_sha256: 77d6b2b4a20f0b25894315bd38e13f9ff0909c9777be52d1dc57570ab93a8647
           - name: Intel
             runner: macos-15-intel
             target: x86_64-apple-darwin
+            prior_sha256: ec6ee4b9a38cd4bd043f8484e77e6d6b99ebcd63cceded8149723bdf5dc2a887
     name: Install and exercise PKG (${{ matrix.name }})
     runs-on: ${{ matrix.runner }}
     steps:
@@ -341,6 +343,174 @@ jobs:
           (cd fixture && shasum -a 256 -c 'tr300-tui-${{ matrix.target }}.tar.xz.sha256')
           mkdir fixture/extracted
           tar -xJf fixture/tr300-tui-${{ matrix.target }}.tar.xz -C fixture/extracted
+
+      - name: Exercise immutable v2 Cargo completion into exact managed CLI and GUI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SD300_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TR300_TUI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force --depth=1 origin refs/tags/v2.0.6:refs/tags/v2.0.6
+          prior_commit=$(git rev-list -n 1 refs/tags/v2.0.6)
+          test "$prior_commit" = a81d86cbd8c9617f84072d721e94040cc2a05dd2
+
+          assets="$RUNNER_TEMP/sd300-cargo-assets-${{ matrix.target }}"
+          prior="$RUNNER_TEMP/sd300-public-v2-${{ matrix.target }}"
+          mkdir -p "$assets" "$prior/extracted"
+          for name in \
+            sd300-cli-installer.sh \
+            sd300-cli-installer.sh.sha256 \
+            sd300-dist-installer.sh \
+            sd300-dist-installer.sh.sha256; do
+            gh release download '${{ needs.build.outputs.tag }}' \
+              --repo '${{ github.repository }}' --dir "$assets" \
+              --pattern "$name" --clobber
+          done
+          cp 'fixture/tr300-tui-${{ matrix.target }}.tar.xz' \
+            'fixture/tr300-tui-${{ matrix.target }}.tar.xz.sha256' "$assets/"
+          cp artifact/sd300-gui-macos-universal.zip \
+            artifact/sd300-gui-macos-universal.zip.sha256 "$assets/"
+          gh release download v2.0.6 --repo '${{ github.repository }}' \
+            --dir "$prior" \
+            --pattern 'tr300-tui-${{ matrix.target }}.tar.xz' \
+            --pattern 'tr300-tui-${{ matrix.target }}.tar.xz.sha256' --clobber
+          (cd "$assets" && shasum -a 256 -c ./*.sha256)
+          (cd "$prior" && shasum -a 256 -c 'tr300-tui-${{ matrix.target }}.tar.xz.sha256')
+          test "$(shasum -a 256 "$prior/tr300-tui-${{ matrix.target }}.tar.xz" | awk '{print $1}')" = \
+            '${{ matrix.prior_sha256 }}'
+
+          tar -xJf "$prior/tr300-tui-${{ matrix.target }}.tar.xz" -C "$prior/extracted"
+          prior_binary=$(find "$prior/extracted" -type f -name sd300 -perm -111 -print -quit)
+          candidate_binary=$(find fixture/extracted -type f -name sd300 -perm -111 -print -quit)
+          test -n "$prior_binary" && test -n "$candidate_binary"
+          test "$("$prior_binary" --version)" = 'sd300 2.0.6'
+          test "$("$candidate_binary" --version)" = 'sd300 ${{ needs.build.outputs.version }}'
+
+          migration_home="$RUNNER_TEMP/sd300-cargo-migration-${{ matrix.target }}"
+          export HOME="$migration_home"
+          export CARGO_HOME="$migration_home/.cargo"
+          export XDG_CONFIG_HOME="$migration_home/.config"
+          export XDG_DATA_HOME="$migration_home/.local/share"
+          export XDG_CACHE_HOME="$migration_home/.cache"
+          export SD300_CI_RELEASE_TAG='${{ needs.build.outputs.tag }}'
+          export SD300_CI_RELEASE_ASSET_DIR="$assets"
+          mkdir -p "$CARGO_HOME/bin" "$XDG_CONFIG_HOME/sd300"
+          cp "$prior_binary" "$CARGO_HOME/bin/sd300"
+          chmod 755 "$CARGO_HOME/bin/sd300"
+          rustc_metadata=$(rustc -vV)
+          jq -n --arg rustc "$rustc_metadata" --arg target '${{ matrix.target }}' '{
+            installs: {
+              "tr300-tui 2.0.6 (registry+https://github.com/rust-lang/crates.io-index)": {
+                version_req: null, bins: ["sd300"], features: [],
+                all_features: false, no_default_features: false,
+                profile: "release", target: $target, rustc: $rustc
+              }
+            }
+          }' > "$CARGO_HOME/.crates2.json"
+
+          shim="$migration_home/cargo-shim"
+          mkdir -p "$shim"
+          cat > "$shim/cargo-shim.rs" <<'RUST'
+          use std::{env, process::Command};
+          fn main() {
+              let args: Vec<String> = env::args().skip(1).collect();
+              let expected = vec![
+                  "install".to_owned(), "tr300-tui".to_owned(),
+                  "--version".to_owned(),
+                  env::var("SD300_EXPECTED_VERSION").unwrap(),
+                  "--force".to_owned(), "--locked".to_owned(),
+              ];
+              if args != expected {
+                  eprintln!("unexpected immutable-v2 cargo command: {:?}", args);
+                  std::process::exit(64);
+              }
+              let status = Command::new("/bin/bash")
+                  .arg(env::var("SD300_CARGO_SHIM_HANDLER").unwrap())
+                  .status().unwrap();
+              std::process::exit(status.code().unwrap_or(1));
+          }
+          RUST
+          cat > "$shim/install-candidate.sh" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          staged="$CARGO_HOME/bin/sd300.next"
+          cp "$SD300_CANDIDATE_BINARY" "$staged"
+          chmod 755 "$staged"
+          mv -f "$staged" "$CARGO_HOME/bin/sd300"
+          rustc_metadata=$(rustc -vV)
+          jq -n --arg rustc "$rustc_metadata" \
+            --arg version "$SD300_EXPECTED_VERSION" \
+            --arg target "$SD300_CARGO_TARGET" '{
+              installs: {
+                ("tr300-tui " + $version + " (registry+https://github.com/rust-lang/crates.io-index)"): {
+                  version_req: null, bins: ["sd300"], features: [],
+                  all_features: false, no_default_features: false,
+                  profile: "release", target: $target, rustc: $rustc
+                }
+              }
+            }' > "$CARGO_HOME/.crates2.json"
+          SH
+          chmod 700 "$shim/install-candidate.sh"
+          rustc "$shim/cargo-shim.rs" -o "$shim/cargo"
+          export SD300_CANDIDATE_BINARY="$candidate_binary"
+          export SD300_EXPECTED_VERSION='${{ needs.build.outputs.version }}'
+          export SD300_CARGO_TARGET='${{ matrix.target }}'
+          export SD300_CARGO_SHIM_HANDLER="$shim/install-candidate.sh"
+          export PATH="$shim:$PATH"
+
+          first=$("$CARGO_HOME/bin/sd300" update --json)
+          test "$(printf '%s\n' "$first" | wc -l | tr -d ' ')" -eq 1
+          jq -e --arg version '${{ needs.build.outputs.version }}' '
+            .success == true and .action == "update" and
+            .install_channel == "cargo" and .target_version == $version
+          ' <<< "$first" >/dev/null
+          cmp -s "$CARGO_HOME/bin/sd300" "$candidate_binary"
+
+          export PATH=${PATH#"$shim:"}
+          second=$("$CARGO_HOME/bin/sd300" update --json)
+          test "$(printf '%s\n' "$second" | wc -l | tr -d ' ')" -eq 1
+          jq -e --arg version '${{ needs.build.outputs.version }}' '
+            .success == true and .action == "update" and
+            .install_channel == "cargo" and
+            .strategy == "cargo-managed-completion" and
+            .target_version == $version
+          ' <<< "$second" >/dev/null
+          cmp -s "$CARGO_HOME/bin/sd300" "$candidate_binary"
+          gui="$HOME/Applications/SD-300.app/Contents/MacOS/sd300-gui"
+          engine="$HOME/Applications/SD-300.app/Contents/MacOS/libsd300_engine.dylib"
+          receipt="$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
+          test -x "$gui" && test -f "$engine" && test -f "$receipt"
+          "$gui" --self-test --json | jq -e \
+            --arg version '${{ needs.build.outputs.version }}' \
+            '.success == true and .product_version == $version and .abi_version == 1' \
+            >/dev/null
+
+          third=$("$CARGO_HOME/bin/sd300" update --json)
+          test "$(printf '%s\n' "$third" | wc -l | tr -d ' ')" -eq 1
+          jq -e '
+            .success == true and .install_channel == "shell-installer" and
+            .strategy == "current"
+          ' <<< "$third" >/dev/null
+          rm "$engine"
+          repair=$("$CARGO_HOME/bin/sd300" update --json)
+          test "$(printf '%s\n' "$repair" | wc -l | tr -d ' ')" -eq 1
+          jq -e '
+            .success == true and .install_channel == "shell-installer" and
+            .strategy == "same-version-repair"
+          ' <<< "$repair" >/dev/null
+          test -f "$engine"
+          uninstall=$("$CARGO_HOME/bin/sd300" uninstall --json)
+          test "$(printf '%s\n' "$uninstall" | wc -l | tr -d ' ')" -eq 1
+          jq -e '
+            .success == true and .action == "uninstall" and
+            .install_channel == "shell-installer"
+          ' <<< "$uninstall" >/dev/null
+          test ! -e "$CARGO_HOME/bin/sd300"
+          test ! -e "$HOME/Applications/SD-300.app"
+          test ! -e "$XDG_CONFIG_HOME/sd300"
 
       - name: Validate trust, takeover, diagnostics, update origin, and uninstall
         env:

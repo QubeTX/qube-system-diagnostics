@@ -31,6 +31,7 @@ sd300_gui_stage=''
 sd300_gui_owner=''
 sd300_gui_install_started=0
 sd300_user_path_state_saved=0
+sd300_path_mutation_allowed=1
 sd300_user_home=''
 sd300_user_zsh_home=''
 
@@ -295,36 +296,246 @@ sd300_save_user_path_file() {
     fi
 }
 
+sd300_written_user_path_equals_prior() {
+    state=$1
+    prior_kind=$(cat "$state/kind") || return 1
+    written_kind=$(cat "$state/written-kind") || return 1
+    [ "$prior_kind" = "$written_kind" ] || return 1
+    case "$prior_kind" in
+        absent) return 0 ;;
+        regular) cmp -s "$state/content" "$state/written-content" ;;
+        symlink)
+            cmp -s "$state/link" "$state/written-link" &&
+                cmp -s "$state/content" "$state/written-content"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+sd300_path_expression() {
+    value=$1
+    case "$value" in
+        "$sd300_user_home"/*)
+            # cargo-dist replaces the resolved home prefix with a late-bound
+            # literal $HOME expression in generated startup files.
+            # shellcheck disable=SC2016
+            printf '$HOME%s\n' "${value#"$sd300_user_home"}"
+            ;;
+        *) printf '%s\n' "$value" ;;
+    esac
+}
+
+sd300_written_user_path_has_appended_line() {
+    state=$1
+    line=$2
+    prior_kind=$(cat "$state/kind") || return 1
+    written_kind=$(cat "$state/written-kind") || return 1
+    case "$prior_kind:$written_kind" in
+        absent:regular)
+            : > "$state/expected-content" || return 1
+            ;;
+        regular:regular)
+            cp -p "$state/content" "$state/expected-content" || return 1
+            ;;
+        symlink:symlink)
+            cmp -s "$state/link" "$state/written-link" || return 1
+            cp -p "$state/content" "$state/expected-content" || return 1
+            ;;
+        *) return 1 ;;
+    esac
+    printf '\n%s\n' "$line" >> "$state/expected-content" || return 1
+    cmp -s "$state/expected-content" "$state/written-content"
+}
+
+sd300_written_user_path_has_appended_ci_line() {
+    state=$1
+    line=$2
+    prior_kind=$(cat "$state/kind") || return 1
+    written_kind=$(cat "$state/written-kind") || return 1
+    case "$prior_kind:$written_kind" in
+        absent:regular)
+            : > "$state/expected-content" || return 1
+            ;;
+        regular:regular)
+            cp -p "$state/content" "$state/expected-content" || return 1
+            ;;
+        symlink:symlink)
+            cmp -s "$state/link" "$state/written-link" || return 1
+            cp -p "$state/content" "$state/expected-content" || return 1
+            ;;
+        *) return 1 ;;
+    esac
+    printf '%s\n' "$line" >> "$state/expected-content" || return 1
+    cmp -s "$state/expected-content" "$state/written-content"
+}
+
+sd300_written_user_path_is_generated_env() {
+    state=$1
+    shell_kind=$2
+    [ "$(cat "$state/kind")" = absent ] || return 1
+    [ "$(cat "$state/written-kind")" = regular ] || return 1
+    install_expr=$(sd300_path_expression "${sd300_intended_prefix%/}/bin") || return 1
+    if [ "$shell_kind" = sh ]; then
+        cat > "$state/expected-content" <<EOF
+#!/bin/sh
+# add binaries to PATH if they aren't added yet
+# affix colons on either side of \$PATH to simplify matching
+case ":\${PATH}:" in
+    *:"$install_expr":*)
+        ;;
+    *)
+        # Prepending path in case a system-installed binary needs to be overridden
+        export PATH="$install_expr:\$PATH"
+        ;;
+esac
+EOF
+    else
+        cat > "$state/expected-content" <<EOF
+if not contains "$install_expr" \$PATH
+    # Prepending path in case a system-installed binary needs to be overridden
+    set -x PATH "$install_expr" \$PATH
+end
+EOF
+    fi
+    cmp -s "$state/expected-content" "$state/written-content"
+}
+
+sd300_recognize_written_user_path_file() {
+    key=$1
+    state="$sd300_temp/user-path-$key"
+    if sd300_written_user_path_equals_prior "$state"; then
+        printf '%s\n' yes > "$state/written-recognized"
+        printf '%s\n' no > "$state/written-changed"
+        return 0
+    fi
+
+    if [ "$sd300_path_mutation_allowed" -ne 1 ]; then
+        printf '%s\n' no > "$state/written-recognized"
+        printf '%s\n' ambiguous > "$state/written-changed"
+        return 0
+    fi
+
+    recognized=1
+    env_expr=$(sd300_path_expression "${sd300_intended_prefix%/}/env") || return 1
+    case "$key" in
+        profile)
+            sd300_written_user_path_has_appended_line "$state" ". \"$env_expr\"" && recognized=0
+            ;;
+        bashrc|bash_profile|bash_login)
+            if [ "$(cat "$state/kind")" != absent ]; then
+                sd300_written_user_path_has_appended_line "$state" ". \"$env_expr\"" && recognized=0
+            fi
+            ;;
+        zshrc)
+            if [ "$(cat "$state/kind")" != absent ] ||
+                [ "$(cat "$sd300_temp/user-path-zshenv/kind")" = absent ]; then
+                sd300_written_user_path_has_appended_line "$state" ". \"$env_expr\"" && recognized=0
+            fi
+            ;;
+        zshenv)
+            if [ "$(cat "$state/kind")" != absent ] &&
+                [ "$(cat "$sd300_temp/user-path-zshrc/kind")" = absent ]; then
+                sd300_written_user_path_has_appended_line "$state" ". \"$env_expr\"" && recognized=0
+            fi
+            ;;
+        fish)
+            sd300_written_user_path_has_appended_line "$state" "source \"${env_expr}.fish\"" && recognized=0
+            ;;
+        env)
+            sd300_written_user_path_is_generated_env "$state" sh && recognized=0
+            ;;
+        env_fish)
+            sd300_written_user_path_is_generated_env "$state" fish && recognized=0
+            ;;
+        github_path)
+            github_line="${sd300_intended_prefix%/}/bin"
+            sd300_written_user_path_has_appended_ci_line "$state" "$github_line" && recognized=0
+            ;;
+        *) return 1 ;;
+    esac
+    if [ "$recognized" -eq 0 ]; then
+        printf '%s\n' yes > "$state/written-recognized"
+        printf '%s\n' yes > "$state/written-changed"
+    else
+        printf '%s\n' no > "$state/written-recognized"
+        printf '%s\n' ambiguous > "$state/written-changed"
+    fi
+}
+
 sd300_restore_user_path_file() {
     key=$1
     path=$2
     state="$sd300_temp/user-path-$key"
     kind=$(cat "$state/kind") || return 1
+    if [ ! -f "$state/written-kind" ]; then
+        printf '%s\n' "SD-300 warning: preserving PATH/profile state that was not captured after installation: $path" >&2
+        return 0
+    fi
+    if [ "$(cat "$state/written-recognized")" != yes ]; then
+        printf '%s\n' "SD-300 warning: preserving a PATH/profile change not attributable solely to cargo-dist: $path" >&2
+        return 0
+    fi
+    written_kind=$(cat "$state/written-kind") || return 1
+    written_matches=0
+    case "$written_kind" in
+        absent)
+            if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+                written_matches=1
+            fi
+            ;;
+        regular)
+            if [ -f "$path" ] && [ ! -L "$path" ] && cmp -s "$path" "$state/written-content"; then
+                written_matches=1
+            fi
+            ;;
+        symlink)
+            if [ -L "$path" ] && [ -f "$path" ] &&
+                readlink "$path" | cmp -s - "$state/written-link" &&
+                cmp -s "$path" "$state/written-content"; then
+                written_matches=1
+            fi
+            ;;
+        *) return 1 ;;
+    esac
+    if [ "$written_matches" -ne 1 ]; then
+        printf '%s\n' "SD-300 warning: preserving a concurrently changed PATH/profile entry during rollback: $path" >&2
+        return 0
+    fi
     case "$kind" in
         absent)
-            if [ -L "$path" ] || { [ -e "$path" ] && [ ! -f "$path" ]; }; then
-                printf '%s\n' "SD-300 warning: refusing to remove an unexpected PATH/profile object: $path" >&2
-                return 1
-            fi
             rm -f "$path"
             ;;
         regular)
-            if [ -L "$path" ] || { [ -e "$path" ] && [ ! -f "$path" ]; }; then
-                printf '%s\n' "SD-300 warning: refusing to overwrite a changed PATH/profile object: $path" >&2
-                return 1
-            fi
-            mkdir -p "$(dirname "$path")" && cp -p "$state/content" "$path"
+            rm -f "$path" && mkdir -p "$(dirname "$path")" && cp -p "$state/content" "$path"
             ;;
         symlink)
-            [ -L "$path" ] && [ -f "$path" ] || return 1
-            readlink "$path" | cmp -s - "$state/link" || {
-                printf '%s\n' "SD-300 warning: refusing to follow a changed PATH/profile symbolic link: $path" >&2
-                return 1
-            }
+            prior_link=$(cat "$state/link") || return 1
+            if ! { [ -L "$path" ] && readlink "$path" | cmp -s - "$state/link"; }; then
+                rm -f "$path" && mkdir -p "$(dirname "$path")" && ln -s "$prior_link" "$path" || return 1
+            fi
             cp -p "$state/content" "$path"
             ;;
         *) return 1 ;;
     esac
+}
+
+sd300_capture_user_path_file() {
+    key=$1
+    path=$2
+    state="$sd300_temp/user-path-$key"
+    if [ -L "$path" ]; then
+        [ -f "$path" ] || return 1
+        printf '%s\n' symlink > "$state/written-kind" || return 1
+        readlink "$path" > "$state/written-link" || return 1
+        cp -p "$path" "$state/written-content" || return 1
+    elif [ -e "$path" ]; then
+        [ -f "$path" ] || return 1
+        printf '%s\n' regular > "$state/written-kind" || return 1
+        cp -p "$path" "$state/written-content" || return 1
+    else
+        printf '%s\n' absent > "$state/written-kind" || return 1
+    fi
+    sd300_recognize_written_user_path_file "$key"
 }
 
 sd300_save_user_path_dir() {
@@ -342,13 +553,61 @@ sd300_save_user_path_dir() {
 sd300_restore_user_path_dir() {
     key=$1
     path=$2
-    [ "$(cat "$sd300_temp/user-path-dir-$key")" = absent ] || return 0
-    if [ -L "$path" ] || { [ -e "$path" ] && [ ! -d "$path" ]; }; then
-        printf '%s\n' "SD-300 warning: refusing to remove an unexpected PATH/profile parent: $path" >&2
-        return 1
+    state="$sd300_temp/user-path-dir-$key"
+    [ "$(cat "$state")" = absent ] || return 0
+    if [ ! -f "$state-written" ]; then
+        printf '%s\n' "SD-300 warning: preserving PATH/profile parent state that was not captured after installation: $path" >&2
+        return 0
     fi
-    [ -d "$path" ] || return 0
-    rmdir "$path"
+    if [ "$(cat "$state-written-recognized")" != yes ]; then
+        printf '%s\n' "SD-300 warning: preserving a PATH/profile parent change not attributable solely to cargo-dist: $path" >&2
+        return 0
+    fi
+    written_kind=$(cat "$state-written") || return 1
+    case "$written_kind" in
+        absent)
+            if [ -e "$path" ] || [ -L "$path" ]; then
+                printf '%s\n' "SD-300 warning: preserving a concurrently created PATH/profile parent during rollback: $path" >&2
+            fi
+            return 0
+            ;;
+        present)
+            if [ -L "$path" ] || { [ -e "$path" ] && [ ! -d "$path" ]; }; then
+                printf '%s\n' "SD-300 warning: preserving a concurrently changed PATH/profile parent during rollback: $path" >&2
+                return 0
+            fi
+            [ -d "$path" ] || return 0
+            rmdir "$path" 2>/dev/null || {
+                printf '%s\n' "SD-300 warning: preserving a non-empty PATH/profile parent during rollback: $path" >&2
+                return 0
+            }
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+sd300_capture_user_path_dir() {
+    key=$1
+    path=$2
+    state="$sd300_temp/user-path-dir-$key-written"
+    if [ -d "$path" ] && [ ! -L "$path" ]; then
+        printf '%s\n' present > "$state"
+    elif [ -e "$path" ] || [ -L "$path" ]; then
+        return 1
+    else
+        printf '%s\n' absent > "$state"
+    fi
+    prior_kind=$(cat "$sd300_temp/user-path-dir-$key") || return 1
+    written_kind=$(cat "$state") || return 1
+    if [ "$prior_kind" = "$written_kind" ]; then
+        printf '%s\n' yes > "$state-recognized"
+    elif [ "$prior_kind:$written_kind" = absent:present ] &&
+        [ "$(cat "$sd300_temp/user-path-fish/written-recognized")" = yes ] &&
+        [ "$(cat "$sd300_temp/user-path-fish/written-changed")" = yes ]; then
+        printf '%s\n' yes > "$state-recognized"
+    else
+        printf '%s\n' no > "$state-recognized"
+    fi
 }
 
 sd300_save_user_path_state() {
@@ -382,6 +641,43 @@ sd300_save_user_path_state() {
         printf '%s\n' absent > "$sd300_temp/user-path-github-path-enabled"
     fi
     sd300_user_path_state_saved=1
+}
+
+sd300_set_path_mutation_expectation() {
+    sd300_path_mutation_allowed=1
+    configured_no_modify=${TR300_TUI_NO_MODIFY_PATH:-${INSTALLER_NO_MODIFY_PATH:-0}}
+    if [ "$configured_no_modify" != 0 ] || [ -n "${TR300_TUI_UNMANAGED_INSTALL:-}" ]; then
+        sd300_path_mutation_allowed=0
+    fi
+    owned_bin="${sd300_intended_prefix%/}/bin"
+    case ":${PATH:-}:" in
+        *:"$owned_bin":*) sd300_path_mutation_allowed=0 ;;
+        *) ;;
+    esac
+    for argument in "$@"; do
+        if [ "$argument" = --no-modify-path ]; then
+            sd300_path_mutation_allowed=0
+        fi
+    done
+}
+
+sd300_capture_user_path_written_state() {
+    [ "$sd300_user_path_state_saved" -eq 1 ] || return 0
+    sd300_capture_user_path_file profile "$sd300_user_home/.profile" || return 1
+    sd300_capture_user_path_file bashrc "$sd300_user_home/.bashrc" || return 1
+    sd300_capture_user_path_file bash_profile "$sd300_user_home/.bash_profile" || return 1
+    sd300_capture_user_path_file bash_login "$sd300_user_home/.bash_login" || return 1
+    sd300_capture_user_path_file zshrc "$sd300_user_zsh_home/.zshrc" || return 1
+    sd300_capture_user_path_file zshenv "$sd300_user_zsh_home/.zshenv" || return 1
+    sd300_capture_user_path_file fish "$sd300_user_home/.config/fish/conf.d/sd300.env.fish" || return 1
+    sd300_capture_user_path_file env "$sd300_intended_prefix/env" || return 1
+    sd300_capture_user_path_file env_fish "$sd300_intended_prefix/env.fish" || return 1
+    if [ "$(cat "$sd300_temp/user-path-github-path-enabled")" = present ]; then
+        sd300_capture_user_path_file github_path "$GITHUB_PATH" || return 1
+    fi
+    sd300_capture_user_path_dir fish_conf_d "$sd300_user_home/.config/fish/conf.d" || return 1
+    sd300_capture_user_path_dir fish "$sd300_user_home/.config/fish" || return 1
+    sd300_capture_user_path_dir config "$sd300_user_home/.config" || return 1
 }
 
 sd300_restore_user_path_state() {
@@ -772,6 +1068,7 @@ sd300_temp=$(mktemp -d "${TMPDIR:-/tmp}/sd300-managed-install.XXXXXXXX") \
 sd300_resolve_gui_target
 sd300_prepare_macos_pkg
 sd300_save_managed_state
+sd300_set_path_mutation_expectation "$@"
 sd300_save_gui_state
 sd300_stop_owned_gui
 sd300_stage_gui_payload
@@ -783,7 +1080,11 @@ sd300_verify_sha256 "$dist_installer" "$dist_sidecar"
 chmod 700 "$dist_installer" || sd300_fail 'could not protect the managed installer'
 
 sd300_transaction_started=1
-sh "$dist_installer" "$@" || sd300_fail 'cargo-dist installation did not complete'
+sd300_dist_status=0
+sh "$dist_installer" "$@" || sd300_dist_status=$?
+sd300_capture_user_path_written_state ||
+    sd300_fail 'could not capture the PATH/profile state written by cargo-dist'
+[ "$sd300_dist_status" -eq 0 ] || sd300_fail 'cargo-dist installation did not complete'
 sd300_verify_receipt
 managed_binary=$(sd300_verify_binary) || sd300_fail 'managed SD-300 verification did not complete'
 sd300_install_gui_payload

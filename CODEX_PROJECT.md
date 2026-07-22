@@ -69,6 +69,11 @@ proof that the public release or another operating system has passed.
   one app process with Open/Quit and hide-on-close only when tray is enabled.
   Native SDK 0.5.4 has no suitable Linux tray, so Linux exits on close and never
   autostarts into an unreachable hidden state.
+- Keyboard navigation, visible focus, text chart equivalents, reduced motion,
+  and the deterministic semantic tree apply on every target. Native SDK 0.5.4
+  bridges retained canvas controls into the system accessibility tree only on
+  macOS; Windows and Linux expose the named canvas rather than its children, so
+  the unchanged TUI is the documented system-screen-reader path there.
 
 ## Distribution and release gates
 

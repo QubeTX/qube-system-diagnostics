@@ -119,6 +119,8 @@
         <Property Id='DiskPrompt' Value='sd300 (Corporate Edition) Installation'/>
         <Property Id='SD300PRESERVEGUISTATE' Secure='yes'/>
         <Property Id='SD300GUIALREADYSTOPPED' Secure='yes'/>
+        <Property Id='SD300TESTFAILAFTERCARGO' Secure='yes'/>
+        <Property Id='SD300CARGOHOME' Secure='yes'/>
         <Property Id='SD300OWNEDNATIVEROOT'>
             <RegistrySearch Id='FindOwnedCorporateNativeRoot'
                 Root='HKCU'
@@ -151,6 +153,9 @@
         </Upgrade>
         <Condition Message='Global Edition is installed. Setup stopped before changing anything. Uninstall it first or use the managed installer: https://github.com/QubeTX/qube-system-diagnostics/releases/latest'>
             <![CDATA[NOT OTHEREDITIONMSI AND NOT OTHEREDITIONINNO]]>
+        </Condition>
+        <Condition Message='SD-300 setup requires Windows Installer rollback support so an existing Cargo installation can be restored if setup fails.'>
+            <![CDATA[Installed OR NOT RollbackDisabled]]>
         </Condition>
 
         <!-- MIC-1 strict cross-method convergence (v4.2.0+) - see wix/main.wxs.
@@ -317,21 +322,59 @@
         </Feature>
 
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+        <CustomAction Id='CaptureCargoHome'
+            Property='SD300CARGOHOME'
+            Value='[%CARGO_HOME]'/>
+        <CustomAction Id='DefaultCargoHome'
+            Property='SD300CARGOHOME'
+            Value='[%USERPROFILE]\.cargo'/>
         <SetProperty Id='StopGuiBeforeMutation'
             Value='&quot;[SD300OWNEDNATIVEROOT]bin\sd300.exe&quot; stop-gui --quiet'
             Sequence='execute'
             Before='StopGuiBeforeMutation'/>
 
-        <!-- MIC-1 strict convergence custom actions - see wix/main.wxs.
-             The lifecycle action uses WixQuietExec so its console-subsystem
-             helper remains hidden. Other actions are deferred and impersonated;
-             FileKey='exe0' runs the installed CLI. Return='check' makes
-             incomplete ownership convergence fail the package transaction, and
-             `NOT Installed` limits it to install/upgrade rather than uninstall or
-             repair. -->
+        <!-- Paired Cargo prepare/rollback/commit transaction; see
+             wix/main.wxs for the full invariants. Every deferred command is
+             passed through WixQuietExec CustomActionData with explicit user and
+             recovery paths, so alternate credentials and custom CARGO_HOME are
+             not inferred by the server-side action. -->
+        <SetProperty Id='RollbackCargoCopy'
+            Value='&quot;[APPLICATIONFOLDER]bin\sd300.exe&quot; mc -s -c -a r -g &quot;[SD300CARGOHOME]&quot; -u &quot;[%USERPROFILE]&quot; -j &quot;[LocalAppDataFolder]SD300\Transactions\msi-c-[ProductCode].json&quot;'
+            Sequence='execute'
+            Before='RollbackCargoCopy'/>
+        <SetProperty Id='CleanCargoCopy'
+            Value='&quot;[APPLICATIONFOLDER]bin\sd300.exe&quot; mc -s -c -a p -g &quot;[SD300CARGOHOME]&quot; -u &quot;[%USERPROFILE]&quot; -j &quot;[LocalAppDataFolder]SD300\Transactions\msi-c-[ProductCode].json&quot;'
+            Sequence='execute'
+            Before='CleanCargoCopy'/>
+        <SetProperty Id='CommitCargoCopy'
+            Value='&quot;[APPLICATIONFOLDER]bin\sd300.exe&quot; mc -s -c -a c -g &quot;[SD300CARGOHOME]&quot; -u &quot;[%USERPROFILE]&quot; -j &quot;[LocalAppDataFolder]SD300\Transactions\msi-c-[ProductCode].json&quot;'
+            Sequence='execute'
+            Before='CommitCargoCopy'/>
+        <SetProperty Id='InjectPostCargoFailure'
+            Value='&quot;[SystemFolder]cmd.exe&quot; /d /c exit /b 1'
+            Sequence='execute'
+            Before='InjectPostCargoFailure'/>
+        <CustomAction Id='RollbackCargoCopy'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
+            Execute='rollback'
+            Impersonate='yes'
+            Return='check'/>
         <CustomAction Id='CleanCargoCopy'
-            FileKey='exe0'
-            ExeCommand='migrate-cleanup --quiet --strict --cargo-copy'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
+        <CustomAction Id='CommitCargoCopy'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
+            Execute='commit'
+            Impersonate='yes'
+            Return='ignore'/>
+        <CustomAction Id='InjectPostCargoFailure'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
             Execute='deferred'
             Impersonate='yes'
             Return='check'/>
@@ -367,6 +410,12 @@
             Return='check'/>
 
         <InstallExecuteSequence>
+            <Custom Action='CaptureCargoHome' Before='SetRollbackCargoCopy'>
+                <![CDATA[NOT Installed AND NOT SD300CARGOHOME]]>
+            </Custom>
+            <Custom Action='DefaultCargoHome' After='CaptureCargoHome'>
+                <![CDATA[NOT Installed AND NOT SD300CARGOHOME]]>
+            </Custom>
             <Custom Action='StopGuiBeforeMutation' Before='RemoveExistingProducts'>
                 <![CDATA[SD300OWNEDNATIVEROOT AND NOT SD300GUIALREADYSTOPPED]]>
             </Custom>
@@ -383,7 +432,16 @@
             <Custom Action='CleanOtherEdition' After='VerifyGuiCompanion'>
                 <![CDATA[NOT Installed]]>
             </Custom>
-            <Custom Action='CleanCargoCopy' After='CleanOtherEdition'>
+            <Custom Action='RollbackCargoCopy' After='CleanOtherEdition'>
+                <![CDATA[NOT Installed]]>
+            </Custom>
+            <Custom Action='CleanCargoCopy' After='RollbackCargoCopy'>
+                <![CDATA[NOT Installed]]>
+            </Custom>
+            <Custom Action='InjectPostCargoFailure' After='CleanCargoCopy'>
+                <![CDATA[NOT Installed AND SD300TESTFAILAFTERCARGO = "1"]]>
+            </Custom>
+            <Custom Action='CommitCargoCopy' After='InjectPostCargoFailure'>
                 <![CDATA[NOT Installed]]>
             </Custom>
             <Custom Action='CleanupGuiState' Before='RemoveFiles'>

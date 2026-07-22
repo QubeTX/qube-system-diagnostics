@@ -103,9 +103,11 @@ jobs:
           - name: GNU x86-64
             runner: ubuntu-22.04
             gui_target: linux-gnu-x86_64
+            cli_target: x86_64-unknown-linux-gnu
           - name: GNU ARM64
             runner: ubuntu-22.04-arm
             gui_target: linux-gnu-arm64
+            cli_target: aarch64-unknown-linux-gnu
     name: Build and qualify ${{ matrix.name }} GUI
     runs-on: ${{ matrix.runner }}
     steps:
@@ -174,6 +176,99 @@ jobs:
                 output/sd300-gui-${{ matrix.gui_target }}.tar.xz \
                 "${{ needs.draft-check.outputs.version }}"
             '
+      - name: Exercise exact managed lifecycle (${{ matrix.name }})
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SD300_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TR300_TUI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/sd300-${{ matrix.gui_target }}-candidate"
+          mkdir -p "$assets"
+          for name in \
+            'sd300-cli-installer.sh' \
+            'sd300-cli-installer.sh.sha256' \
+            'sd300-dist-installer.sh' \
+            'sd300-dist-installer.sh.sha256' \
+            'tr300-tui-${{ matrix.cli_target }}.tar.xz' \
+            'tr300-tui-${{ matrix.cli_target }}.tar.xz.sha256'; do
+            gh release download '${{ needs.draft-check.outputs.tag }}' \
+              --repo '${{ github.repository }}' --dir "$assets" \
+              --pattern "$name" --clobber
+          done
+          cp 'output/sd300-gui-${{ matrix.gui_target }}.tar.xz' \
+            'output/sd300-gui-${{ matrix.gui_target }}.tar.xz.sha256' "$assets/"
+          (cd "$assets" && sha256sum -c ./*.sha256)
+
+          expected="$RUNNER_TEMP/sd300-${{ matrix.gui_target }}-expected"
+          mkdir -p "$expected"
+          tar -xJf "$assets/tr300-tui-${{ matrix.cli_target }}.tar.xz" -C "$expected"
+          expected_binary=$(find "$expected" -type f -name sd300 -perm -111 -print -quit)
+          test -n "$expected_binary"
+          test "$("$expected_binary" --version)" = 'sd300 ${{ needs.draft-check.outputs.version }}'
+
+          lifecycle_home=$(mktemp -d "$RUNNER_TEMP/sd300-${{ matrix.gui_target }}-lifecycle.XXXXXXXX")
+          trap 'rm -rf "$lifecycle_home"' EXIT
+          export HOME="$lifecycle_home"
+          export CARGO_HOME="$lifecycle_home/.cargo"
+          export XDG_CONFIG_HOME="$lifecycle_home/.config"
+          export XDG_DATA_HOME="$lifecycle_home/.local/share"
+          export XDG_CACHE_HOME="$lifecycle_home/.cache"
+          export XDG_RUNTIME_DIR="$lifecycle_home/.runtime"
+          export SD300_CI_RELEASE_TAG='${{ needs.draft-check.outputs.tag }}'
+          export SD300_CI_RELEASE_ASSET_DIR="$assets"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+
+          sh "$assets/sd300-cli-installer.sh" --no-modify-path
+          binary="$CARGO_HOME/bin/sd300"
+          gui="$XDG_DATA_HOME/sd300/bin/sd300-gui"
+          engine="$XDG_DATA_HOME/sd300/libexec/libsd300_engine.so"
+          desktop="$XDG_DATA_HOME/applications/sd300.desktop"
+          receipt="$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
+          test -x "$binary" && test -x "$gui" && test -f "$engine"
+          test -f "$desktop" && test -f "$receipt"
+          cmp -s "$binary" "$expected_binary"
+          jq -e --arg version '${{ needs.draft-check.outputs.version }}' '
+            .provider.source == "cargo-dist" and
+            .source.app_name == "sd300" and .version == $version
+          ' "$receipt" >/dev/null
+          "$gui" --self-test --json | jq -e \
+            --arg version '${{ needs.draft-check.outputs.version }}' '
+              .success == true and .product_version == $version and
+              .abi_version == 1 and .engine_schema_version == 1
+            ' >/dev/null
+
+          current=$("$binary" update --json)
+          test "$(printf '%s\n' "$current" | wc -l | tr -d ' ')" -eq 1
+          jq -e '
+            .success == true and .action == "update" and
+            .install_channel == "shell-installer" and .strategy == "current"
+          ' <<< "$current" >/dev/null
+
+          rm "$engine"
+          repair=$("$binary" update --json)
+          test "$(printf '%s\n' "$repair" | wc -l | tr -d ' ')" -eq 1
+          jq -e '
+            .success == true and .action == "update" and
+            .install_channel == "shell-installer" and
+            .strategy == "same-version-repair"
+          ' <<< "$repair" >/dev/null
+          test -f "$engine"
+          cmp -s "$binary" "$expected_binary"
+
+          uninstall=$("$binary" uninstall --json)
+          test "$(printf '%s\n' "$uninstall" | wc -l | tr -d ' ')" -eq 1
+          jq -e '
+            .success == true and .action == "uninstall" and
+            .install_channel == "shell-installer"
+          ' <<< "$uninstall" >/dev/null
+          test ! -e "$binary"
+          test ! -e "$XDG_DATA_HOME/sd300"
+          test ! -e "$desktop"
+          test ! -e "$XDG_CONFIG_HOME/sd300"
       - uses: actions/upload-artifact@v6
         with:
           name: sd300-gui-${{ matrix.gui_target }}-${{ needs.draft-check.outputs.tag }}
@@ -225,6 +320,98 @@ jobs:
               bash scripts/validate-native-gui-linux-package.sh \
                 output/sd300-gui-linux-musl-x86_64.tar.xz \
                 "${{ needs.draft-check.outputs.version }}"
+            '
+      - name: Stage exact musl lifecycle assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/sd300-linux-musl-x86_64-candidate"
+          mkdir -p "$assets"
+          for name in \
+            sd300-cli-installer.sh \
+            sd300-cli-installer.sh.sha256 \
+            sd300-dist-installer.sh \
+            sd300-dist-installer.sh.sha256 \
+            tr300-tui-x86_64-unknown-linux-musl.tar.xz \
+            tr300-tui-x86_64-unknown-linux-musl.tar.xz.sha256; do
+            gh release download '${{ needs.draft-check.outputs.tag }}' \
+              --repo '${{ github.repository }}' --dir "$assets" \
+              --pattern "$name" --clobber
+          done
+          cp output/sd300-gui-linux-musl-x86_64.tar.xz* "$assets/"
+          (cd "$assets" && sha256sum -c ./*.sha256)
+      - name: Exercise exact managed lifecycle (musl x86-64)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/sd300-linux-musl-x86_64-candidate"
+          docker run --rm \
+            -e GITHUB_ACTIONS=true \
+            -e GITHUB_TOKEN \
+            -e SD300_GITHUB_TOKEN="$GITHUB_TOKEN" \
+            -e TR300_TUI_GITHUB_TOKEN="$GITHUB_TOKEN" \
+            -e SD300_CI_RELEASE_TAG='${{ needs.draft-check.outputs.tag }}' \
+            -e SD300_CI_RELEASE_ASSET_DIR=/candidate \
+            -v "$assets:/candidate:ro" alpine:3.20 sh -ceu '
+              apk add --no-cache bash ca-certificates coreutils curl jq xz
+              export HOME=/tmp/sd300-lifecycle
+              export CARGO_HOME="$HOME/.cargo"
+              export XDG_CONFIG_HOME="$HOME/.config"
+              export XDG_DATA_HOME="$HOME/.local/share"
+              export XDG_CACHE_HOME="$HOME/.cache"
+              export XDG_RUNTIME_DIR="$HOME/.runtime"
+              mkdir -p "$XDG_RUNTIME_DIR"
+              chmod 700 "$XDG_RUNTIME_DIR"
+
+              mkdir -p /tmp/expected
+              tar -xJf /candidate/tr300-tui-x86_64-unknown-linux-musl.tar.xz \
+                -C /tmp/expected
+              expected_binary=$(find /tmp/expected -type f -name sd300 -perm -111 -print -quit)
+              test -n "$expected_binary"
+              test "$("$expected_binary" --version)" = "sd300 ${{ needs.draft-check.outputs.version }}"
+
+              bash /candidate/sd300-cli-installer.sh --no-modify-path
+              binary="$CARGO_HOME/bin/sd300"
+              gui="$XDG_DATA_HOME/sd300/bin/sd300-gui"
+              engine="$XDG_DATA_HOME/sd300/libexec/libsd300_engine.so"
+              desktop="$XDG_DATA_HOME/applications/sd300.desktop"
+              receipt="$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
+              test -x "$binary" && test -x "$gui" && test -f "$engine"
+              test -f "$desktop" && test -f "$receipt"
+              cmp -s "$binary" "$expected_binary"
+              "$gui" --self-test --json | jq -e \
+                --arg version "${{ needs.draft-check.outputs.version }}" \
+                ".success == true and .product_version == \$version and .abi_version == 1" \
+                >/dev/null
+
+              current=$("$binary" update --json)
+              test "$(printf "%s\n" "$current" | wc -l | tr -d " ")" -eq 1
+              printf "%s\n" "$current" | jq -e \
+                ".success == true and .install_channel == \"shell-installer\" and .strategy == \"current\"" \
+                >/dev/null
+
+              rm "$engine"
+              repair=$("$binary" update --json)
+              test "$(printf "%s\n" "$repair" | wc -l | tr -d " ")" -eq 1
+              printf "%s\n" "$repair" | jq -e \
+                ".success == true and .install_channel == \"shell-installer\" and .strategy == \"same-version-repair\"" \
+                >/dev/null
+              test -f "$engine"
+              cmp -s "$binary" "$expected_binary"
+
+              uninstall=$("$binary" uninstall --json)
+              test "$(printf "%s\n" "$uninstall" | wc -l | tr -d " ")" -eq 1
+              printf "%s\n" "$uninstall" | jq -e \
+                ".success == true and .action == \"uninstall\" and .install_channel == \"shell-installer\"" \
+                >/dev/null
+              test ! -e "$binary"
+              test ! -e "$XDG_DATA_HOME/sd300"
+              test ! -e "$desktop"
+              test ! -e "$XDG_CONFIG_HOME/sd300"
             '
       - uses: actions/upload-artifact@v6
         with:
