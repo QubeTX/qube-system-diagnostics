@@ -49,6 +49,9 @@ keychain="${work_dir}/sd300-release.keychain-db"
 keychain_password=$(openssl rand -base64 32)
 credential_dir="${work_dir}/credentials"
 mkdir -m 700 "$credential_dir" "$output_dir"
+# Absolute from here on: later steps write archives from inside subshells that
+# have already changed directory, where a relative output path cannot resolve.
+output_dir=$(cd "$output_dir" && pwd)
 chmod 700 "$work_dir"
 
 original_user_keychains=()

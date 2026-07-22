@@ -223,6 +223,10 @@ jobs:
           export XDG_RUNTIME_DIR="$lifecycle_home/.runtime"
           export SD300_CI_RELEASE_TAG='${{ needs.draft-check.outputs.tag }}'
           export SD300_CI_RELEASE_ASSET_DIR="$assets"
+          # Draft assets are unreachable through the public release download
+          # URL even with a token, so point the nested cargo-dist installer at
+          # the exact draft bytes already fetched into the asset directory.
+          export INSTALLER_DOWNLOAD_URL="file://$assets"
           mkdir -p "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
 
@@ -360,6 +364,7 @@ jobs:
             -e TR300_TUI_GITHUB_TOKEN="$GITHUB_TOKEN" \
             -e SD300_CI_RELEASE_TAG='${{ needs.draft-check.outputs.tag }}' \
             -e SD300_CI_RELEASE_ASSET_DIR=/candidate \
+            -e INSTALLER_DOWNLOAD_URL=file:///candidate \
             -v "$assets:/candidate:ro" alpine:3.20 sh -ceu '
               apk add --no-cache bash ca-certificates coreutils curl jq xz
               export HOME=/tmp/sd300-lifecycle

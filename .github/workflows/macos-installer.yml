@@ -401,6 +401,10 @@ jobs:
           export XDG_CACHE_HOME="$migration_home/.cache"
           export SD300_CI_RELEASE_TAG='${{ needs.build.outputs.tag }}'
           export SD300_CI_RELEASE_ASSET_DIR="$assets"
+          # Draft assets are unreachable through the public release download
+          # URL even with a token, so point the nested cargo-dist installer at
+          # the exact draft bytes already fetched into the asset directory.
+          export INSTALLER_DOWNLOAD_URL="file://$assets"
           mkdir -p "$CARGO_HOME/bin" "$XDG_CONFIG_HOME/sd300"
           cp "$prior_binary" "$CARGO_HOME/bin/sd300"
           chmod 755 "$CARGO_HOME/bin/sd300"
