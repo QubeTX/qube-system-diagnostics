@@ -51,6 +51,10 @@ The newest section is work in progress. It is deliberately candid about what has
 - Gave one intentionally large automated output test enough time on slow hosted Windows machines without relaxing normal collector deadlines.
 - Replaced an unbounded workflow-lint command that could leave hung processes with bounded parsing and separate shell checks.
 
+**Removed**
+
+- Removed a broken automatic code-review robot from the project's checks. It had stopped working at a level outside our control and only produced a permanent red X without ever reviewing anything. Reviews still happen; they are just done directly now.
+
 **Security**
 
 - Removed the commercial primary font file from public source history and reconstructs it only on trusted build machines after an exact checksum check. This protects the file but does not prove permission to embed it in the app.

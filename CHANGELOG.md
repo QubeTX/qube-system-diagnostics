@@ -170,6 +170,14 @@ qualification has completed.
   beside the receipt and requires byte-exact preservation plus complete
   owned-state removal (ADR 0003).
 
+### Removed
+
+- Removed the automatic Claude Code Review pull-request workflow. It failed
+  externally before producing any review turns or findings on every recent run
+  (for example exact-head run `29892152564`) and therefore added a permanently
+  red check without review value. Independent review is performed in-session;
+  the mention-triggered Claude workflow is unaffected.
+
 ### Security and release integrity
 
 - Moved the commercial Makira source face out of the public Git graph and into
