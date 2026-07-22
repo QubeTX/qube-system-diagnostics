@@ -20,6 +20,7 @@
   - [x] Lock the approved Warm Carbon design and bundled font hierarchy
   - [x] Make all nine navigation destinations functional with bounded live projections
   - [x] Complete audience modes, settings, exports, sorting/filtering, and unavailable-state parity
+  - [ ] Reproduce and eliminate the severe minute-old scroll/input lag on scrollable sections
   - [ ] Qualify keyboard, scaling, tray/autostart, and sustained renderer performance
 - [ ] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration (needs #nsp) (ms #v3n) #cpl
 

@@ -28,6 +28,7 @@
 | Project | Status |
 |---|---|
 | SD-300 v2.0.2 | Complete: Windows accuracy, full updater lifecycle, installers, parity, release, offline bundle, and website rollout |
+| SD-300 v3.0.0 | Active on `codex/sd300-v3-native-gui`: additive Native SDK GUI and composite lifecycle; draft PR #4; exact-head ordinary CI green; final soak, Windows cleanup rerun, font license, signing, provenance, and public-byte gates open |
 
 ## Preferences
 
@@ -38,3 +39,4 @@
 | Public artifacts | Stable versionless names and latest URLs; exact versions remain internal for integrity |
 | Evidence | Distinguish live hardware, hosted native, fixture, cross-compile, and research proof |
 | Board | Git-track the task board and keep status, verification, and activity current |
+| Release honesty | A build or CI pass is not physical UI, installer, UAC, long-soak, signing, license, provenance, or public-byte acceptance; keep those claims separate |
