@@ -6,6 +6,7 @@
 ## To-Do
 - [ ] **Qualify and release SD-300 v3.0.0 on all six existing targets** - pass compatibility, lifecycle, performance, provenance, hosted, physical Windows, and public-byte gates across Windows x86-64, macOS x86-64/ARM64, Linux GNU x86-64/ARM64, and Linux musl x86-64; probe additional SDK architectures without silently expanding the owned release contract (needs #gux, #cpl) (ms #v3n) #qv3
   - [ ] Re-prove foreground and hidden performance budgets on the fixed build
+  - [ ] Design and implement the app, taskbar, tray, and installer icons with Quiver arrow-1.1-max
   - [ ] Merge PR #4 to main and drive the release workflow to full green
   - [ ] Verify fresh public bytes, Cargo install, and physical Windows acceptance
 - [ ] **Add safe in-app and tray-driven updates** - let nontechnical users launch the existing owner-preserving CLI+GUI update transaction from the desktop app through a verified coordinator that relaunches only after success (needs #qv3) (ms #v3n) #giu

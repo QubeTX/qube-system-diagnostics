@@ -181,6 +181,12 @@ qualification has completed.
   updates and asset downloads. The updater now resolves the trusted System32
   `powershell.exe` image directly (also hardening against PATH interception)
   and uses a PATH-resolved PowerShell 7 only as the fallback.
+- Fixed managed updates failing with "Get-FileHash is not recognized" when the
+  updater is launched from a PowerShell 7 session: the child in-box shell
+  inherited pwsh's `PSModulePath`, which shadows Windows PowerShell 5.1's
+  built-in modules with Core-only editions and breaks cmdlet auto-loading.
+  Every PowerShell child the updater spawns now starts with a cleared
+  `PSModulePath` so the shell rebuilds its own defaults.
 - Fixed retired MSI Cargo-transaction journals stranding their empty
   product-owned `Transactions` directory inside the receipt root after commit
   or rollback cleanup, which kept the receipt root from emptying at uninstall.

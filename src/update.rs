@@ -859,7 +859,10 @@ fn execute_managed_wrapper(
                 return Err("PowerShell is not available".into());
             };
             run_status(
-                Command::new(&program).args([
+                // A pwsh 7 parent's PSModulePath shadows the in-box shell's
+                // built-in modules (Get-FileHash fails to auto-load); every
+                // PowerShell child rebuilds its own defaults when unset.
+                Command::new(&program).env_remove("PSModulePath").args([
                     "-NoProfile",
                     "-NonInteractive",
                     "-ExecutionPolicy",
@@ -2047,7 +2050,9 @@ fn download(url: &str, destination: &Path) -> std::result::Result<(), String> {
             powershell_escape(&destination.to_string_lossy())
         );
         run_status(
-            Command::new(program).args([
+            // See execute_managed_wrapper: inherited pwsh module paths break
+            // the in-box shell's auto-loading; children rebuild defaults.
+            Command::new(program).env_remove("PSModulePath").args([
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
@@ -3286,7 +3291,9 @@ fn uninstall_windows_files(
     let powershell =
         trusted_windows_system_executable(Path::new("WindowsPowerShell\\v1.0\\powershell.exe"))?;
     let cleanup = run_status(
-        Command::new(powershell).args([
+        // See execute_managed_wrapper: inherited pwsh module paths break the
+        // in-box shell's auto-loading; children rebuild defaults when unset.
+        Command::new(powershell).env_remove("PSModulePath").args([
             "-NoLogo",
             "-NoProfile",
             "-NonInteractive",
