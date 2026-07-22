@@ -22,6 +22,7 @@
   - [x] Make all nine navigation destinations functional with bounded live projections
   - [x] Complete audience modes, settings, exports, sorting/filtering, and unavailable-state parity
   - [x] Attribute the early clean soak exit to its graceful-quit source
+  - [x] Attribute the scroll lag with a warmed-state damage benchmark and record ADR 0002
   - [ ] Reproduce and eliminate the severe minute-old scroll/input lag on scrollable sections
   - [ ] Qualify keyboard, scaling, tray/autostart, and sustained renderer performance
 - [ ] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration (needs #nsp) (ms #v3n) #cpl

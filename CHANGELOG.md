@@ -175,6 +175,16 @@ qualification has completed.
   in final position exited 1 despite correct behavior. The command string now
   ends with a terminal `exit 0`; uncaught errors still abort with a nonzero
   exit before reaching it (ADR 0003 addendum, proven on real 5.1).
+- Fixed updater PowerShell discovery on stock Windows: the `--version` spawn
+  probe is a Windows PowerShell 5.1 parser error, so machines without
+  PowerShell 7 reported the in-box shell as missing and failed managed-channel
+  updates and asset downloads. The updater now resolves the trusted System32
+  `powershell.exe` image directly (also hardening against PATH interception)
+  and uses a PATH-resolved PowerShell 7 only as the fallback.
+- Fixed retired MSI Cargo-transaction journals stranding their empty
+  product-owned `Transactions` directory inside the receipt root after commit
+  or rollback cleanup, which kept the receipt root from emptying at uninstall.
+  The directory is now removed only when empty; unrelated content preserves it.
 
 ### Removed
 

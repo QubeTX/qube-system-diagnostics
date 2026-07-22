@@ -850,15 +850,16 @@ fn execute_managed_wrapper(
 
     match channel {
         InstallChannel::PowerShellInstaller => {
-            let program = if tool_exists("powershell.exe") {
-                "powershell.exe"
-            } else if tool_exists("pwsh.exe") {
-                "pwsh.exe"
+            #[cfg(windows)]
+            let program = windows_powershell_program()?;
+            #[cfg(not(windows))]
+            let program: std::ffi::OsString = if tool_exists("pwsh") {
+                "pwsh".into()
             } else {
                 return Err("PowerShell is not available".into());
             };
             run_status(
-                Command::new(program).args([
+                Command::new(&program).args([
                     "-NoProfile",
                     "-NonInteractive",
                     "-ExecutionPolicy",
@@ -2038,13 +2039,8 @@ fn ci_asset_directory() -> std::result::Result<Option<PathBuf>, String> {
 fn download(url: &str, destination: &Path) -> std::result::Result<(), String> {
     #[cfg(windows)]
     {
-        let program = if tool_exists("powershell.exe") {
-            "powershell.exe"
-        } else if tool_exists("pwsh.exe") {
-            "pwsh.exe"
-        } else {
-            return Err("PowerShell is required to download release assets".into());
-        };
+        let program = windows_powershell_program()
+            .map_err(|_| "PowerShell is required to download release assets".to_string())?;
         let script = format!(
             "$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; Invoke-WebRequest -UseBasicParsing -Uri '{}' -OutFile '{}'",
             powershell_escape(url),
@@ -2320,6 +2316,24 @@ fn tool_exists(tool: &str) -> bool {
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// Stock Windows ships only Windows PowerShell 5.1, which rejects the
+/// cross-platform `--version` probe with a parse error, so a spawn probe
+/// reports the in-box shell as missing on any machine without PowerShell 7.
+/// Resolve the trusted System32 image directly instead and fall back to a
+/// PATH-resolved PowerShell 7 only when the in-box shell is absent.
+#[cfg(windows)]
+fn windows_powershell_program() -> std::result::Result<std::ffi::OsString, String> {
+    if let Ok(powershell) =
+        trusted_windows_system_executable(Path::new("WindowsPowerShell\\v1.0\\powershell.exe"))
+    {
+        return Ok(powershell.into_os_string());
+    }
+    if tool_exists("pwsh.exe") {
+        return Ok(std::ffi::OsString::from("pwsh.exe"));
+    }
+    Err("PowerShell is not available".into())
 }
 
 fn detect_installation() -> std::result::Result<Installation, String> {
@@ -4485,6 +4499,15 @@ mod tests {
             assert!(uninstall.reboot_required());
             assert_eq!(uninstall.worker_exit_code(), 1641);
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_powershell_program_resolves_the_trusted_in_box_shell() {
+        let program = windows_powershell_program().expect("in-box PowerShell must resolve");
+        let path = std::path::PathBuf::from(&program);
+        assert!(path.is_absolute());
+        assert!(path.ends_with("WindowsPowerShell\\v1.0\\powershell.exe"));
     }
 
     #[test]

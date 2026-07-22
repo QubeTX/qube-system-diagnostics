@@ -1044,6 +1044,7 @@ fn rollback_msi_cargo_transaction_inner(args: &MigrateArgs) -> std::result::Resu
     }
     remove_regular_file(&journal_path)?;
     remove_regular_file_if_exists(&marker_path)?;
+    remove_empty_journal_directory(&journal_path)?;
     Ok(true)
 }
 
@@ -1293,7 +1294,33 @@ fn cleanup_committed_msi_transaction(
     }
     remove_regular_file(journal_path)?;
     remove_regular_file(marker_path)?;
+    remove_empty_journal_directory(journal_path)?;
     Ok(())
+}
+
+/// The MSI journal lives in a product-owned `Transactions` directory inside
+/// the receipt root, so a retired journal must not strand an empty directory
+/// that keeps the receipt root from emptying at uninstall. Nonempty and
+/// already-missing directories are both expected outcomes.
+fn remove_empty_journal_directory(journal_path: &Path) -> std::result::Result<(), String> {
+    let Some(parent) = journal_path.parent() else {
+        return Ok(());
+    };
+    match fs::remove_dir(parent) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(format!(
+            "Could not remove the empty MSI transaction directory {}: {error}",
+            parent.display()
+        )),
+    }
 }
 
 fn msi_cargo_paths(args: &MigrateArgs) -> std::result::Result<(PathBuf, PathBuf, PathBuf), String> {
@@ -3224,6 +3251,25 @@ mod tests {
             .iter()
             .any(|result| result.status == CleanupStatus::Preserved));
         assert_eq!(std::fs::read(binary).unwrap(), b"owned");
+    }
+
+    #[test]
+    fn retired_journal_directory_is_removed_only_when_empty() {
+        let temp = tempfile::tempdir().unwrap();
+        let transactions = temp.path().join("Transactions");
+        std::fs::create_dir_all(&transactions).unwrap();
+        let journal = transactions.join("msi-g-test.json");
+
+        remove_empty_journal_directory(&journal).unwrap();
+        assert!(!transactions.exists());
+
+        std::fs::create_dir_all(&transactions).unwrap();
+        std::fs::write(transactions.join("unrelated.txt"), b"keep").unwrap();
+        remove_empty_journal_directory(&journal).unwrap();
+        assert!(transactions.join("unrelated.txt").exists());
+
+        std::fs::remove_dir_all(&transactions).unwrap();
+        remove_empty_journal_directory(&journal).unwrap();
     }
 
     #[cfg(unix)]
