@@ -359,12 +359,13 @@ jobs:
           $receipt = Join-Path $configRoot 'sd300\sd300-receipt.json'
           $null = New-Item -ItemType Directory -Path (Split-Path -Parent $binary), (Split-Path -Parent $receipt) -Force
           Copy-Item -LiteralPath $env:SD300_CI_MANAGED_BINARY -Destination $binary -Force
-          @{
+          $fixtureReceipt = @{
             provider = @{ source = 'cargo-dist' }
             source = @{ app_name = 'sd300' }
             install_prefix = $prefix
             version = $env:SD300_CI_RELEASE_TAG.TrimStart('v')
-          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $receipt -Encoding utf8
+          }
+          [IO.File]::WriteAllText($receipt, ($fixtureReceipt | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
           '@ | Set-Content target\candidate-assets\sd300-dist-installer.ps1 -Encoding utf8
           $fixtureHash = (Get-FileHash target\candidate-assets\sd300-dist-installer.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
           "$fixtureHash *sd300-dist-installer.ps1" | Set-Content target\candidate-assets\sd300-dist-installer.ps1.sha256 -Encoding ascii

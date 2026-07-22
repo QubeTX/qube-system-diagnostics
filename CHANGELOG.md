@@ -206,6 +206,18 @@ qualification has completed.
   same-modifier wheel bursts into one scroll input at the summed delta, so a
   burst costs one reconcile and one repaint at the final offset (ADR 0002;
   measured by the new warmed-state benchmark).
+- Fixed a follow-on wheel regression where one physical click could glide the
+  entire scroll range: the runtime derives kinetic velocity from the same
+  wheel delta the Windows host now coalesces, so a summed burst became
+  runaway momentum. Wheel momentum is disabled at the app design-token level
+  (`wheel_velocity_scale = 0`), keeping the coalesced one-repaint burst while
+  making every notch a bounded step in the wheel's direction.
+- Fixed managed receipts written with a UTF-8 byte-order mark (any Windows
+  PowerShell 5.1 `Set-Content -Encoding utf8` writer) failing ownership
+  verification with "does not prove an exact cargo-dist binary": receipt
+  parsing now strips a leading BOM in both the updater and the migration
+  engine, and the qualification fixture writes BOM-less receipts like the
+  real installer.
 - Fixed a mid-session tray toggle stranding a hidden, icon-less process (or
   quitting past a still-live tray icon): the close-to-tray quit decision now
   consults the startup-effective tray presence for this session rather than

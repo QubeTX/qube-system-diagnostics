@@ -2563,6 +2563,9 @@ fn regular_file_presence(path: &Path, label: &str) -> std::result::Result<bool, 
 }
 
 fn managed_receipt_fields(receipt: &str) -> Option<(PathBuf, String)> {
+    // Windows PowerShell 5.1 writers (Set-Content -Encoding utf8) prefix a
+    // UTF-8 BOM that serde_json rejects; the receipt is ours to read liberally.
+    let receipt = receipt.trim_start_matches('\u{feff}');
     let json: serde_json::Value = serde_json::from_str(receipt).ok()?;
     if json
         .pointer("/provider/source")
@@ -4377,6 +4380,12 @@ mod tests {
         }"#;
         assert_eq!(
             managed_receipt_fields(exact),
+            Some((PathBuf::from("/managed"), "2.0.0".into()))
+        );
+
+        let bom_prefixed = format!("\u{feff}{exact}");
+        assert_eq!(
+            managed_receipt_fields(&bom_prefixed),
             Some((PathBuf::from("/managed"), "2.0.0".into()))
         );
 

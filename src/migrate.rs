@@ -2026,7 +2026,9 @@ fn receipt_exactly_matches(path: &Path, cargo_home: &Path) -> bool {
     let Ok(contents) = std::fs::read_to_string(path) else {
         return false;
     };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) else {
+    // Windows PowerShell 5.1 writers prefix a UTF-8 BOM serde_json rejects.
+    let contents = contents.trim_start_matches('\u{feff}');
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(contents) else {
         return false;
     };
     json.pointer("/provider/source")
