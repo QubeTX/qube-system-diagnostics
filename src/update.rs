@@ -1184,6 +1184,7 @@ fn worker_error_report_path(backup: &Path) -> PathBuf {
     backup.with_extension("uninstall-error.log")
 }
 
+#[cfg(windows)]
 pub fn run_windows_uninstall_worker(channel: &str, backup: &Path) -> i32 {
     let report = |message: &str| {
         let _ = std::fs::write(worker_error_report_path(backup), message);
