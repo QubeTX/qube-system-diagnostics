@@ -4499,9 +4499,14 @@ mod tests {
         assert!(commands.contains("install-receipt.json"));
         assert!(commands
             .contains("[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames"));
-        assert!(commands.contains("[IO.Directory]::Delete('C:\\Users\\test\\.sd300',$false)"));
         assert!(commands.contains("HResult -band 0xFFFF) -ne 145"));
-        assert!(!commands.contains("Remove-Item -LiteralPath 'C:\\Users\\test\\.sd300'"));
+        // Path::parent resolves the literal Windows receipt path only where `\`
+        // is a separator; non-Windows hosts see one component and an empty parent.
+        #[cfg(windows)]
+        {
+            assert!(commands.contains("[IO.Directory]::Delete('C:\\Users\\test\\.sd300',$false)"));
+            assert!(!commands.contains("Remove-Item -LiteralPath 'C:\\Users\\test\\.sd300'"));
+        }
         assert!(!commands.contains("$sd300Root="));
     }
 
