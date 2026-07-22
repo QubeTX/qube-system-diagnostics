@@ -585,7 +585,7 @@ jobs:
             for ($attempt = 0; $attempt -lt 60 -and (Test-Path -LiteralPath $corporateRoot); $attempt++) {
               Start-Sleep -Milliseconds 500
             }
-            if (Test-Path -LiteralPath $corporateRoot -or (Get-CorporateRegistration).Count -ne 0) {
+            if ((Test-Path -LiteralPath $corporateRoot) -or (Get-CorporateRegistration).Count -ne 0) {
               throw 'legacy Cargo MSI uninstall left its owner or payload behind'
             }
             if (@(Get-ChildItem -LiteralPath $transactionRoot -Force -ErrorAction SilentlyContinue).Count -ne 0) {
