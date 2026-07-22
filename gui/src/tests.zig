@@ -803,3 +803,518 @@ test "headless SD-300 1 Hz renderer benchmark" {
         },
     );
 }
+
+// ============================================================================
+// Warmed-state scroll damage attribution benchmark
+//
+// The steady-state overview benchmark above proves the 1 Hz tick is cheap on a
+// warmed surface. This benchmark reproduces the reported "goes laggy after ~60s
+// once you scroll" behaviour and attributes where the cost actually lands. It
+// drives Network (5), Processes (6), and Drivers (8) — each fully populated so
+// the content overflows the viewport — in three shapes:
+//
+//   * tick    : one data-only frame transition (chart shift + scalar/table
+//               deltas) at a fixed scroll offset, cold vs warmed histories.
+//   * scroll  : the same tick at a non-zero scroll offset that overflows.
+//   * burst   : N successive frames that only advance the scroll offset on a
+//               fully warmed model, i.e. a wheel-scroll drag.
+//
+// For every frame it records render duration, the damage mode the patched
+// reference renderer actually took (sparse `.damage` vs the conservative
+// union/full `.fallback`), the damage-rect count, the frame dirty ratio, and
+// the render-memo hit/miss deltas. Test-only; gated behind SD300_RENDER_BENCH.
+// ============================================================================
+
+const WarmSample = struct {
+    ns: u64,
+    fallback: bool,
+    rects: usize,
+    ratio: f32,
+};
+
+const WarmPool = struct {
+    allocator: std.mem.Allocator,
+    frame_options: canvas.CanvasFrameOptions,
+    clear: canvas.Color,
+    fonts: []const canvas.ReferenceFont,
+    width: usize,
+    height: usize,
+    pixels: []u8,
+    verify: []u8,
+    arena0: *std.heap.ArenaAllocator,
+    arena1: *std.heap.ArenaAllocator,
+    cmds0: []canvas.CanvasCommand,
+    cmds1: []canvas.CanvasCommand,
+    nodes0: []canvas.WidgetLayoutNode,
+    nodes1: []canvas.WidgetLayoutNode,
+    builder0: *canvas.Builder,
+    builder1: *canvas.Builder,
+    diff: []canvas.DiffChange,
+
+    fn build(pool: *WarmPool, slot: u1, model: *const main.Model) !canvas.DisplayList {
+        const arena = if (slot == 0) pool.arena0 else pool.arena1;
+        const cmds = if (slot == 0) pool.cmds0 else pool.cmds1;
+        const nodes = if (slot == 0) pool.nodes0 else pool.nodes1;
+        const builder = if (slot == 0) pool.builder0 else pool.builder1;
+        _ = arena.reset(.retain_capacity);
+        builder.* = canvas.Builder.init(cmds);
+        return buildRenderBenchDisplayList(arena.allocator(), model, builder, nodes);
+    }
+};
+
+inline fn warmClock() i128 {
+    return @intCast(std.Io.Timestamp.now(testing.io, .real).nanoseconds);
+}
+
+fn warmSetName(buf: anytype, comptime fmt: []const u8, args: anytype) void {
+    var tmp: [128]u8 = undefined;
+    const text = std.fmt.bufPrint(&tmp, fmt, args) catch return;
+    buf.set(text);
+}
+
+fn warmFill(history: []f64, tick: u32, seed: u32) void {
+    for (history, 0..) |*sample, index| {
+        const t = @as(f64, @floatFromInt(index)) + @as(f64, @floatFromInt(tick));
+        const s = @as(f64, @floatFromInt(seed));
+        const value = 50.0 + 40.0 * @sin(t * 0.30 + s) + 8.0 * @sin(t * 0.13 + s * 1.7);
+        sample.* = std.math.clamp(value, 5.0, 95.0);
+    }
+}
+
+fn warmHistories(model: *main.Model, tick: u32) void {
+    warmFill(&model.cpu_history, tick, 1);
+    warmFill(&model.memory_history, tick, 2);
+    warmFill(&model.swap_history, tick, 3);
+    warmFill(&model.network_download_history, tick, 4);
+    warmFill(&model.network_upload_history, tick, 5);
+    warmFill(&model.gpu_history, tick, 6);
+    warmFill(&model.temperature_history_celsius, tick, 7);
+    warmFill(&model.temperature_history_fahrenheit, tick, 8);
+    warmFill(&model.disk_read_history, tick, 9);
+    warmFill(&model.disk_write_history, tick, 10);
+}
+
+fn warmPopulate(model: *main.Model, section: u8) void {
+    const d = &model.detail;
+    switch (section) {
+        5 => {
+            d.static_ready = true;
+            d.fast_ready = true;
+            d.medium_ready = true;
+            d.diagnostics_ready = true;
+            d.interface_count = 4;
+            d.interface_total_count = 6;
+            for (0..4) |i| {
+                const r = &d.interface_rows[i];
+                r.id = @intCast(i);
+                r.is_up = true;
+                r.download_kib_s = 100 + @as(f64, @floatFromInt(i)) * 40;
+                r.upload_kib_s = 20 + @as(f64, @floatFromInt(i)) * 8;
+                r.received_gib = 12.5;
+                r.transmitted_gib = 3.2;
+                warmSetName(&r.name_buffer, "eth{d}", .{i});
+                r.state_buffer.set("up");
+                warmSetName(&r.address_buffer, "10.0.0.{d}", .{i + 2});
+                r.mac_buffer.set("00:11:22:33:44:55");
+            }
+            d.connection_count = 20;
+            d.connection_total_count = 44;
+            d.listening_count = 7;
+            for (0..20) |i| {
+                const r = &d.connection_rows[i];
+                r.id = @intCast(i);
+                r.local_port = @intCast(1024 + i);
+                r.remote_port = 443;
+                r.pid = @intCast(2000 + i);
+                r.protocol_buffer.set("tcp");
+                r.local_buffer.set("10.0.0.5");
+                warmSetName(&r.remote_buffer, "93.184.216.{d}", .{i + 1});
+                r.state_buffer.set("ESTABLISHED");
+                warmSetName(&r.process_buffer, "svc{d}", .{i});
+            }
+            d.gateway_reachable = true;
+            d.gateway_latency_ms = 1.2;
+            d.gateway_latency_available = true;
+            d.dns_resolved = true;
+            d.dns_latency_ms = 8.3;
+            d.dns_latency_available = true;
+            d.internet_reachable = true;
+            d.internet_latency_ms = 15.0;
+            d.internet_latency_available = true;
+        },
+        6 => {
+            d.fast_ready = true;
+            d.process_values_warmed = true;
+            d.process_total_count = 486;
+            d.process_total_threads = 3277;
+            d.process_count = 16;
+            model.show_all_processes = true;
+            for (0..16) |i| {
+                const r = &d.process_rows[i];
+                r.id = @intCast(i);
+                r.pid = @intCast(1000 + i * 7);
+                warmSetName(&r.friendly_buffer, "Process {d}", .{i});
+                warmSetName(&r.name_buffer, "proc{d}.exe", .{i});
+                r.status_buffer.set("running");
+            }
+        },
+        8 => {
+            d.drivers_ready = true;
+            d.driver_count = 32;
+            d.driver_total_count = 71;
+            d.driver_attention_count = 5;
+            d.driver_scan_buffer.set("completed");
+            for (0..32) |i| {
+                const r = &d.driver_rows[i];
+                r.id = @intCast(i);
+                r.attention = (i % 7 == 0);
+                warmSetName(&r.name_buffer, "Device Controller {d}", .{i});
+                r.category_buffer.set("system");
+                r.status_buffer.set("ok");
+                warmSetName(&r.version_buffer, "10.0.{d}.3", .{i});
+                r.date_buffer.set("2025-01-01");
+            }
+        },
+        else => {},
+    }
+}
+
+fn warmNudge(model: *main.Model, section: u8, tick: u32) void {
+    const d = &model.detail;
+    const ft = @as(f64, @floatFromInt(tick));
+    switch (section) {
+        5 => {
+            d.total_download_kib_s = 800 + ft * 17.0;
+            d.total_upload_kib_s = 120 + ft * 5.0;
+            d.interface_rows[0].download_kib_s = 100 + ft * 3.0;
+        },
+        6 => {
+            for (0..d.process_count) |i| {
+                const fi = @as(f64, @floatFromInt(i));
+                d.process_rows[i].cpu_percent = std.math.clamp(5 + 30 * @abs(@sin(fi * 0.5 + ft * 0.4)), 0, 400);
+                d.process_rows[i].memory_mib = 50 + fi * 20 + ft * 2;
+                d.process_rows[i].memory_percent = std.math.clamp(1 + fi * 0.3 + ft * 0.05, 0, 100);
+            }
+        },
+        8 => {
+            // Two far-apart rows change per tick: a small, well-separated
+            // damage pattern that can exercise the sparse `.damage` path.
+            const label: []const u8 = if (tick % 2 == 0) "ok" else "degraded";
+            d.driver_rows[0].status_buffer.set(label);
+            d.driver_rows[16].status_buffer.set(label);
+        },
+        else => {},
+    }
+}
+
+fn warmConfigure(model: *main.Model, section: u8, tick: u32, warm: bool, scroll: f64) void {
+    model.* = main.initialModel();
+    model.engine_ready = true;
+    model.fast_summary_seen = true;
+    model.sequence = 100;
+    model.cpu_percent = 42;
+    model.memory_percent = 61;
+    model.active_section = section;
+    model.scroll_top = scroll;
+    warmPopulate(model, section);
+    warmNudge(model, section, tick);
+    if (warm) warmHistories(model, tick);
+}
+
+fn warmApply(
+    pool: *WarmPool,
+    surface: canvas.ReferenceRenderSurface,
+    prev: canvas.DisplayList,
+    cur: canvas.DisplayList,
+    scratch: *WarmRenderBenchFrameScratch,
+) !WarmSample {
+    const frame = try cur.framePlan(prev, pool.frame_options, scratch.storage());
+    const damage = renderBenchDamage(try canvas.DisplayList.diff(prev, cur, pool.diff));
+    const start = warmClock();
+    const mode = try surface.renderPassDamage(frame.renderPass(), pool.clear, damage.slice());
+    const ns: u64 = @intCast(warmClock() - start);
+    return .{ .ns = ns, .fallback = mode == .fallback, .rects = damage.count, .ratio = frame.profile().dirty_ratio };
+}
+
+fn warmSummarize(
+    name: []const u8,
+    samples: []const WarmSample,
+    dhits: u64,
+    dmiss: u64,
+    dmaskhit: u64,
+    dmaskmiss: u64,
+) void {
+    var times: [64]u64 = undefined;
+    var total: u64 = 0;
+    var damage_n: usize = 0;
+    var fallback_n: usize = 0;
+    var rects_min: usize = std.math.maxInt(usize);
+    var rects_max: usize = 0;
+    var ratio_sum: f64 = 0;
+    const n = samples.len;
+    for (samples, 0..) |s, i| {
+        times[i] = s.ns;
+        total += s.ns;
+        if (s.fallback) {
+            fallback_n += 1;
+        } else {
+            damage_n += 1;
+        }
+        if (s.rects < rects_min) rects_min = s.rects;
+        if (s.rects > rects_max) rects_max = s.rects;
+        ratio_sum += s.ratio;
+    }
+    std.sort.pdq(u64, times[0..n], {}, renderBenchLessThan);
+    const p50 = times[n / 2];
+    const p95 = times[@min(n - 1, (n * 95 + 99) / 100 - 1)];
+    const maxv = times[n - 1];
+    const denom = @as(f64, @floatFromInt(n));
+    std.debug.print(
+        "WARM_BENCH {s} | n={d:>2} avg={d:>7.3} p50={d:>7.3} p95={d:>7.3} max={d:>7.3} ms | damage={d:>2} fallback={d:>2} | rects={d}-{d} ratio={d:.3} | memo hit+{d} miss+{d} maskhit+{d} maskmiss+{d}\n",
+        .{
+            name,
+            n,
+            @as(f64, @floatFromInt(total)) / denom / 1_000_000.0,
+            @as(f64, @floatFromInt(p50)) / 1_000_000.0,
+            @as(f64, @floatFromInt(p95)) / 1_000_000.0,
+            @as(f64, @floatFromInt(maxv)) / 1_000_000.0,
+            damage_n,
+            fallback_n,
+            rects_min,
+            rects_max,
+            ratio_sum / denom,
+            dhits,
+            dmiss,
+            dmaskhit,
+            dmaskmiss,
+        },
+    );
+}
+
+fn warmRunTick(
+    pool: *WarmPool,
+    name: []const u8,
+    model_a: *const main.Model,
+    model_b: *const main.Model,
+    s0: *WarmRenderBenchFrameScratch,
+    s1: *WarmRenderBenchFrameScratch,
+    s2: *WarmRenderBenchFrameScratch,
+) !void {
+    var memo = canvas.ReferenceRenderMemo.init(pool.allocator);
+    defer memo.deinit();
+    const surface = (try canvas.ReferenceRenderSurface.init(pool.width, pool.height, pool.pixels)).withFonts(pool.fonts).withRenderMemo(&memo);
+
+    const list_a = try pool.build(0, model_a);
+    const list_b = try pool.build(1, model_b);
+
+    // Seed the retained surface with frame A.
+    const seed_frame = try list_a.framePlan(null, pool.frame_options, s0.storage());
+    try surface.renderPass(seed_frame.renderPass(), pool.clear);
+
+    // Correctness gate: applying the A->B damage to the retained surface must
+    // reproduce a full render of B byte-for-byte. Guards against synthesizing
+    // an incomplete damage set that would make the timings meaningless.
+    const frame_ab = try list_b.framePlan(list_a, pool.frame_options, s1.storage());
+    const damage_ab = renderBenchDamage(try canvas.DisplayList.diff(list_a, list_b, pool.diff));
+    _ = try surface.renderPassDamage(frame_ab.renderPass(), pool.clear, damage_ab.slice());
+    const full_b = try list_b.framePlan(null, pool.frame_options, s2.storage());
+    const verify_surface = (try canvas.ReferenceRenderSurface.init(pool.width, pool.height, pool.verify)).withFonts(pool.fonts);
+    try verify_surface.renderPass(full_b.renderPass(), pool.clear);
+    try testing.expectEqualSlices(u8, pool.verify, pool.pixels);
+
+    // Re-seed to A, then precompute both directions with distinct scratch so
+    // the alternating steady-state loop can reuse them.
+    try surface.renderPass(seed_frame.renderPass(), pool.clear);
+    const frame_ba = try list_a.framePlan(list_b, pool.frame_options, s2.storage());
+    const damage_ba = renderBenchDamage(try canvas.DisplayList.diff(list_b, list_a, pool.diff));
+
+    // Warm the memo/caches (even count returns the surface to A).
+    for (0..4) |i| {
+        if (i % 2 == 0) {
+            _ = try surface.renderPassDamage(frame_ab.renderPass(), pool.clear, damage_ab.slice());
+        } else {
+            _ = try surface.renderPassDamage(frame_ba.renderPass(), pool.clear, damage_ba.slice());
+        }
+    }
+
+    const base_hits = memo.hits;
+    const base_misses = memo.misses;
+    const base_mask_hits = memo.glyph_mask_hits;
+    const base_mask_misses = memo.glyph_mask_misses;
+
+    const sample_count: usize = 24;
+    var samples: [64]WarmSample = undefined;
+    for (0..sample_count) |i| {
+        const use_ab = i % 2 == 0;
+        const frame = if (use_ab) frame_ab else frame_ba;
+        const damage = if (use_ab) &damage_ab else &damage_ba;
+        const start = warmClock();
+        const mode = try surface.renderPassDamage(frame.renderPass(), pool.clear, damage.slice());
+        const ns: u64 = @intCast(warmClock() - start);
+        samples[i] = .{ .ns = ns, .fallback = mode == .fallback, .rects = damage.count, .ratio = frame.profile().dirty_ratio };
+    }
+
+    const dhits: u64 = @intCast(memo.hits - base_hits);
+    const dmiss: u64 = @intCast(memo.misses - base_misses);
+    const dmaskhit: u64 = @intCast(memo.glyph_mask_hits - base_mask_hits);
+    const dmaskmiss: u64 = @intCast(memo.glyph_mask_misses - base_mask_misses);
+    warmSummarize(name, samples[0..sample_count], dhits, dmiss, dmaskhit, dmaskmiss);
+}
+
+fn warmRunBurst(
+    pool: *WarmPool,
+    name: []const u8,
+    base_model: *main.Model,
+    scratch: *WarmRenderBenchFrameScratch,
+) !void {
+    var memo = canvas.ReferenceRenderMemo.init(pool.allocator);
+    defer memo.deinit();
+    const surface = (try canvas.ReferenceRenderSurface.init(pool.width, pool.height, pool.pixels)).withFonts(pool.fonts).withRenderMemo(&memo);
+
+    const step: usize = 20;
+    const preroll: usize = 4;
+    const measured: usize = 16;
+
+    base_model.scroll_top = 0;
+    var prev = try pool.build(0, base_model);
+    const seed_frame = try prev.framePlan(null, pool.frame_options, scratch.storage());
+    try surface.renderPass(seed_frame.renderPass(), pool.clear);
+
+    var slot: u1 = 1;
+    var frame_index: usize = 1;
+
+    for (0..preroll) |_| {
+        base_model.scroll_top = @floatFromInt(frame_index * step);
+        const cur = try pool.build(slot, base_model);
+        _ = try warmApply(pool, surface, prev, cur, scratch);
+        prev = cur;
+        slot ^= 1;
+        frame_index += 1;
+    }
+
+    const base_hits = memo.hits;
+    const base_misses = memo.misses;
+    const base_mask_hits = memo.glyph_mask_hits;
+    const base_mask_misses = memo.glyph_mask_misses;
+
+    var samples: [64]WarmSample = undefined;
+    for (0..measured) |i| {
+        base_model.scroll_top = @floatFromInt(frame_index * step);
+        const cur = try pool.build(slot, base_model);
+        samples[i] = try warmApply(pool, surface, prev, cur, scratch);
+        prev = cur;
+        slot ^= 1;
+        frame_index += 1;
+    }
+
+    const dhits: u64 = @intCast(memo.hits - base_hits);
+    const dmiss: u64 = @intCast(memo.misses - base_misses);
+    const dmaskhit: u64 = @intCast(memo.glyph_mask_hits - base_mask_hits);
+    const dmaskmiss: u64 = @intCast(memo.glyph_mask_misses - base_mask_misses);
+    warmSummarize(name, samples[0..measured], dhits, dmiss, dmaskhit, dmaskmiss);
+}
+
+test "headless SD-300 warmed-state scroll damage attribution benchmark" {
+    if (comptime !@import("builtin").link_libc) return error.SkipZigTest;
+    if (std.c.getenv("SD300_RENDER_BENCH") == null) return error.SkipZigTest;
+
+    const allocator = testing.allocator;
+    const width: usize = 1180;
+    const height: usize = 760;
+    const pixel_len = width * height * 4;
+
+    var makira_face = try canvas.font_ttf.Face.parse(@embedFile("fonts/Makira-Regular.ttf"));
+    var plex_face = try canvas.font_ttf.Face.parse(@embedFile("fonts/IBMPlexMono-Regular.ttf"));
+    var tokens_model = main.initialModel();
+    const tokens = main.qubeTokens(&tokens_model);
+    const fonts = [_]canvas.ReferenceFont{
+        .{ .id = tokens.typography.font_id, .face = &makira_face },
+        .{ .id = tokens.typography.mono_font_id, .face = &plex_face },
+    };
+
+    const pixels = try allocator.alloc(u8, pixel_len);
+    defer allocator.free(pixels);
+    const verify = try allocator.alloc(u8, pixel_len);
+    defer allocator.free(verify);
+
+    const arena0 = try allocator.create(std.heap.ArenaAllocator);
+    defer allocator.destroy(arena0);
+    arena0.* = std.heap.ArenaAllocator.init(allocator);
+    defer arena0.deinit();
+    const arena1 = try allocator.create(std.heap.ArenaAllocator);
+    defer allocator.destroy(arena1);
+    arena1.* = std.heap.ArenaAllocator.init(allocator);
+    defer arena1.deinit();
+
+    const cmds0 = try allocator.alloc(canvas.CanvasCommand, warm_bench_capacity);
+    defer allocator.free(cmds0);
+    const cmds1 = try allocator.alloc(canvas.CanvasCommand, warm_bench_capacity);
+    defer allocator.free(cmds1);
+    const nodes0 = try allocator.alloc(canvas.WidgetLayoutNode, warm_bench_capacity);
+    defer allocator.free(nodes0);
+    const nodes1 = try allocator.alloc(canvas.WidgetLayoutNode, warm_bench_capacity);
+    defer allocator.free(nodes1);
+    const builder0 = try allocator.create(canvas.Builder);
+    defer allocator.destroy(builder0);
+    const builder1 = try allocator.create(canvas.Builder);
+    defer allocator.destroy(builder1);
+    const diff = try allocator.alloc(canvas.DiffChange, warm_bench_capacity);
+    defer allocator.free(diff);
+
+    var pool = WarmPool{
+        .allocator = allocator,
+        .frame_options = .{ .surface_size = native_sdk.geometry.SizeF.init(width, height), .scale = 1 },
+        .clear = tokens.colors.background,
+        .fonts = &fonts,
+        .width = width,
+        .height = height,
+        .pixels = pixels,
+        .verify = verify,
+        .arena0 = arena0,
+        .arena1 = arena1,
+        .cmds0 = cmds0,
+        .cmds1 = cmds1,
+        .nodes0 = nodes0,
+        .nodes1 = nodes1,
+        .builder0 = builder0,
+        .builder1 = builder1,
+        .diff = diff,
+    };
+
+    const s0 = try allocator.create(WarmRenderBenchFrameScratch);
+    defer allocator.destroy(s0);
+    const s1 = try allocator.create(WarmRenderBenchFrameScratch);
+    defer allocator.destroy(s1);
+    const s2 = try allocator.create(WarmRenderBenchFrameScratch);
+    defer allocator.destroy(s2);
+
+    const model_a = try allocator.create(main.Model);
+    defer allocator.destroy(model_a);
+    const model_b = try allocator.create(main.Model);
+    defer allocator.destroy(model_b);
+
+    std.debug.print("\nSD300_WARM_BENCH surface={d}x{d} sections=5,6,8 (Network/Processes/Drivers)\n", .{ width, height });
+
+    const sections = [_]u8{ 5, 6, 8 };
+    const scrolls = [_]f64{ 0, 420 };
+    const warm_flags = [_]bool{ false, true };
+
+    for (sections) |section| {
+        for (scrolls) |scroll| {
+            for (warm_flags) |warm| {
+                warmConfigure(model_a, section, 10, warm, scroll);
+                warmConfigure(model_b, section, 11, warm, scroll);
+                const warm_label: []const u8 = if (warm) "warm" else "cold";
+                var name_buf: [96]u8 = undefined;
+                const name = try std.fmt.bufPrint(&name_buf, "sec{d} tick {s} scroll={d:>3.0}", .{ section, warm_label, scroll });
+                try warmRunTick(&pool, name, model_a, model_b, s0, s1, s2);
+            }
+        }
+        // Scroll burst on a fully warmed, populated model: only the scroll
+        // offset advances per frame — a wheel-scroll drag.
+        warmConfigure(model_a, section, 10, true, 0);
+        var burst_name_buf: [96]u8 = undefined;
+        const burst_name = try std.fmt.bufPrint(&burst_name_buf, "sec{d} scroll-burst  warm      ", .{section});
+        try warmRunBurst(&pool, burst_name, model_a, s0);
+    }
+}
