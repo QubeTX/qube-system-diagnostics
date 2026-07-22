@@ -3,6 +3,10 @@
 ## Backlog
 - [ ] **Run the released-bytes two-hour soak and capture frame/input percentiles** - TASK FOR CODEX; unattended, machine-quarantined two-hour Processes soak plus formal frame-p95/input-p95 evidence on the public v3 bytes, with exit-attribution awareness; replaces the pre-release soak gate the operator waived on 2026-07-22 (needs #qv3) (ms #v3n) #sok
 - [ ] **Run the extensive post-release testing and performance sweep** - TASK FOR CODEX; everything waived from the v3.0.0 release under the operator's functional-bar directive: exhaustive GUI automation across all sections/modes/keyboard/scaling/exports/unavailable states, published-v2 PTY replay on hosted targets, physical interaction regression sweep (scroll granularity, tray and minimize lifecycle), formal foreground/hidden budget re-proof, and varied-load performance regression checks; feeds patch releases (needs #qv3) (ms #v3n) #ext
+- [ ] **Run the post-release hardening sweep** - TASK FOR CODEX; deferred robustness items from the release reviews: uninstall-fix trio, engine staleness/threading/panic containment, GUI and installer polish, documented quirks (needs #qv3) (ms #v3n) #hrd
+- [ ] **Resolve Makira embedding-license evidence** - obtain vendor documentation for the purchased face or replace with an open font in a patch release; operator-led #mkl
+- [ ] **Run physical macOS acceptance on real hardware** - installed PKG lifecycle, GUI/status-item behavior, and notarization experience when Mac access returns #mac
+- [ ] **Improve GUI screen-reader accessibility beyond the named canvas** - track Native SDK accessibility-tree support; TUI remains the documented fallback #acc
 
 ## To-Do
 - [ ] **Add safe in-app and tray-driven updates** - let nontechnical users launch the existing owner-preserving CLI+GUI update transaction from the desktop app through a verified coordinator that relaunches only after success (needs #qv3) (ms #v3n) #giu
@@ -12,7 +16,7 @@
   - [x] Re-prove foreground and hidden performance budgets on the fixed build
   - [x] Design and implement the app, taskbar, tray, and installer icons with Quiver arrow-1.1-max
   - [x] Run a bounded post-fix performance sanity sample (formal budget re-proof in Backlog #sok)
-  - [ ] Merge PR #4 to main and drive the release workflow to full green
+  - [x] Merge PR #4 to main (4e17c41); release workflow driving to full green
   - [ ] Verify fresh public bytes, Cargo install, and physical Windows acceptance
 
 ## Done
