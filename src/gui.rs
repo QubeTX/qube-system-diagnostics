@@ -416,6 +416,77 @@ fn is_macos_app(_path: &Path) -> bool {
     false
 }
 
+/// Start the installed CLI's own update transaction as a detached coordinator
+/// on behalf of the desktop app. The CLI stays the sole lifecycle engine; this
+/// only resolves a proven absolute product location — never a PATH lookup —
+/// and hands it `update --json --relaunch-gui`, so a successful transaction
+/// reopens the app through the idempotent singleton Open route. Output streams
+/// to a log beside the settings so failures stay inspectable after the GUI
+/// exits mid-update.
+pub fn spawn_update_coordinator() -> std::result::Result<PathBuf, String> {
+    let cli = locate_update_cli().ok_or_else(|| {
+        "the SD-300 CLI was not found at a proven install location; run `sd300 update` from a terminal to repair the installation".to_string()
+    })?;
+    let mut command = Command::new(&cli);
+    command
+        .args(["update", "--json", "--relaunch-gui"])
+        .stdin(Stdio::null());
+    match update_launch_log() {
+        Some((stdout, stderr)) => {
+            command.stdout(stdout).stderr(stderr);
+        }
+        // An unwritable log must never block the update itself.
+        None => {
+            command.stdout(Stdio::null()).stderr(Stdio::null());
+        }
+    }
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    command.spawn().map(|_| cli.clone()).map_err(|error| {
+        format!(
+            "could not start the updater at '{}': {error}",
+            cli.display()
+        )
+    })
+}
+
+fn locate_update_cli() -> Option<PathBuf> {
+    let current = std::env::current_exe().ok();
+    update_cli_from(current.as_deref(), crate::update::managed_cli_binary())
+}
+
+fn update_cli_from(gui_exe: Option<&Path>, managed: Option<PathBuf>) -> Option<PathBuf> {
+    let cli_name = if cfg!(windows) { "sd300.exe" } else { "sd300" };
+    let mut candidates = Vec::new();
+    if let Some(dir) = gui_exe.and_then(Path::parent) {
+        // The composite root pairs `<root>/app/sd300-gui` with `<root>/bin/sd300`.
+        if let Some(root) = dir.parent() {
+            candidates.push(root.join("bin").join(cli_name));
+        }
+        // Linux managed installs share one flat `bin/` directory.
+        candidates.push(dir.join(cli_name));
+    }
+    candidates.extend(managed);
+    #[cfg(target_os = "macos")]
+    candidates.push(PathBuf::from("/usr/local/bin/sd300"));
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+fn update_launch_log() -> Option<(Stdio, Stdio)> {
+    let path = crate::settings::settings_path()
+        .ok()?
+        .parent()?
+        .join("update-launch.log");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok()?;
+    }
+    let file = std::fs::File::create(path).ok()?;
+    let clone = file.try_clone().ok()?;
+    Some((Stdio::from(clone), Stdio::from(file)))
+}
+
 fn spawn(candidate: &Path) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     let mut command = {
@@ -451,6 +522,47 @@ fn xdg_data_home() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_cli_resolution_prefers_the_composite_root_layout() {
+        let cli_name = if cfg!(windows) { "sd300.exe" } else { "sd300" };
+        let root = tempfile::tempdir().expect("temp root");
+        let bin = root.path().join("bin");
+        let app = root.path().join("app");
+        std::fs::create_dir_all(&bin).expect("bin dir");
+        std::fs::create_dir_all(&app).expect("app dir");
+        let cli = bin.join(cli_name);
+        std::fs::write(&cli, b"stub").expect("cli stub");
+        let gui = app.join("sd300-gui.exe");
+
+        assert_eq!(update_cli_from(Some(&gui), None), Some(cli.clone()));
+
+        // The receipt-recorded managed binary backstops non-bundle layouts.
+        let managed = bin.join(cli_name);
+        assert_eq!(update_cli_from(None, Some(managed.clone())), Some(managed));
+
+        // Nothing proven on disk means no spawn target at all. On macOS the
+        // fixed PKG path may genuinely hold an installed CLI, so this holds
+        // only where every candidate is relative to the fake bundle.
+        #[cfg(not(target_os = "macos"))]
+        {
+            let missing = PathBuf::from("definitely-not-an-sd300-install/app/sd300-gui");
+            assert_eq!(update_cli_from(Some(&missing), None), None);
+        }
+    }
+
+    #[test]
+    fn flat_bin_layout_resolves_the_sibling_cli() {
+        let cli_name = if cfg!(windows) { "sd300.exe" } else { "sd300" };
+        let root = tempfile::tempdir().expect("temp root");
+        let bin = root.path().join("bin");
+        std::fs::create_dir_all(&bin).expect("bin dir");
+        let cli = bin.join(cli_name);
+        std::fs::write(&cli, b"stub").expect("cli stub");
+        let gui = bin.join("sd300-gui");
+
+        assert_eq!(update_cli_from(Some(&gui), None), Some(cli));
+    }
 
     #[test]
     fn absent_companion_is_not_mistaken_for_the_tui_binary() {

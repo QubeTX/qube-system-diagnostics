@@ -1211,6 +1211,26 @@ pub extern "C" fn sd300_engine_set_launch_at_login(enabled: u32, start_hidden: u
 }
 
 #[no_mangle]
+pub extern "C" fn sd300_engine_request_update(
+    message: *mut u8,
+    capacity: usize,
+    required: *mut usize,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        let (status, text) = match sd_300::gui::spawn_update_coordinator() {
+            Ok(cli) => (STATUS_OK, cli.display().to_string()),
+            Err(error) => (STATUS_INTERNAL_ERROR, error),
+        };
+        // The message is best-effort context for the caller's status line; the
+        // return status alone is authoritative, so a small caller buffer must
+        // not turn a spawned coordinator into an apparent failure.
+        let _ = copy_to_caller(text.as_bytes(), message, capacity, required);
+        status
+    }))
+    .unwrap_or(STATUS_PANIC)
+}
+
+#[no_mangle]
 pub extern "C" fn sd300_engine_create(out_handle: *mut *mut c_void) -> i32 {
     if out_handle.is_null() {
         return STATUS_INVALID_ARGUMENT;
@@ -1549,7 +1569,7 @@ mod tests {
             serde_json::from_slice(&buffer[..required - 1]).expect("valid metadata JSON");
         assert_eq!(metadata["abi_version"], ABI_VERSION);
         assert_eq!(metadata["schema_version"], SCHEMA_VERSION);
-        assert_eq!(metadata["product_version"], "3.0.0");
+        assert_eq!(metadata["product_version"], "3.1.0");
     }
 
     #[test]
@@ -1604,7 +1624,7 @@ mod tests {
         let envelope: serde_json::Value =
             serde_json::from_slice(&state.json).expect("valid topic JSON");
         assert_eq!(envelope["schema_version"], SCHEMA_VERSION);
-        assert_eq!(envelope["product_version"], "3.0.0");
+        assert_eq!(envelope["product_version"], "3.1.0");
         assert_eq!(envelope["target"], target_label());
         assert_eq!(envelope["topic"], "warnings");
         assert_eq!(envelope["sequence"], 1);

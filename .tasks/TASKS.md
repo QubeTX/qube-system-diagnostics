@@ -9,18 +9,23 @@
 - [ ] **Improve GUI screen-reader accessibility beyond the named canvas** - track Native SDK accessibility-tree support; TUI remains the documented fallback #acc
 
 ## To-Do
-- [ ] **Add safe in-app and tray-driven updates** - let nontechnical users launch the existing owner-preserving CLI+GUI update transaction from the desktop app through a verified coordinator that relaunches only after success (needs #qv3) (ms #v3n) #giu
 
 ## Active
-- [ ] **Qualify and release SD-300 v3.0.0 on all six existing targets** - pass compatibility, lifecycle, performance, provenance, hosted, physical Windows, and public-byte gates across Windows x86-64, macOS x86-64/ARM64, Linux GNU x86-64/ARM64, and Linux musl x86-64; probe additional SDK architectures without silently expanding the owned release contract (ms #v3n) #qv3
+- [ ] **Add safe in-app and tray-driven updates** - let nontechnical users launch the existing owner-preserving CLI+GUI update transaction from the desktop app; ships as v3.1.0 with the two pending post-release fixes (ms #v3n) #giu
+  - [x] Implement the update trigger in settings and tray with a detached engine-spawned coordinator
+  - [x] Add the hidden CLI relaunch flag gated to successful transactions
+  - [x] Validate: Rust and native tests, strict checks, local installed-copy coordinator exercise
+  - [x] Bump product version surfaces to 3.1.0 with lockstep changelogs
+  - [ ] Merge, release, and verify public bytes
+
+## Done
+- [x] **Qualify and release SD-300 v3.0.0 on all six existing targets** - PUBLIC 2026-07-22 15:02 UTC with 59 assets, live crate, three verified attestations, and physical Windows acceptance on the released MSI; stable versionless installer URLs keep existing website commands working unchanged (done 2026-07-22) (ms #v3n) #qv3
   - [x] Re-prove foreground and hidden performance budgets on the fixed build
   - [x] Design and implement the app, taskbar, tray, and installer icons with Quiver arrow-1.1-max
   - [x] Run a bounded post-fix performance sanity sample (formal budget re-proof in Backlog #sok)
   - [x] Merge PR #4 to main (4e17c41); release workflow driving to full green
   - [x] Publish v3.0.0 (release public 2026-07-22 15:02 UTC, 59 assets, crate live, attestations green)
   - [x] Verify fresh public bytes, Cargo install, and physical Windows acceptance
-
-## Done
 - [x] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration; hosted run 29917852561 green end-to-end (done 2026-07-22) (ms #v3n) #cpl
   - [x] Land the reviewed receipt-parent cleanup fix with lockstep changelogs and ADR
   - [x] Pass exact-head hosted Windows Native Installers qualification with sibling preservation

@@ -167,7 +167,11 @@ the selected artifact is composite: CLI and GUI payloads are verified before
 mutation, the running GUI is asked to quit, both components are verified after
 installation, and failure restores the prior CLI+GUI state together. A missing
 GUI at the current version is a repair; a complete installation is still a
-no-op. The GUI never opens as a side effect of install or update.
+no-op. The GUI never opens as a side effect of install or update, with one
+deliberate exception: an update started from the app's own Settings page or
+tray menu runs this same CLI transaction through a detached coordinator and
+reopens the monitor only after the transaction succeeds. An already-current
+product keeps the running app open, and a failed update never launches it.
 
 If both Cargo and a managed receipt claim the same binary, the newer structured
 ownership record wins. Equal timestamps or contradictory evidence fail closed

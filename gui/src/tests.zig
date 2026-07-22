@@ -683,7 +683,7 @@ test "tray state exposes live summaries and explicit Open and Quit" {
     var scratch: main.NativeApp.StatusItemScratch = .{};
     const state = main.statusItem(&model, &scratch);
     try testing.expectEqualStrings("SD", state.title);
-    try testing.expectEqual(@as(usize, 9), state.items.len);
+    try testing.expectEqual(@as(usize, 10), state.items.len);
     try testing.expectEqualStrings("CPU · 7.3%", state.items[0].label);
     try testing.expect(!state.items[0].enabled);
     try testing.expectEqualStrings("Memory · 44.5%", state.items[1].label);
@@ -691,7 +691,26 @@ test "tray state exposes live summaries and explicit Open and Quit" {
     try testing.expectEqualStrings("Storage free · 43.3%", state.items[3].label);
     try testing.expectEqualStrings("Disk health · good", state.items[4].label);
     try testing.expectEqualStrings("app.open", state.items[6].command);
-    try testing.expectEqualStrings("app.quit", state.items[8].command);
+    try testing.expectEqualStrings("app.update", state.items[7].command);
+    try testing.expectEqualStrings("app.quit", state.items[9].command);
+}
+
+test "tray and singleton commands route to typed messages including update" {
+    try testing.expectEqual(main.Msg.open_window, main.onCommand("app.open").?);
+    try testing.expectEqual(main.Msg.update_now, main.onCommand("app.update").?);
+    try testing.expectEqual(main.Msg.quit_app, main.onCommand("app.quit").?);
+    try testing.expect(main.onCommand("app.unknown") == null);
+}
+
+test "update request without a loaded engine reports the terminal fallback" {
+    var model = main.initialModel();
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+
+    main.update(&model, .update_now, &fx);
+    try testing.expect(std.mem.indexOf(u8, model.status(), "Update unavailable") != null);
+    try testing.expect(std.mem.indexOf(u8, model.status(), "sd300 update") != null);
 }
 
 test "boot arms exactly one live foreground render timer" {

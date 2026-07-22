@@ -3,7 +3,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Check for updates and install the latest release.
-    Update(ActionArgs),
+    Update(UpdateActionArgs),
     /// Install the latest release through the preferred managed CLI channel.
     Install(ActionArgs),
     /// Remove SD-300 through its proven installation owner.
@@ -42,6 +42,19 @@ pub struct ActionArgs {
     /// Emit exactly one machine-readable JSON result object.
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Args, Debug, Clone, Default, PartialEq, Eq)]
+pub struct UpdateActionArgs {
+    /// Emit exactly one machine-readable JSON result object.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Reopen the installed desktop monitor after a successful update.
+    /// Reserved for the GUI's in-app update coordinator; never launches the
+    /// app on failure or on an ordinary terminal-driven update.
+    #[arg(long = "relaunch-gui", hide = true)]
+    pub relaunch_gui: bool,
 }
 
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
@@ -249,8 +262,27 @@ mod tests {
     #[test]
     fn parses_positional_update_action() {
         let cli = Cli::try_parse_from(["sd300", "update"]).expect("update action should parse");
-        assert_eq!(cli.command, Some(Command::Update(ActionArgs::default())));
+        assert_eq!(
+            cli.command,
+            Some(Command::Update(UpdateActionArgs::default()))
+        );
         assert!(!cli.update);
+    }
+
+    #[test]
+    fn parses_hidden_update_relaunch_flag() {
+        let cli = Cli::try_parse_from(["sd300", "update", "--json", "--relaunch-gui"])
+            .expect("hidden relaunch flag should parse");
+        assert_eq!(
+            cli.command,
+            Some(Command::Update(UpdateActionArgs {
+                json: true,
+                relaunch_gui: true,
+            }))
+        );
+
+        let help = Cli::command().render_long_help().to_string();
+        assert!(!help.contains("--relaunch-gui"));
     }
 
     #[test]
@@ -303,7 +335,10 @@ mod tests {
             .expect("update JSON action should parse");
         assert_eq!(
             update.command,
-            Some(Command::Update(ActionArgs { json: true }))
+            Some(Command::Update(UpdateActionArgs {
+                json: true,
+                relaunch_gui: false,
+            }))
         );
 
         let install =

@@ -4,6 +4,42 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-07-22
+
+### Added
+
+- Added safe in-app and tray-driven updates. The Settings page's "Update now"
+  action and the tray's "Update SD-300" item ask the GUI engine to start the
+  installed CLI as a detached, windowless update coordinator running the
+  existing owner-preserving transaction (`update --json --relaunch-gui`). The
+  CLI resolves only from proven absolute product locations — the composite
+  root's `bin/` sibling of the app directory, the shared flat `bin/` layout,
+  the managed receipt's recorded binary, or the fixed macOS PKG path — never
+  from a PATH lookup. Coordinator output streams to `update-launch.log`
+  beside the GUI settings so failures stay inspectable after the app closes
+  mid-update. The GUI process itself never mutates the installation.
+- Added the hidden `--relaunch-gui` flag on `sd300 update`, reserved for the
+  GUI coordinator: after a successful transaction the CLI reopens the
+  installed monitor through the idempotent singleton Open route, so an
+  already-current product keeps the running app open and simply focuses it.
+  Failures never launch the app, ordinary terminal updates are unchanged, and
+  the update's JSON stdout contract, help output, and exit codes are
+  byte-identical to v3.0.0.
+- Added the `sd300_engine_request_update` engine ABI entry backing the GUI
+  action. The returned status is authoritative; the optional caller buffer
+  carries the resolved CLI path or the failure reason for the status line.
+
+### Changed
+
+- The Settings About badge now derives its version from the engine's expected
+  product version exactly like the sidebar label, and the product-version
+  consistency check now treats literal markup versions as optional (any
+  literal that remains must still match the release) since visible labels
+  bind to the checked engine constant.
+- The About panel's lifecycle copy now describes the in-app update handoff;
+  installer ownership, elevation, rollback, and JSON contracts remain
+  authoritative in the CLI, and uninstall remains CLI-only.
+
 ### Fixed
 
 - Fixed the desktop sidebar showing the hardcoded build-state label

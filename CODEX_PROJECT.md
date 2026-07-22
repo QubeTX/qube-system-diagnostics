@@ -22,7 +22,9 @@ proof that the public release or another operating system has passed.
   compatible.
 - `sd300 gui` is additive. It launches or focuses an installed GUI and gives an
   install/update repair instruction when the companion is absent. Install and
-  update never launch the app.
+  update never launch the app, except the v3.1.0 GUI-initiated coordinator:
+  `update --json --relaunch-gui` relaunches the monitor only after a
+  successful transaction; installs, terminal updates, and failures never do.
 - Managed/native owners install CLI+GUI as one product and preserve their
   existing scope, path, PATH, receipt, owner, and update route. Proven-owner
   uninstall additionally removes the GUI, engine, integrations, startup entry,

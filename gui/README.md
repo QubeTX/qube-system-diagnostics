@@ -22,7 +22,15 @@ performance soak, or public release.
   and unchanged Ratatui flow; `sd300 gui` launches or focuses this app.
 - Managed wrappers and native installers package the CLI/TUI, GUI, engine, and
   platform integrations together, but installation and update never open the
-  app automatically.
+  app automatically. The one deliberate exception is the app's own "Update
+  now" action (Settings page, and the tray's "Update SD-300" item): the
+  engine spawns the installed CLI as a detached coordinator running `update
+  --json --relaunch-gui`, the CLI performs its normal owner-preserving
+  transaction (closing the app through the authenticated quit endpoint), and
+  the hidden flag relaunches the monitor only after success — an
+  already-current product keeps the running app open and focuses it. The GUI
+  process never mutates the installation; coordinator output is logged to
+  `update-launch.log` beside the GUI settings.
 - Proven-owner uninstall stops the app and removes the owned CLI+GUI product,
   integrations, startup state, and private app data while preserving ambiguous
   files and user-exported reports.

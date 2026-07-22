@@ -267,6 +267,25 @@ struct LifecycleResult<'a> {
     message: String,
 }
 
+/// The desktop app's in-app update path: the identical proven-owner update
+/// transaction, followed by a GUI relaunch that the singleton Open route makes
+/// idempotent. Relaunch requires both the explicit hidden coordinator flag and
+/// a successful outcome, so installers and ordinary terminal updates never
+/// launch the app.
+pub fn run_with_relaunch(json: bool, relaunch_gui: bool) -> Result<i32> {
+    let exit_code = run(json)?;
+    if should_relaunch_gui(relaunch_gui, exit_code) {
+        // Relaunch problems report on stderr only; the update's stdout
+        // contract and exit code stay exactly what the transaction produced.
+        let _ = crate::gui::launch();
+    }
+    Ok(exit_code)
+}
+
+fn should_relaunch_gui(requested: bool, exit_code: i32) -> bool {
+    requested && exit_code == 0
+}
+
 pub fn run(json: bool) -> Result<i32> {
     let installation = match detect_installation() {
         Ok(installation) => installation,
@@ -2539,6 +2558,12 @@ fn managed_receipt_binary() -> Option<PathBuf> {
     managed_receipt_evidence().map(|(binary, _)| binary)
 }
 
+/// The managed channel's receipt-recorded CLI executable, for callers that
+/// need a proven absolute product location rather than a PATH lookup.
+pub(crate) fn managed_cli_binary() -> Option<PathBuf> {
+    managed_receipt_binary()
+}
+
 fn managed_receipt_evidence() -> Option<(PathBuf, String)> {
     managed_receipt_evidence_regular().ok().flatten()
 }
@@ -4145,6 +4170,15 @@ fn uninstall_macos_pkg(_quiet_stdout: bool) -> std::result::Result<String, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relaunches_gui_only_for_explicit_successful_coordinator_updates() {
+        assert!(should_relaunch_gui(true, 0));
+        assert!(!should_relaunch_gui(false, 0));
+        assert!(!should_relaunch_gui(true, 1));
+        assert!(!should_relaunch_gui(true, 2));
+        assert!(!should_relaunch_gui(false, 1));
+    }
 
     #[test]
     fn compares_semantic_version_segments() {
