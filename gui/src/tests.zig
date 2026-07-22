@@ -22,6 +22,52 @@ fn buildTree(arena: std.mem.Allocator, model: *const main.Model) !main.AppUi.Tre
 }
 
 const render_bench_capacity: usize = 2048;
+// The warmed-state scroll benchmark below drives fully populated Network,
+// Processes, and Drivers sections, which emit more draw commands and layout
+// nodes than the overview steady-state case. Give it a generous, heap-backed
+// scratch so a large scrolled display list cannot silently overflow.
+const warm_bench_capacity: usize = 6144;
+
+/// Generic frame-plan scratch keyed by command capacity. The overview
+/// steady-state benchmark keeps its 2048-slot buffers; the warmed-state
+/// attribution benchmark below uses a 6144-slot instance. Test-only.
+fn FrameScratchStorage(comptime cap: usize) type {
+    return struct {
+        const Self = @This();
+        render_commands: [cap]canvas.RenderCommand = undefined,
+        render_batches: [cap]canvas.RenderBatch = undefined,
+        resources: [512]canvas.RenderResource = undefined,
+        resource_cache_entries: [512]canvas.RenderResourceCacheEntry = undefined,
+        resource_cache_actions: [1024]canvas.RenderResourceCacheAction = undefined,
+        glyph_atlas_entries: [cap]canvas.GlyphAtlasEntry = undefined,
+        glyph_atlas_cache_entries: [cap]canvas.GlyphAtlasCacheEntry = undefined,
+        glyph_atlas_cache_actions: [cap * 2]canvas.GlyphAtlasCacheAction = undefined,
+        text_layout_plans: [cap]canvas.TextLayoutPlan = undefined,
+        text_layout_lines: [cap * 2]canvas.TextLine = undefined,
+        text_layout_cache_entries: [cap]canvas.TextLayoutCacheEntry = undefined,
+        text_layout_cache_actions: [cap * 2]canvas.TextLayoutCacheAction = undefined,
+        changes: [cap]canvas.DiffChange = undefined,
+
+        fn storage(self: *Self) canvas.CanvasFrameStorage {
+            return .{
+                .render_commands = &self.render_commands,
+                .render_batches = &self.render_batches,
+                .resources = &self.resources,
+                .resource_cache_entries = &self.resource_cache_entries,
+                .resource_cache_actions = &self.resource_cache_actions,
+                .glyph_atlas_entries = &self.glyph_atlas_entries,
+                .glyph_atlas_cache_entries = &self.glyph_atlas_cache_entries,
+                .glyph_atlas_cache_actions = &self.glyph_atlas_cache_actions,
+                .text_layout_plans = &self.text_layout_plans,
+                .text_layout_lines = &self.text_layout_lines,
+                .text_layout_cache_entries = &self.text_layout_cache_entries,
+                .text_layout_cache_actions = &self.text_layout_cache_actions,
+                .changes = &self.changes,
+            };
+        }
+    };
+}
+const WarmRenderBenchFrameScratch = FrameScratchStorage(warm_bench_capacity);
 
 const RenderBenchFrameScratch = struct {
     render_commands: [render_bench_capacity]canvas.RenderCommand = undefined,

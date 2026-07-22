@@ -70,6 +70,30 @@ root itself.
   the receipt tree** — deferred to backlog as hardening; neither is part of the
   failing path.
 
+## Addendum (2026-07-22): the Windows PowerShell 5.1 `-Command` exit-code contract
+
+The first hosted qualification of this fix still failed: the child
+powershell.exe exited 1 even though the sibling was preserved correctly. Local
+reproduction on real Windows PowerShell 5.1 proved the mechanism:
+`powershell.exe -Command "<string>"` mirrors the FINAL statement's `$?` in its
+exit code. A caught-and-swallowed terminating error (our tolerated
+nonempty-parent catch) — and equally a failed `-ErrorAction SilentlyContinue`
+cmdlet — leaves `$?` false, so a tolerated outcome in last position reports a
+false failure. PowerShell 7 does not behave this way, which is why the earlier
+PS7-only local proof missed it (and why hosted 5.1 remains the authoritative
+gate).
+
+Correction: the composed cleanup string now ends with a terminal `exit 0`.
+Empirically verified on 5.1: tolerated outcomes exit 0 with the sibling
+byte-intact; an uncaught `throw` aborts execution before reaching the marker
+and still exits 1 (fail-closed preserved); the empty-parent case still removes
+the directory and exits 0. This also removes the latent same-shape hazard for
+whichever suppressed removal happens to be the string's last statement.
+
+Lesson recorded for future agents: when validating updater PowerShell behavior,
+the exception semantics AND the host exit-code contract are separate claims, and
+each must be proven on Windows PowerShell 5.1 specifically.
+
 ## Consequences
 
 - Managed uninstall succeeds while preserving unrelated receipt-root siblings;

@@ -169,6 +169,12 @@ qualification has completed.
   existing rollback path. Hosted qualification now plants an unrelated sibling
   beside the receipt and requires byte-exact preservation plus complete
   owned-state removal (ADR 0003).
+- Fixed the same cleanup reporting a false failure under Windows PowerShell
+  5.1, whose `-Command` exit code mirrors the last statement's `$?`: a
+  tolerated outcome (caught nonempty-parent exception or suppressed removal)
+  in final position exited 1 despite correct behavior. The command string now
+  ends with a terminal `exit 0`; uncaught errors still abort with a nonzero
+  exit before reaching it (ADR 0003 addendum, proven on real 5.1).
 
 ### Removed
 

@@ -3358,6 +3358,11 @@ fn windows_managed_cleanup_commands(
             ));
         }
     }
+    // Windows PowerShell 5.1 mirrors the final statement's $? in the -Command
+    // exit code, so a tolerated outcome (caught nonempty-parent exception or a
+    // suppressed removal) in the last position would report a false failure.
+    // Uncaught throws still abort before reaching this terminal marker.
+    commands.push_str("exit 0");
     commands
 }
 
@@ -4500,6 +4505,7 @@ mod tests {
         assert!(commands
             .contains("[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames"));
         assert!(commands.contains("HResult -band 0xFFFF) -ne 145"));
+        assert!(commands.ends_with("exit 0"));
         // Path::parent resolves the literal Windows receipt path only where `\`
         // is a separator; non-Windows hosts see one component and an empty parent.
         #[cfg(windows)]

@@ -46,6 +46,7 @@ The newest section is work in progress. It is deliberately candid about what has
 - Treated successful Windows installs that require a restart as committed success, preventing an unsafe rollback after Windows Installer had already committed.
 - Made interrupted Windows cleanup retry owned shortcuts, app registrations, search entries, path entries, and receipts even when the main app folder is already gone.
 - Fixed an uninstall failure that could occur when the program's small settings folder also held a person's own unrelated files. Uninstall now removes only its own records, leaves everything else byte-for-byte untouched, and removes the folder itself only when it is completely empty. Our automated checks now prove an unrelated file placed next to the program's records survives uninstall exactly as it was.
+- Fixed a follow-on quirk where that same careful cleanup could report a failure even though it had done everything right, because of how an older built-in Windows component signals success. Real problems still stop the process and restore the previous state.
 - Fixed Linux packaging across merged system folders, private desktop libraries, musl linking, container trust, dependency discovery, license evidence, and clean-host startup.
 - Fixed macOS hosted builds involving system security headers, duplicated platform sources, stable engine identity, and developer-path leakage.
 - Gave one intentionally large automated output test enough time on slow hosted Windows machines without relaxing normal collector deadlines.
