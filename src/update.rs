@@ -3800,7 +3800,7 @@ fn execute_windows_native_uninstaller(
                 );
             }
             run_status(
-                Command::new(executable).args([
+                Command::new(&executable).args([
                     "/VERYSILENT",
                     "/SUPPRESSMSGBOXES",
                     "/NORESTART",
@@ -3809,9 +3809,37 @@ fn execute_windows_native_uninstaller(
                 ]),
                 quiet_stdout,
             )?;
+            reap_orphaned_inno_uninstaller(&executable);
             Ok(WindowsNativeUninstallExecution::Exe)
         }
         _ => Err("The detected channel is not a Windows native installer".into()),
+    }
+}
+
+/// Inno uninstallers finish through a relaunched temp copy after the original
+/// process returns, and that copy occasionally loses the race to remove the
+/// original `unins*.exe` even though the registration, data file, and payloads
+/// are gone. Wait briefly for the self-deletion; if a data-less orphan
+/// remains inside the just-retired root, remove the proven-dead file and
+/// reclaim the directory only when empty. Best-effort: the uninstall itself
+/// already succeeded and was verified, so failures here are not fatal.
+#[cfg(windows)]
+fn reap_orphaned_inno_uninstaller(executable: &Path) {
+    let data = executable.with_extension("dat");
+    for _ in 0..50 {
+        if !executable.is_file() {
+            return;
+        }
+        if !data.is_file() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    if executable.is_file() && !data.is_file() {
+        let _ = std::fs::remove_file(executable);
+        if let Some(root) = executable.parent() {
+            let _ = std::fs::remove_dir(root);
+        }
     }
 }
 

@@ -83,6 +83,14 @@ function Remove-Inno([string]$Root) {
     $uninstaller = Get-ChildItem -LiteralPath $Root -Filter 'unins*.exe' -File -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if ($uninstaller) {
+        $dataFile = [IO.Path]::ChangeExtension($uninstaller.FullName, '.dat')
+        if (-not (Test-Path -LiteralPath $dataFile -PathType Leaf)) {
+            # An uninstaller without its data file is unrunnable orphan residue
+            # from Inno's self-deletion race; executing it exits 1 with no log.
+            Remove-Item -LiteralPath $uninstaller.FullName -Force
+            try { [IO.Directory]::Delete($Root, $false) } catch {}
+            return
+        }
         $innoLog = Join-Path ([IO.Path]::GetTempPath()) "sd300-inno-uninstall-$([Guid]::NewGuid().ToString('N')).log"
         try {
             Invoke-Checked $uninstaller.FullName @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$innoLog")

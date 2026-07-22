@@ -212,6 +212,12 @@ qualification has completed.
   runaway momentum. Wheel momentum is disabled at the app design-token level
   (`wheel_velocity_scale = 0`), keeping the coalesced one-repaint burst while
   making every notch a bounded step in the wheel's direction.
+- Fixed retiring a Global or Corporate EXE owner (channel takeover) stranding
+  an orphaned, unrunnable `unins000.exe` in the retired root: Inno
+  uninstallers self-delete through a relaunched temp copy after the original
+  process returns and can lose that race. The retirement now waits briefly
+  for self-deletion and reaps a data-less leftover uninstaller, reclaiming
+  the directory only when empty.
 - Fixed managed receipts written with a UTF-8 byte-order mark (any Windows
   PowerShell 5.1 `Set-Content -Encoding utf8` writer) failing ownership
   verification with "does not prove an exact cargo-dist binary": receipt
