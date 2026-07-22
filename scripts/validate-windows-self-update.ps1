@@ -256,7 +256,9 @@ function Assert-ManagedUninstall([string]$Binary, [string]$Channel) {
     $lines = @(& $Binary uninstall --json)
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0 -or $lines.Count -ne 1) {
-        throw "$Channel uninstall did not return one successful JSON object (exit $exitCode, lines $($lines.Count)): $($lines -join ' | ')"
+        # Write-Host survives ConciseView truncation of long throw messages.
+        $lines | ForEach-Object { Write-Host "UNINSTALL-OUTPUT: $_" }
+        throw "$Channel uninstall did not return one successful JSON object (exit $exitCode, lines $($lines.Count))"
     }
     $result = $lines[0] | ConvertFrom-Json
     if (-not $result.success -or $result.install_channel -ne $Channel) {
@@ -302,7 +304,9 @@ function Assert-NativeUninstall(
     $lines = @(& $Binary uninstall --json)
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0 -or $lines.Count -ne 1) {
-        throw "$Channel uninstall did not return one successful JSON object (exit $exitCode, lines $($lines.Count)): $($lines -join ' | ')"
+        # Write-Host survives ConciseView truncation of long throw messages.
+        $lines | ForEach-Object { Write-Host "UNINSTALL-OUTPUT: $_" }
+        throw "$Channel uninstall did not return one successful JSON object (exit $exitCode, lines $($lines.Count))"
     }
     $result = $lines[0] | ConvertFrom-Json
     if (-not $result.success -or $result.install_channel -ne $Channel) {
