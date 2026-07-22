@@ -265,6 +265,10 @@ jobs:
           TR300_TUI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SD300_CI_RELEASE_TAG: ${{ steps.meta.outputs.tag }}
           SD300_CI_RELEASE_ASSET_DIR: ${{ github.workspace }}/qualification
+          # Draft assets are unreachable through the public release download
+          # URL even with a token, so point the nested cargo-dist installer at
+          # the already-verified draft bytes in the qualification directory.
+          INSTALLER_DOWNLOAD_URL: file://${{ github.workspace }}/qualification
         shell: bash
         run: |
           set -euo pipefail
