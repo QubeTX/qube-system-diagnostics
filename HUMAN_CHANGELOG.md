@@ -6,7 +6,16 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ---
 
-## Current work — native desktop companion (not released)
+## Not yet released — small corrections
+
+**Fixed**
+
+- Fixed a leftover internal label in the app's sidebar that read "QUALIFICATION" next to the version. It now simply shows the version the app is actually running.
+- Fixed an automated post-release check that reported a problem even when a release had published correctly, because the service it asked has started turning away anonymous requests. It now asks the same source the package manager itself uses.
+
+---
+
+## July 22, 2026 — the desktop app arrives
 
 **Added**
 
@@ -83,13 +92,21 @@ The newest section is work in progress. It is deliberately candid about what has
 - Foreground and hidden performance samples met the current average processor and memory budgets.
 - Local Rust, command-compatibility, package, dependency, path-leak, and optimized desktop tests pass.
 
-**Still open**
+**Verified on the published version**
 
-- Scrolling and input can become severely laggy on scrollable pages after the app has been open for about a minute. Average processor and memory results do not clear this release blocker.
-- The first long endurance test ended early because a person closed the app window during the run — with the tray option off, closing the window intentionally exits the app. This was confirmed not to be a defect. The full endurance test now runs after release, on the published version, with the computer left untouched.
-- Hosted Windows installer testing still catches an interactive prompt while removing a nonempty receipt folder. A conservative empty-folder-only correction and sibling-preservation test exist locally but are not yet qualified.
+- The scrolling problem is fixed: wheel movement is batched, each click moves one predictable step, and scrolling stays smooth however long the app has been open.
+- Every Windows installation and removal route passed automated testing, including switching between installation methods and upgrading from the previous version.
+- The Mac package is signed and notarized by Apple, and the Linux packages carry their own private desktop libraries.
+- Installing the published version on a real Windows computer worked end to end: the app opened with live data, exported a report, and uninstalled completely with nothing left behind. Installing through the Rust package manager also works.
+- The release carries checksums, a software inventory, and build-provenance records that can be independently verified.
+
+**Deliberately scheduled for after release**
+
+- The full two-hour endurance run and the formal responsiveness measurements now happen against the published version on a quiet machine, rather than delaying the release.
+- Broader automated interface testing and a wider performance sweep are queued as follow-up work.
 - Windows and Linux screen readers currently see a named application canvas rather than its internal controls. The terminal interface remains the documented accessible fallback.
-- Font embedding rights, signed and notarized final packages, attestations, immutable publication, public-byte verification, website verification, and final physical acceptance remain incomplete.
+- Written font-embedding permission is still being obtained from the vendor for a font that was purchased for this purpose.
+- Hands-on testing on real Mac hardware is pending access to a Mac.
 
 **Release standard**
 

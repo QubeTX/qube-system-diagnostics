@@ -538,10 +538,16 @@ jobs:
             sleep 5
           done
 
+          # Poll the sparse index rather than the web API: the index is what
+          # Cargo itself resolves against, and crates.io's API now rejects
+          # unidentified clients under its data-access policy.
           for attempt in {1..12}; do
-            status=$(curl -sS -o /dev/null -w '%{http_code}' \
-              'https://crates.io/api/v1/crates/tr300-tui/${{ steps.meta.outputs.version }}')
-            [[ $status == 200 ]] && break
+            if curl -sSf -A 'sd300-release-qualification (+https://github.com/QubeTX/qube-system-diagnostics)' \
+              'https://index.crates.io/tr/30/tr300-tui' \
+              | jq -e --arg version '${{ steps.meta.outputs.version }}' \
+                'select(.vers == $version)' >/dev/null; then
+              break
+            fi
             [[ $attempt -lt 12 ]] || { echo "published crate did not converge" >&2; exit 1; }
             sleep 5
           done

@@ -306,6 +306,13 @@ pub const Model = struct {
     pub fn processToggleLabel(model: *const Model) []const u8 {
         return if (model.show_all_processes) "Show primary 8" else "Show all matches";
     }
+    /// Sidebar build identity. Sourced from the engine's expected product
+    /// version so it can never drift from the shipped version or carry a
+    /// stale build-state word into a public release.
+    pub fn productVersionLabel(model: *const Model) []const u8 {
+        _ = model;
+        return "v" ++ engine.expected_product_version;
+    }
     pub fn processCpuSort(model: *const Model) bool {
         return model.process_sort == .cpu;
     }

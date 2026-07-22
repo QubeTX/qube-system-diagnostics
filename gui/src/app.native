@@ -38,7 +38,7 @@
       <list-item selected="{active_section == 8}" icon="wrench" on-press="select_drivers">Drivers</list-item>
       <spacer grow="1" />
       <list-item selected="{active_section == 9}" icon="wrench" on-press="select_settings">Settings</list-item>
-      <text foreground="text_muted"><span mono="true">v3.0.0 QUALIFICATION</span></text>
+      <text foreground="text_muted"><span mono="true">{productVersionLabel}</span></text>
     </column>
 
     <scroll grow="1" value="{scroll_top}" on-scroll="content_scrolled">

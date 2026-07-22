@@ -17,7 +17,8 @@
   - [x] Design and implement the app, taskbar, tray, and installer icons with Quiver arrow-1.1-max
   - [x] Run a bounded post-fix performance sanity sample (formal budget re-proof in Backlog #sok)
   - [x] Merge PR #4 to main (4e17c41); release workflow driving to full green
-  - [ ] Verify fresh public bytes, Cargo install, and physical Windows acceptance
+  - [x] Publish v3.0.0 (release public 2026-07-22 15:02 UTC, 59 assets, crate live, attestations green)
+  - [x] Verify fresh public bytes, Cargo install, and physical Windows acceptance
 
 ## Done
 - [x] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration; hosted run 29917852561 green end-to-end (done 2026-07-22) (ms #v3n) #cpl

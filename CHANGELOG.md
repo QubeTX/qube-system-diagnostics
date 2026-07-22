@@ -2,11 +2,26 @@
 
 All notable changes to SD-300 will be documented in this file.
 
-## [3.0.0] - Unreleased (qualification)
+## [Unreleased]
 
-This entry describes the v3 candidate and release contract. It is not evidence
-that hosted, native-hardware, installer, performance, or public-artifact
-qualification has completed.
+### Fixed
+
+- Fixed the desktop sidebar showing the hardcoded build-state label
+  `v3.0.0 QUALIFICATION`. The label now derives from the engine's expected
+  product version, so it cannot drift from the shipped version or carry a
+  build-state word into a public release.
+- Fixed the post-publication crate convergence check, which polled crates.io's
+  web API; that API now rejects unidentified clients under its data-access
+  policy, so the check failed after a correct publication. It now polls the
+  sparse index Cargo itself resolves against, with an identifying user agent.
+
+## [3.0.0] - 2026-07-22
+
+Released 2026-07-22. Public verification on the released artifacts: the crate
+installs and runs (`cargo install tr300-tui --version 3.0.0`), public Windows
+installer and GUI archive checksums match their sidecars, `gh attestation
+verify` passes against the repository, and a physical Windows install
+launched the GUI on live hardware and uninstalled with no residue.
 
 ### Added
 
