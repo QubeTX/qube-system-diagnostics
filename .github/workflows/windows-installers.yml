@@ -697,6 +697,11 @@ jobs:
               }
             }
           } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $env:CARGO_HOME '.crates2.json') -Encoding utf8
+          # Real Cargo maintains both manifests; v3 ownership requires the legacy file.
+          Set-Content -LiteralPath (Join-Path $env:CARGO_HOME '.crates.toml') -Encoding utf8 -Value @(
+            '[v1]',
+            '"tr300-tui 2.0.6 (registry+https://github.com/rust-lang/crates.io-index)" = ["sd300.exe"]'
+          )
 
           @'
           use std::{env, process::Command};
@@ -734,6 +739,10 @@ jobs:
               }
             }
           } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $env:CARGO_HOME '.crates2.json') -Encoding utf8
+          Set-Content -LiteralPath (Join-Path $env:CARGO_HOME '.crates.toml') -Encoding utf8 -Value @(
+            '[v1]',
+            ('"tr300-tui ' + $env:SD300_EXPECTED_VERSION + ' (registry+https://github.com/rust-lang/crates.io-index)" = ["sd300.exe"]')
+          )
           '@ | Set-Content -LiteralPath $env:SD300_CARGO_SHIM_HANDLER -Encoding utf8
           rustc (Join-Path $shim 'cargo-shim.rs') -o (Join-Path $shim 'cargo.exe')
           if ($LASTEXITCODE -ne 0) { throw 'could not build the Windows Cargo migration shim' }
