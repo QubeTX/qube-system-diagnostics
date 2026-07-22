@@ -168,7 +168,7 @@ function Assert-CurrentNoop([string]$Binary, [string]$Channel) {
     $lines = @(& $Binary update --json)
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0 -or $lines.Count -ne 1) {
-        throw "$Channel current-version update did not return one successful JSON object (exit $exitCode, lines $($lines.Count))"
+        throw "$Channel current-version update did not return one successful JSON object (exit $exitCode, lines $($lines.Count)): $($lines -join ' | ')"
     }
     $result = $lines[0] | ConvertFrom-Json
     if (-not $result.success -or $result.action -ne 'update' -or
