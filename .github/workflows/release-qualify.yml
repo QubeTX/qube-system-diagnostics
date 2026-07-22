@@ -188,7 +188,10 @@ jobs:
           jq -e --arg version '${{ steps.meta.outputs.version }}' '
             tostring | contains($version)
           ' qualification/dist-manifest.json >/dev/null
-          if grep -R -F '@SD300_' qualification; then
+          # Only the build-time placeholders must be gone; the managed wrapper
+          # legitimately carries @SD300_RUNTIME@/@SD300_GUI@ inside its own
+          # runtime-side sed commands, rendered on the user's machine.
+          if grep -R -E '@SD300_(TAG|VERSION)@' qualification; then
             echo 'installer placeholder was not rendered' >&2
             exit 1
           fi
