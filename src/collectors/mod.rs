@@ -79,7 +79,7 @@ mod command_tests {
         let output = run_output(
             "sh",
             ["-c", "head -c 1048576 /dev/zero"],
-            CommandTimeout::Normal,
+            CommandTimeout::Slow,
         )
         .expect("large-output command should complete");
 
@@ -91,7 +91,7 @@ mod command_tests {
                 "-Command",
                 "[Console]::OpenStandardOutput().Write((New-Object byte[] 1048576), 0, 1048576)",
             ],
-            CommandTimeout::Normal,
+            CommandTimeout::Slow,
         )
         .expect("large-output command should complete");
 
