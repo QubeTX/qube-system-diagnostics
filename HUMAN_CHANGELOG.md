@@ -16,6 +16,7 @@ The newest section is work in progress. It is deliberately candid about what has
 - Added complete User and Technician views for all nine diagnostic areas, with clear source labels and honest unavailable, unsupported, and permission-denied states.
 - Added bounded history charts, process search and sorting, network and driver filters, connection paging, disk reliability details, driver-service details, and direct navigation from a warning to its explanation.
 - Added safe background driver rescans, redacted report exports, interaction help, remembered navigation, and per-page data collection so hidden information is not needlessly refreshed.
+- Added a proper app icon — a dark badge with an amber pulse line — so the app is recognizable in the taskbar, system tray, window corner, and installed-programs list instead of showing a blank default icon.
 - Added app settings for theme, units, reduced motion, close behavior, tray behavior, startup, and refresh choices without changing terminal defaults.
 - Added tray and launch-at-login support on Windows and macOS. Linux closes normally because the current desktop toolkit does not provide a Linux tray.
 - Added single-instance behavior, graceful close requests, and safe installer/update handoff so a second launch focuses the existing app.

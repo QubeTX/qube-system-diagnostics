@@ -449,6 +449,9 @@
             </Custom>
         </InstallExecuteSequence>
 
+        <Icon Id='ProductICO' SourceFile='wix\Product.ico'/>
+        <Property Id='ARPPRODUCTICON' Value='ProductICO' />
+
         <Property Id='ARPHELPLINK' Value='https://github.com/QubeTX/qube-system-diagnostics'/>
 
         <UI>

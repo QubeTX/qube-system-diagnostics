@@ -37,6 +37,12 @@ qualification has completed.
   bounded histories, process sorting/search, network/driver filtering,
   connection paging, disk reliability/activity detail, driver services, and
   explicit unavailable/unsupported/permission-denied observations.
+- Added the SD-300 application icon: a Warm Carbon rounded-square badge with
+  an amber diagnostic pulse waveform over a subtle grid (generated with Quiver
+  arrow-1.1-max, operator-authorized). The icon ships as the GUI window,
+  taskbar, and tray identity via the existing `assets/icon.png` path and as a
+  multi-size `wix/Product.ico` wired into both MSI editions' Add/Remove
+  Programs entries.
 - Added asynchronous GUI driver rescans, redacted snapshot and capability
   exports, in-app interaction help, cause-to-detail navigation, persisted last
   destination, and per-destination collection subscriptions.
