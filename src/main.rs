@@ -47,8 +47,19 @@ async fn main() -> Result<()> {
                 sd_300::report::print_capabilities(&report, args.json)?;
                 return Ok(());
             }
+            Command::Gui => {
+                std::process::exit(sd_300::gui::launch());
+            }
             Command::MigrateCleanup(args) => {
                 let exit_code = sd_300::migrate::run(&args);
+                std::process::exit(exit_code);
+            }
+            Command::CleanupGuiState(args) => {
+                let exit_code = sd_300::update::cleanup_owned_gui_state(args.quiet);
+                std::process::exit(exit_code);
+            }
+            Command::StopGui(args) => {
+                let exit_code = sd_300::update::stop_gui(args.quiet);
                 std::process::exit(exit_code);
             }
             Command::UpdateCleanup(args) => {
@@ -100,6 +111,9 @@ async fn main() -> Result<()> {
     // Run the app
     let mut terminal = ratatui::init();
     let mut app = App::new(initial_mode);
+    if initial_mode.is_none() {
+        app.cargo_gui_completion_notice = sd_300::update::cargo_gui_completion_needed();
+    }
     let result = app.run(&mut terminal).await;
 
     // Restore terminal

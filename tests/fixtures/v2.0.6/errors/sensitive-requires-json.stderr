@@ -1,0 +1,6 @@
+error: the following required arguments were not provided:
+  --json
+
+Usage: sd300 snapshot --json --include-sensitive
+
+For more information, try '--help'.

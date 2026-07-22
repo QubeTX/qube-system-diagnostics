@@ -31,6 +31,10 @@ pub struct App {
     pub should_quit: bool,
     /// Whether to show the help overlay
     pub show_help: bool,
+    /// Exceptional Cargo v2-to-v3 state: the second update still needs to
+    /// install the managed CLI+GUI product. This never affects normal TUI
+    /// startup or session behavior.
+    pub cargo_gui_completion_notice: bool,
     /// System data snapshot
     pub snapshot: SystemSnapshot,
     /// CPU usage history (60 samples)
@@ -83,6 +87,7 @@ impl App {
             current_section: Section::Overview,
             should_quit: false,
             show_help: false,
+            cargo_gui_completion_notice: false,
             snapshot: SystemSnapshot::default(),
             cpu_history: HistoryBuffer::new(HISTORY_SAMPLES),
             mem_history: HistoryBuffer::new(HISTORY_SAMPLES),
@@ -441,6 +446,251 @@ impl App {
             HealthStatus::Warning
         } else {
             HealthStatus::Good
+        }
+    }
+}
+
+#[cfg(test)]
+mod compatibility_tests {
+    use super::*;
+    use crate::collectors::drivers::DriverScanStatus;
+    use crate::collectors::network_diag::{ConnectionInfo, ConnectionState, Protocol};
+    use crate::collectors::processes::ProcessInfo;
+    use crossterm::event::{KeyEvent, KeyEventKind};
+
+    fn press(app: &mut App, code: KeyCode) {
+        app.handle_event(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)));
+    }
+
+    fn press_with_modifiers(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+        app.handle_event(Event::Key(KeyEvent::new(code, modifiers)));
+    }
+
+    fn process(pid: u32) -> ProcessInfo {
+        ProcessInfo {
+            pid,
+            name: format!("process-{pid}"),
+            friendly_name: format!("Process {pid}"),
+            cpu_percent: 0.0,
+            memory_bytes: 0,
+            memory_percent: 0.0,
+            status: "Run".into(),
+        }
+    }
+
+    fn connection(port: u16) -> ConnectionInfo {
+        ConnectionInfo {
+            protocol: Protocol::Tcp,
+            local_addr: "127.0.0.1".into(),
+            local_port: port,
+            remote_addr: "127.0.0.1".into(),
+            remote_port: port,
+            state: ConnectionState::Established,
+            pid: None,
+            process_name: None,
+        }
+    }
+
+    #[test]
+    fn v2_refresh_cadence_history_and_startup_defaults_are_unchanged() {
+        assert_eq!(REFRESH_FAST, Duration::from_secs(1));
+        assert_eq!(REFRESH_MEDIUM, Duration::from_secs(3));
+        assert_eq!(REFRESH_SLOW, Duration::from_secs(5));
+        assert_eq!(REFRESH_DIAG, Duration::from_secs(15));
+        assert_eq!(REFRESH_HEALTH, Duration::from_secs(60));
+        assert_eq!(HISTORY_SAMPLES, 60);
+
+        let mut app = App::new(None);
+        assert_eq!(app.mode, None);
+        assert_eq!(app.current_section, Section::Overview);
+        assert!(!app.should_quit);
+        assert!(!app.show_help);
+        assert_eq!(app.process_sort, ProcessSortKey::Cpu);
+        assert_eq!(app.temp_unit, TempUnit::Celsius);
+        assert_eq!(app.process_scroll, 0);
+        assert_eq!(app.connection_scroll, 0);
+        assert_eq!(app.driver_scroll, 0);
+        assert_eq!(app.disk_scroll, 0);
+        assert!(app.driver_scan_handle.is_none());
+        assert!(app.connectivity_check_handle.is_none());
+        assert!(app.disk_health_handle.is_none());
+
+        for sample in 0..=HISTORY_SAMPLES {
+            app.cpu_history.push(sample as f64);
+        }
+        assert_eq!(app.cpu_history.len(), HISTORY_SAMPLES);
+        assert_eq!(app.cpu_history.as_slice().first(), Some(&1.0));
+    }
+
+    #[test]
+    fn v2_mode_chooser_help_navigation_and_quit_keys_are_unchanged() {
+        let mut user = App::new(None);
+        press(&mut user, KeyCode::Char('1'));
+        assert_eq!(user.mode, Some(DiagnosticMode::User));
+
+        let mut technician = App::new(None);
+        press(&mut technician, KeyCode::Char('2'));
+        assert_eq!(technician.mode, Some(DiagnosticMode::Technician));
+
+        press(&mut user, KeyCode::Char('?'));
+        assert!(user.show_help);
+        press(&mut user, KeyCode::Char('7'));
+        assert!(user.show_help, "help overlay should consume unrelated keys");
+        assert_eq!(user.current_section, Section::Overview);
+        press(&mut user, KeyCode::Esc);
+        assert!(!user.show_help);
+        assert!(
+            !user.should_quit,
+            "Escape should close help before quitting"
+        );
+
+        user.process_scroll = 3;
+        user.connection_scroll = 4;
+        user.driver_scroll = 5;
+        user.disk_scroll = 6;
+        press(&mut user, KeyCode::Char('7'));
+        assert_eq!(user.current_section, Section::Processes);
+        assert_eq!(user.process_scroll, 0);
+        assert_eq!(user.connection_scroll, 0);
+        assert_eq!(user.driver_scroll, 0);
+        assert_eq!(user.disk_scroll, 0);
+
+        press(&mut user, KeyCode::Char('m'));
+        assert_eq!(user.mode, None);
+
+        let mut quit = App::new(None);
+        press(&mut quit, KeyCode::Char('q'));
+        assert!(quit.should_quit);
+
+        let mut control_c = App::new(Some(DiagnosticMode::Technician));
+        control_c.show_help = true;
+        press_with_modifiers(&mut control_c, KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert!(
+            control_c.should_quit,
+            "Ctrl+C must take priority everywhere"
+        );
+    }
+
+    #[test]
+    fn v2_section_unit_sort_and_scroll_keybindings_are_unchanged() {
+        let mut app = App::new(Some(DiagnosticMode::Technician));
+        for (key, section) in [
+            ('1', Section::Overview),
+            ('2', Section::Cpu),
+            ('3', Section::Memory),
+            ('4', Section::Disk),
+            ('5', Section::Gpu),
+            ('6', Section::Network),
+            ('7', Section::Processes),
+            ('8', Section::Thermals),
+            ('9', Section::Drivers),
+        ] {
+            press(&mut app, KeyCode::Char(key));
+            assert_eq!(app.current_section, section);
+        }
+
+        assert_eq!(app.temp_unit, TempUnit::Celsius);
+        press(&mut app, KeyCode::Char('f'));
+        assert_eq!(app.temp_unit, TempUnit::Fahrenheit);
+        press(&mut app, KeyCode::Char('f'));
+        assert_eq!(app.temp_unit, TempUnit::Celsius);
+
+        app.current_section = Section::Processes;
+        for (key, sort) in [
+            ('c', ProcessSortKey::Cpu),
+            ('M', ProcessSortKey::Memory),
+            ('p', ProcessSortKey::Pid),
+            ('n', ProcessSortKey::Name),
+        ] {
+            press(&mut app, KeyCode::Char(key));
+            assert_eq!(app.process_sort, sort);
+        }
+
+        app.snapshot.processes.list = vec![process(1), process(2), process(3)];
+        for _ in 0..4 {
+            press(&mut app, KeyCode::Down);
+        }
+        assert_eq!(app.process_scroll, 2, "process scroll should clamp to rows");
+        press(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.process_scroll, 1);
+
+        app.current_section = Section::Network;
+        app.snapshot.network_diag.active_connections = vec![connection(1), connection(2)];
+        press(&mut app, KeyCode::Char('j'));
+        press(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.connection_scroll, 1);
+        press(&mut app, KeyCode::Up);
+        assert_eq!(app.connection_scroll, 0);
+
+        app.current_section = Section::Drivers;
+        press(&mut app, KeyCode::Down);
+        assert_eq!(app.driver_scroll, 1);
+        press(&mut app, KeyCode::Up);
+        assert_eq!(app.driver_scroll, 0);
+
+        app.current_section = Section::Disk;
+        press(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.disk_scroll, 1);
+        press(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.disk_scroll, 0);
+    }
+
+    #[test]
+    fn key_release_events_remain_ignored() {
+        let mut app = App::new(Some(DiagnosticMode::User));
+        app.handle_event(Event::Key(KeyEvent::new_with_kind(
+            KeyCode::Char('q'),
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        )));
+        assert!(!app.should_quit);
+    }
+
+    #[tokio::test]
+    async fn completed_driver_scan_is_polled_and_duplicate_refresh_is_not_spawned() {
+        let mut app = App::new(Some(DiagnosticMode::Technician));
+        app.current_section = Section::Drivers;
+        app.snapshot.warnings.push(DiagnosticWarning {
+            source: "Drivers".into(),
+            message: "stale".into(),
+            severity: WarningSeverity::Warning,
+        });
+
+        app.driver_scan_handle = Some(tokio::spawn(async {
+            DriverData {
+                scan_status: DriverScanStatus::Success,
+                ..DriverData::default()
+            }
+        }));
+        while app
+            .driver_scan_handle
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+        {
+            tokio::task::yield_now().await;
+        }
+        app.poll_background_scans().await;
+        assert!(app.driver_scan_handle.is_none());
+        assert_eq!(app.snapshot.drivers.scan_status, DriverScanStatus::Success);
+        assert!(app
+            .snapshot
+            .warnings
+            .iter()
+            .all(|warning| warning.source != "Drivers"));
+
+        let pending = tokio::spawn(async { std::future::pending::<DriverData>().await });
+        let pending_id = pending.id();
+        app.driver_scan_handle = Some(pending);
+        press(&mut app, KeyCode::Char('r'));
+        assert_eq!(
+            app.driver_scan_handle
+                .as_ref()
+                .map(tokio::task::JoinHandle::id),
+            Some(pending_id),
+            "manual refresh must not replace an in-flight scan"
+        );
+        if let Some(handle) = app.driver_scan_handle.take() {
+            handle.abort();
         }
     }
 }

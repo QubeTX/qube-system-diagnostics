@@ -1,0 +1,10 @@
+# Build inputs whose exact bytes are part of the reviewed dependency lock.
+gui/patches/*.patch text eol=lf
+
+# Compatibility fixtures are byte-stable Unix text on every checkout. Tests
+# normalize the executable's platform line endings before comparing them.
+tests/fixtures/** text eol=lf
+
+# Embedded binary assets must never pass through Git text conversion.
+*.ttf -text
+*.png -text

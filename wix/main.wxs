@@ -69,7 +69,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='SD-300 real-time interactive system diagnostic TUI (Global Edition)'
+            Description='SD-300 terminal diagnostics and native system monitor (Global Edition)'
             Manufacturer='Emmett S'
             InstallerVersion='450'
             Languages='1033'
@@ -84,6 +84,20 @@
 
         <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
         <Property Id='DiskPrompt' Value='sd300 Installation'/>
+        <Property Id='SD300PRESERVEGUISTATE' Secure='yes'/>
+        <Property Id='SD300GUIALREADYSTOPPED' Secure='yes'/>
+        <Property Id='SD300CARGOHOME' Secure='yes'/>
+        <!-- Qualification-only fault injection. This is secure so a quiet
+             elevated install receives the explicit command-line property. -->
+        <Property Id='SD300TESTFAILAFTERCARGO' Secure='yes'/>
+        <Property Id='SD300OWNEDNATIVEROOT'>
+            <RegistrySearch Id='FindOwnedGlobalNativeRoot'
+                Root='HKLM'
+                Key='Software\SD300'
+                Name='NativeInstallRootGlobal'
+                Type='directory'
+                Win64='yes'/>
+        </Property>
         <Property Id='CONFLICTING_INNO_UNINSTALL'>
             <RegistrySearch Id='FindConflictingGlobalInno'
                 Root='HKLM'
@@ -108,6 +122,9 @@
         </Upgrade>
         <Condition Message='Corporate Edition is installed. Setup stopped before changing anything. Uninstall it first or use the managed installer: https://github.com/QubeTX/qube-system-diagnostics/releases/latest'>
             <![CDATA[NOT OTHEREDITIONMSI AND NOT OTHEREDITIONINNO]]>
+        </Condition>
+        <Condition Message='SD-300 setup requires Windows Installer rollback support so an existing Cargo installation can be restored if setup fails.'>
+            <![CDATA[Installed OR NOT RollbackDisabled]]>
         </Condition>
 
         <!-- MIC-1 strict cross-method convergence (v4.2.0+). A fresh native
@@ -168,6 +185,15 @@
                             Type='string'
                             Value='msi-global'/>
                     </Component>
+                    <Component Id='NativeInstallRootMarker' Guid='A5881ECD-A207-481B-8D92-2C4FE698C2BB' Win64='yes'>
+                        <RegistryValue
+                            Root='HKLM'
+                            Key='Software\SD300'
+                            Name='NativeInstallRootGlobal'
+                            Type='string'
+                            Value='[APPLICATIONFOLDER]'
+                            KeyPath='yes'/>
+                    </Component>
 
                     <Directory Id='Bin' Name='bin'>
                         <Component Id='Path' Guid='D4E8F2A1-6B3C-4D9E-A5F7-1C8B2E0D6A43' KeyPath='yes'>
@@ -189,6 +215,74 @@
                                 KeyPath='yes'/>
                         </Component>
                     </Directory>
+                    <Directory Id='Gui' Name='app'>
+                        <Component Id='GuiBinaries' Guid='8D74A1E2-6B3F-4FA2-8EB9-20E27B9D9CF1'>
+                            <File
+                                Id='GuiExe'
+                                Name='sd300-gui.exe'
+                                DiskId='1'
+                                Source='$(var.NativeGuiBinDir)\sd300-gui.exe'
+                                KeyPath='yes'/>
+                            <File
+                                Id='GuiEngine'
+                                Name='sd300_engine.dll'
+                                DiskId='1'
+                                Source='$(var.NativeGuiBinDir)\sd300_engine.dll'/>
+                        </Component>
+                        <Directory Id='GuiAssets' Name='assets'>
+                            <Component Id='GuiIconAsset' Guid='C57A0E7D-43DE-49F6-B390-F22B6BC44A08'>
+                                <File
+                                    Id='GuiIconPng'
+                                    Name='icon.png'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\assets\icon.png'
+                                    KeyPath='yes'/>
+                            </Component>
+                        </Directory>
+                        <Directory Id='GuiLicenses' Name='licenses'>
+                            <Component Id='GuiProductLicenseNotice' Guid='C2920BDE-A9CF-4D78-BF05-7854FC657B7E'>
+                                <File Id='GuiProductLicense'
+                                    Name='PRODUCT-LICENSE.md'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\licenses\PRODUCT-LICENSE.md'
+                                    KeyPath='yes'/>
+                            </Component>
+                            <Component Id='GuiIbmPlexLicenseNotice' Guid='7E8901EC-079F-48CC-A174-6A4D504B9314'>
+                                <File Id='GuiIbmPlexLicense'
+                                    Name='IBM-PLEX-OFL-1.1.txt'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\licenses\IBM-PLEX-OFL-1.1.txt'
+                                    KeyPath='yes'/>
+                            </Component>
+                            <Component Id='GuiNativeSdkLicenseNotice' Guid='1BC07F1E-DA52-4758-B1C9-8425C29ECD28'>
+                                <File Id='GuiNativeSdkLicense'
+                                    Name='NATIVE-SDK-APACHE-2.0.txt'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\licenses\NATIVE-SDK-APACHE-2.0.txt'
+                                    KeyPath='yes'/>
+                            </Component>
+                        </Directory>
+                    </Directory>
+                </Directory>
+            </Directory>
+            <Directory Id='ProgramMenuFolder'>
+                <Directory Id='ApplicationProgramsFolder' Name='SD-300'>
+                    <Component Id='GuiStartMenuShortcut' Guid='DDF6CE8A-0C08-43F4-B546-C47056459B36'>
+                        <Shortcut
+                            Id='GuiStartMenuShortcutEntry'
+                            Name='SD-300'
+                            Description='Open the SD-300 native system monitor'
+                            Target='[Gui]sd300-gui.exe'
+                            WorkingDirectory='Gui'/>
+                        <RemoveFolder Id='RemoveApplicationProgramsFolder' On='uninstall'/>
+                        <RegistryValue
+                            Root='HKCU'
+                            Key='Software\SD300'
+                            Name='GuiStartMenuShortcutGlobal'
+                            Type='integer'
+                            Value='1'
+                            KeyPath='yes'/>
+                    </Component>
                 </Directory>
             </Directory>
         </Directory>
@@ -211,6 +305,13 @@
 
             <ComponentRef Id='binary0'/>
             <ComponentRef Id='InstallSourceMarker'/>
+            <ComponentRef Id='NativeInstallRootMarker'/>
+            <ComponentRef Id='GuiBinaries'/>
+            <ComponentRef Id='GuiIconAsset'/>
+            <ComponentRef Id='GuiProductLicenseNotice'/>
+            <ComponentRef Id='GuiIbmPlexLicenseNotice'/>
+            <ComponentRef Id='GuiNativeSdkLicenseNotice'/>
+            <ComponentRef Id='GuiStartMenuShortcut'/>
 
             <Feature
                 Id='Environment'
@@ -223,22 +324,66 @@
         </Feature>
 
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+        <!-- A caller may explicitly pass SD300CARGOHOME for a custom Cargo
+             installation. Otherwise capture the client environment when MSI
+             exposes it, then fall back to the invoking profile's default. -->
+        <CustomAction Id='CaptureCargoHome'
+            Property='SD300CARGOHOME'
+            Value='[%CARGO_HOME]'/>
+        <CustomAction Id='DefaultCargoHome'
+            Property='SD300CARGOHOME'
+            Value='[%USERPROFILE]\.cargo'/>
+        <SetProperty Id='StopGuiBeforeMutation'
+            Value='&quot;[SD300OWNEDNATIVEROOT]bin\sd300.exe&quot; stop-gui --quiet'
+            Sequence='execute'
+            Before='StopGuiBeforeMutation'/>
 
-        <!-- Cross-method consolidation custom actions (v3.17.0+). Two deferred,
-             IMPERSONATED, best-effort actions that run the freshly-installed
-             sd300.exe (FileKey='exe0', so WiX resolves the installed path) with
-             strict `migrate-cleanup`. FileKey/ExeCommand is used instead of
-             WixUtilExtension's WixQuietExec because cargo wix only auto-links
-             WixUIExtension; a WixQuietExec CA would fail the CI link step. A
-             type-18 FileKey CA needs no extension and runs the installed exe
-             directly. Impersonate='yes' is load-bearing: this perMachine MSI runs
-             elevated, but the cleanup must resolve the INVOKING user's Cargo bin
-             and LocalAppData, so impersonation runs the CA as the logged-on user.
-             Return='check' makes incomplete convergence fail visibly. Condition
-             `NOT Installed` runs it on install/upgrade only, not uninstall/repair. -->
+        <!-- Cargo takeover is one Windows Installer transaction. Immediate
+             SetProperty rows populate each WixQuietExec action's
+             CustomActionData with the exact invoking profile, Cargo home,
+             journal, and freshly installed helper path. The rollback action is
+             scheduled before the deferred mutation, while the commit action
+             marks and removes recovery material only after InstallFinalize.
+             Commit return codes are deliberately ignored: once commit cleanup
+             begins, a process interruption may leave harmless recovery residue
+             but must never initiate a rollback after deleting a backup. -->
+        <SetProperty Id='RollbackCargoCopy'
+            Value='&quot;[APPLICATIONFOLDER]bin\sd300.exe&quot; mc -s -c -a r -g &quot;[SD300CARGOHOME]&quot; -u &quot;[%USERPROFILE]&quot; -j &quot;[LocalAppDataFolder]SD300\Transactions\msi-g-[ProductCode].json&quot;'
+            Sequence='execute'
+            Before='RollbackCargoCopy'/>
+        <SetProperty Id='CleanCargoCopy'
+            Value='&quot;[APPLICATIONFOLDER]bin\sd300.exe&quot; mc -s -c -a p -g &quot;[SD300CARGOHOME]&quot; -u &quot;[%USERPROFILE]&quot; -j &quot;[LocalAppDataFolder]SD300\Transactions\msi-g-[ProductCode].json&quot;'
+            Sequence='execute'
+            Before='CleanCargoCopy'/>
+        <SetProperty Id='CommitCargoCopy'
+            Value='&quot;[APPLICATIONFOLDER]bin\sd300.exe&quot; mc -s -c -a c -g &quot;[SD300CARGOHOME]&quot; -u &quot;[%USERPROFILE]&quot; -j &quot;[LocalAppDataFolder]SD300\Transactions\msi-g-[ProductCode].json&quot;'
+            Sequence='execute'
+            Before='CommitCargoCopy'/>
+        <SetProperty Id='InjectPostCargoFailure'
+            Value='&quot;[SystemFolder]cmd.exe&quot; /d /c exit /b 1'
+            Sequence='execute'
+            Before='InjectPostCargoFailure'/>
+        <CustomAction Id='RollbackCargoCopy'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
+            Execute='rollback'
+            Impersonate='yes'
+            Return='check'/>
         <CustomAction Id='CleanCargoCopy'
-            FileKey='exe0'
-            ExeCommand='migrate-cleanup --quiet --strict --cargo-copy'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
+        <CustomAction Id='CommitCargoCopy'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
+            Execute='commit'
+            Impersonate='yes'
+            Return='ignore'/>
+        <CustomAction Id='InjectPostCargoFailure'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
             Execute='deferred'
             Impersonate='yes'
             Return='check'/>
@@ -250,7 +395,7 @@
              relative unins000.exe resolves from the application directory. -->
         <CustomAction Id='RemoveConflictingInno'
             Directory='TARGETDIR'
-            ExeCommand='[CONFLICTING_INNO_UNINSTALL] /VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
+            ExeCommand='[CONFLICTING_INNO_UNINSTALL] /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /PRESERVEGUISTATE'
             Execute='deferred'
             Impersonate='no'
             Return='check'/>
@@ -260,28 +405,68 @@
             Execute='deferred'
             Impersonate='yes'
             Return='check'/>
+        <CustomAction Id='StopGuiBeforeMutation'
+            BinaryKey='WixCA'
+            DllEntry='WixQuietExec64'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
+        <CustomAction Id='VerifyGuiCompanion'
+            Directory='TARGETDIR'
+            ExeCommand='&quot;[Gui]sd300-gui.exe&quot; --self-test --json'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
+        <CustomAction Id='CleanupGuiState'
+            FileKey='exe0'
+            ExeCommand='cleanup-gui-state --quiet'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='check'/>
 
         <InstallExecuteSequence>
+            <Custom Action='CaptureCargoHome' Before='SetRollbackCargoCopy'>
+                <![CDATA[NOT Installed AND NOT SD300CARGOHOME]]>
+            </Custom>
+            <Custom Action='DefaultCargoHome' After='CaptureCargoHome'>
+                <![CDATA[NOT Installed AND NOT SD300CARGOHOME]]>
+            </Custom>
+            <Custom Action='StopGuiBeforeMutation' Before='RemoveExistingProducts'>
+                <![CDATA[SD300OWNEDNATIVEROOT AND NOT SD300GUIALREADYSTOPPED]]>
+            </Custom>
             <Custom Action='RemoveConflictingInno' Before='InstallFiles'>
                 <![CDATA[CONFLICTING_INNO_UNINSTALL AND NOT REMOVE~="ALL"]]>
             </Custom>
-            <Custom Action='CleanOtherEdition' Before='CleanCargoCopy'>
+            <!-- Qualify the newly installed companion before any cleanup that
+                 mutates pre-existing Cargo or other-edition ownership. If the
+                 self-test fails, MSI rollback can remove only this package and
+                 leave the user's prior command untouched. -->
+            <Custom Action='VerifyGuiCompanion' After='InstallFiles'>
+                <![CDATA[NOT REMOVE~="ALL"]]>
+            </Custom>
+            <Custom Action='CleanOtherEdition' After='VerifyGuiCompanion'>
                 <![CDATA[NOT Installed]]>
             </Custom>
-            <Custom Action='CleanCargoCopy' Before='InstallFinalize'>
+            <Custom Action='RollbackCargoCopy' After='CleanOtherEdition'>
                 <![CDATA[NOT Installed]]>
+            </Custom>
+            <Custom Action='CleanCargoCopy' After='RollbackCargoCopy'>
+                <![CDATA[NOT Installed]]>
+            </Custom>
+            <Custom Action='InjectPostCargoFailure' After='CleanCargoCopy'>
+                <![CDATA[NOT Installed AND SD300TESTFAILAFTERCARGO = "1"]]>
+            </Custom>
+            <Custom Action='CommitCargoCopy' After='InjectPostCargoFailure'>
+                <![CDATA[NOT Installed]]>
+            </Custom>
+            <Custom Action='CleanupGuiState' Before='RemoveFiles'>
+                <![CDATA[REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE AND NOT SD300PRESERVEGUISTATE]]>
             </Custom>
         </InstallExecuteSequence>
 
 
-        <!--
-          Uncomment the following `Icon` and `Property` tags to change the product icon.
-
-          The product icon is the graphic that appears in the Add/Remove
-          Programs control panel for the application.
-        -->
-        <!--<Icon Id='ProductICO' SourceFile='wix\Product.ico'/>-->
-        <!--<Property Id='ARPPRODUCTICON' Value='ProductICO' />-->
+        <Icon Id='ProductICO' SourceFile='wix\Product.ico'/>
+        <Property Id='ARPPRODUCTICON' Value='ProductICO' />
 
         <Property Id='ARPHELPLINK' Value='https://github.com/QubeTX/qube-system-diagnostics'/>
         

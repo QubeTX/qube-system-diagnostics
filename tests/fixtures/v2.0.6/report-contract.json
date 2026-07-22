@@ -1,0 +1,72 @@
+{
+  "object_keys": {
+    "": ["capabilities", "cpu", "disk", "disk_health", "displays", "drivers", "gpu", "memory", "network", "network_diagnostics", "privacy", "processes", "product", "product_version", "schema_version", "system", "target_arch", "target_os", "thermals", "warnings"],
+    "/privacy": ["redacted_fields", "sensitive_values_included"],
+    "/system": ["architecture", "bios_release_date", "bios_version", "cpu_cores", "cpu_model", "cpu_threads", "hardware_status", "hostname", "hypervisor_present", "kernel_version", "manufacturer", "model", "os_name", "os_version", "total_memory_bytes", "uptime_seconds"],
+    "/cpu": ["core_count", "cpu_model", "per_core_frequency", "per_core_usage", "thread_count", "total_usage"],
+    "/memory": ["available_bytes", "module_status", "modules", "swap_total_bytes", "swap_used_bytes", "total_bytes", "used_bytes"],
+    "/disk": ["partitions"],
+    "/disk_health": ["drives", "health_status", "reliability_status"],
+    "/displays": ["brightness_status", "displays", "inventory_status"],
+    "/gpu": ["adapters", "available", "driver_version", "inventory_status", "memory_total_mb", "memory_used_mb", "name", "telemetry_available", "telemetry_status", "temperature", "utilization_percent"],
+    "/network": ["adapter_status", "adapters", "interfaces", "total_download_rate", "total_upload_rate"],
+    "/network_diagnostics": ["active_connections", "dns", "gateway", "internet", "listening_ports"],
+    "/network_diagnostics/dns": ["domain", "error", "resolution_ms", "resolved", "resolved_ip"],
+    "/network_diagnostics/gateway": ["error", "latency_ms", "reachable", "target"],
+    "/network_diagnostics/internet": ["error", "latency_ms", "reachable", "target"],
+    "/processes": ["list", "total_count", "total_threads"],
+    "/thermals": ["battery", "battery_status", "cpu_temp", "cpu_temperature_status", "fan_status", "fans", "gpu_temp", "gpu_temperature_status", "power_source", "sensors", "temperature_status"],
+    "/drivers": ["audio", "bluetooth", "display", "input", "network", "other", "scan_status", "services", "storage", "system", "usb"]
+  },
+  "optional_object_keys": {
+    "/thermals/battery": ["cycle_count", "design_voltage_mv", "full_charged_capacity_mwh", "is_charging", "is_on_ac", "percent", "provider_status", "time_remaining"]
+  },
+  "array_item_keys": {
+    "/disk/partitions": ["available_bytes", "disk_type", "filesystem", "is_removable", "mount_point", "name", "total_bytes", "used_bytes"],
+    "/disk_health/drives": ["device_id", "firmware", "health_source", "health_status", "io_stats", "media_type", "model", "power_on_hours", "read_errors_total", "serial", "temperature_celsius", "wear_percent", "write_errors_total"],
+    "/displays/displays": ["active", "brightness_percent", "connection", "label", "physical_height_cm", "physical_width_cm", "source"],
+    "/gpu/adapters": ["current_resolution", "dedicated_memory_mb", "driver_version", "memory_used_mb", "name", "refresh_rate_hz", "source", "status", "telemetry_available", "temperature_celsius", "utilization_percent"],
+    "/memory/modules": ["capacity_bytes", "configured_speed_mt_s", "locator", "manufacturer", "memory_type", "part_number", "rated_speed_mt_s"],
+    "/network/adapters": ["description", "hardware_interface", "link_speed_bps", "media_connection_state", "name", "status"],
+    "/network/interfaces": ["download_rate", "ip_addresses", "is_up", "mac_address", "name", "operational_state", "received_bytes", "transmitted_bytes", "upload_rate"],
+    "/network_diagnostics/active_connections": ["local_addr", "local_port", "pid", "process_name", "protocol", "remote_addr", "remote_port", "state"],
+    "/network_diagnostics/listening_ports": ["local_addr", "local_port", "pid", "process_name", "protocol", "remote_addr", "remote_port", "state"],
+    "/processes/list": ["cpu_percent", "friendly_name", "memory_bytes", "memory_percent", "name", "pid", "status"],
+    "/thermals/fans": ["label", "rpm", "source"],
+    "/thermals/sensors": ["critical", "kind", "label", "source", "temperature"],
+    "/drivers/audio": ["category", "driver_date", "driver_version", "extra", "name", "status"],
+    "/drivers/bluetooth": ["category", "driver_date", "driver_version", "extra", "name", "status"],
+    "/drivers/display": ["category", "driver_date", "driver_version", "extra", "name", "status"],
+    "/drivers/input": ["category", "driver_date", "driver_version", "extra", "name", "status"],
+    "/drivers/network": ["category", "driver_date", "driver_version", "extra", "name", "status"],
+    "/drivers/other": ["category", "driver_date", "driver_version", "extra", "name", "status"],
+    "/drivers/storage": ["category", "driver_date", "driver_version", "extra", "name", "status"],
+    "/drivers/system": ["category", "driver_date", "driver_version", "extra", "name", "status"],
+    "/drivers/usb": ["category", "driver_date", "driver_version", "extra", "name", "status"],
+    "/drivers/services": ["display_name", "is_running", "name"],
+    "/warnings": ["message", "severity", "source"]
+  },
+  "observation_pointers": [
+    "/system/hardware_status",
+    "/memory/module_status",
+    "/disk_health/health_status",
+    "/disk_health/reliability_status",
+    "/displays/brightness_status",
+    "/displays/inventory_status",
+    "/gpu/inventory_status",
+    "/gpu/telemetry_status",
+    "/network/adapter_status",
+    "/thermals/battery_status",
+    "/thermals/cpu_temperature_status",
+    "/thermals/fan_status",
+    "/thermals/gpu_temperature_status",
+    "/thermals/temperature_status"
+  ],
+  "redacted_fields": [
+    "system.hostname",
+    "disk_health.drives[].serial",
+    "network.interfaces[].mac_address",
+    "network.interfaces[].ip_addresses",
+    "network_diagnostics.*_addr"
+  ]
+}

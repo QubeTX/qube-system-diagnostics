@@ -1,0 +1,347 @@
+<column gap="0">
+  <row gap="16" padding="20" cross="center" background="surface">
+    <column gap="2" grow="1">
+      <text size="heading">SD-300</text>
+      <text foreground="text_muted"><span mono="true">SYSTEM DIAGNOSTICS / NATIVE MONITOR</span></text>
+    </column>
+    <if test="{summaryFailed}">
+      <if test="{fast_summary_seen}"><badge variant="outline">COLLECTOR FAILED · LAST SAMPLE {sequence}</badge></if>
+      <else><badge variant="outline">COLLECTOR FAILED</badge></else>
+    </if>
+    <else>
+      <if test="{summaryStale}">
+        <badge variant="outline">STALE · SAMPLE {sequence}</badge>
+      </if>
+      <else>
+        <if test="{summaryLive}">
+          <badge variant="outline">LIVE · SAMPLE {sequence}</badge>
+        </if>
+        <else>
+          <badge variant="outline">CONNECTING</badge>
+        </else>
+      </else>
+    </else>
+    <button icon="refresh-cw" variant="outline" on-press="refresh_now">Refresh</button>
+  </row>
+
+  <row gap="0" grow="1">
+    <column gap="6" padding="16" width="220" background="surface">
+      <text foreground="text_muted"><span mono="true">MONITOR</span></text>
+      <list-item selected="{active_section == 0}" icon="eye" on-press="select_overview">Overview</list-item>
+      <list-item selected="{active_section == 1}" icon="terminal" on-press="select_cpu">CPU</list-item>
+      <list-item selected="{active_section == 2}" icon="archive" on-press="select_memory">Memory</list-item>
+      <list-item selected="{active_section == 3}" icon="folder" on-press="select_disk">Disk</list-item>
+      <list-item selected="{active_section == 4}" icon="panel-right" on-press="select_gpu">GPU</list-item>
+      <list-item selected="{active_section == 5}" icon="git-branch" on-press="select_network">Network</list-item>
+      <list-item selected="{active_section == 6}" icon="menu" on-press="select_processes">Processes</list-item>
+      <list-item selected="{active_section == 7}" icon="alert" on-press="select_thermals">Thermals</list-item>
+      <list-item selected="{active_section == 8}" icon="wrench" on-press="select_drivers">Drivers</list-item>
+      <spacer grow="1" />
+      <list-item selected="{active_section == 9}" icon="wrench" on-press="select_settings">Settings</list-item>
+      <text foreground="text_muted"><span mono="true">v3.0.0 QUALIFICATION</span></text>
+    </column>
+
+    <scroll grow="1" value="{scroll_top}" on-scroll="content_scrolled">
+      <column gap="20" padding="24">
+        <if test="{active_section == 0}">
+        <column gap="4">
+          <text size="display">System overview</text>
+          <if test="{technicianMode}"><text foreground="text_muted">Technician view · raw identity, provenance, and bounded live telemetry from the same Rust collectors as the TUI.</text></if>
+          <else><text foreground="text_muted">User view · current system pressure first, with plain-language interpretation and the same collectors as the TUI.</text></else>
+        </column>
+
+        <if test="{detail.static_ready}">
+          <panel padding="20" background="surface" radius="lg">
+            <column gap="10">
+              <row cross="center"><column gap="3" grow="1"><text size="heading">{manufacturer} {systemModel}</text><text foreground="text_muted">{osName} {osVersion} · {architecture}</text></column><badge variant="outline">UP {fixed(uptimeHours, 1)} HOURS</badge></row>
+              <text><span mono="true">PROCESSOR · {systemCpu}</span></text>
+              <if test="{technicianMode}"><row gap="16"><text grow="1" foreground="text_muted"><span mono="true">HOST · {hostname}</span></text><text grow="1" foreground="text_muted"><span mono="true">KERNEL · {kernel}</span></text><text grow="1" foreground="text_muted"><span mono="true">FIRMWARE · {bios}</span></text><text grow="1" foreground="text_muted"><span mono="true">HYPERVISOR · {upper(hypervisorState)}</span></text></row></if>
+            </column>
+          </panel>
+        </if>
+
+        <row gap="16">
+          <panel padding="20" grow="1" background="surface" radius="lg">
+            <column gap="14">
+              <row cross="center">
+                <text grow="1" foreground="text_muted"><span mono="true">CPU LOAD</span></text>
+                <badge variant="secondary">{logical_processors} LOGICAL</badge>
+              </row>
+              <text size="display">{fixed(cpu_percent, 1)}%</text>
+              <progress value="{cpu_percent / 100}" label="CPU utilization" />
+              <text foreground="text_muted"><span mono="true">One-second collector · bounded latest-only projection</span></text>
+            </column>
+          </panel>
+
+          <panel padding="20" grow="1" background="surface" radius="lg">
+            <column gap="14">
+              <row cross="center">
+                <text grow="1" foreground="text_muted"><span mono="true">MEMORY LOAD</span></text>
+                <badge variant="secondary">PHYSICAL</badge>
+              </row>
+              <text size="display">{fixed(memory_percent, 1)}%</text>
+              <progress value="{memory_percent / 100}" label="Memory utilization" />
+              <text foreground="text_muted"><span mono="true">{fixed(memory_used_gib, 1)} GiB used of {fixed(memory_total_gib, 1)} GiB</span></text>
+            </column>
+          </panel>
+        </row>
+
+        <if test="{userMode}">
+          <panel padding="20" background="surface" radius="lg">
+            <column gap="10"><text>What the current load means</text><row gap="20"><text grow="1">{cpuAssessment}</text><text grow="1">{memoryAssessment}</text></row><text foreground="text_muted">One sample is a signal, not a diagnosis. Sustained history and the Processes page provide the useful context.</text></column>
+          </panel>
+        </if>
+
+        <panel padding="20" background="surface" radius="lg">
+          <column gap="12">
+            <row cross="center">
+              <column gap="3" grow="1">
+                <text>Collection health</text>
+                <text foreground="text_muted">Bounded projections prevent renderer lag from creating collector backlog.</text>
+              </column>
+              <if test="{detail.warnings_ready}"><badge variant="outline">{detail.warning_row_count} SHOWN OF {detail.warning_total_count} WARNINGS</badge></if><else><badge variant="outline">{warning_count} WARNINGS</badge></else>
+            </row>
+            <if test="{detail.warnings_ready}"><for each="warnings" as="warning" key="id"><row gap="12" cross="center"><badge variant="outline">{upper(warning.severity)}</badge><text width="100">{warning.source}</text><text grow="1">{warning.message}</text></row></for></if>
+            <chart height="40" y-min="0" y-max="100" stroke-width="1" label="CPU load history">
+              <series values="{cpu_history}" color="accent" label="CPU load" />
+            </chart>
+            <row cross="center">
+              <text grow="1" foreground="text_muted"><span mono="true">ABI 1 · Schema 1 · Dynamic bundle-relative engine</span></text>
+              <spacer width="10" height="10" background="warning" />
+            </row>
+          </column>
+        </panel>
+        </if>
+
+        <if test="{active_section == 1}">
+          <column gap="4">
+            <text size="display">Processor</text>
+            <text foreground="text_muted">Live utilization and bounded load history from the SD-300 CPU collector.</text>
+          </column>
+          <row gap="16">
+            <panel padding="20" grow="1" background="surface" radius="lg">
+              <column gap="14">
+                <text foreground="text_muted"><span mono="true">TOTAL CPU LOAD</span></text>
+                <text size="display">{fixed(cpu_percent, 1)}%</text>
+                <progress value="{cpu_percent / 100}" label="Total CPU utilization" />
+              </column>
+            </panel>
+            <panel padding="20" grow="1" background="surface" radius="lg">
+              <column gap="14">
+                <text foreground="text_muted"><span mono="true">LOGICAL PROCESSORS</span></text>
+                <text size="display">{logical_processors}</text>
+                <if test="{detail.fast_ready}">
+                  <text foreground="text_muted"><span mono="true">{detail.physical_core_count} physical · {detail.logical_thread_count} logical</span></text>
+                </if>
+                <else>
+                  <text foreground="text_muted"><span mono="true">Detailed per-core projection is warming up.</span></text>
+                </else>
+              </column>
+            </panel>
+          </row>
+          <panel padding="20" background="surface" radius="lg">
+            <column gap="12">
+              <text>CPU load trace</text>
+              <chart height="120" y-min="0" y-max="100" grid-lines="4" baseline="true" stroke-width="1" label="CPU load history">
+                <series kind="area" values="{cpu_history}" color="accent" label="CPU load" />
+              </chart>
+              <text foreground="text_muted"><span mono="true">60 bounded visual samples · 0–100%</span></text>
+            </column>
+          </panel>
+          <if test="{detail.fast_ready}">
+            <panel padding="20" background="surface" radius="lg">
+              <column gap="10">
+                <row cross="center"><text grow="1">Per-core utilization</text><badge variant="outline">{detail.cpu_core_count} SHOWN OF {detail.cpu_core_total_count} · {cpuModel}</badge></row>
+                <row gap="12"><text width="70" foreground="text_muted"><span mono="true">CORE</span></text><text grow="1" foreground="text_muted"><span mono="true">LOAD</span></text><text width="90" foreground="text_muted"><span mono="true">FREQUENCY</span></text></row>
+                <for each="cpuCores" as="core" key="id">
+                  <row gap="12" cross="center">
+                    <text width="70"><span mono="true">Core {core.id}</span></text>
+                    <progress grow="1" value="{core.usage_percent / 100}" label="Per-core utilization" />
+                    <if test="{core.frequency_available}"><text width="90"><span mono="true">{core.frequency_mhz} MHz</span></text></if><else><text width="90" foreground="text_muted"><span mono="true">NOT REPORTED</span></text></else>
+                  </row>
+                </for>
+              </column>
+            </panel>
+            <panel padding="20" background="surface" radius="lg"><row cross="center"><column gap="4" grow="1"><text>Likely CPU cause</text><text foreground="text_muted">Open the full inventory ranked by percent of one logical core to distinguish a short burst from a sustained consumer.</text></column><button variant="outline" on-press="show_cpu_processes">Open CPU-ranked processes</button></row></panel>
+          </if>
+        </if>
+
+        <if test="{active_section == 2}">
+          <column gap="4">
+            <text size="display">Memory</text>
+            <text foreground="text_muted">Physical memory pressure from the shared SD-300 memory collector.</text>
+          </column>
+          <row gap="16">
+            <panel padding="20" grow="1" background="surface" radius="lg">
+              <column gap="14">
+                <text foreground="text_muted"><span mono="true">MEMORY LOAD</span></text>
+                <text size="display">{fixed(memory_percent, 1)}%</text>
+                <progress value="{memory_percent / 100}" label="Physical memory utilization" />
+              </column>
+            </panel>
+            <panel padding="20" grow="1" background="surface" radius="lg">
+              <column gap="14">
+                <text foreground="text_muted"><span mono="true">MEMORY IN USE</span></text>
+                <text size="display">{fixed(memory_used_gib, 1)} GiB</text>
+                <text foreground="text_muted"><span mono="true">of {fixed(memory_total_gib, 1)} GiB physical capacity</span></text>
+              </column>
+            </panel>
+          </row>
+          <panel padding="20" background="surface" radius="lg"><column gap="12"><row cross="center"><column gap="3" grow="1"><text>Memory pressure trace</text><text foreground="text_muted">Physical utilization and swap remain separate signals; swap use alone is not classified as a fault.</text></column><button variant="outline" on-press="show_memory_processes">Open memory-ranked processes</button></row><chart height="100" y-min="0" y-max="100" grid-lines="4" baseline="true" stroke-width="1" label="Memory and swap utilization history"><series kind="area" values="{memory_history}" color="accent" label="Physical memory" /><series values="{swap_history}" color="warning" label="Swap" /></chart><text foreground="text_muted"><span mono="true">{fixed(memory_used_gib, 1)} GiB USED OF {fixed(memory_total_gib, 1)} GiB · {fixed(detail.memory_available_gib, 1)} GiB AVAILABLE</span></text></column></panel>
+          <panel padding="20" background="surface" radius="lg">
+            <column gap="10">
+              <row cross="center"><text grow="1">Memory hardware</text><badge variant="outline">{detail.memory_module_count} SHOWN OF {detail.memory_module_total_count} · {upper(detail.memoryModuleStatus)}</badge></row>
+              <if test="{detail.fast_ready}">
+                <row gap="16">
+                  <text foreground="text_muted"><span mono="true">AVAILABLE · {fixed(detail.memory_available_gib, 1)} GiB</span></text>
+                  <text foreground="text_muted"><span mono="true">SWAP · {fixed(detail.swap_used_gib, 1)} / {fixed(detail.swap_total_gib, 1)} GiB</span></text>
+                </row>
+                <if test="{detail.memory_module_count > 0}"><for each="memoryModules" as="module" key="id">
+                    <row gap="12" cross="center">
+                      <text width="110">{module.locator}</text>
+                      <text width="82"><span mono="true">{fixed(module.capacity_gib, 1)} GiB</span></text>
+                      <text width="70"><span mono="true">{module.memoryType}</span></text>
+                      <if test="{module.configured_speed_available}"><text width="105"><span mono="true">{module.configured_speed_mt_s} MT/s</span></text></if><else><text width="105" foreground="text_muted"><span mono="true">NOT REPORTED</span></text></else>
+                      <text grow="1">{module.manufacturer}</text>
+                      <if test="{technicianMode}"><if test="{module.rated_speed_available}"><text foreground="text_muted"><span mono="true">RATED {module.rated_speed_mt_s} · {module.partNumber}</span></text></if><else><text foreground="text_muted"><span mono="true">RATED NOT REPORTED · {module.partNumber}</span></text></else></if>
+                    </row>
+                </for></if>
+                <else><text foreground="text_muted">{detail.memoryModuleObservation}</text></else>
+              </if>
+              <else>
+                <text foreground="text_muted">Module inventory, speed, manufacturer, part number, swap, and availability are loading from the full static and fast topics.</text>
+              </else>
+              <text foreground="text_muted"><span mono="true">MODULE OBSERVATION · {detail.memoryModuleObservation}</span></text>
+            </column>
+          </panel>
+        </if>
+
+        <if test="{active_section == 3}">
+          <column gap="4"><text size="display">Disk</text><text foreground="text_muted">Partitions, capacity, filesystem, media type, and health.</text></column>
+          <if test="{detail.slow_ready}">
+            <panel padding="20" background="surface" radius="lg">
+              <column gap="12">
+                <row cross="center"><text grow="1">Mounted storage</text><badge variant="outline">{detail.disk_count} SHOWN OF {detail.disk_total_count} VOLUMES</badge></row>
+                <for each="disks" as="disk" key="id">
+                  <column gap="6">
+                    <row gap="12" cross="center"><text grow="1">{disk.name} · {disk.mount}</text><badge variant="outline">{upper(disk.diskType)}</badge><if test="{disk.removable}"><badge variant="outline">REMOVABLE</badge></if><text><span mono="true">{disk.filesystem}</span></text></row>
+                    <progress value="{disk.usage_percent / 100}" label="Disk utilization" />
+                    <text foreground="text_muted"><span mono="true">{fixed(disk.used_gib, 1)} GiB used · {fixed(disk.available_gib, 1)} GiB free · {fixed(disk.total_gib, 1)} GiB total</span></text>
+                  </column>
+                </for>
+              </column>
+            </panel>
+          </if>
+          <else>
+            <panel padding="20" background="surface" radius="lg"><column gap="10"><badge variant="outline">COLLECTING</badge><text>The five-second storage topic is starting.</text><text foreground="text_muted">Partition rows will appear without blocking the interface.</text></column></panel>
+          </else>
+          <if test="{detail.health_ready}">
+            <if test="{detail.disk_io_available}"><panel padding="20" background="surface" radius="lg"><column gap="12"><row cross="center"><column gap="3" grow="1"><text>Disk activity and saturation</text><text foreground="text_muted">Activity is independent of capacity. Latency and queue values come from the platform reliability provider.</text></column><badge variant="outline">LIVE I/O · {upper(detail.diskReliabilityStatus)}</badge></row><row gap="18"><text grow="1"><span mono="true">READ · {fixed(detail.disk_read_mib_s, 2)} MiB/s</span></text><text grow="1"><span mono="true">WRITE · {fixed(detail.disk_write_mib_s, 2)} MiB/s</span></text><text grow="1"><span mono="true">QUEUE · {fixed(detail.disk_queue_depth, 2)}</span></text><text grow="1"><span mono="true">LATENCY · {fixed(detail.disk_read_latency_ms, 2)} / {fixed(detail.disk_write_latency_ms, 2)} ms R/W</span></text></row><chart height="90" y-min="0" baseline="true" stroke-width="1" label="Disk read and write throughput history"><series values="{disk_read_history}" color="accent" label="Read MiB/s" /><series values="{disk_write_history}" color="warning" label="Write MiB/s" /></chart><if test="{detail.disk_errors_available}"><text foreground="text_muted"><span mono="true">RELIABILITY COUNTERS · {detail.disk_read_errors_total} READ ERRORS · {detail.disk_write_errors_total} WRITE ERRORS</span></text></if><else><text foreground="text_muted"><span mono="true">RELIABILITY · {detail.diskReliabilityObservation}</span></text></else></column></panel></if>
+            <else><panel padding="20" background="surface" radius="lg"><column gap="6"><row cross="center"><column gap="3" grow="1"><text>Disk activity and saturation</text><text foreground="text_muted">Capacity is not substituted for activity or reliability evidence.</text></column><badge variant="outline">{upper(detail.diskReliabilityStatus)}</badge></row><text foreground="text_muted">{detail.diskReliabilityObservation}</text></column></panel></else>
+          </if>
+          <if test="{detail.health_ready}">
+            <panel padding="20" background="surface" radius="lg"><column gap="10"><row cross="center"><text grow="1">Physical drive health</text><badge variant="outline">{detail.drive_health_count} SHOWN OF {detail.drive_health_total_count} · {upper(detail.diskHealthStatus)}</badge></row><for each="driveHealth" as="drive" key="id"><row gap="12" cross="center"><text grow="1">{drive.model}</text><badge variant="outline">{upper(drive.health)}</badge><text><span mono="true">{upper(drive.mediaType)}</span></text><if test="{drive.temperature_available}"><if test="{fahrenheitMode}"><text><span mono="true">{fixed((drive.temperature_celsius * 9 / 5) + 32, 1)} °F</span></text></if><else><text><span mono="true">{fixed(drive.temperature_celsius, 1)} °C</span></text></else></if><if test="{technicianMode}"><if test="{drive.wear_available}"><text><span mono="true">WEAR {drive.wear_percent}%</span></text></if><if test="{drive.power_on_hours_available}"><text><span mono="true">{drive.power_on_hours} HOURS</span></text></if></if></row><if test="{technicianMode}"><text foreground="text_muted"><span mono="true">SOURCE · {drive.source}</span></text><if test="{drive.io_available}"><text foreground="text_muted"><span mono="true">I/O · {fixed(drive.read_mib_s, 2)} / {fixed(drive.write_mib_s, 2)} MiB/s R/W · QUEUE {fixed(drive.queue_depth, 2)} · LATENCY {fixed(drive.read_latency_ms, 2)} / {fixed(drive.write_latency_ms, 2)} ms</span></text></if></if></for><if test="{detail.drive_health_count == 0}"><text foreground="text_muted">{detail.diskHealthObservation}</text></if><text foreground="text_muted"><span mono="true">HEALTH · {detail.diskHealthObservation}</span></text><text foreground="text_muted"><span mono="true">RELIABILITY · {detail.diskReliabilityObservation}</span></text></column></panel>
+          </if>
+          <else>
+            <panel padding="20" background="surface" radius="lg"><column gap="8"><text>Physical drive health</text><text foreground="text_muted">The independent 60-second health scan is still running.</text><text foreground="text_muted"><span mono="true">STATUS · SCANNING ASYNCHRONOUSLY</span></text></column></panel>
+          </else>
+        </if>
+
+        <if test="{active_section == 4}">
+          <row cross="center"><column gap="4" grow="1"><text size="display">Graphics</text><text foreground="text_muted">Adapter inventory, utilization, memory, temperature, driver, and display linkage.</text></column><if test="{detail.slow_ready}"><badge variant="outline">{detail.gpu_count} SHOWN OF {detail.gpu_total_count} · {upper(detail.gpuInventoryStatus)}</badge></if></row>
+          <if test="{detail.slow_ready}">
+            <for each="gpus" as="gpu" key="id">
+              <panel padding="20" background="surface" radius="lg"><column gap="12"><row cross="center"><text grow="1" size="heading">{gpu.name}</text><if test="{gpu.telemetry_available}"><badge variant="outline">LIVE TELEMETRY</badge></if><else><badge variant="outline">INVENTORY ONLY</badge></else></row><row gap="16"><column gap="6" grow="1"><text foreground="text_muted"><span mono="true">GPU LOAD</span></text><if test="{gpu.utilization_available}"><text size="display">{fixed(gpu.utilization_percent, 1)}%</text><progress value="{gpu.utilization_percent / 100}" label="GPU utilization" /></if><else><text size="heading">Unavailable</text><text foreground="text_muted">{detail.gpuTelemetryObservation}</text></else></column><column gap="6" grow="1"><text foreground="text_muted"><span mono="true">DEDICATED MEMORY</span></text><if test="{gpu.memory_used_available}"><text size="display">{fixed(gpu.memory_used_mib / 1024, 1)} GiB</text></if><else><text size="heading">Usage unavailable</text></else><if test="{gpu.memory_total_available}"><text foreground="text_muted"><span mono="true">of {fixed(gpu.memory_total_mib / 1024, 1)} GiB</span></text></if></column></row><row gap="16"><text grow="1"><span mono="true">DRIVER · {gpu.driver}</span></text><if test="{gpu.resolution_available}"><if test="{gpu.refresh_rate_available}"><text><span mono="true">DISPLAY · {gpu.resolution} @ {gpu.refresh_rate_hz} Hz</span></text></if><else><text><span mono="true">DISPLAY · {gpu.resolution}</span></text></else></if><if test="{gpu.temperature_available}"><if test="{fahrenheitMode}"><text><span mono="true">TEMP · {fixed((gpu.temperature_celsius * 9 / 5) + 32, 1)} °F</span></text></if><else><text><span mono="true">TEMP · {fixed(gpu.temperature_celsius, 1)} °C</span></text></else></if></row><text foreground="text_muted"><span mono="true">SOURCE · {gpu.source}</span></text></column></panel>
+            </for>
+            <if test="{primaryGpuTelemetryAvailable}"><panel padding="20" background="surface" radius="lg"><column gap="10"><text>Primary adapter utilization trace</text><chart height="100" y-min="0" y-max="100" grid-lines="4" baseline="true" stroke-width="1" label="GPU utilization history"><series kind="area" values="{gpu_history}" color="accent" label="GPU load" /></chart><text foreground="text_muted">Inventory-only adapters remain excluded rather than contributing a false zero.</text></column></panel></if>
+            <if test="{detail.gpu_count == 0}"><panel padding="20" background="surface" radius="lg"><column gap="8"><badge variant="outline">{upper(detail.gpuInventoryStatus)}</badge><text>{detail.gpuInventoryObservation}</text><text foreground="text_muted">GPU inventory and telemetry are independent; absence is not rendered as zero utilization.</text></column></panel></if>
+            <if test="{detail.static_ready}"><panel padding="20" background="surface" radius="lg"><column gap="9"><row cross="center"><text grow="1">Connected displays</text><badge variant="outline">{detail.display_count} SHOWN OF {detail.display_total_count} · {upper(detail.displayInventoryStatus)}</badge></row><for each="displays" as="display" key="id"><row gap="12" cross="center"><text grow="1">{display.label}</text><if test="{display.active_available}"><if test="{display.active}"><badge variant="outline">ACTIVE</badge></if><else><badge variant="outline">INACTIVE</badge></else></if><else><badge variant="outline">ACTIVE STATE UNKNOWN</badge></else><text><span mono="true">{upper(display.connection)}</span></text><if test="{display.brightness_available}"><text><span mono="true">{display.brightness_percent}% BRIGHTNESS</span></text></if><if test="{display.size_available}"><text><span mono="true">{display.physical_width_cm} × {display.physical_height_cm} CM</span></text></if><if test="{technicianMode}"><text grow="1" foreground="text_muted"><span mono="true">{display.source}</span></text></if></row></for><if test="{detail.display_count == 0}"><text foreground="text_muted">{detail.displayInventoryObservation}</text></if><text foreground="text_muted"><span mono="true">INVENTORY · {detail.displayInventoryObservation}</span></text><text foreground="text_muted"><span mono="true">BRIGHTNESS · {upper(detail.displayBrightnessStatus)} · {detail.displayBrightnessObservation}</span></text></column></panel></if>
+          </if>
+          <else>
+            <panel padding="20" background="surface" radius="lg"><column gap="10"><badge variant="outline">COLLECTING</badge><text>The five-second GPU topic is starting.</text><text foreground="text_muted">Unavailable telemetry will remain explicit when an adapter is detected without a supported provider.</text></column></panel>
+          </else>
+        </if>
+
+        <if test="{active_section == 5}">
+          <column gap="4"><text size="display">Network</text><text foreground="text_muted">Interfaces, throughput, active connections, gateway, DNS, and internet reachability.</text></column>
+          <if test="{detail.fast_ready}">
+            <row gap="16"><panel padding="20" grow="1" background="surface" radius="lg"><column gap="8"><text foreground="text_muted"><span mono="true">DOWNLOAD RATE</span></text><text size="display">{fixed(detail.total_download_kib_s, 1)}</text><text foreground="text_muted"><span mono="true">KiB/s</span></text></column></panel><panel padding="20" grow="1" background="surface" radius="lg"><column gap="8"><text foreground="text_muted"><span mono="true">UPLOAD RATE</span></text><text size="display">{fixed(detail.total_upload_kib_s, 1)}</text><text foreground="text_muted"><span mono="true">KiB/s</span></text></column></panel></row>
+            <panel padding="20" background="surface" radius="lg"><column gap="10"><text>Traffic-rate trace</text><chart height="90" y-min="0" baseline="true" stroke-width="1" label="Network download and upload rate history"><series values="{network_download_history}" color="accent" label="Download KiB/s" /><series values="{network_upload_history}" color="warning" label="Upload KiB/s" /></chart><text foreground="text_muted">Rates are per-second activity; interface totals remain cumulative and are labeled separately.</text></column></panel>
+            <panel padding="20" background="surface" radius="lg"><column gap="10"><row cross="center"><text grow="1">Interfaces</text><badge variant="outline">{detail.interface_count} SHOWN OF {detail.interface_total_count}</badge></row><for each="interfaces" as="interface" key="id"><row gap="12" cross="center"><text width="130">{interface.name}</text><if test="{interface.is_up}"><badge variant="outline">UP</badge></if><else><badge variant="outline">DOWN</badge></else><text grow="1"><span mono="true">{interface.address}</span></text><text><span mono="true">↓ {fixed(interface.download_kib_s, 1)} · ↑ {fixed(interface.upload_kib_s, 1)} KiB/s</span></text></row><if test="{technicianMode}"><row gap="12"><text width="130" foreground="text_muted"><span mono="true">{interface.state}</span></text><text grow="1" foreground="text_muted"><span mono="true">MAC · {interface.mac}</span></text><text foreground="text_muted"><span mono="true">TOTAL ↓ {fixed(interface.received_gib, 2)} · ↑ {fixed(interface.transmitted_gib, 2)} GiB</span></text></row></if></for></column></panel>
+          </if>
+          <else><panel padding="20" background="surface" radius="lg"><column gap="8"><badge variant="outline">COLLECTING</badge><text>Fast interface telemetry is starting.</text></column></panel></else>
+          <if test="{technicianMode}"><if test="{detail.static_ready}"><panel padding="20" background="surface" radius="lg"><column gap="8"><row cross="center"><text grow="1">Platform adapter inventory</text><badge variant="outline">{detail.network_adapter_count} SHOWN OF {detail.network_adapter_total_count} · {upper(detail.networkAdapterStatus)}</badge></row><for each="networkAdapters" as="adapter" key="id"><row gap="12" cross="center"><column gap="2" grow="1"><text>{adapter.name}</text><text foreground="text_muted">{adapter.description}</text></column><badge variant="outline">MEDIA · {upper(adapter.status)}</badge><if test="{adapter.link_speed_available}"><text><span mono="true">{fixed(adapter.link_speed_mbps, 1)} Mbps</span></text></if><if test="{adapter.hardware_available}"><text><span mono="true">HARDWARE · {adapter.hardware_interface}</span></text></if></row></for><if test="{detail.network_adapter_count == 0}"><text foreground="text_muted">{detail.networkAdapterObservation}</text></if><text foreground="text_muted"><span mono="true">OBSERVATION · {detail.networkAdapterObservation}</span></text></column></panel></if></if>
+          <panel padding="20" background="surface" radius="lg"><column gap="10"><row cross="center"><text grow="1">Connectivity diagnostics</text><if test="{detail.diagnostics_ready}"><badge variant="outline">CURRENT</badge></if><else><badge variant="outline">SCANNING</badge></else></row><if test="{detail.diagnostics_ready}"><row gap="16"><column gap="2" grow="1"><text><span mono="true">GATEWAY · {detail.gateway_reachable}</span></text><if test="{detail.gateway_latency_available}"><text foreground="text_muted"><span mono="true">{fixed(detail.gateway_latency_ms, 1)} ms</span></text></if><else><text foreground="text_muted"><span mono="true">LATENCY UNAVAILABLE</span></text></else></column><column gap="2" grow="1"><text><span mono="true">DNS · {detail.dns_resolved}</span></text><if test="{detail.dns_latency_available}"><text foreground="text_muted"><span mono="true">{fixed(detail.dns_latency_ms, 1)} ms</span></text></if><else><text foreground="text_muted"><span mono="true">LATENCY UNAVAILABLE</span></text></else></column><column gap="2" grow="1"><text><span mono="true">INTERNET · {detail.internet_reachable}</span></text><if test="{detail.internet_latency_available}"><text foreground="text_muted"><span mono="true">{fixed(detail.internet_latency_ms, 1)} ms</span></text></if><else><text foreground="text_muted"><span mono="true">LATENCY UNAVAILABLE</span></text></else></column></row></if><text foreground="text_muted"><span mono="true">15-SECOND ASYNCHRONOUS DIAGNOSTIC CADENCE</span></text></column></panel>
+          <if test="{technicianMode}"><if test="{detail.diagnostics_ready}"><panel padding="20" background="surface" radius="lg"><column gap="7"><text>Diagnostic targets and provider detail</text><text foreground="text_muted"><span mono="true">GATEWAY · {detail.gatewayTarget} · {detail.gatewayError}</span></text><text foreground="text_muted"><span mono="true">DNS · {detail.dnsDomain} → {detail.dnsResult} · {detail.dnsError}</span></text><text foreground="text_muted"><span mono="true">INTERNET · {detail.internetTarget} · {detail.internetError}</span></text></column></panel></if></if>
+          <if test="{detail.medium_ready}"><panel padding="20" background="surface" radius="lg"><column gap="8"><row cross="center"><text grow="1">Active connections</text><badge variant="outline">{connectionMatchCount} MATCHED OF {detail.connection_count} SHOWN · {detail.connection_total_count} TOTAL · {detail.listening_count} LISTENING</badge></row><search-field text="{connectionFilter}" placeholder="Filter by endpoint, state, protocol, PID, or process…" on-input="connection_filter_edit" label="Filter active connections" /><row gap="10"><text width="50" foreground="text_muted"><span mono="true">PROTO</span></text><text grow="1" foreground="text_muted"><span mono="true">LOCAL</span></text><text grow="1" foreground="text_muted"><span mono="true">REMOTE</span></text><text width="110" foreground="text_muted"><span mono="true">STATE</span></text><text width="110" foreground="text_muted"><span mono="true">PID / PROCESS</span></text></row><for each="connections" as="connection" key="id"><row gap="10"><text width="50"><span mono="true">{upper(connection.protocol)}</span></text><text grow="1"><span mono="true">{connection.local}:{connection.local_port}</span></text><text grow="1"><span mono="true">{connection.remote}:{connection.remote_port}</span></text><text width="110"><span mono="true">{upper(connection.state)}</span></text><text width="110"><span mono="true">{connection.pid} · {connection.processName}</span></text></row></for><text foreground="text_muted">Filtering operates on the current 20-row bounded projection; the total count makes truncation explicit.</text></column></panel></if>
+        </if>
+
+        <if test="{active_section == 6}">
+          <column gap="4"><text size="display">Processes</text><text foreground="text_muted">Live consumers ranked across the full process inventory before the bounded view.</text></column>
+          <if test="{detail.fast_ready}">
+            <panel padding="20" background="surface" radius="lg"><column gap="9"><row cross="center"><text grow="1">Live process consumers</text><if test="{detail.process_values_warmed}"><badge variant="outline">{detail.process_total_count} PROCESSES · {detail.process_total_threads} THREADS</badge></if><else><badge variant="outline">WARMING UP · {detail.process_total_count} PROCESSES</badge></else><row gap="6"><button selected="{processCpuSort}" variant="outline" on-press="sort_process_cpu">CPU</button><button selected="{processMemorySort}" variant="outline" on-press="sort_process_memory">Memory</button><button selected="{processPidSort}" variant="outline" on-press="sort_process_pid">PID</button><button selected="{processNameSort}" variant="outline" on-press="sort_process_name">Name</button></row><button variant="outline" on-press="toggle_process_rows">{processToggleLabel}</button></row><search-field text="{processFilter}" placeholder="Filter the current bounded process projection…" on-input="process_filter_edit" label="Filter processes by name or state" /><row gap="10"><text grow="1" foreground="text_muted"><span mono="true">PROCESS</span></text><text width="70" foreground="text_muted"><span mono="true">PID</span></text><text width="90" foreground="text_muted"><span mono="true">CPU / CORE</span></text><text width="130" foreground="text_muted"><span mono="true">MEMORY</span></text><text width="90" foreground="text_muted"><span mono="true">STATE</span></text></row><for each="processes" as="process" key="id"><row gap="10" cross="center"><column gap="2" grow="1"><text>{process.friendlyName}</text><if test="{technicianMode}"><text foreground="text_muted"><span mono="true">{process.name}</span></text></if></column><text width="70"><span mono="true">{process.pid}</span></text><text width="90"><span mono="true">{fixed(process.cpu_percent, 1)}%</span></text><text width="130"><span mono="true">{fixed(process.memory_mib, 1)} MiB · {fixed(process.memory_percent, 1)}%</span></text><text width="90"><span mono="true">{process.status}</span></text></row></for><text foreground="text_muted"><span mono="true">CPU IS % OF ONE LOGICAL CORE · MULTITHREADED VALUES MAY EXCEED 100%</span></text><text foreground="text_muted"><span mono="true">ENGINE RANKS THE FULL INVENTORY EACH SECOND · FILTERING OPERATES ON THE LATEST 16-ROW BOUNDED PROJECTION</span></text><text foreground="text_muted"><span mono="true">SHOWING {visibleProcessCount} OF {processMatchCount} MATCHED ROWS · {detail.process_total_count} TOTAL PROCESSES · WINDOWS BATCH / SYSINFO</span></text></column></panel>
+          </if>
+          <else><panel padding="20" background="surface" radius="lg"><column gap="10"><badge variant="outline">COLLECTING</badge><text>The one-second process projection is starting.</text><text foreground="text_muted">The production table stays bounded so a large process list cannot inflate renderer cost.</text></column></panel></else>
+        </if>
+
+        <if test="{active_section == 7}">
+          <column gap="4"><text size="display">Thermals</text><text foreground="text_muted">Available component and GPU temperatures with source provenance.</text></column>
+          <if test="{detail.slow_ready}">
+            <row gap="16"><panel padding="20" grow="1" background="surface" radius="lg"><column gap="8"><row cross="center"><text grow="1" foreground="text_muted"><span mono="true">CPU TEMPERATURE</span></text><badge variant="outline">{upper(detail.cpuTemperatureStatus)}</badge></row><if test="{detail.cpu_temperature_available}"><if test="{fahrenheitMode}"><text size="display">{fixed((detail.cpu_temperature_celsius * 9 / 5) + 32, 1)} °F</text></if><else><text size="display">{fixed(detail.cpu_temperature_celsius, 1)} °C</text></else></if><else><text size="heading">Unavailable</text><text foreground="text_muted">{detail.cpuTemperatureObservation}</text></else></column></panel><panel padding="20" grow="1" background="surface" radius="lg"><column gap="8"><row cross="center"><text grow="1" foreground="text_muted"><span mono="true">GPU TEMPERATURE</span></text><badge variant="outline">{upper(detail.gpuTemperatureStatus)}</badge></row><if test="{detail.gpu_temperature_available}"><if test="{fahrenheitMode}"><text size="display">{fixed((detail.gpu_temperature_celsius * 9 / 5) + 32, 1)} °F</text></if><else><text size="display">{fixed(detail.gpu_temperature_celsius, 1)} °C</text></else></if><else><text size="heading">Unavailable</text><text foreground="text_muted">{detail.gpuTemperatureObservation}</text></else></column></panel></row>
+            <if test="{thermalHistoryAvailable}"><panel padding="20" background="surface" radius="lg"><column gap="10"><text>Primary temperature trace</text><if test="{fahrenheitMode}"><chart height="100" y-min="32" y-max="248" grid-lines="4" baseline="true" stroke-width="1" label="Temperature history in Fahrenheit"><series values="{temperature_history_fahrenheit}" color="accent" label="Temperature °F" /></chart></if><else><chart height="100" y-min="0" y-max="120" grid-lines="4" baseline="true" stroke-width="1" label="Temperature history in Celsius"><series values="{temperature_history_celsius}" color="accent" label="Temperature °C" /></chart></else><text foreground="text_muted">CPU is preferred when available; otherwise the current GPU summary supplies this bounded trace.</text></column></panel></if>
+            <if test="{detail.battery_available}"><panel padding="20" background="surface" radius="lg"><column gap="9"><row cross="center"><column gap="3" grow="1"><text>Battery and power</text><text foreground="text_muted"><span mono="true">SOURCE · {upper(detail.powerSource)}</span></text></column><badge variant="outline">{fixed(detail.battery_percent, 1)}% · {upper(detail.batteryStatus)}</badge></row><progress value="{detail.battery_percent / 100}" label="Battery charge" /><row gap="16"><text><span mono="true">AC · {detail.battery_on_ac}</span></text><text><span mono="true">CHARGING · {detail.battery_charging}</span></text><text><span mono="true">REMAINING · {detail.batteryTime}</span></text><if test="{technicianMode}"><if test="{detail.battery_cycle_available}"><text><span mono="true">CYCLES · {detail.battery_cycle_count}</span></text></if><if test="{detail.battery_capacity_available}"><text><span mono="true">CAPACITY · {detail.battery_capacity_mwh} mWh</span></text></if><if test="{detail.battery_voltage_available}"><text><span mono="true">DESIGN · {detail.battery_voltage_mv} mV</span></text></if></if></row><if test="{technicianMode}"><text foreground="text_muted">{detail.batteryProvider} · {detail.batteryObservation}</text></if></column></panel></if>
+            <else><panel padding="20" background="surface" radius="lg"><column gap="6"><row cross="center"><column gap="3" grow="1"><text>Battery and power</text><text foreground="text_muted">No battery row was returned; the provider state below distinguishes desktop, unsupported, denied, and failed collection.</text></column><badge variant="outline">{upper(detail.batteryStatus)}</badge></row><text foreground="text_muted">{detail.batteryObservation}</text></column></panel></else>
+            <panel padding="20" background="surface" radius="lg"><column gap="9"><row cross="center"><text grow="1">Sensor and fan inventory</text><badge variant="outline">{detail.sensor_count}/{detail.sensor_total_count} SENSORS · {detail.fan_count}/{detail.fan_total_count} FANS</badge></row><for each="sensors" as="sensor" key="id"><row gap="12" cross="center"><text grow="1">{sensor.label}</text><badge variant="outline">{upper(sensor.kind)}</badge><if test="{fahrenheitMode}"><text width="90"><span mono="true">{fixed((sensor.temperature_celsius * 9 / 5) + 32, 1)} °F</span></text></if><else><text width="90"><span mono="true">{fixed(sensor.temperature_celsius, 1)} °C</span></text></else><if test="{technicianMode}"><if test="{sensor.critical_available}"><text><span mono="true">CRITICAL · {fixed(sensor.critical_celsius, 1)} °C</span></text></if><text grow="1" foreground="text_muted"><span mono="true">{sensor.source}</span></text></if></row></for><for each="fans" as="fan" key="id"><row gap="12"><text grow="1">{fan.label}</text><text><span mono="true">{fan.rpm} RPM</span></text><if test="{technicianMode}"><text grow="1" foreground="text_muted"><span mono="true">{fan.source}</span></text></if></row></for><if test="{detail.sensor_count == 0}"><text foreground="text_muted">{detail.thermalInventoryObservation}</text></if><if test="{detail.fan_count == 0}"><text foreground="text_muted">Fan provider · {detail.fanObservation}</text></if><text foreground="text_muted"><span mono="true">TEMPERATURES · {upper(detail.thermalInventoryStatus)} · {detail.thermalInventoryObservation}</span></text><text foreground="text_muted"><span mono="true">FANS · {upper(detail.fanStatus)} · {detail.fanObservation}</span></text></column></panel>
+          </if>
+          <else><panel padding="20" background="surface" radius="lg"><column gap="10"><badge variant="outline">COLLECTING</badge><text>The five-second thermal topic is starting.</text><text foreground="text_muted">Missing, permission-denied, and unsupported sensor providers will be shown distinctly.</text></column></panel></else>
+        </if>
+
+        <if test="{active_section == 8}">
+          <row cross="center"><column gap="4" grow="1"><text size="display">Drivers</text><text foreground="text_muted">Device inventory and authoritative attention state.</text></column><button icon="refresh-cw" variant="outline" on-press="scan_drivers">Scan again</button></row>
+          <if test="{detail.drivers_ready}">
+            <panel padding="20" background="surface" radius="lg"><column gap="9"><row cross="center"><column gap="3" grow="1"><text>Device inventory</text><text foreground="text_muted"><span mono="true">SCAN · {driverScanStatus}</span></text></column><badge variant="outline">{driverMatchCount} MATCHED OF {detail.driver_count} SHOWN · {detail.driver_total_count} TOTAL · {detail.driver_attention_count} ATTENTION</badge></row><row gap="8"><search-field grow="1" text="{driverFilter}" placeholder="Filter devices by name, category, status, version, or detail…" on-input="driver_filter_edit" label="Filter driver devices" /><button selected="{driver_attention_only}" variant="outline" on-press="toggle_driver_attention">{driverAttentionFilterLabel}</button></row><row gap="10"><text grow="1" foreground="text_muted"><span mono="true">DEVICE</span></text><text width="90" foreground="text_muted"><span mono="true">CATEGORY</span></text><text width="180" foreground="text_muted"><span mono="true">STATUS</span></text><text width="120" foreground="text_muted"><span mono="true">VERSION</span></text></row><for each="drivers" as="driver" key="id"><column gap="3"><row gap="10" cross="center"><text grow="1">{driver.name}</text><text width="90"><span mono="true">{upper(driver.category)}</span></text><text width="180"><span mono="true">{upper(driver.status)}</span></text><text width="120"><span mono="true">{driver.version}</span></text></row><if test="{technicianMode}"><text foreground="text_muted"><span mono="true">DATE · {driver.date} · {driver.detail}</span></text></if></column></for><text foreground="text_muted"><span mono="true">ATTENTION DEVICES FIRST · FILTERING OPERATES ON THE 32-ROW BOUNDED PROJECTION · SETUPAPI / SYSFS / IOKIT</span></text></column></panel>
+            <if test="{technicianMode}"><panel padding="20" background="surface" radius="lg"><column gap="8"><row cross="center"><text grow="1">Associated platform services</text><badge variant="outline">{detail.service_count} SHOWN OF {detail.service_total_count} SERVICES</badge></row><for each="services" as="service" key="id"><row gap="12" cross="center"><column gap="2" grow="1"><text>{service.displayName}</text><text foreground="text_muted"><span mono="true">{service.name}</span></text></column><badge variant="outline">{upper(service.state)}</badge></row></for><if test="{detail.service_count == 0}"><text foreground="text_muted">The current platform driver provider returned no associated service inventory.</text></if></column></panel></if>
+          </if>
+          <else><panel padding="20" background="surface" radius="lg"><column gap="10"><badge variant="outline">SCANNING</badge><text>The asynchronous driver scan is running.</text><text foreground="text_muted">The scan remains off the renderer thread and preserves platform-provider status provenance.</text></column></panel></else>
+        </if>
+
+        <if test="{active_section == 9}">
+          <column gap="4"><text size="display">Settings</text><text foreground="text_muted">Desktop preferences are isolated from the SD-300 terminal experience.</text></column>
+
+          <panel padding="20" background="surface" radius="lg">
+            <column gap="14">
+              <row cross="center"><column gap="3" grow="1"><text>Audience mode</text><text foreground="text_muted">User mode emphasizes interpretation; Technician mode surfaces raw provenance and detail.</text></column><if test="{technicianMode}"><button variant="outline" on-press="toggle_audience_mode">Technician · switch to User</button></if><else><button variant="outline" on-press="toggle_audience_mode">User · switch to Technician</button></else></row>
+              <row cross="center"><column gap="3" grow="1"><text>Temperature unit</text><text foreground="text_muted">Applies only to GUI thermal and drive-health presentation.</text></column><if test="{fahrenheitMode}"><button variant="outline" on-press="toggle_temperature_unit">Fahrenheit · switch to Celsius</button></if><else><button variant="outline" on-press="toggle_temperature_unit">Celsius · switch to Fahrenheit</button></else></row>
+              <row cross="center"><column gap="3" grow="1"><text>Chart density</text><text foreground="text_muted">Controls visual history spacing without changing collector cadence.</text></column><row gap="8"><button selected="{compactDensity}" variant="outline" on-press="density_compact">Compact</button><button selected="{balancedDensity}" variant="outline" on-press="density_balanced">Balanced</button><button selected="{comfortableDensity}" variant="outline" on-press="density_comfortable">Comfortable</button></row></row>
+              <row cross="center"><column gap="3" grow="1"><text>Reduced motion</text><text foreground="text_muted">Keeps diagnostic transitions restrained and avoids decorative animation.</text></column><if test="{reduced_motion}"><button variant="outline" on-press="toggle_reduced_motion">On · turn off</button></if><else><button variant="outline" on-press="toggle_reduced_motion">Off · turn on</button></else></row>
+            </column>
+          </panel>
+
+          <panel padding="20" background="surface" radius="lg">
+            <column gap="14">
+              <text>Desktop lifecycle</text>
+              <if test="{trayAvailable}"><row cross="center"><column gap="3" grow="1"><text>Tray / status item</text><text foreground="text_muted">When enabled, close hides the window; Quit terminates collection. Default is off.</text></column><if test="{tray_enabled}"><button variant="outline" on-press="toggle_tray">Enabled · disable</button></if><else><button variant="outline" on-press="toggle_tray">Disabled · enable</button></else></row></if>
+              <else><row cross="center"><column gap="3" grow="1"><text>Tray / status item</text><text foreground="text_muted">Unavailable on Linux in Native SDK 0.5.4; closing the window exits.</text></column><badge variant="outline">UNAVAILABLE</badge></row></else>
+              <row cross="center"><column gap="3" grow="1"><text>Launch at login</text><text foreground="text_muted">Starts hidden only when the tray is enabled; otherwise opens the monitor visibly.</text></column><if test="{launch_at_login}"><button variant="outline" on-press="toggle_launch_at_login">Enabled · disable</button></if><else><button variant="outline" on-press="toggle_launch_at_login">Disabled · enable</button></else></row>
+              <if test="{settings_restart_required}"><badge variant="outline">RESTART REQUIRED FOR TRAY / CLOSE BEHAVIOR</badge></if>
+            </column>
+          </panel>
+
+          <panel padding="20" background="surface" radius="lg">
+            <column gap="10"><row cross="center"><column gap="3" grow="1"><text>Diagnostic exports</text><text foreground="text_muted">Exports are explicit, redacted by default, and preserved if SD-300 is uninstalled.</text></column><if test="{export_pending}"><badge variant="outline">PREPARING</badge></if></row><row gap="8"><button variant="outline" on-press="export_redacted_snapshot">Export redacted snapshot</button><button variant="outline" on-press="export_capabilities">Export capabilities</button></row><text foreground="text_muted">Sensitive network addresses, host identity, and storage serials are removed from snapshot exports.</text><text foreground="text_muted">{status}</text></column>
+          </panel>
+
+          <panel padding="20" background="surface" radius="lg">
+            <column gap="10"><row cross="center"><column gap="3" grow="1"><text>About SD-300</text><text foreground="text_muted">The desktop monitor and terminal UI consume the same Rust collector implementation through isolated runtimes.</text></column><badge variant="outline">v3.0.0 · ABI 1 · SCHEMA 1</badge></row><text><span mono="true">CLI / TUI · run sd300</span></text><text><span mono="true">Open GUI · run sd300 gui</span></text><text><span mono="true">Update · run sd300 update</span></text><text><span mono="true">Uninstall CLI + GUI · run sd300 uninstall</span></text><text foreground="text_muted">Lifecycle actions remain status-only here so installer ownership, elevation, rollback, and JSON contracts stay authoritative in the CLI.</text></column>
+          </panel>
+
+          <panel padding="20" background="surface" radius="lg"><column gap="9"><text>Interaction help</text><text>Use the left navigation to change resources; each selection resets that page to the top and changes only the GUI collector profile.</text><text>Refresh requests the newest completed samples without restarting collection. Process sort controls rank the full inventory before the bounded table is shown.</text><text>Tab and Shift+Tab move focus, Enter or Space activates the focused control, and the operating-system close command follows the configured tray behavior.</text><text foreground="text_muted">Charts always have text equivalents. Visible focus, semantic labels, reduced motion, and native scaling remain active; the terminal UI keeps its own unchanged keybindings and help.</text></column></panel>
+
+          <panel padding="20" background="surface" radius="lg">
+            <column gap="9"><row cross="center"><column gap="3" grow="1"><text>Capabilities and provenance</text><text foreground="text_muted">Availability is explicit; missing permission or platform support is never presented as healthy data.</text></column><badge variant="outline">{detail.capability_count} SHOWN OF {detail.capability_total_count}</badge></row><if test="{detail.capabilities_ready}"><for each="capabilities" as="capability" key="id"><row gap="10" cross="center"><text width="150"><span mono="true">{capability.capability}</span></text><badge variant="outline">{upper(capability.status)}</badge><text grow="1">{capability.source}</text><if test="{technicianMode}"><text grow="1" foreground="text_muted">{capability.detail}</text></if></row></for></if><else><text foreground="text_muted">The capability matrix is loading from the shared observation model.</text></else></column>
+          </panel>
+        </if>
+      </column>
+    </scroll>
+  </row>
+</column>

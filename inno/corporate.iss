@@ -21,6 +21,9 @@
 #ifndef MyAppBinaryDir
   #define MyAppBinaryDir "..\target\release"
 #endif
+#ifndef MyAppGuiBinDir
+  #define MyAppGuiBinDir "..\target\native-gui-stage\windows-x86_64\app\zig-out\bin"
+#endif
 
 #define MyAppName "sd300"
 #define MyAppFullName "SD-300 Corporate"
@@ -74,6 +77,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "{#MyAppBinaryDir}\{#MyAppExeName}"; DestDir: "{app}\bin"; Flags: ignoreversion; AfterInstall: ConsolidatePriorCli
+Source: "{#MyAppGuiBinDir}\sd300-gui.exe"; DestDir: "{app}\app"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\sd300_engine.dll"; DestDir: "{app}\app"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\icon.png"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\licenses\*"; DestDir: "{app}\app\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\SD-300"; Filename: "{app}\app\sd300-gui.exe"; WorkingDir: "{app}\app"; Comment: "Open the SD-300 native system monitor"
 
 [Registry]
 ; Install-source marker. sd300 update reads HKCU\Software\SD300\InstallSource
@@ -81,6 +91,9 @@ Source: "{#MyAppBinaryDir}\{#MyAppExeName}"; DestDir: "{app}\bin"; Flags: ignore
 ; must match the `exe-corporate` arm in src/update.rs.
 Root: HKCU; Subkey: "Software\SD300"; ValueType: string; ValueName: "InstallSource"; ValueData: "exe-corporate"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SD300"; ValueType: string; ValueName: "InstallSourceCorporate"; ValueData: "exe-corporate"; Flags: uninsdeletevalue
+; Per-user ownership evidence used only to locate the existing v3 CLI for a
+; hidden, authenticated GUI shutdown before Setup mutates the shared image.
+Root: HKCU; Subkey: "Software\SD300"; ValueType: string; ValueName: "NativeInstallRootCorporate"; ValueData: "{app}\"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SD300"; Flags: uninsdeletekeyifempty
 
 [Code]
@@ -88,6 +101,49 @@ Root: HKCU; Subkey: "Software\SD300"; Flags: uninsdeletekeyifempty
 #define ConflictingMsiPublisher MyAppPublisher
 #define OtherEditionDisplayName "SD-300 Global"
 #define OtherEditionInnoAppId "{DC74D35F-CBF4-425F-B11E-E9EA87C13CA9}"
+
+procedure StopGuiAtRoot(Root: String);
+var
+  ExitCode: Integer;
+  CliBinary: String;
+  GuiBinary: String;
+begin
+  Root := RemoveBackslashUnlessRoot(Root);
+  GuiBinary := Root + '\app\sd300-gui.exe';
+  if not FileExists(GuiBinary) then
+    exit;
+  CliBinary := Root + '\bin\{#MyAppExeName}';
+  if not FileExists(CliBinary) then
+    RaiseException('An owned SD-300 GUI exists without its lifecycle CLI. Setup stopped before changing files.');
+  if not Exec(CliBinary, 'stop-gui --quiet', ExtractFileDir(CliBinary),
+      SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+    RaiseException('Could not start the hidden SD-300 GUI lifecycle request. Setup stopped safely.');
+  if ExitCode <> 0 then
+    RaiseException('The SD-300 GUI did not stop safely (exit ' + IntToStr(ExitCode) + ').');
+end;
+
+procedure StopExistingGui;
+var
+  RegisteredRoot: String;
+begin
+  if RegQueryStringValue(HKEY_CURRENT_USER, 'Software\SD300',
+      'NativeInstallRootCorporate', RegisteredRoot) then
+    StopGuiAtRoot(RegisteredRoot);
+end;
+
+function HasCommandLineParameter(Parameter: String): Boolean;
+var
+  Index: Integer;
+begin
+  Result := False;
+  for Index := 1 to ParamCount do
+    if CompareText(ParamStr(Index), Parameter) = 0 then
+    begin
+      Result := True;
+      exit;
+    end;
+end;
+
 #include "remove-conflicting-msi.pas"
 
 procedure RunStrictMigration(Args: String; LabelText: String);
@@ -111,6 +167,38 @@ begin
     orphan first, then the current user's Cargo/managed copy. }
   RunStrictMigration('--other-edition', 'orphaned-edition');
   RunStrictMigration('--cargo-copy', 'managed/Cargo');
+end;
+
+procedure VerifyGuiCompanion;
+var
+  ExitCode: Integer;
+  GuiBinary: String;
+begin
+  GuiBinary := ExpandConstant('{app}\app\sd300-gui.exe');
+  if not Exec(GuiBinary, '--self-test --json', ExpandConstant('{app}\app'),
+      SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+    RaiseException('Could not start the installed SD-300 GUI self-test. Setup stopped safely.');
+  if ExitCode <> 0 then
+    RaiseException('The installed SD-300 GUI or engine failed self-test (exit ' +
+      IntToStr(ExitCode) + '). Setup stopped safely.');
+end;
+
+procedure CleanupOwnedGuiState;
+var
+  ExitCode: Integer;
+  CliBinary: String;
+begin
+  if HasCommandLineParameter('/PRESERVEGUISTATE') then
+  begin
+    Log('Preserving GUI state during an installer-format transition.');
+    exit;
+  end;
+  CliBinary := ExpandConstant('{app}\bin\{#MyAppExeName}');
+  if not Exec(CliBinary, 'cleanup-gui-state --quiet', ExpandConstant('{app}\bin'),
+      SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+    RaiseException('Could not start SD-300 GUI state cleanup. Uninstall stopped safely.');
+  if ExitCode <> 0 then
+    RaiseException('SD-300 GUI state cleanup failed safely (exit ' + IntToStr(ExitCode) + ').');
 end;
 
 {
@@ -175,11 +263,24 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
+  begin
     EnvAddPath(ExpandConstant('{app}') + '\bin');
+    VerifyGuiCompanion;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+  begin
+    { The uninstaller itself proves ownership of its application directory;
+      it does not need the registry locator required by a fresh installer. }
+    if HasCommandLineParameter('/SD300GUIALREADYSTOPPED') then
+      Log('SD-300 lifecycle preflight already stopped the GUI before uninstall.')
+    else
+      StopGuiAtRoot(ExpandConstant('{app}'));
+    CleanupOwnedGuiState;
+  end;
   if CurUninstallStep = usPostUninstall then
     EnvRemovePath(ExpandConstant('{app}') + '\bin');
 end;

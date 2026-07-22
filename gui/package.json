@@ -1,0 +1,16 @@
+{
+  "name": "@qubetx/sd300-native-gui",
+  "version": "3.0.0",
+  "private": true,
+  "scripts": {
+    "prepare:font": "node ../scripts/prepare-makira-font.mjs",
+    "check:product-version": "node ../scripts/check-product-version-consistency.mjs",
+    "check": "npm run prepare:font && native check --strict",
+    "test": "node ../scripts/test-native-gui.mjs",
+    "build:developer": "npm run prepare:font && native build --yes",
+    "package:macos": "npm run prepare:font && native package --target macos"
+  },
+  "devDependencies": {
+    "@native-sdk/cli": "0.5.4"
+  }
+}

@@ -1,0 +1,68 @@
+SD-300 is a live, interactive terminal user interface for real-time
+system diagnostics and monitoring. Part of the QubeTX 300 Series
+alongside TR-300 (Machine Report) and ND-300 (Network Diagnostic).
+
+Run without flags to choose a diagnostic mode interactively,
+use --user / --tech to launch directly into a mode, or run
+sd300 update to check for and install the latest release. Use
+    sd300 snapshot --json for a redacted, noninteractive diagnostic report.
+
+Usage: sd300 [OPTIONS]
+       sd300 <COMMAND>
+
+Commands:
+  update        Check for updates and install the latest release
+  install       Install the latest release through the preferred managed CLI channel
+  uninstall     Remove SD-300 through its proven installation owner
+  snapshot      Collect one redacted noninteractive diagnostic snapshot
+  capabilities  Show which diagnostic capabilities are available on this machine
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+      --user
+          Launch directly into User Mode (plain language diagnostics)
+
+      --tech
+          Launch directly into Technician Mode (raw data and advanced metrics)
+
+      --update
+          Check for updates and install the latest version (legacy flag form of `sd300 update`)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+EXAMPLES:
+  sd300          Choose a diagnostic mode interactively
+  sd300 --user   Launch directly into User Mode
+  sd300 --tech   Launch directly into Technician Mode
+  sd300 update   Check for updates and install
+  sd300 install  Install latest through the managed CLI channel
+  sd300 uninstall Remove the proven installed channel
+  sd300 snapshot --json       Redacted diagnostic snapshot
+  sd300 capabilities --json   Capability and availability states
+  sd300 --update Same as 'sd300 update' (legacy flag form)
+
+KEYBINDINGS:
+  1-9          Switch to section
+  q / Esc      Quit
+  Ctrl+C       Quit to shell
+  m            Return to mode selection
+  ?            Help overlay
+  f            Toggle temperature unit (C/F)
+  j / k        Scroll (Processes, Connections, Drivers, Disk)
+  c / M / p / n  Sort processes by CPU / Memory / PID / Name
+  r            Refresh drivers (Drivers section)
+
+SECTIONS:
+  1 Overview    System health dashboard / identity and gauges
+  2 CPU         Load, sparkline, per-core utilization
+  3 Memory      Usage, swap, top consumers
+  4 Disk        Drive health, partitions, SMART data
+  5 GPU         Utilization, VRAM, temperature
+  6 Network     Connectivity, interfaces, active connections
+  7 Processes   Running apps / sortable process table
+  8 Thermals    Temperature, fans, battery, power
+  9 Drivers     Device health, driver versions, services

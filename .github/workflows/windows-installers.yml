@@ -10,6 +10,11 @@ on:
         description: "Draft release tag to qualify"
         required: true
         type: string
+      qualification_only:
+        description: "Build and exercise installers from this ref without a release draft"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -26,7 +31,9 @@ jobs:
       ready: ${{ steps.meta.outputs.ready }}
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
       source_ref: ${{ steps.meta.outputs.source_ref }}
+      qualification_only: ${{ steps.meta.outputs.qualification_only }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -36,20 +43,50 @@ jobs:
         name: Resolve qualification draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          QUALIFICATION_ONLY: ${{ inputs.qualification_only }}
+          EXPECTED_SOURCE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          TRIGGER_SOURCE_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
         shell: bash
         run: |
           set -euo pipefail
+          source_sha=$(git rev-parse HEAD)
+          [[ $source_sha == "$EXPECTED_SOURCE_SHA" ]] || {
+            echo "checkout $source_sha does not match triggering source $EXPECTED_SOURCE_SHA" >&2
+            exit 1
+          }
+          source_ref=${TRIGGER_SOURCE_REF:-$source_sha}
           version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
-          if [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
-            tag='${{ inputs.tag }}'
+          if [[ $EVENT_NAME == workflow_dispatch ]]; then
+            tag=$DISPATCH_TAG
           else
             tag="v${version}"
           fi
           [[ $tag == "v${version}" ]] || { echo "tag $tag does not match Cargo.toml $version" >&2; exit 1; }
-          state=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || true)
-          if [[ $state == true ]]; then
+          release_json=$(gh release view "$tag" --json isDraft,tagName,targetCommitish 2>/dev/null || true)
+          state=$(jq -r '.isDraft // empty' <<< "$release_json")
+          qualification_only=false
+          if [[ $EVENT_NAME == workflow_dispatch && $QUALIFICATION_ONLY == true ]]; then
             ready=true
-          elif [[ '${{ github.event_name }}' == workflow_dispatch ]]; then
+            qualification_only=true
+            echo "Running branch-only Windows installer qualification for $source_sha; no release assets will be replaced."
+          elif [[ $state == true ]]; then
+            ready=true
+            release_tag=$(jq -r '.tagName // empty' <<< "$release_json")
+            target_commitish=$(jq -r '.targetCommitish // empty' <<< "$release_json")
+            [[ $release_tag == "$tag" ]] || { echo "release tag $release_tag does not match requested tag $tag" >&2; exit 1; }
+            [[ $target_commitish == "$source_sha" ]] || {
+              echo "release $tag targets $target_commitish, but this producer checkout is $source_sha" >&2
+              exit 1
+            }
+            git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+            tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
+            [[ $tag_sha == "$source_sha" ]] || {
+              echo "tag $tag resolves to $tag_sha, but this producer checkout is $source_sha" >&2
+              exit 1
+            }
+          elif [[ $EVENT_NAME == workflow_dispatch ]]; then
             echo "$tag is not an unpublished qualification draft" >&2
             exit 1
           else
@@ -60,8 +97,19 @@ jobs:
             echo "ready=$ready"
             echo "tag=$tag"
             echo "version=$version"
-            echo "source_ref=$(git rev-parse HEAD)"
+            echo "source_sha=$source_sha"
+            echo "source_ref=$source_ref"
+            echo "qualification_only=$qualification_only"
           } >> "$GITHUB_OUTPUT"
+          {
+            echo '### Windows producer source identity'
+            echo
+            echo "- Source ref: \`$source_ref\`"
+            echo "- Source SHA: \`$source_sha\`"
+            echo "- Release tag: \`$tag\`"
+            echo "- Producer enabled: \`$ready\`"
+            echo "- Qualification only: \`$qualification_only\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   build-test-upload:
     needs: draft-check
@@ -70,8 +118,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.draft-check.outputs.source_ref }}
+          ref: ${{ needs.draft-check.outputs.source_sha }}
           persist-credentials: false
+
+      - name: Verify exact source checkout
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          $expected = '${{ needs.draft-check.outputs.source_sha }}'
+          if ($actual -ne $expected) { throw "checkout $actual does not match qualified source $expected" }
 
       - id: meta
         name: Resolve draft metadata
@@ -80,9 +135,47 @@ jobs:
           Add-Content $env:GITHUB_OUTPUT 'tag=${{ needs.draft-check.outputs.tag }}'
           Add-Content $env:GITHUB_OUTPUT 'version=${{ needs.draft-check.outputs.version }}'
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: "1.95"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Verify coordinated product version
+        run: node scripts/check-product-version-consistency.mjs --expected-target '${{ needs.draft-check.outputs.version }}'
+      - name: Verify clean-cache and warmed-offline Native SDK restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/sd300-native-npm-cache"
+          rm -rf gui/node_modules "$cache"
+          npm --prefix gui ci --ignore-scripts --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
+          rm -rf gui/node_modules
+          npm --prefix gui ci --ignore-scripts --offline --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
       - name: Build release binary
         run: cargo build --release --locked
+
+      - name: Build and qualify native GUI companion
+        shell: pwsh
+        env:
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
+          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+        run: |
+          scripts\build-native-gui.ps1 -Target windows-x86_64 -SkipNpmCi
+          scripts\package-native-gui.ps1 `
+            -Target windows-x86_64 `
+            -Version '${{ steps.meta.outputs.version }}'
+          $null = New-Item -ItemType Directory -Path target\native -Force
+          Copy-Item target\native-gui-packages\sd300-gui-windows-x86_64.zip* target\native\
 
       - name: Build Global and Corporate MSI
         shell: pwsh
@@ -95,12 +188,14 @@ jobs:
               @{ Source = 'wix\main.wxs'; Stem = 'global' },
               @{ Source = 'wix-corporate\corporate.wxs'; Stem = 'corporate' }
           )) {
-            & $candle -arch x64 `
+            & $candle -arch x64 -ext WixUtilExtension `
               "-dVersion=${{ steps.meta.outputs.version }}" `
               "-dCargoTargetBinDir=$PWD\target\release" `
+              "-dNativeGuiBinDir=$PWD\target\native-gui-stage\windows-x86_64\app\zig-out\bin" `
               -out "target\native\$($definition.Stem).wixobj" $definition.Source
             if ($LASTEXITCODE -ne 0) { throw "candle failed for $($definition.Stem)" }
-            & $light -sice:ICE38 -sice:ICE64 -sice:ICE91 -ext WixUIExtension `
+            & $light -sice:ICE38 -sice:ICE64 -sice:ICE91 `
+              -ext WixUIExtension -ext WixUtilExtension `
               -out "target\native\sd300-windows-x64-$($definition.Stem).msi" `
               "target\native\$($definition.Stem).wixobj"
             if ($LASTEXITCODE -ne 0) { throw "light failed for $($definition.Stem)" }
@@ -111,9 +206,10 @@ jobs:
         run: |
           choco install innosetup -y --no-progress --no-color
           $iscc = 'C:\Program Files (x86)\Inno Setup 6\iscc.exe'
-          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" inno\global.iss
+          $guiBin = "$PWD\target\native-gui-stage\windows-x86_64\app\zig-out\bin"
+          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" "/DMyAppGuiBinDir=$guiBin" inno\global.iss
           if ($LASTEXITCODE -ne 0) { throw 'Global Inno build failed' }
-          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" inno\corporate.iss
+          & $iscc "/DMyAppVersion=${{ steps.meta.outputs.version }}" "/DMyAppGuiBinDir=$guiBin" inno\corporate.iss
           if ($LASTEXITCODE -ne 0) { throw 'Corporate Inno build failed' }
           Copy-Item inno\Output\sd300-windows-x64-global.exe target\native\
           Copy-Item inno\Output\sd300-windows-x64-corporate.exe target\native\
@@ -130,6 +226,18 @@ jobs:
             )
             if ((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne ((Get-Content "$($_.FullName).sha256") -split '\s+')[0]) { throw "checksum failed for $($_.Name)" }
           }
+          $global = 'target\native\sd300-windows-x64-global.msi'
+          $legacy = 'target\native\tr300-tui-x86_64-pc-windows-msvc.msi'
+          Copy-Item -LiteralPath $global -Destination $legacy -Force
+          $legacyHash = (Get-FileHash -LiteralPath $legacy -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText(
+            "$legacy.sha256",
+            "$legacyHash *$([IO.Path]::GetFileName($legacy))`n",
+            [Text.Encoding]::ASCII
+          )
+          $globalHash = (Get-FileHash -LiteralPath $global -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($legacyHash -ne $globalHash) { throw 'legacy MSI alias is not byte-identical to the qualified Global MSI' }
+          if ($legacyHash -ne ((Get-Content "$legacy.sha256") -split '\s+')[0]) { throw 'legacy MSI alias checksum failed' }
 
       - name: Exercise install, takeover, update-origin, and diagnostics
         shell: pwsh
@@ -150,12 +258,43 @@ jobs:
           Set-Content Cargo.lock $lock -Encoding utf8
           cargo build --release --locked --target-dir target\prior-build
 
+          # The synthetic prior must remain a genuine CLI-only predecessor.
+          # Building it with current v3 installer definitions would silently
+          # give the old CLI a v3 GUI and invalidate the transition test.
+          git fetch --force --depth=1 origin refs/tags/v2.0.6:refs/tags/v2.0.6
+          if ($LASTEXITCODE -ne 0) { throw 'could not fetch immutable v2.0.6 installer definitions' }
+          $priorDefinitions = Join-Path $PWD 'target\prior-definitions'
+          $null = New-Item -ItemType Directory -Path $priorDefinitions -Force
+          foreach ($path in @(
+            'wix/main.wxs',
+            'wix-corporate/corporate.wxs',
+            'inno/global.iss',
+            'inno/corporate.iss',
+            'inno/remove-conflicting-msi.pas'
+          )) {
+            $contents = @(git show "v2.0.6:$path")
+            if ($LASTEXITCODE -ne 0) { throw "could not read v2.0.6:$path" }
+            $destination = Join-Path $priorDefinitions ([IO.Path]::GetFileName($path))
+            [IO.File]::WriteAllText($destination, (($contents -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          }
+          # The v2 Inno files resolve LicenseFile relative to their own
+          # directory. Recreate that immutable source layout instead of
+          # accidentally depending on a checkout-root path that exists only
+          # in developer builds.
+          $priorLicense = @(git show 'v2.0.6:LICENSE.md')
+          if ($LASTEXITCODE -ne 0) { throw 'could not read v2.0.6:LICENSE.md' }
+          [IO.File]::WriteAllText(
+            (Join-Path $priorDefinitions '..\LICENSE.md'),
+            (($priorLicense -join "`n") + "`n"),
+            [Text.UTF8Encoding]::new($false)
+          )
+
           $candle = "$env:WIX\bin\candle.exe"
           $light = "$env:WIX\bin\light.exe"
           $null = New-Item -ItemType Directory -Path target\prior-native -Force
           foreach ($definition in @(
-              @{ Source = 'wix\main.wxs'; Stem = 'global' },
-              @{ Source = 'wix-corporate\corporate.wxs'; Stem = 'corporate' }
+              @{ Source = (Join-Path $priorDefinitions 'main.wxs'); Stem = 'global' },
+              @{ Source = (Join-Path $priorDefinitions 'corporate.wxs'); Stem = 'corporate' }
           )) {
             & $candle -arch x64 "-dVersion=$prior" "-dCargoTargetBinDir=$PWD\target\prior-build\release" `
               -out "target\prior-native\$($definition.Stem).wixobj" $definition.Source
@@ -167,12 +306,12 @@ jobs:
           }
 
           $iscc = 'C:\Program Files (x86)\Inno Setup 6\iscc.exe'
-          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" inno\global.iss
+          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" (Join-Path $priorDefinitions 'global.iss')
           if ($LASTEXITCODE -ne 0) { throw 'prior Global Inno build failed' }
-          Copy-Item inno\Output\sd300-windows-x64-global.exe target\prior-native\sd300-prior-global.exe
-          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" inno\corporate.iss
+          Copy-Item (Join-Path $priorDefinitions 'Output\sd300-windows-x64-global.exe') target\prior-native\sd300-prior-global.exe
+          & $iscc "/DMyAppVersion=$prior" "/DMyAppBinaryDir=$PWD\target\prior-build\release" (Join-Path $priorDefinitions 'corporate.iss')
           if ($LASTEXITCODE -ne 0) { throw 'prior Corporate Inno build failed' }
-          Copy-Item inno\Output\sd300-windows-x64-corporate.exe target\prior-native\sd300-prior-corporate.exe
+          Copy-Item (Join-Path $priorDefinitions 'Output\sd300-windows-x64-corporate.exe') target\prior-native\sd300-prior-corporate.exe
 
       - name: Exercise real same-channel version transitions
         shell: pwsh
@@ -181,11 +320,35 @@ jobs:
         run: |
           $null = New-Item -ItemType Directory -Path target\candidate-assets -Force
           Copy-Item target\native\sd300-windows-x64-* target\candidate-assets\
+          Copy-Item target\native\sd300-gui-windows-x86_64.zip* target\candidate-assets\
           foreach ($name in @(
               'sd300-cli-installer.ps1', 'sd300-cli-installer.ps1.sha256'
           )) {
-            gh release download '${{ steps.meta.outputs.tag }}' --pattern $name --dir target\candidate-assets
-            if ($LASTEXITCODE -ne 0) { throw "could not download candidate $name" }
+            if ('${{ needs.draft-check.outputs.qualification_only }}' -eq 'true') {
+              if ($name -eq 'sd300-cli-installer.ps1') {
+                $wrapper = Get-Content scripts\managed-installers\sd300-installer.ps1 -Raw
+                $wrapper = $wrapper.Replace('@SD300_TAG@', '${{ steps.meta.outputs.tag }}')
+                $wrapper = $wrapper.Replace('@SD300_VERSION@', '${{ steps.meta.outputs.version }}')
+                [IO.File]::WriteAllText(
+                  (Join-Path $PWD 'target\candidate-assets\sd300-cli-installer.ps1'),
+                  $wrapper,
+                  [Text.UTF8Encoding]::new($false)
+                )
+              }
+              else {
+                $wrapperPath = Join-Path $PWD 'target\candidate-assets\sd300-cli-installer.ps1'
+                $wrapperHash = (Get-FileHash -LiteralPath $wrapperPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                [IO.File]::WriteAllText(
+                  (Join-Path $PWD 'target\candidate-assets\sd300-cli-installer.ps1.sha256'),
+                  "$wrapperHash *sd300-cli-installer.ps1`n",
+                  [Text.Encoding]::ASCII
+                )
+              }
+            }
+            else {
+              gh release download '${{ steps.meta.outputs.tag }}' --pattern $name --dir target\candidate-assets
+              if ($LASTEXITCODE -ne 0) { throw "could not download candidate $name" }
+            }
           }
           @'
           param([switch]$NoModifyPath)
@@ -196,12 +359,13 @@ jobs:
           $receipt = Join-Path $configRoot 'sd300\sd300-receipt.json'
           $null = New-Item -ItemType Directory -Path (Split-Path -Parent $binary), (Split-Path -Parent $receipt) -Force
           Copy-Item -LiteralPath $env:SD300_CI_MANAGED_BINARY -Destination $binary -Force
-          @{
+          $fixtureReceipt = @{
             provider = @{ source = 'cargo-dist' }
             source = @{ app_name = 'sd300' }
             install_prefix = $prefix
             version = $env:SD300_CI_RELEASE_TAG.TrimStart('v')
-          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $receipt -Encoding utf8
+          }
+          [IO.File]::WriteAllText($receipt, ($fixtureReceipt | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
           '@ | Set-Content target\candidate-assets\sd300-dist-installer.ps1 -Encoding utf8
           $fixtureHash = (Get-FileHash target\candidate-assets\sd300-dist-installer.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
           "$fixtureHash *sd300-dist-installer.ps1" | Set-Content target\candidate-assets\sd300-dist-installer.ps1.sha256 -Encoding ascii
@@ -213,14 +377,491 @@ jobs:
             -PriorVersion '1.9.9' `
             -PriorBinary target\prior-build\release\sd300.exe
 
+      - name: Download and verify immutable public v2.0.6 Windows fixtures
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $fixtureRoot = Join-Path $PWD 'target\published-v2.0.6'
+          $downloadRoot = Join-Path $fixtureRoot 'downloads'
+          $priorRoot = Join-Path $fixtureRoot 'prior-native'
+          $extractRoot = Join-Path $fixtureRoot 'archive'
+          $null = New-Item -ItemType Directory -Path $downloadRoot, $priorRoot, $extractRoot -Force
+          $assets = @(
+            'tr300-tui-x86_64-pc-windows-msvc.zip',
+            'sd300-cli-installer.ps1',
+            'sd300-dist-installer.ps1',
+            'sd300-windows-x64-global.msi',
+            'sd300-windows-x64-corporate.msi',
+            'sd300-windows-x64-global.exe',
+            'sd300-windows-x64-corporate.exe'
+          )
+          $expectedDigests = @{
+            'tr300-tui-x86_64-pc-windows-msvc.zip' = '75ffafa4a1e41e0f5ebccb2e1099418c4b6de77feab0c28851b1a8fb20343f29'
+            'sd300-cli-installer.ps1' = '97aafc54842dfc71c001eb53ea23ae53d0f93159ebaf8e1e2413539c2d090953'
+            'sd300-dist-installer.ps1' = '854c7d69204c47247648933a3db75c8f764378cdf7a0a514fbd49f0b06898740'
+            'sd300-windows-x64-global.msi' = '7cd5fd28cc58d0710ef636dedbc3135ebdd143583f84c73c22f92c6edd95aaff'
+            'sd300-windows-x64-corporate.msi' = 'bc0e6004c7bcad17fe65759dcd9ee1d0aba3d3fe8ead864e3fecc1d552fe0aad'
+            'sd300-windows-x64-global.exe' = 'd60d32f92a82fd03845c1e84bb7260584da11cc5478b85edf367b28a13e61e8b'
+            'sd300-windows-x64-corporate.exe' = '1a8d050d4be95415d9e9ba6609d8eba8d51dc997fc4fb2dde1a422dd867003be'
+          }
+          git fetch --force --depth=1 origin 'refs/tags/v2.0.6:refs/tags/v2.0.6'
+          if ($LASTEXITCODE -ne 0) { throw 'could not fetch the immutable v2.0.6 tag' }
+          $priorCommit = (git rev-list -n 1 refs/tags/v2.0.6).Trim()
+          if ($priorCommit -cne 'a81d86cbd8c9617f84072d721e94040cc2a05dd2') {
+            throw "v2.0.6 resolves to $priorCommit instead of its reviewed commit"
+          }
+          foreach ($asset in $assets) {
+            gh release download v2.0.6 --repo QubeTX/qube-system-diagnostics `
+              --dir $downloadRoot --pattern $asset --pattern "$asset.sha256" --clobber
+            if ($LASTEXITCODE -ne 0) { throw "could not download immutable v2.0.6 asset $asset" }
+            $sidecar = (Get-Content -LiteralPath (Join-Path $downloadRoot "$asset.sha256") -Raw).Trim()
+            if ($sidecar -notmatch '^([0-9a-fA-F]{64})\s+\*?(.+)$') {
+              throw "v2.0.6 checksum sidecar is malformed: $asset.sha256"
+            }
+            if ([IO.Path]::GetFileName($Matches[2].Trim()) -cne $asset) {
+              throw "v2.0.6 checksum sidecar names the wrong asset: $asset.sha256"
+            }
+            $actual = (Get-FileHash -LiteralPath (Join-Path $downloadRoot $asset) -Algorithm SHA256).Hash
+            if ($actual -cne $Matches[1].ToUpperInvariant() -or
+                $actual.ToLowerInvariant() -cne $expectedDigests[$asset]) {
+              throw "immutable v2.0.6 asset checksum failed: $asset"
+            }
+          }
+
+          Expand-Archive -LiteralPath (Join-Path $downloadRoot 'tr300-tui-x86_64-pc-windows-msvc.zip') `
+            -DestinationPath $extractRoot -Force
+          $binaries = @(Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter sd300.exe)
+          if ($binaries.Count -ne 1) {
+            throw "immutable v2.0.6 archive contains $($binaries.Count) sd300.exe candidates"
+          }
+          $reported = (& $binaries[0].FullName --version).Trim()
+          if ($LASTEXITCODE -ne 0 -or $reported -ne 'sd300 2.0.6') {
+            throw "immutable v2.0.6 binary identity mismatch: $reported"
+          }
+          Copy-Item -LiteralPath $binaries[0].FullName -Destination (Join-Path $fixtureRoot 'sd300.exe')
+          Copy-Item -LiteralPath (Join-Path $downloadRoot 'sd300-windows-x64-global.msi') -Destination (Join-Path $priorRoot 'sd300-prior-global.msi')
+          Copy-Item -LiteralPath (Join-Path $downloadRoot 'sd300-windows-x64-corporate.msi') -Destination (Join-Path $priorRoot 'sd300-prior-corporate.msi')
+          Copy-Item -LiteralPath (Join-Path $downloadRoot 'sd300-windows-x64-global.exe') -Destination (Join-Path $priorRoot 'sd300-prior-global.exe')
+          Copy-Item -LiteralPath (Join-Path $downloadRoot 'sd300-windows-x64-corporate.exe') -Destination (Join-Path $priorRoot 'sd300-prior-corporate.exe')
+
+      - name: Exercise legacy Cargo MSI rollback and commit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fixtureRoot = Join-Path $env:RUNNER_TEMP 'sd300-msi-cargo-legacy'
+          $cargoHome = Join-Path $fixtureRoot '.cargo'
+          $cargoBin = Join-Path $cargoHome 'bin'
+          $cargoBinary = Join-Path $cargoBin 'sd300.exe'
+          $legacyManifest = Join-Path $cargoHome '.crates.toml'
+          $currentManifest = Join-Path $cargoHome '.crates2.json'
+          $evidence = Join-Path $PWD 'target\msi-cargo-legacy'
+          $corporateMsi = (Resolve-Path 'target\native\sd300-windows-x64-corporate.msi').Path
+          $corporateRoot = Join-Path $env:LOCALAPPDATA 'Programs\sd300'
+          $transactionRoot = Join-Path $env:LOCALAPPDATA 'SD300\Transactions'
+          $null = New-Item -ItemType Directory -Path $cargoBin, $evidence -Force
+
+          function Get-CorporateRegistration {
+            $items = @()
+            foreach ($root in @(
+              'Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+              'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+              'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+            )) {
+              if (-not (Test-Path -LiteralPath $root)) { continue }
+              $items += Get-ChildItem -LiteralPath $root | ForEach-Object {
+                Get-ItemProperty -LiteralPath $_.PSPath
+              } | Where-Object { $_.DisplayName -eq 'SD-300 Corporate' -and $_.WindowsInstaller -eq 1 }
+            }
+            return @($items)
+          }
+
+          function Invoke-Msi([string[]]$Arguments, [int[]]$Expected) {
+            $process = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" `
+              -ArgumentList $Arguments -WindowStyle Hidden -Wait -PassThru
+            if ($process.ExitCode -notin $Expected) {
+              throw "msiexec exited $($process.ExitCode); expected $($Expected -join ', ')"
+            }
+            return $process.ExitCode
+          }
+
+          try {
+            Copy-Item -LiteralPath 'target\published-v2.0.6\sd300.exe' -Destination $cargoBinary
+            @'
+          [v1]
+          "ripgrep 14.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = ["rg.exe"]
+          "tr300-tui 2.0.6 (registry+https://github.com/rust-lang/crates.io-index)" = ["sd300.exe"]
+          '@ | Set-Content -LiteralPath $legacyManifest -Encoding utf8NoBOM
+            @{
+              installs = @{
+                'ripgrep 14.1.1 (registry+https://github.com/rust-lang/crates.io-index)' = @{
+                  version_req = $null
+                  bins = @('rg.exe')
+                  features = @()
+                  all_features = $false
+                  no_default_features = $false
+                  profile = 'release'
+                  target = 'x86_64-pc-windows-msvc'
+                  rustc = 'qualification fixture'
+                }
+              }
+            } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $currentManifest -Encoding utf8NoBOM
+
+            $original = @{
+              binary = (Get-FileHash -LiteralPath $cargoBinary -Algorithm SHA256).Hash
+              legacy = (Get-FileHash -LiteralPath $legacyManifest -Algorithm SHA256).Hash
+              current = (Get-FileHash -LiteralPath $currentManifest -Algorithm SHA256).Hash
+            }
+            $rollbackLog = Join-Path $evidence 'corporate-legacy-rollback.log'
+            [void](Invoke-Msi @(
+              '/i', "`"$corporateMsi`"", '/qn', '/norestart',
+              "SD300CARGOHOME=`"$cargoHome`"", 'SD300TESTFAILAFTERCARGO=1',
+              '/l*v', "`"$rollbackLog`""
+            ) @(1603))
+
+            foreach ($entry in @(
+              @{ Path = $cargoBinary; Hash = $original.binary },
+              @{ Path = $legacyManifest; Hash = $original.legacy },
+              @{ Path = $currentManifest; Hash = $original.current }
+            )) {
+              if (-not (Test-Path -LiteralPath $entry.Path -PathType Leaf) -or
+                  (Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash -cne $entry.Hash) {
+                throw "MSI rollback did not restore exact bytes at $($entry.Path)"
+              }
+            }
+            if ((Get-CorporateRegistration).Count -ne 0 -or (Test-Path -LiteralPath $corporateRoot)) {
+              throw 'injected Cargo rollback left a Corporate MSI owner or payload'
+            }
+            if (@(Get-ChildItem -LiteralPath $transactionRoot -Force -ErrorAction SilentlyContinue).Count -ne 0) {
+              throw 'injected Cargo rollback left recovery material'
+            }
+
+            $installLog = Join-Path $evidence 'corporate-legacy-commit.log'
+            [void](Invoke-Msi @(
+              '/i', "`"$corporateMsi`"", '/qn', '/norestart',
+              "SD300CARGOHOME=`"$cargoHome`"", '/l*v', "`"$installLog`""
+            ) @(0, 1641, 3010))
+            if (Test-Path -LiteralPath $cargoBinary) {
+              throw 'committed Cargo takeover left the prior binary behind'
+            }
+            if ((Get-Content -LiteralPath $legacyManifest -Raw) -match 'tr300-tui 2\.0\.6' -or
+                (Get-Content -LiteralPath $currentManifest -Raw) -match 'tr300-tui 2\.0\.6') {
+              throw 'committed Cargo takeover left SD-300 manifest ownership behind'
+            }
+            if ((Get-Content -LiteralPath $legacyManifest -Raw) -notmatch 'ripgrep 14\.1\.1' -or
+                (Get-Content -LiteralPath $currentManifest -Raw) -notmatch 'ripgrep 14\.1\.1') {
+              throw 'committed Cargo takeover damaged unrelated ownership'
+            }
+            $installedCli = Join-Path $corporateRoot 'bin\sd300.exe'
+            $installedGui = Join-Path $corporateRoot 'app\sd300-gui.exe'
+            if ((& $installedCli --version).Trim() -ne 'sd300 ${{ steps.meta.outputs.version }}') {
+              throw 'legacy Cargo MSI takeover installed the wrong CLI version'
+            }
+            # A GUI-subsystem executable yields no output through direct pipe
+            # capture on a consoleless runner; redirect to files like every
+            # other self-test call site.
+            $selfTestOut = Join-Path $env:RUNNER_TEMP "legacy-selftest-$([Guid]::NewGuid().ToString('N')).out"
+            $selfTestErrFile = "$selfTestOut.err"
+            $selfTestProcess = Start-Process -FilePath $installedGui -ArgumentList '--self-test', '--json' `
+              -Wait -PassThru -WindowStyle Hidden `
+              -RedirectStandardOutput $selfTestOut -RedirectStandardError $selfTestErrFile
+            $selfTestExit = $selfTestProcess.ExitCode
+            $selfTestRaw = @(Get-Content -LiteralPath $selfTestOut -ErrorAction SilentlyContinue) +
+              @(Get-Content -LiteralPath $selfTestErrFile -ErrorAction SilentlyContinue)
+            Remove-Item -LiteralPath $selfTestOut, $selfTestErrFile -Force -ErrorAction SilentlyContinue
+            $selfTest = $null
+            try { $selfTest = ($selfTestRaw -join "`n") | ConvertFrom-Json } catch {}
+            if (-not $selfTest -or -not $selfTest.success -or $selfTest.product_version -ne '${{ steps.meta.outputs.version }}') {
+              Write-Host "GUI-SELFTEST-EXIT: $selfTestExit"
+              Write-Host "GUI-SELFTEST-GUI-PRESENT: $(Test-Path -LiteralPath $installedGui)"
+              Write-Host "GUI-SELFTEST-ENGINE-PRESENT: $(Test-Path -LiteralPath (Join-Path $corporateRoot 'app\sd300_engine.dll'))"
+              $selfTestRaw | ForEach-Object { Write-Host "GUI-SELFTEST: $_" }
+              throw 'legacy Cargo MSI takeover installed an invalid GUI companion'
+            }
+            $uninstall = (& $installedCli uninstall --json) | ConvertFrom-Json
+            if (-not $uninstall.success -or $uninstall.install_channel -ne 'msi-corporate') {
+              throw 'legacy Cargo MSI takeover did not support CLI uninstall'
+            }
+            for ($attempt = 0; $attempt -lt 60 -and (Test-Path -LiteralPath $corporateRoot); $attempt++) {
+              Start-Sleep -Milliseconds 500
+            }
+            if ((Test-Path -LiteralPath $corporateRoot) -or (Get-CorporateRegistration).Count -ne 0) {
+              throw 'legacy Cargo MSI uninstall left its owner or payload behind'
+            }
+            if (@(Get-ChildItem -LiteralPath $transactionRoot -Force -ErrorAction SilentlyContinue).Count -ne 0) {
+              throw 'committed Cargo takeover left recovery material'
+            }
+          }
+          finally {
+            foreach ($registration in @(Get-CorporateRegistration)) {
+              [void](Invoke-Msi @('/x', $registration.PSChildName, '/qn', '/norestart') @(0, 1605, 1614, 1641, 3010))
+            }
+            if (Test-Path -LiteralPath $fixtureRoot) {
+              Remove-Item -LiteralPath $fixtureRoot -Recurse -Force
+            }
+          }
+
+      - name: Exercise immutable public v2.0.6 same-channel transitions
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts\validate-windows-self-update.ps1 `
+            -CandidateAssets target\candidate-assets `
+            -CandidateVersion '${{ steps.meta.outputs.version }}' `
+            -CandidateBinary target\release\sd300.exe `
+            -PriorArtifacts target\published-v2.0.6\prior-native `
+            -PriorVersion '2.0.6' `
+            -PriorBinary target\published-v2.0.6\sd300.exe `
+            -PriorManagedInstaller target\published-v2.0.6\downloads\sd300-cli-installer.ps1 `
+            -PriorManagedAssets target\published-v2.0.6\downloads
+
+      - name: Exercise immutable v2 Cargo completion into managed CLI and GUI
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $migrationRoot = Join-Path $env:RUNNER_TEMP 'sd300-cargo-migration-windows'
+          $assets = Join-Path $migrationRoot 'assets'
+          $candidateExtract = Join-Path $migrationRoot 'candidate'
+          $shim = Join-Path $migrationRoot 'shim'
+          $testHome = Join-Path $migrationRoot 'home'
+          $null = New-Item -ItemType Directory -Path $assets, $candidateExtract, $shim, $testHome -Force
+
+          foreach ($name in @(
+              'sd300-cli-installer.ps1',
+              'sd300-cli-installer.ps1.sha256',
+              'sd300-dist-installer.ps1',
+              'sd300-dist-installer.ps1.sha256',
+              'sd300-gui-windows-x86_64.zip',
+              'sd300-gui-windows-x86_64.zip.sha256'
+          )) {
+            Copy-Item -LiteralPath (Join-Path $PWD "target\candidate-assets\$name") -Destination $assets
+          }
+
+          if ('${{ needs.draft-check.outputs.qualification_only }}' -eq 'true') {
+            $candidateBinary = (Resolve-Path 'target\release\sd300.exe').Path
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY `
+              '- Branch-only qualification used the exact source-built candidate binary because no immutable draft asset exists.'
+          }
+          else {
+            $archiveName = 'tr300-tui-x86_64-pc-windows-msvc.zip'
+            gh release download '${{ steps.meta.outputs.tag }}' --repo '${{ github.repository }}' `
+              --dir $assets --pattern $archiveName --pattern "$archiveName.sha256" --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'could not download exact candidate Windows CLI archive' }
+            $sidecar = (Get-Content -LiteralPath (Join-Path $assets "$archiveName.sha256") -Raw).Trim()
+            if ($sidecar -notmatch '^([0-9a-fA-F]{64})\s+\*?(.+)$') {
+              throw 'candidate Windows CLI checksum sidecar is malformed'
+            }
+            $actual = (Get-FileHash -LiteralPath (Join-Path $assets $archiveName) -Algorithm SHA256).Hash
+            if ($actual -cne $Matches[1].ToUpperInvariant()) {
+              throw 'candidate Windows CLI archive checksum failed'
+            }
+            Expand-Archive -LiteralPath (Join-Path $assets $archiveName) `
+              -DestinationPath $candidateExtract -Force
+            $candidates = @(Get-ChildItem -LiteralPath $candidateExtract -Recurse -File -Filter sd300.exe)
+            if ($candidates.Count -ne 1) { throw 'candidate archive has an ambiguous sd300.exe inventory' }
+            $candidateBinary = $candidates[0].FullName
+          }
+          if ((& $candidateBinary --version).Trim() -ne 'sd300 ${{ steps.meta.outputs.version }}') {
+            throw 'candidate Windows CLI reports the wrong product version'
+          }
+
+          $env:HOME = $testHome
+          $env:USERPROFILE = $testHome
+          $env:CARGO_HOME = Join-Path $testHome '.cargo'
+          $env:XDG_CONFIG_HOME = Join-Path $testHome '.config'
+          $env:APPDATA = Join-Path $testHome 'AppData\Roaming'
+          $env:LOCALAPPDATA = Join-Path $testHome 'AppData\Local'
+          $env:SD300_CI_RELEASE_TAG = '${{ steps.meta.outputs.tag }}'
+          $env:SD300_CI_RELEASE_ASSET_DIR = $assets
+          $env:SD300_CI_MANAGED_BINARY = $candidateBinary
+          $env:SD300_CANDIDATE_BINARY = $candidateBinary
+          $env:SD300_EXPECTED_VERSION = '${{ steps.meta.outputs.version }}'
+          $env:SD300_CARGO_TARGET = 'x86_64-pc-windows-msvc'
+          $env:SD300_CARGO_SHIM_HANDLER = Join-Path $shim 'install-candidate.ps1'
+          $cargoBin = Join-Path $env:CARGO_HOME 'bin'
+          $null = New-Item -ItemType Directory -Path $cargoBin, $env:XDG_CONFIG_HOME, `
+            $env:APPDATA, $env:LOCALAPPDATA, `
+            (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs') -Force
+          Copy-Item -LiteralPath target\published-v2.0.6\sd300.exe `
+            -Destination (Join-Path $cargoBin 'sd300.exe')
+          $rustcMetadata = (rustc -vV) -join "`n"
+          @{
+            installs = @{
+              'tr300-tui 2.0.6 (registry+https://github.com/rust-lang/crates.io-index)' = @{
+                version_req = $null; bins = @('sd300.exe'); features = @()
+                all_features = $false; no_default_features = $false
+                profile = 'release'; target = 'x86_64-pc-windows-msvc'; rustc = $rustcMetadata
+              }
+            }
+          } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $env:CARGO_HOME '.crates2.json') -Encoding utf8
+          # Real Cargo maintains both manifests; v3 ownership requires the legacy file.
+          Set-Content -LiteralPath (Join-Path $env:CARGO_HOME '.crates.toml') -Encoding utf8 -Value @(
+            '[v1]',
+            '"tr300-tui 2.0.6 (registry+https://github.com/rust-lang/crates.io-index)" = ["sd300.exe"]'
+          )
+
+          @'
+          use std::{env, process::Command};
+          fn main() {
+              let args: Vec<String> = env::args().skip(1).collect();
+              let expected = vec![
+                  "install".to_owned(), "tr300-tui".to_owned(),
+                  "--version".to_owned(), env::var("SD300_EXPECTED_VERSION").unwrap(),
+                  "--force".to_owned(), "--locked".to_owned(),
+              ];
+              if args != expected {
+                  eprintln!("unexpected immutable-v2 cargo command: {:?}", args);
+                  std::process::exit(64);
+              }
+              let status = Command::new("powershell.exe")
+                  .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+                  .arg(env::var("SD300_CARGO_SHIM_HANDLER").unwrap())
+                  .status().unwrap();
+              std::process::exit(status.code().unwrap_or(1));
+          }
+          '@ | Set-Content -LiteralPath (Join-Path $shim 'cargo-shim.rs') -Encoding utf8
+          @'
+          $ErrorActionPreference = 'Stop'
+          $destination = Join-Path $env:CARGO_HOME 'bin\sd300.exe'
+          $staged = "$destination.next"
+          Copy-Item -LiteralPath $env:SD300_CANDIDATE_BINARY -Destination $staged -Force
+          Move-Item -LiteralPath $staged -Destination $destination -Force
+          $rustcMetadata = (rustc -vV) -join "`n"
+          $crates2 = @{
+            installs = @{
+              ("tr300-tui $($env:SD300_EXPECTED_VERSION) (registry+https://github.com/rust-lang/crates.io-index)") = @{
+                version_req = $null; bins = @('sd300.exe'); features = @()
+                all_features = $false; no_default_features = $false
+                profile = 'release'; target = $env:SD300_CARGO_TARGET; rustc = $rustcMetadata
+              }
+            }
+          }
+          # This handler runs under Windows PowerShell 5.1, whose utf8 is BOM'd;
+          # real Cargo writes BOM-less manifests, so mirror that exactly.
+          [IO.File]::WriteAllText((Join-Path $env:CARGO_HOME '.crates2.json'), ($crates2 | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $cratesToml = "[v1]`n" + '"tr300-tui ' + $env:SD300_EXPECTED_VERSION + ' (registry+https://github.com/rust-lang/crates.io-index)" = ["sd300.exe"]' + "`n"
+          [IO.File]::WriteAllText((Join-Path $env:CARGO_HOME '.crates.toml'), $cratesToml, [Text.UTF8Encoding]::new($false))
+          '@ | Set-Content -LiteralPath $env:SD300_CARGO_SHIM_HANDLER -Encoding utf8
+          rustc (Join-Path $shim 'cargo-shim.rs') -o (Join-Path $shim 'cargo.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'could not build the Windows Cargo migration shim' }
+
+          function Invoke-Sd300Json {
+            param(
+              [Parameter(Mandatory)][string]$Executable,
+              [Parameter(Mandatory)][string[]]$Arguments
+            )
+            $lines = @(& $Executable @Arguments)
+            if ($LASTEXITCODE -ne 0) {
+              # Write-Host survives ConciseView truncation of long throw messages.
+              $lines | ForEach-Object { Write-Host "SD300-OUTPUT: $_" }
+              throw "SD-300 exited with $LASTEXITCODE while running $($Arguments -join ' ')"
+            }
+            if ($lines.Count -ne 1) {
+              throw "SD-300 emitted $($lines.Count) stdout lines instead of one JSON object"
+            }
+            return ($lines[0] | ConvertFrom-Json)
+          }
+
+          $binary = Join-Path $cargoBin 'sd300.exe'
+          $originalPath = $env:PATH
+          $env:PATH = "$shim;$originalPath"
+          $firstJson = Invoke-Sd300Json -Executable $binary -Arguments @('update', '--json')
+          if (-not $firstJson.success -or $firstJson.install_channel -ne 'cargo' -or
+              $firstJson.target_version -ne '${{ steps.meta.outputs.version }}') {
+            throw 'immutable v2 Cargo update returned the wrong contract'
+          }
+          if ((Get-FileHash $binary -Algorithm SHA256).Hash -cne
+              (Get-FileHash $candidateBinary -Algorithm SHA256).Hash) {
+            throw 'the first Cargo update did not install the exact candidate binary'
+          }
+
+          $env:PATH = $originalPath
+          $secondJson = Invoke-Sd300Json -Executable $binary -Arguments @('update', '--json')
+          if (-not $secondJson.success -or $secondJson.install_channel -ne 'cargo' -or
+              $secondJson.strategy -ne 'cargo-managed-completion') {
+            throw 'Cargo managed completion returned the wrong contract'
+          }
+          $guiRoot = Join-Path $env:LOCALAPPDATA 'Programs\SD-300'
+          $gui = Join-Path $guiRoot 'app\sd300-gui.exe'
+          $engine = Join-Path $guiRoot 'app\sd300_engine.dll'
+          $receipt = Join-Path $env:XDG_CONFIG_HOME 'sd300\sd300-receipt.json'
+          if (-not (Test-Path $gui -PathType Leaf) -or -not (Test-Path $engine -PathType Leaf) -or
+              -not (Test-Path $receipt -PathType Leaf)) {
+            throw 'Cargo managed completion did not install the complete Windows product'
+          }
+          # GUI-subsystem executables yield no output through direct pipe capture
+          # on a consoleless runner; redirect to files like the other call sites.
+          $selfTestOut = Join-Path $env:RUNNER_TEMP "cargo-completion-selftest-$([Guid]::NewGuid().ToString('N')).out"
+          $selfTestProcess = Start-Process -FilePath $gui -ArgumentList '--self-test', '--json' `
+            -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $selfTestOut -RedirectStandardError "$selfTestOut.err"
+          $selfTest = $null
+          try { $selfTest = (@(Get-Content -LiteralPath $selfTestOut -ErrorAction SilentlyContinue) -join "`n") | ConvertFrom-Json } catch {}
+          if ($selfTestProcess.ExitCode -ne 0 -or -not $selfTest -or -not $selfTest.success -or
+              $selfTest.product_version -ne '${{ steps.meta.outputs.version }}') {
+            Write-Host "CARGO-SELFTEST-EXIT: $($selfTestProcess.ExitCode)"
+            Get-Content -LiteralPath $selfTestOut, "$selfTestOut.err" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "CARGO-SELFTEST: $_" }
+            throw 'installed GUI self-test failed after Cargo completion'
+          }
+          Remove-Item -LiteralPath $selfTestOut, "$selfTestOut.err" -Force -ErrorAction SilentlyContinue
+
+          $current = Invoke-Sd300Json -Executable $binary -Arguments @('update', '--json')
+          if (-not $current.success -or $current.install_channel -ne 'powershell-installer' -or
+              $current.strategy -ne 'current') {
+            throw 'the complete Cargo migration did not preserve the current-version no-op'
+          }
+          Remove-Item -LiteralPath $engine -Force
+          $repair = Invoke-Sd300Json -Executable $binary -Arguments @('update', '--json')
+          if (-not $repair.success -or $repair.install_channel -ne 'powershell-installer' -or
+              $repair.strategy -ne 'same-version-repair' -or -not (Test-Path $engine -PathType Leaf)) {
+            throw 'the Cargo migration did not repair a missing GUI engine at the same version'
+          }
+
+          $uninstall = Invoke-Sd300Json -Executable $binary -Arguments @('uninstall', '--json')
+          if (-not $uninstall.success -or $uninstall.install_channel -ne 'powershell-installer') {
+            throw 'the migrated Windows product did not return a successful uninstall contract'
+          }
+          for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            if (-not (Test-Path $binary) -and -not (Test-Path $guiRoot) -and -not (Test-Path $receipt)) { break }
+            Start-Sleep -Milliseconds 500
+          }
+          if (Test-Path $binary) { throw 'Cargo migration uninstall left the CLI behind' }
+          if (Test-Path $guiRoot) { throw 'Cargo migration uninstall left the GUI behind' }
+          if (Test-Path $receipt) { throw 'Cargo migration uninstall left the receipt behind' }
+          $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\SD-300.lnk'
+          if (Test-Path $shortcut) { throw 'Cargo migration uninstall left the Start menu shortcut behind' }
+
       - uses: actions/upload-artifact@v6
         with:
           name: sd300-windows-native-${{ steps.meta.outputs.tag }}
           if-no-files-found: error
-          path: target/native/sd300-windows-x64-*
+          path: |
+            target/native/sd300-windows-x64-*
+            target/native/sd300-gui-windows-x86_64.zip*
+            target/native/tr300-tui-x86_64-pc-windows-msvc.msi*
+            target/msi-cargo-legacy/*.log
 
       - name: Attach qualified Windows assets to draft
+        if: ${{ needs.draft-check.outputs.qualification_only != 'true' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload '${{ steps.meta.outputs.tag }}' target/native/sd300-windows-x64-* --clobber
+        run: |
+          $tag = '${{ steps.meta.outputs.tag }}'
+          $expected = '${{ needs.draft-check.outputs.source_sha }}'
+          $release = gh release view $tag --json isDraft,tagName,targetCommitish | ConvertFrom-Json
+          if (-not $release.isDraft) { throw "$tag is no longer an unpublished qualification draft" }
+          if ($release.tagName -ne $tag) { throw "release tag $($release.tagName) does not match $tag" }
+          if ($release.targetCommitish -ne $expected) { throw "$tag targets $($release.targetCommitish), expected $expected" }
+          git fetch --force --depth=1 origin "refs/tags/$($tag):refs/tags/$($tag)"
+          if ($LASTEXITCODE -ne 0) { throw "could not fetch $tag for final source verification" }
+          $tagSha = (git rev-list -n 1 "refs/tags/$tag").Trim()
+          if ($tagSha -ne $expected) { throw "$tag resolves to $tagSha, expected $expected" }
+          gh release upload '${{ steps.meta.outputs.tag }}' `
+            target/native/sd300-windows-x64-* `
+            target/native/sd300-gui-windows-x86_64.zip* `
+            target/native/tr300-tui-x86_64-pc-windows-msvc.msi* `
+            --clobber

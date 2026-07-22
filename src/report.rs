@@ -110,7 +110,15 @@ impl DiagnosticReport {
             });
         }
 
-        let capabilities = capabilities_for(&snapshot);
+        Self::from_snapshot(&snapshot, include_sensitive)
+    }
+
+    /// Build the same versioned, redaction-aware report from an already-live
+    /// collector snapshot. The desktop engine uses this for an explicit export
+    /// request so it does not start a competing collector or pause the GUI
+    /// renderer while gathering duplicate data.
+    pub fn from_snapshot(snapshot: &SystemSnapshot, include_sensitive: bool) -> Self {
+        let capabilities = capabilities_for(snapshot);
         let mut report = Self {
             schema_version: 1,
             product: "SD-300",
@@ -131,20 +139,20 @@ impl DiagnosticReport {
                     ]
                 },
             },
-            system: snapshot.system,
-            cpu: snapshot.cpu,
-            memory: snapshot.memory,
-            disk: snapshot.disk,
-            disk_health: snapshot.disk_health,
-            displays: snapshot.displays,
-            gpu: snapshot.gpu,
-            network: snapshot.network,
-            network_diagnostics: snapshot.network_diag,
-            processes: snapshot.processes,
-            thermals: snapshot.thermals,
-            drivers: snapshot.drivers,
+            system: snapshot.system.clone(),
+            cpu: snapshot.cpu.clone(),
+            memory: snapshot.memory.clone(),
+            disk: snapshot.disk.clone(),
+            disk_health: snapshot.disk_health.clone(),
+            displays: snapshot.displays.clone(),
+            gpu: snapshot.gpu.clone(),
+            network: snapshot.network.clone(),
+            network_diagnostics: snapshot.network_diag.clone(),
+            processes: snapshot.processes.clone(),
+            thermals: snapshot.thermals.clone(),
+            drivers: snapshot.drivers.clone(),
             capabilities,
-            warnings: snapshot.warnings,
+            warnings: snapshot.warnings.clone(),
         };
         if !include_sensitive {
             report.redact();
@@ -182,7 +190,7 @@ impl DiagnosticReport {
     }
 }
 
-fn capabilities_for(snapshot: &SystemSnapshot) -> Vec<CapabilityRecord> {
+pub fn capabilities_for(snapshot: &SystemSnapshot) -> Vec<CapabilityRecord> {
     let available_or = |condition: bool, source: &str, detail: &str| {
         if condition {
             Observation::available(source)

@@ -67,6 +67,9 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
       - id: meta
         name: Resolve release metadata
         shell: bash
@@ -101,6 +104,11 @@ jobs:
           if [ "$EVENT_NAME" = "pull_request" ]; then
             :
           elif [ "$REF_TYPE" = "tag" ]; then
+            expected_tag="v${version}"
+            if [ "$REF_NAME" != "$expected_tag" ]; then
+              echo "::error::Explicit releases must use canonical tag ${expected_tag}; received ${REF_NAME}."
+              exit 1
+            fi
             publishing=true
             should_deploy=true
             tag="$REF_NAME"
@@ -130,6 +138,13 @@ jobs:
             tag_exists=false
             if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
               tag_exists=true
+              git fetch --force --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
+              tag_sha=$(git rev-list -n 1 "refs/tags/${tag}")
+              source_sha=$(git rev-parse HEAD)
+              if [ "$tag_sha" != "$source_sha" ]; then
+                echo "::error::Immutable tag ${tag} resolves to ${tag_sha}, but this release source is ${source_sha}."
+                exit 1
+              fi
             fi
 
             if [ "$release_is_draft" = true ]; then
@@ -158,6 +173,21 @@ jobs:
             echo "publishing=$publishing"
             echo "should_deploy=$should_deploy"
           } >> "$GITHUB_OUTPUT"
+      - name: Verify coordinated product version
+        run: node scripts/check-product-version-consistency.mjs --expected-target '${{ steps.meta.outputs.version }}'
+      - name: Verify clean-cache and warmed-offline Native SDK dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/sd300-native-npm-cache"
+          rm -rf gui/node_modules "$cache"
+          npm --prefix gui ci --ignore-scripts --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
+          rm -rf gui/node_modules
+          npm --prefix gui ci --ignore-scripts --offline --cache "$cache"
+          node scripts/prepare-native-sdk.mjs gui
+          node scripts/check-native-distribution.mjs gui
       - name: Check formatting
         run: cargo fmt --check
       - name: Run tests

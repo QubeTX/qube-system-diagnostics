@@ -1,0 +1,19 @@
+SD-300 System Diagnostic — QubeTX Developer Tools
+
+Usage: sd300 [OPTIONS]
+       sd300 <COMMAND>
+
+Commands:
+  update        Check for updates and install the latest release
+  install       Install the latest release through the preferred managed CLI channel
+  uninstall     Remove SD-300 through its proven installation owner
+  snapshot      Collect one redacted noninteractive diagnostic snapshot
+  capabilities  Show which diagnostic capabilities are available on this machine
+  help          Print this message or the help of the given subcommand(s)
+
+Options:
+      --user     Launch directly into User Mode (plain language diagnostics)
+      --tech     Launch directly into Technician Mode (raw data and advanced metrics)
+      --update   Check for updates and install the latest version (legacy flag form of `sd300 update`)
+  -h, --help     Print help (see more with '--help')
+  -V, --version  Print version

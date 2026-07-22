@@ -2,6 +2,331 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [3.0.0] - Unreleased (qualification)
+
+This entry describes the v3 candidate and release contract. It is not evidence
+that hosted, native-hardware, installer, performance, or public-artifact
+qualification has completed.
+
+### Added
+
+- Added a native-rendered Vercel Native SDK desktop monitor alongside the
+  existing Rust CLI/Ratatui TUI, with Overview, CPU, Memory, Disk, GPU, Network,
+  Processes, Thermals, and Drivers surfaces backed by the same collector model.
+- Added `sd300 gui` to launch or focus the installed app without changing bare
+  `sd300`, which continues to open the existing User/Technician chooser.
+- Added a dynamically loaded Rust GUI engine with versioned, bounded,
+  latest-only projections, explicit ABI/schema/product/target checks, and
+  bundle-relative loading. The app owns a separate collector runtime; it does
+  not move or replace the TUI event loop.
+- Added GUI-only versioned preferences for mode, temperature unit, window
+  geometry, chart density, navigation, tray, close behavior, launch-at-login,
+  and reduced motion. These settings do not alter TUI startup or session
+  defaults.
+- Added Windows tray and macOS status-item lifecycles with Open and Quit, both
+  default off. Linux intentionally exits on close because Native SDK 0.5.4 does
+  not supply the required tray implementation.
+- Added the Warm Carbon visual system with a restrained black/charcoal/orange
+  field and subtle grid, bundled Makira for primary copy and major numerals, and
+  IBM Plex Mono for technical labels and compact measurements.
+- Added GUI self-test, product-version consistency, dependency lock,
+  developer-path leakage, performance, lifecycle, and compatibility
+  qualification surfaces.
+- Added complete native User and Technician presentations for all nine
+  diagnostic destinations, including source/provenance and shown/total state,
+  bounded histories, process sorting/search, network/driver filtering,
+  connection paging, disk reliability/activity detail, driver services, and
+  explicit unavailable/unsupported/permission-denied observations.
+- Added the SD-300 application icon: a Warm Carbon rounded-square badge with
+  an amber diagnostic pulse waveform over a subtle grid (generated with Quiver
+  arrow-1.1-max, operator-authorized). The icon ships as the GUI window,
+  taskbar, and tray identity via the existing `assets/icon.png` path and as a
+  multi-size `wix/Product.ico` wired into both MSI editions' Add/Remove
+  Programs entries.
+- Added asynchronous GUI driver rescans, redacted snapshot and capability
+  exports, in-app interaction help, cause-to-detail navigation, persisted last
+  destination, and per-destination collection subscriptions.
+- Added a fixed-layout process-summary ABI and a reusable Windows process
+  sampler that perform one bounded inventory query for GUI process ranking and
+  live CPU/memory updates without sharing mutable state with the TUI.
+- Added authenticated cross-process GUI lifecycle endpoints for graceful
+  close, uninstall/update handoff, singleton focus, and Windows UI-thread Open
+  routing, plus launch-at-login ownership and hidden-start support.
+- Added target-pinned Windows, macOS, Linux GNU, and Linux musl build wrappers,
+  clean-cache and warmed/offline dependency restore checks, package inventory
+  and self-test manifests, and target-specific private-runtime packaging.
+- Added private GTK runtime closure discovery for Linux, with architecture,
+  ELF interpreter/RUNPATH/dependency, distro-owner, license, checksum, and SPDX
+  `CONTAINS` validation on blank pinned Ubuntu and Alpine hosts.
+- Added immutable v2.0.6 CLI/TUI help, version, parse-error, capability,
+  report/redaction, lifecycle, and noninteractive TUI fixtures so the additive
+  GUI work cannot silently rewrite the existing terminal contracts.
+- Added a Windows performance harness that isolates GUI settings, selects a
+  real section, samples window and engine processes independently, records
+  first/last memory windows, and fails if the app exits before the requested
+  duration.
+
+### Changed
+
+- Extended managed wrappers, Windows MSI/EXE packages, the macOS universal PKG,
+  and Linux managed packages to treat the CLI/TUI, GUI, Rust engine, assets,
+  integrations, and Linux private runtime as one composite product. Install and
+  update remain dormant: they never open the app automatically.
+- Extended proven-owner update, repair, rollback, and uninstall semantics to the
+  GUI companion. A complete same-version install is still a no-op; a missing or
+  corrupt GUI at the current version is a repair; uninstall removes owned CLI
+  and GUI state while preserving ambiguous paths and user-exported reports.
+- Defined the intentional Cargo v2 migration exception: the first update uses
+  Cargo to install the v3 CLI, and the second same-version update performs a
+  transactional managed CLI+GUI takeover. Later operations use the managed
+  owner.
+- Made GUI/TUI feature parity a release invariant. Collector, capability,
+  warning, provenance, redaction, and hardware-data improvements must be shared
+  rather than independently reimplemented in either frontend.
+- Preserved the 1/3/5/15/60-second engine cadences and required visible-window
+  fast-topic presentation at least once per second after renderer optimization;
+  only hidden/tray mode may coalesce to its required summaries.
+- Kept the six established release targets as hard gates:
+  `x86_64-pc-windows-msvc`, `x86_64-apple-darwin`,
+  `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`,
+  `aarch64-unknown-linux-gnu`, and `x86_64-unknown-linux-musl`. x86_64 covers
+  both Intel and AMD; this does not add a Windows ARM64 release.
+- Pinned the GUI distribution graph to `@native-sdk/cli` 0.5.4 and Zig 0.16.0,
+  including immutable package URLs, integrity/content hashes, per-host Zig
+  checksums, and the reviewed Native SDK renderer patch. Global installations
+  and developer-local dependency paths are rejected by distribution checks.
+- Reworked the Native SDK 0.5.4 software renderer with hash-verified downstream
+  fixes for bounded gradient stops, multi-region dirty rendering, retained
+  base fragments and glyph coverage, a persistent Windows top-down DIB/memory
+  DC, GTK 4.0/4.10 dialog compatibility, configured-entry model hashing, and
+  deterministic ReleaseFast tests against pristine npm restores.
+- Kept one-second foreground collection/presentation while replacing full
+  per-tick JSON process envelopes, repeated timer construction, and redundant
+  process inventories with bounded binary projections, reusable buffers,
+  stable process ranking, in-place counter refresh, and a repeating timer.
+- Disabled Native SDK per-event trace serialization in distributable builds
+  while retaining panic capture, explicit self-test output, renderer
+  instrumentation, and opt-in qualification traces.
+- Expanded GUI settings and observation ownership so corrupt settings recover
+  through an atomic rewrite, user exports survive uninstall, startup/tray
+  choices remain independent, and GUI preferences cannot change TUI defaults.
+- Reworked Windows MSI/EXE and managed takeover transactions so Cargo ownership
+  transfer is journaled and byte-restorable across `.crates.toml`,
+  `.crates2.json`, the Cargo binary, and the managed receipt; only the exact
+  proven `tr300-tui` owner is retired after companion qualification succeeds.
+- Hardened managed archive extraction against links, special files, duplicate
+  canonical paths, manifest/inventory/hash disagreement, traversal, and
+  concurrent PATH/profile mutation; rollback restores the exact previous
+  PATH/profile/GitHub Actions state where owned.
+- Expanded exact-source release qualification with immutable v2.0.6 public
+  wrapper/archive/MSI/EXE hashes, synthetic-prior and real-prior update/repair/
+  uninstall lanes, same-version companion repair, deliberate failure
+  injection, and branch-only qualification that cannot publish or replace
+  release assets.
+
+### Fixed
+
+- Prevented Windows collector subprocesses from flashing console windows by
+  applying the no-window contract to every GUI-owned command path.
+- Fixed blank or partially rendered Native SDK frames caused by gradient-stop
+  overflow, repeated platform-source compilation, incorrect configured-entry
+  hashing, and stale damage/glyph coverage.
+- Fixed the high foreground CPU path caused by repeated software command-list
+  replay, per-present DIB reconstruction, development event tracing, full
+  process-envelope serialization, duplicate process queries, and timer churn.
+- Fixed a false one-frame process CPU spike by committing the Windows process
+  sampling baseline only after the complete fallible inventory query succeeds.
+- Fixed tray, startup, singleton, and close-policy disagreements: hidden startup
+  is explicit, tray-off close quits, repeated Open focuses the existing process,
+  and the Windows private Open message is handled on the Native SDK UI thread.
+- Fixed composite installer defects found by real and hosted trials, including
+  overlong WiX deferred CustomActionData, deferred `CARGO_HOME` resolution,
+  repair-time `FileKey` validation, same-version reinstall properties leaking
+  into major upgrades, pre-qualification Cargo cleanup, missing notice
+  components, and GUI self-tests that incorrectly required a console stdout
+  pipe under Windows Installer.
+- Fixed Global Inno uninstall hooks that attempted `ExecAsOriginalUser` in an
+  unsupported uninstall context; update/install still preserve the original
+  user where required, while uninstall uses the proven owner token.
+- Fixed Windows Installer committed-result handling so exit 1641/3010 is
+  treated as committed reboot success and later verification failures do not
+  perform an unsafe CLI-only rollback of an already-committed MSI transaction.
+- Fixed managed Windows retry cleanup so Start/Search, Installed Apps, PATH,
+  receipt, and shortcut ownership are retried even if an interrupted earlier
+  attempt already removed the GUI payload root.
+- Fixed Linux native package construction across merged-`/usr` ownership,
+  private GTK search paths, musl dynamic `cdylib` linking, container Git trust,
+  runtime dependency traversal, Alpine public-domain license evidence, Debian
+  common-license symlinks, and architecture-specific blank-host launch.
+- Fixed macOS hosted builds for Xcode's Security/libDER search path, duplicate
+  platform sources, stable engine install identity, and release debug/developer
+  path leakage before signing.
+- Fixed the large-output command-drain regression test to use its existing slow
+  command deadline on hosted Windows while leaving production probe deadlines
+  unchanged.
+- Replaced the unbounded actionlint/ShellCheck integration that left multiple
+  hung `actionlint.exe` processes with bounded workflow parsing and separate
+  ShellCheck validation over extracted Bash blocks and repository scripts.
+- Fixed managed PowerShell uninstall failing in noninteractive Windows
+  PowerShell when the receipt parent directory contained unrelated files: the
+  cleanup now removes the parent only when empty via nonrecursive
+  `[IO.Directory]::Delete`, treats Win32 `ERROR_DIR_NOT_EMPTY` (145) as the
+  expected preservation outcome, and rethrows every other failure into the
+  existing rollback path. Hosted qualification now plants an unrelated sibling
+  beside the receipt and requires byte-exact preservation plus complete
+  owned-state removal (ADR 0003).
+- Fixed the same cleanup reporting a false failure under Windows PowerShell
+  5.1, whose `-Command` exit code mirrors the last statement's `$?`: a
+  tolerated outcome (caught nonempty-parent exception or suppressed removal)
+  in final position exited 1 despite correct behavior. The command string now
+  ends with a terminal `exit 0`; uncaught errors still abort with a nonzero
+  exit before reaching it (ADR 0003 addendum, proven on real 5.1).
+- Fixed updater PowerShell discovery on stock Windows: the `--version` spawn
+  probe is a Windows PowerShell 5.1 parser error, so machines without
+  PowerShell 7 reported the in-box shell as missing and failed managed-channel
+  updates and asset downloads. The updater now resolves the trusted System32
+  `powershell.exe` image directly (also hardening against PATH interception)
+  and uses a PATH-resolved PowerShell 7 only as the fallback.
+- Fixed managed updates failing with "Get-FileHash is not recognized" when the
+  updater is launched from a PowerShell 7 session: the child in-box shell
+  inherited pwsh's `PSModulePath`, which shadows Windows PowerShell 5.1's
+  built-in modules with Core-only editions and breaks cmdlet auto-loading.
+  Every PowerShell child the updater spawns now starts with a cleared
+  `PSModulePath` so the shell rebuilds its own defaults.
+- Fixed retired MSI Cargo-transaction journals stranding their empty
+  product-owned `Transactions` directory inside the receipt root after commit
+  or rollback cleanup, which kept the receipt root from emptying at uninstall.
+  The directory is now removed only when empty; unrelated content preserves it.
+- Fixed the severe warmed-state scroll lag on scrollable GUI sections: every
+  scroll frame is architecturally a full-viewport software repaint
+  (~16-22 ms), and queued wheel messages could arrive faster than that service
+  rate on the single-threaded update queue — after the 60-sample histories
+  fill, mandatory per-second chart repaints join the same queue and the
+  backlog becomes user-visible. The Windows host now coalesces same-axis,
+  same-modifier wheel bursts into one scroll input at the summed delta, so a
+  burst costs one reconcile and one repaint at the final offset (ADR 0002;
+  measured by the new warmed-state benchmark).
+- Fixed a follow-on wheel regression where one physical click could glide the
+  entire scroll range: the runtime derives kinetic velocity from the same
+  wheel delta the Windows host now coalesces, so a summed burst became
+  runaway momentum. Wheel momentum is disabled at the app design-token level
+  (`wheel_velocity_scale = 0`), keeping the coalesced one-repaint burst while
+  making every notch a bounded step in the wheel's direction.
+- Fixed Global EXE uninstall failing verification on fast machines: the Inno
+  uninstaller finishes through a relaunched copy whose final machine-PATH
+  removal lands after the original process returns, so owned-state
+  verification raced an eventually-consistent uninstall. Verification now
+  polls briefly for convergence, and elevated worker failures relay their
+  detail (including the uninstaller log tail) across the UAC boundary
+  through a report file instead of dying with an opaque exit code.
+- Fixed retiring a Global or Corporate EXE owner (channel takeover) stranding
+  an orphaned, unrunnable `unins000.exe` in the retired root: Inno
+  uninstallers self-delete through a relaunched temp copy after the original
+  process returns and can lose that race. The retirement now waits briefly
+  for self-deletion and reaps a data-less leftover uninstaller, reclaiming
+  the directory only when empty.
+- Fixed Cargo ownership evidence (`.crates.toml`/`.crates2.json`) being
+  rejected when a Windows PowerShell 5.1 writer prefixed a UTF-8 byte-order
+  mark: detection reads now strip a leading BOM, while transactional manifest
+  editing stays byte-exact and fails safely.
+- Fixed managed receipts written with a UTF-8 byte-order mark (any Windows
+  PowerShell 5.1 `Set-Content -Encoding utf8` writer) failing ownership
+  verification with "does not prove an exact cargo-dist binary": receipt
+  parsing now strips a leading BOM in both the updater and the migration
+  engine, and the qualification fixture writes BOM-less receipts like the
+  real installer.
+- Fixed a mid-session tray toggle stranding a hidden, icon-less process (or
+  quitting past a still-live tray icon): the close-to-tray quit decision now
+  consults the startup-effective tray presence for this session rather than
+  the persisted preference, matching the RESTART REQUIRED semantics.
+- Fixed up to 30 seconds of stale data after restoring a minimized window:
+  collection cadence now follows the close-to-tray policy-hidden state rather
+  than raw visibility, so a minimized window keeps one-second sampling and the
+  foreground collection profile and restore is instantly fresh; tray-hidden
+  windows keep the 30-second cadence.
+
+### Removed
+
+- Removed the automatic Claude Code Review pull-request workflow. It failed
+  externally before producing any review turns or findings on every recent run
+  (for example exact-head run `29892152564`) and therefore added a permanently
+  red check without review value. Independent review is performed in-session;
+  the mention-triggered Claude workflow is unaffected.
+
+### Security and release integrity
+
+- Moved the commercial Makira source face out of the public Git graph and into
+  trusted-runner reconstruction guarded by exact SHA-256. This protects the
+  bytes but does not establish an app-embedding license; license evidence is
+  still required before publication.
+- Required source commit, triggering SHA, coordinated product version, draft
+  target, immutable tag, package manifest, checksums, SBOM, and attestations to
+  agree before an artifact can be attached or promoted.
+- Required exact owned paths, receipt/registration identity, publisher,
+  install scope, artifact kind, and trusted system executables before Windows
+  cleanup, takeover, or uninstall can authorize mutation.
+- Preserved unrelated Cargo packages, user-exported reports, ambiguous paths,
+  and nonempty shared state roots across takeover, rollback, repair, and
+  uninstall qualification.
+
+### Qualification completed so far
+
+- Exact-head ordinary CI passes Rust format/Clippy/tests/release/target checks,
+  security audit, and Native GUI build/test/package lanes for Windows x86-64,
+  macOS Intel/Apple Silicon, Linux GNU x86-64/ARM64, and Linux musl x86-64.
+- Physical Alienware qualification passes all nine destinations, both audience
+  modes, keyboard navigation, maximized scaling, redacted export, singleton
+  focus, hidden startup, repeated close-to-tray, launch-at-login add/remove,
+  default close/exit, and exact adjacent-engine self-test.
+- Physical Corporate MSI qualification passes injected post-Cargo failure and
+  exact rollback, successful v2.0.6 takeover, current-version missing-engine
+  repair, CLI/snapshot/capability checks, GUI launch/focus/export, supported
+  uninstall, user-export preservation, and exact restoration of the original
+  Cargo-owned v2.0.6 fixture.
+- The release-shaped Processes workload passed a 15-minute foreground sample
+  at 1.58% of one logical core with 84.78 MiB average working set and 227.2 MiB
+  average private memory, and a 30-minute hidden sample at 0.18% with 64.98 MiB
+  working set and 206.65 MiB private memory.
+- Local gates pass 107 Rust unit tests, seven immutable-v2 CLI compatibility
+  tests, release build, crates.io dry run, strict product-version checks,
+  dependency/path-leak verification, and 31 optimized Native SDK tests with
+  one expected platform skip.
+
+### Known open qualification issues
+
+- The operator reports severe scrolling/input lag on scrollable GUI sections
+  after the end-user app has been open for roughly one minute. Average CPU and
+  memory samples do not clear this release-blocking interaction regression.
+- The first exact two-hour soak attempt was invalidated by an operator window
+  close (attributed 2026-07-22 with harness, code-path, and event-log evidence;
+  ADR 0001 — not a product defect). The pre-release soak gate was explicitly
+  waived by the operator; the two-hour soak and formal frame/input percentile
+  evidence move to a tracked post-release task against released bytes.
+- Exact-head Windows installer qualification previously failed managed
+  PowerShell uninstall on a nonempty-receipt-parent prompt. The empty-only
+  cleanup and unrelated-sibling preservation proof are now committed and
+  locally validated (ADR 0003); a fresh hosted Windows qualification run
+  remains the authoritative Windows PowerShell 5.1 proof.
+- Native SDK exposes the Windows/Linux GUI as a named canvas but not as an
+  internal screen-reader control tree. The existing TUI remains the documented
+  accessible fallback until the SDK provides that platform capability.
+- Makira app-embedding license evidence or an authorized open-font replacement,
+  signed/notarized final packages, provenance attestations, immutable tag and
+  release publication, fresh public-byte verification, website verification,
+  and final physical acceptance remain incomplete.
+
+### Release qualification
+
+- Requires the existing CLI/TUI contracts and lifecycle behavior to remain
+  compatible while qualifying the composite product on every release target.
+- Requires foreground, hidden/tray, and soak performance gates: at most 2% of
+  one logical core foreground, 1% hidden/tray, 150 MiB working set/RSS,
+  300 MiB private memory/commit, 16.7 ms frame-time p95, 50 ms input-response
+  p95 outside explicit scans, and no unbounded growth.
+- Requires SHA-256 sidecars, an SPDX SBOM, GitHub build-provenance and SBOM
+  attestations, exact-tag asset verification, and public-byte verification
+  before v3.0.0 is treated as released.
+
 ## [2.0.6] - 2026-07-19
 
 ### Fixed
