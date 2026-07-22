@@ -418,6 +418,10 @@ jobs:
               }
             }
           }' > "$CARGO_HOME/.crates2.json"
+          # Real Cargo maintains both manifests, and v3 ownership detection
+          # requires the legacy one.
+          printf '[v1]\n"tr300-tui 2.0.6 (registry+https://github.com/rust-lang/crates.io-index)" = ["sd300"]\n' \
+            > "$CARGO_HOME/.crates.toml"
 
           shim="$migration_home/cargo-shim"
           mkdir -p "$shim"
@@ -460,6 +464,8 @@ jobs:
                 }
               }
             }' > "$CARGO_HOME/.crates2.json"
+          printf '[v1]\n"tr300-tui %s (registry+https://github.com/rust-lang/crates.io-index)" = ["sd300"]\n' \
+            "$SD300_EXPECTED_VERSION" > "$CARGO_HOME/.crates.toml"
           SH
           chmod 700 "$shim/install-candidate.sh"
           rustc "$shim/cargo-shim.rs" -o "$shim/cargo"
