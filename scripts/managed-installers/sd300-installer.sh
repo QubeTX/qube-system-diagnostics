@@ -30,6 +30,9 @@ sd300_gui_archive_name=''
 sd300_gui_stage=''
 sd300_gui_owner=''
 sd300_gui_install_started=0
+sd300_user_path_state_saved=0
+sd300_user_home=''
+sd300_user_zsh_home=''
 
 sd300_cleanup() {
     if [ "$sd300_transaction_started" -eq 1 ] && [ "$sd300_committed" -eq 0 ]; then
@@ -270,6 +273,137 @@ sd300_save_managed_state() {
         cp -p "$sd300_prior_binary" "$sd300_temp/prior-receipt-sd300" ||
             sd300_fail 'could not back up the receipt-owned managed binary'
     fi
+    sd300_save_user_path_state
+}
+
+sd300_save_user_path_file() {
+    key=$1
+    path=$2
+    state="$sd300_temp/user-path-$key"
+    mkdir -p "$state" || sd300_fail 'could not create the PATH rollback state'
+    if [ -L "$path" ]; then
+        [ -f "$path" ] || sd300_fail "PATH/profile file is a dangling or non-file symbolic link: $path"
+        printf '%s\n' symlink > "$state/kind"
+        readlink "$path" > "$state/link" || sd300_fail "could not record PATH/profile symbolic link: $path"
+        cp -p "$path" "$state/content" || sd300_fail "could not back up PATH/profile file: $path"
+    elif [ -e "$path" ]; then
+        [ -f "$path" ] || sd300_fail "PATH/profile location is not a regular file: $path"
+        printf '%s\n' regular > "$state/kind"
+        cp -p "$path" "$state/content" || sd300_fail "could not back up PATH/profile file: $path"
+    else
+        printf '%s\n' absent > "$state/kind"
+    fi
+}
+
+sd300_restore_user_path_file() {
+    key=$1
+    path=$2
+    state="$sd300_temp/user-path-$key"
+    kind=$(cat "$state/kind") || return 1
+    case "$kind" in
+        absent)
+            if [ -L "$path" ] || { [ -e "$path" ] && [ ! -f "$path" ]; }; then
+                printf '%s\n' "SD-300 warning: refusing to remove an unexpected PATH/profile object: $path" >&2
+                return 1
+            fi
+            rm -f "$path"
+            ;;
+        regular)
+            if [ -L "$path" ] || { [ -e "$path" ] && [ ! -f "$path" ]; }; then
+                printf '%s\n' "SD-300 warning: refusing to overwrite a changed PATH/profile object: $path" >&2
+                return 1
+            fi
+            mkdir -p "$(dirname "$path")" && cp -p "$state/content" "$path"
+            ;;
+        symlink)
+            [ -L "$path" ] && [ -f "$path" ] || return 1
+            readlink "$path" | cmp -s - "$state/link" || {
+                printf '%s\n' "SD-300 warning: refusing to follow a changed PATH/profile symbolic link: $path" >&2
+                return 1
+            }
+            cp -p "$state/content" "$path"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+sd300_save_user_path_dir() {
+    key=$1
+    path=$2
+    if [ -d "$path" ]; then
+        printf '%s\n' present > "$sd300_temp/user-path-dir-$key"
+    elif [ -e "$path" ] || [ -L "$path" ]; then
+        sd300_fail "PATH/profile parent is not a directory: $path"
+    else
+        printf '%s\n' absent > "$sd300_temp/user-path-dir-$key"
+    fi
+}
+
+sd300_restore_user_path_dir() {
+    key=$1
+    path=$2
+    [ "$(cat "$sd300_temp/user-path-dir-$key")" = absent ] || return 0
+    if [ -L "$path" ] || { [ -e "$path" ] && [ ! -d "$path" ]; }; then
+        printf '%s\n' "SD-300 warning: refusing to remove an unexpected PATH/profile parent: $path" >&2
+        return 1
+    fi
+    [ -d "$path" ] || return 0
+    rmdir "$path"
+}
+
+sd300_save_user_path_state() {
+    if [ -n "${HOME:-}" ]; then
+        sd300_user_home=$HOME
+    elif command -v getent >/dev/null 2>&1; then
+        if [ -n "${USER:-}" ]; then
+            sd300_user_home=$(getent passwd "$USER" | cut -d: -f6)
+        else
+            sd300_user_home=$(getent passwd "$(id -un)" | cut -d: -f6)
+        fi
+    fi
+    [ -n "$sd300_user_home" ] || sd300_fail 'could not resolve the home used for shell profile changes'
+    sd300_user_zsh_home=${ZDOTDIR:-$sd300_user_home}
+    sd300_save_user_path_file profile "$sd300_user_home/.profile"
+    sd300_save_user_path_file bashrc "$sd300_user_home/.bashrc"
+    sd300_save_user_path_file bash_profile "$sd300_user_home/.bash_profile"
+    sd300_save_user_path_file bash_login "$sd300_user_home/.bash_login"
+    sd300_save_user_path_file zshrc "$sd300_user_zsh_home/.zshrc"
+    sd300_save_user_path_file zshenv "$sd300_user_zsh_home/.zshenv"
+    sd300_save_user_path_file fish "$sd300_user_home/.config/fish/conf.d/sd300.env.fish"
+    sd300_save_user_path_file env "$sd300_intended_prefix/env"
+    sd300_save_user_path_file env_fish "$sd300_intended_prefix/env.fish"
+    sd300_save_user_path_dir fish_conf_d "$sd300_user_home/.config/fish/conf.d"
+    sd300_save_user_path_dir fish "$sd300_user_home/.config/fish"
+    sd300_save_user_path_dir config "$sd300_user_home/.config"
+    if [ -n "${GITHUB_PATH:-}" ]; then
+        sd300_save_user_path_file github_path "$GITHUB_PATH"
+        printf '%s\n' present > "$sd300_temp/user-path-github-path-enabled"
+    else
+        printf '%s\n' absent > "$sd300_temp/user-path-github-path-enabled"
+    fi
+    sd300_user_path_state_saved=1
+}
+
+sd300_restore_user_path_state() {
+    [ "$sd300_user_path_state_saved" -eq 1 ] || return 0
+    sd300_restore_user_path_file profile "$sd300_user_home/.profile" || return 1
+    sd300_restore_user_path_file bashrc "$sd300_user_home/.bashrc" || return 1
+    sd300_restore_user_path_file bash_profile "$sd300_user_home/.bash_profile" || return 1
+    sd300_restore_user_path_file bash_login "$sd300_user_home/.bash_login" || return 1
+    sd300_restore_user_path_file zshrc "$sd300_user_zsh_home/.zshrc" || return 1
+    sd300_restore_user_path_file zshenv "$sd300_user_zsh_home/.zshenv" || return 1
+    sd300_restore_user_path_file fish "$sd300_user_home/.config/fish/conf.d/sd300.env.fish" || return 1
+    sd300_restore_user_path_file env "$sd300_intended_prefix/env" || return 1
+    sd300_restore_user_path_file env_fish "$sd300_intended_prefix/env.fish" || return 1
+    if [ "$(cat "$sd300_temp/user-path-github-path-enabled")" = present ]; then
+        sd300_restore_user_path_file github_path "$GITHUB_PATH" || return 1
+    fi
+    # cargo-dist may create this hierarchy solely to add its fish startup file.
+    # Remove only directories proven absent before the inner install, and only
+    # when they remain empty so concurrent user changes are preserved.
+    sd300_restore_user_path_dir fish_conf_d "$sd300_user_home/.config/fish/conf.d" || return 1
+    sd300_restore_user_path_dir fish "$sd300_user_home/.config/fish" || return 1
+    sd300_restore_user_path_dir config "$sd300_user_home/.config" || return 1
 }
 
 sd300_restore_one_binary() {
@@ -284,6 +418,7 @@ sd300_restore_one_binary() {
 }
 
 sd300_restore_managed_state() {
+    sd300_restore_user_path_state || return 1
     sd300_restore_one_binary "$sd300_intended_binary" "$sd300_intended_binary_existed" \
         "$sd300_temp/prior-intended-sd300" || return 1
     if [ -n "$sd300_prior_binary" ] && [ "$sd300_prior_binary" != "$sd300_intended_binary" ]; then
@@ -486,7 +621,18 @@ sd300_stage_gui_payload() {
     case "$sd300_gui_target" in
         macos-*)
             command -v unzip >/dev/null 2>&1 || sd300_fail 'unzip is required to install the macOS app'
-            unzip -Z1 "$gui_archive" | grep -Eq '(^/|(^|/)\.\.(/|$))' && sd300_fail 'GUI archive contains an unsafe path'
+            zip_members="$sd300_temp/gui-zip-members"
+            zip_types="$sd300_temp/gui-zip-types"
+            unzip -Z1 "$gui_archive" > "$zip_members" || sd300_fail 'could not inspect the macOS GUI archive'
+            unzip -Z -l "$gui_archive" > "$zip_types" || sd300_fail 'could not inspect macOS GUI archive member types'
+            grep -Eq '(^/|(^|/)\.\.(/|$))' "$zip_members" && sd300_fail 'GUI archive contains an unsafe path'
+            [ "$(LC_ALL=C sort "$zip_members" | uniq | wc -l | tr -d ' ')" = "$(wc -l < "$zip_members" | tr -d ' ')" ] ||
+                sd300_fail 'GUI archive repeats a member path'
+            zip_type_count=$(grep -Ec '^[-bcdlps]' "$zip_types")
+            [ "$zip_type_count" = "$(wc -l < "$zip_members" | tr -d ' ')" ] ||
+                sd300_fail 'GUI archive member types could not be determined safely'
+            grep -E '^[bclps]' "$zip_types" >/dev/null &&
+                sd300_fail 'GUI archive contains a symbolic link or special file'
             unzip -q "$gui_archive" -d "$sd300_gui_stage" || sd300_fail 'could not extract the macOS GUI archive'
             [ -d "$sd300_gui_stage/SD-300.app" ] || sd300_fail 'macOS GUI archive has no SD-300.app'
             sd300_verify_gui_manifest "$sd300_gui_stage" \
@@ -496,9 +642,18 @@ sd300_stage_gui_payload() {
             gui_binary="$sd300_gui_stage/SD-300.app/Contents/MacOS/sd300-gui"
             ;;
         linux-*)
-            members=$(tar -tJf "$gui_archive") || sd300_fail 'could not inspect the Linux GUI archive'
-            printf '%s\n' "$members" | grep -Eq '(^/|(^|/)\.\.(/|$))' && sd300_fail 'GUI archive contains an unsafe path'
-            printf '%s\n' "$members" | grep -Eqv '^sd300(/|$)' && sd300_fail 'GUI archive contains files outside its owned root'
+            tar_members="$sd300_temp/gui-tar-members"
+            tar_types="$sd300_temp/gui-tar-types"
+            tar -tJf "$gui_archive" > "$tar_members" || sd300_fail 'could not inspect the Linux GUI archive'
+            tar -tvJf "$gui_archive" > "$tar_types" || sd300_fail 'could not inspect Linux GUI archive member types'
+            grep -Eq '(^/|(^|/)\.\.(/|$))' "$tar_members" && sd300_fail 'GUI archive contains an unsafe path'
+            grep -Eqv '^sd300(/|$)' "$tar_members" && sd300_fail 'GUI archive contains files outside its owned root'
+            [ "$(LC_ALL=C sort "$tar_members" | uniq | wc -l | tr -d ' ')" = "$(wc -l < "$tar_members" | tr -d ' ')" ] ||
+                sd300_fail 'GUI archive repeats a member path'
+            [ "$(wc -l < "$tar_types" | tr -d ' ')" = "$(wc -l < "$tar_members" | tr -d ' ')" ] ||
+                sd300_fail 'GUI archive member types could not be determined safely'
+            grep -Ev '^[-d]' "$tar_types" >/dev/null &&
+                sd300_fail 'GUI archive contains a symbolic link, hard link, or special file'
             tar -xJf "$gui_archive" -C "$sd300_gui_stage" || sd300_fail 'could not extract the Linux GUI archive'
             [ -d "$sd300_gui_stage/sd300" ] || sd300_fail 'Linux GUI archive has no sd300 root'
             sd300_verify_gui_manifest "$sd300_gui_stage/sd300" \

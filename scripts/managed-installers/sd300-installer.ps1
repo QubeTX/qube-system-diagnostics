@@ -265,6 +265,19 @@ function Expand-Sd300GuiPayload([string]$Archive, [string]$Destination) {
         foreach ($entry in $zip.Entries) {
             $relative = $entry.FullName.Replace('\', '/').TrimEnd('/')
             if (-not $relative) { continue }
+            # ExternalAttributes is exposed as a signed Int32 even though ZIP
+            # stores it as an unsigned bit field.
+            $externalAttributes = ([long]$entry.ExternalAttributes -band 0xFFFFFFFFL)
+            $unixFileType = (($externalAttributes -shr 16) -band 0xF000)
+            $isDirectoryName = $entry.FullName.EndsWith('/') -or $entry.FullName.EndsWith('\')
+            $declaresDirectory = $unixFileType -eq 0x4000
+            $declaresRegularFile = $unixFileType -eq 0x8000
+            if (($externalAttributes -band [uint32][IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                ($unixFileType -ne 0 -and -not $declaresDirectory -and -not $declaresRegularFile) -or
+                ($declaresDirectory -and -not $isDirectoryName) -or
+                ($declaresRegularFile -and $isDirectoryName)) {
+                throw "GUI archive contains a symbolic link or special member: $($entry.FullName)"
+            }
             if ($relative -notmatch '^[A-Za-z0-9._/-]+$' -or
                 [IO.Path]::IsPathRooted($relative) -or
                 @($relative.Split('/') | Where-Object { $_ -eq '.' -or $_ -eq '..' }).Count -gt 0 -or
@@ -463,6 +476,54 @@ function Save-Sd300ManagedState([string]$BackupRoot, [object[]]$NativeProducts) 
         $null
     }
 
+    $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $false)
+    $environmentKeyExisted = $null -ne $environmentKey
+    try {
+        $userPathName = if ($environmentKey) {
+            @($environmentKey.GetValueNames() | Where-Object {
+                $_.Equals('Path', [StringComparison]::OrdinalIgnoreCase)
+            }) | Select-Object -First 1
+        } else {
+            $null
+        }
+        $userPathExisted = $null -ne $userPathName
+        $userPathValue = if ($userPathExisted) {
+            $environmentKey.GetValue(
+                $userPathName,
+                $null,
+                [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+            )
+        } else {
+            $null
+        }
+        $userPathKind = if ($userPathExisted) {
+            $environmentKey.GetValueKind($userPathName)
+        } else {
+            $null
+        }
+    } finally {
+        if ($environmentKey) { $environmentKey.Dispose() }
+    }
+
+    $githubPath = if ([string]::IsNullOrWhiteSpace($env:GITHUB_PATH)) {
+        $null
+    } else {
+        [IO.Path]::GetFullPath($env:GITHUB_PATH)
+    }
+    $githubPathExisted = $false
+    $githubPathBackup = Join-Path $BackupRoot 'github-path'
+    if ($githubPath) {
+        if (Test-Path -LiteralPath $githubPath) {
+            $githubPathItem = Get-Item -LiteralPath $githubPath -Force
+            if ($githubPathItem.PSIsContainer -or
+                ($githubPathItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "GITHUB_PATH is not a regular non-reparse file: $githubPath"
+            }
+            $githubPathExisted = $true
+            Copy-Item -LiteralPath $githubPath -Destination $githubPathBackup
+        }
+    }
+
     return [pscustomobject]@{
         ReceiptPath = $receiptPath
         ReceiptExisted = $receiptExisted
@@ -479,10 +540,67 @@ function Save-Sd300ManagedState([string]$BackupRoot, [object[]]$NativeProducts) 
         UninstallKey = $uninstallKey
         UninstallKeyExisted = $uninstallKeyExisted
         UninstallProperties = $uninstallProperties
+        UserPathName = $userPathName
+        EnvironmentKeyExisted = $environmentKeyExisted
+        UserPathExisted = $userPathExisted
+        UserPathValue = $userPathValue
+        UserPathKind = $userPathKind
+        GithubPath = $githubPath
+        GithubPathExisted = $githubPathExisted
+        GithubPathBackup = $githubPathBackup
     }
 }
 
 function Restore-Sd300ManagedState($State) {
+    if ($State.EnvironmentKeyExisted) {
+        $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+        try {
+            if ($State.UserPathExisted) {
+                $environmentKey.SetValue(
+                    $State.UserPathName,
+                    $State.UserPathValue,
+                    [Microsoft.Win32.RegistryValueKind]$State.UserPathKind
+                )
+            } else {
+                $environmentKey.DeleteValue('Path', $false)
+            }
+        } finally {
+            $environmentKey.Dispose()
+        }
+    } else {
+        $environmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+        if ($environmentKey) {
+            try {
+                $environmentKey.DeleteValue('Path', $false)
+                if ($environmentKey.ValueCount -ne 0 -or $environmentKey.SubKeyCount -ne 0) {
+                    throw 'refusing to remove a concurrently populated user Environment key during rollback'
+                }
+            } finally {
+                $environmentKey.Dispose()
+            }
+            [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey('Environment', $false)
+        }
+    }
+    $dummyName = 'sd300-rollback-' + [guid]::NewGuid().ToString('N')
+    [Environment]::SetEnvironmentVariable($dummyName, 'sd300-rollback', 'User')
+    [Environment]::SetEnvironmentVariable($dummyName, $null, 'User')
+
+    if ($State.GithubPath) {
+        if (Test-Path -LiteralPath $State.GithubPath) {
+            $githubPathItem = Get-Item -LiteralPath $State.GithubPath -Force
+            if ($githubPathItem.PSIsContainer -or
+                ($githubPathItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "refusing to overwrite an unexpected GITHUB_PATH object during rollback: $($State.GithubPath)"
+            }
+        }
+        if ($State.GithubPathExisted) {
+            $null = New-Item -ItemType Directory -Path (Split-Path -Parent $State.GithubPath) -Force
+            Copy-Item -LiteralPath $State.GithubPathBackup -Destination $State.GithubPath -Force
+        } else {
+            Remove-Item -LiteralPath $State.GithubPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     foreach ($binary in $State.Binaries) {
         if ($binary.Existed) {
             $null = New-Item -ItemType Directory -Path (Split-Path -Parent $binary.Path) -Force

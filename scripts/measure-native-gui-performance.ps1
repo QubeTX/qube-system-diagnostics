@@ -302,6 +302,15 @@ try {
     $topThreads = @($threadCpu | Sort-Object cpuSeconds -Descending | Select-Object -First 8)
     $sorted = @($samples | Sort-Object)
     $p95Index = [Math]::Max(0, [Math]::Ceiling($sorted.Count * 0.95) - 1)
+    $memoryWindowSamples = [Math]::Max(1, [Math]::Floor($workingSets.Count * 0.1))
+    $workingSetStartAverage = (@($workingSets | Select-Object -First $memoryWindowSamples) |
+        Measure-Object -Average).Average
+    $workingSetEndAverage = (@($workingSets | Select-Object -Last $memoryWindowSamples) |
+        Measure-Object -Average).Average
+    $privateStartAverage = (@($privateBytes | Select-Object -First $memoryWindowSamples) |
+        Measure-Object -Average).Average
+    $privateEndAverage = (@($privateBytes | Select-Object -Last $memoryWindowSamples) |
+        Measure-Object -Average).Average
 
     [ordered]@{
         schemaVersion = 1
@@ -321,8 +330,11 @@ try {
         memoryMiB = [ordered]@{
             workingSetAverage = [Math]::Round((($workingSets | Measure-Object -Average).Average / 1MB), 2)
             workingSetMaximum = [Math]::Round((($workingSets | Measure-Object -Maximum).Maximum / 1MB), 2)
+            workingSetLastWindowDelta = [Math]::Round((($workingSetEndAverage - $workingSetStartAverage) / 1MB), 2)
             privateAverage = [Math]::Round((($privateBytes | Measure-Object -Average).Average / 1MB), 2)
             privateMaximum = [Math]::Round((($privateBytes | Measure-Object -Maximum).Maximum / 1MB), 2)
+            privateLastWindowDelta = [Math]::Round((($privateEndAverage - $privateStartAverage) / 1MB), 2)
+            comparisonWindowSamples = $memoryWindowSamples
         }
         topThreads = $topThreads
     } | ConvertTo-Json -Depth 4

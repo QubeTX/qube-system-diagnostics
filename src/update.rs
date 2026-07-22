@@ -99,6 +99,89 @@ struct Release {
     version: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowsInstallerCompletion {
+    Complete,
+    RebootRequired(i32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UpdateExecution {
+    Standard,
+    WindowsMsiCommitted(WindowsInstallerCompletion),
+}
+
+impl UpdateExecution {
+    #[cfg(any(windows, test))]
+    fn windows_msi_committed(self) -> bool {
+        matches!(self, Self::WindowsMsiCommitted(_))
+    }
+
+    fn reboot_required(self) -> bool {
+        matches!(
+            self,
+            Self::WindowsMsiCommitted(WindowsInstallerCompletion::RebootRequired(_))
+        )
+    }
+
+    fn success_suffix(self) -> &'static str {
+        if self.reboot_required() {
+            "; Windows Installer committed the update and requires a reboot"
+        } else {
+            ""
+        }
+    }
+
+    fn post_commit_failure(self, message: String) -> String {
+        if matches!(self, Self::WindowsMsiCommitted(_)) {
+            format!(
+                "{message}; Windows Installer already committed the product transaction, so the prior executable was not restored. Run the same update again to repair the composite installation"
+            )
+        } else {
+            message
+        }
+    }
+
+    #[cfg(any(windows, test))]
+    fn worker_exit_code(self) -> i32 {
+        match self {
+            Self::WindowsMsiCommitted(WindowsInstallerCompletion::RebootRequired(code)) => code,
+            _ => 0,
+        }
+    }
+}
+
+#[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowsNativeUninstallExecution {
+    Exe,
+    MsiCommitted(WindowsInstallerCompletion),
+}
+
+#[cfg(windows)]
+impl WindowsNativeUninstallExecution {
+    fn windows_msi_committed(self) -> bool {
+        matches!(self, Self::MsiCommitted(_))
+    }
+
+    fn reboot_required(self) -> bool {
+        matches!(
+            self,
+            Self::MsiCommitted(WindowsInstallerCompletion::RebootRequired(_))
+        )
+    }
+
+    fn worker_exit_code(self) -> i32 {
+        match self {
+            Self::MsiCommitted(WindowsInstallerCompletion::RebootRequired(code)) => code,
+            _ => 0,
+        }
+    }
+}
+
+#[cfg(windows)]
+const WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR: i32 = 200;
+
 #[derive(Debug, Serialize)]
 struct LifecycleResult<'a> {
     action: &'a str,
@@ -195,10 +278,13 @@ pub fn run(json: bool) -> Result<i32> {
             2,
         );
     }
-    let outcome = perform_update(&installation, &release, json)
-        .and_then(|()| crate::gui::verify_installed(&release.version));
+    let outcome = perform_update(&installation, &release, json).and_then(|execution| {
+        crate::gui::verify_installed(&release.version)
+            .map_err(|message| execution.post_commit_failure(message))?;
+        Ok(execution)
+    });
     match outcome {
-        Ok(()) => emit(
+        Ok(execution) => emit(
             json,
             LifecycleResult {
                 action: "update",
@@ -208,9 +294,10 @@ pub fn run(json: bool) -> Result<i32> {
                 install_channel: Some(installation.channel),
                 strategy: Some(strategy),
                 message: format!(
-                    "Updated to {} without changing the {} channel",
+                    "Updated to {} without changing the {} channel{}",
                     release.version,
-                    installation.channel.label()
+                    installation.channel.label(),
+                    execution.success_suffix()
                 ),
             },
             0,
@@ -274,14 +361,18 @@ fn repair_current_gui(
     }
 
     let repaired = if installation.channel == InstallChannel::Cargo {
-        perform_managed_install(target_channel, release, json)
+        perform_managed_install(target_channel, release, json).map(|()| UpdateExecution::Standard)
     } else {
         perform_update(installation, release, json)
     }
-    .and_then(|()| crate::gui::verify_installed(&release.version));
+    .and_then(|execution| {
+        crate::gui::verify_installed(&release.version)
+            .map_err(|message| execution.post_commit_failure(message))?;
+        Ok(execution)
+    });
 
     match repaired {
-        Ok(()) => emit(
+        Ok(execution) => emit(
             json,
             LifecycleResult {
                 action: "update",
@@ -297,8 +388,9 @@ fn repair_current_gui(
                     )
                 } else {
                     format!(
-                        "Repaired the missing or incompatible GUI companion without changing the {} channel",
-                        installation.channel.label()
+                        "Repaired the missing or incompatible GUI companion without changing the {} channel{}",
+                        installation.channel.label(),
+                        execution.success_suffix()
                     )
                 },
             },
@@ -546,7 +638,7 @@ fn execute_update(
     installation: &Installation,
     release: &Release,
     quiet_stdout: bool,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<UpdateExecution, String> {
     match installation.channel {
         InstallChannel::Cargo => run_status(
             Command::new("cargo").args([
@@ -558,17 +650,23 @@ fn execute_update(
                 "--locked",
             ]),
             quiet_stdout,
-        ),
+        )
+        .map(|()| UpdateExecution::Standard),
         InstallChannel::PowerShellInstaller | InstallChannel::ShellInstaller => {
             execute_managed_wrapper(installation.channel, release, quiet_stdout)
+                .map(|()| UpdateExecution::Standard)
         }
         InstallChannel::MsiGlobal | InstallChannel::MsiCorporate => {
             execute_windows_msi(installation.channel, release, quiet_stdout)
+                .map(UpdateExecution::WindowsMsiCommitted)
         }
         InstallChannel::ExeGlobal | InstallChannel::ExeCorporate => {
             execute_windows_exe(installation.channel, release, quiet_stdout)
+                .map(|()| UpdateExecution::Standard)
         }
-        InstallChannel::MacPkg => execute_macos_pkg(release, quiet_stdout),
+        InstallChannel::MacPkg => {
+            execute_macos_pkg(release, quiet_stdout).map(|()| UpdateExecution::Standard)
+        }
     }
 }
 
@@ -576,22 +674,33 @@ fn perform_update(
     installation: &Installation,
     release: &Release,
     quiet_stdout: bool,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<UpdateExecution, String> {
     #[cfg(windows)]
     {
         if installation.channel.global_worker_id().is_some() {
             return with_elevated_windows_live_image_handoff(installation, release);
         }
-        with_windows_live_image_handoff(|| {
-            execute_update(installation, release, quiet_stdout)?;
-            verify_version(&installation.binary_path, &release.version)
-        })
+        cleanup_stale_windows_update_backups();
+        let handoff = WindowsLiveImageHandoff::begin()?;
+        let execution = match execute_update(installation, release, quiet_stdout) {
+            Ok(execution) => execution,
+            Err(message) => {
+                return handoff
+                    .finish(Err(message))
+                    .map(|()| UpdateExecution::Standard)
+            }
+        };
+        handoff.finish_execution(
+            execution,
+            verify_version(&installation.binary_path, &release.version),
+        )
     }
 
     #[cfg(not(windows))]
     {
-        execute_update(installation, release, quiet_stdout)?;
-        verify_version(&installation.binary_path, &release.version)
+        let execution = execute_update(installation, release, quiet_stdout)?;
+        verify_version(&installation.binary_path, &release.version)?;
+        Ok(execution)
     }
 }
 
@@ -693,7 +802,7 @@ fn execute_windows_msi(
     channel: InstallChannel,
     release: &Release,
     quiet_stdout: bool,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<WindowsInstallerCompletion, String> {
     let asset = channel
         .update_asset()
         .ok_or_else(|| "MSI asset is unavailable".to_string())?;
@@ -716,7 +825,7 @@ fn execute_windows_msi(
         // GUI instead of treating `/i` as a no-op.
         command.args(["REINSTALL=ALL", "REINSTALLMODE=vomus"]);
     }
-    run_status(&mut command, quiet_stdout)
+    run_windows_installer_status(&mut command, quiet_stdout)
 }
 
 #[cfg(not(windows))]
@@ -724,7 +833,7 @@ fn execute_windows_msi(
     _channel: InstallChannel,
     _release: &Release,
     _quiet_stdout: bool,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<WindowsInstallerCompletion, String> {
     Err("MSI updates are Windows-only".into())
 }
 
@@ -810,7 +919,7 @@ where
 fn with_elevated_windows_live_image_handoff(
     installation: &Installation,
     release: &Release,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<UpdateExecution, String> {
     let handoff = WindowsLiveImageHandoff::plan()?;
     let channel = installation
         .channel
@@ -818,12 +927,38 @@ fn with_elevated_windows_live_image_handoff(
         .ok_or_else(|| "Refused a non-Global elevated update request".to_string())?;
     let exit_code =
         launch_elevated_windows_update_worker(channel, &release.version, &handoff.backup)?;
-    if exit_code != 0 {
+    if exit_code == WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR as u32 {
+        return Err(
+            "Windows Installer committed the Global MSI transaction, but post-install verification or cleanup failed; the prior executable was not restored. Run the same update again to repair the composite installation."
+                .into(),
+        );
+    }
+    let msi_completion = (installation.channel == InstallChannel::MsiGlobal)
+        .then(|| {
+            i32::try_from(exit_code)
+                .ok()
+                .and_then(windows_installer_completion)
+        })
+        .flatten();
+    if exit_code != 0
+        && !matches!(
+            msi_completion,
+            Some(WindowsInstallerCompletion::RebootRequired(_))
+        )
+    {
         return Err(format!(
             "The elevated same-channel update worker exited with code {exit_code}. It retained or restored the old executable; verify `sd300 --version` before retrying."
         ));
     }
+    let execution = match installation.channel {
+        InstallChannel::MsiGlobal => UpdateExecution::WindowsMsiCommitted(
+            msi_completion.unwrap_or(WindowsInstallerCompletion::Complete),
+        ),
+        _ => UpdateExecution::Standard,
+    };
     verify_version(&installation.binary_path, &release.version)
+        .map_err(|message| execution.post_commit_failure(message))?;
+    Ok(execution)
 }
 
 #[cfg(windows)]
@@ -872,13 +1007,28 @@ pub fn run_windows_update_worker(channel: &str, version: &str, backup: &Path) ->
         tag: format!("v{version}"),
         version: version.to_string(),
     };
-    let outcome = execute_update(&installation, &release, true)
-        .and_then(|()| verify_version(&handoff.original, version));
-    match handoff.finish(outcome) {
-        Ok(()) => 0,
+    let execution = match execute_update(&installation, &release, true) {
+        Ok(execution) => execution,
+        Err(message) => {
+            return match handoff.finish(Err(message)) {
+                Ok(()) => 2,
+                Err(message) => {
+                    eprintln!("SD-300 update worker failed safely: {message}");
+                    2
+                }
+            }
+        }
+    };
+    let verification = verify_version(&handoff.original, version);
+    match handoff.finish_execution(execution, verification) {
+        Ok(execution) => execution.worker_exit_code(),
         Err(message) => {
             eprintln!("SD-300 update worker failed safely: {message}");
-            2
+            if execution.windows_msi_committed() {
+                WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR
+            } else {
+                2
+            }
         }
     }
 }
@@ -957,11 +1107,28 @@ pub fn run_windows_uninstall_worker(channel: &str, backup: &Path) -> i32 {
             return 2;
         }
     };
-    match handoff.finish(execute_windows_native_uninstaller(&installation, true)) {
-        Ok(()) => 0,
+    let execution = match execute_windows_native_uninstaller(&installation, true) {
+        Ok(execution) => execution,
+        Err(message) => {
+            return match handoff.finish(Err(message)) {
+                Ok(()) => 2,
+                Err(message) => {
+                    eprintln!("SD-300 uninstall worker failed safely: {message}");
+                    2
+                }
+            }
+        }
+    };
+    let verification = verify_windows_native_uninstalled(&installation);
+    match handoff.finish_execution(execution, verification) {
+        Ok(execution) => execution.worker_exit_code(),
         Err(message) => {
             eprintln!("SD-300 uninstall worker failed safely: {message}");
-            2
+            if execution.windows_msi_committed() {
+                WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR
+            } else {
+                2
+            }
         }
     }
 }
@@ -1374,6 +1541,40 @@ impl WindowsLiveImageHandoff {
         }
     }
 
+    fn finish_execution(
+        self,
+        execution: UpdateExecution,
+        verification: std::result::Result<(), String>,
+    ) -> std::result::Result<UpdateExecution, String> {
+        if execution.windows_msi_committed() {
+            self.finish_committed_msi(verification)?;
+        } else {
+            self.finish(verification)?;
+        }
+        Ok(execution)
+    }
+
+    fn finish_committed_msi(
+        self,
+        verification: std::result::Result<(), String>,
+    ) -> std::result::Result<(), String> {
+        let cleanup = schedule_windows_update_takeover_cleanup(&self.backup);
+        match (verification, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(message), Ok(())) => Err(format!(
+                "{message}; Windows Installer committed the product transaction, so the prior executable was not restored"
+            )),
+            (Ok(()), Err(error)) => Err(format!(
+                "The MSI transaction verified, but safe cleanup could not start for {}: {error}",
+                self.backup.display()
+            )),
+            (Err(message), Err(error)) => Err(format!(
+                "{message}; Windows Installer committed the product transaction, so the prior executable was not restored; cleanup also could not start for {}: {error}",
+                self.backup.display()
+            )),
+        }
+    }
+
     fn finish_managed_takeover(
         self,
         result: std::result::Result<(), String>,
@@ -1538,6 +1739,40 @@ impl WindowsUninstallImageHandoff {
                     self.backup.display()
                 )),
             },
+        }
+    }
+
+    fn finish_execution(
+        self,
+        execution: WindowsNativeUninstallExecution,
+        verification: std::result::Result<(), String>,
+    ) -> std::result::Result<WindowsNativeUninstallExecution, String> {
+        if execution.windows_msi_committed() {
+            self.finish_committed_msi(verification)?;
+        } else {
+            self.finish(verification)?;
+        }
+        Ok(execution)
+    }
+
+    fn finish_committed_msi(
+        self,
+        verification: std::result::Result<(), String>,
+    ) -> std::result::Result<(), String> {
+        let cleanup = schedule_windows_uninstall_cleanup(&self.backup);
+        match (verification, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(message), Ok(())) => Err(format!(
+                "{message}; Windows Installer committed the uninstall transaction, so the installed executable was not restored"
+            )),
+            (Ok(()), Err(error)) => Err(format!(
+                "The MSI uninstall committed, but final cleanup could not start for {}: {error}",
+                self.backup.display()
+            )),
+            (Err(message), Err(error)) => Err(format!(
+                "{message}; Windows Installer committed the uninstall transaction, so the installed executable was not restored; final cleanup also could not start for {}: {error}",
+                self.backup.display()
+            )),
         }
     }
 
@@ -1770,7 +2005,7 @@ fn download(url: &str, destination: &Path) -> std::result::Result<(), String> {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, test))]
 fn powershell_escape(value: &str) -> String {
     value.replace('\'', "''")
 }
@@ -1814,6 +2049,35 @@ fn run_status(command: &mut Command, quiet_stdout: bool) -> std::result::Result<
             status.code().unwrap_or(-1)
         )),
         Err(error) => Err(format!("Could not start {}: {}", program, error)),
+    }
+}
+
+#[cfg(any(windows, test))]
+fn windows_installer_completion(exit_code: i32) -> Option<WindowsInstallerCompletion> {
+    match exit_code {
+        0 => Some(WindowsInstallerCompletion::Complete),
+        // ERROR_SUCCESS_REBOOT_INITIATED and ERROR_SUCCESS_REBOOT_REQUIRED
+        1641 | 3010 => Some(WindowsInstallerCompletion::RebootRequired(exit_code)),
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
+fn run_windows_installer_status(
+    command: &mut Command,
+    quiet_stdout: bool,
+) -> std::result::Result<WindowsInstallerCompletion, String> {
+    if quiet_stdout {
+        command.stdout(Stdio::null());
+    }
+    let program = format!("{:?}", command.get_program());
+    match command.status() {
+        Ok(status) => {
+            let exit_code = status.code().unwrap_or(-1);
+            windows_installer_completion(exit_code)
+                .ok_or_else(|| format!("{program} exited with code {exit_code}"))
+        }
+        Err(error) => Err(format!("Could not start {program}: {error}")),
     }
 }
 
@@ -2737,44 +3001,15 @@ fn schedule_windows_file_cleanup(
     } else {
         prove_windows_managed_gui_root()?
     };
-    let mut commands = format!(
-        "Wait-Process -Id {} -ErrorAction SilentlyContinue; ",
-        std::process::id()
+    let shortcut = (!cargo_owned).then(windows_managed_gui_shortcut).flatten();
+    let commands = windows_managed_cleanup_commands(
+        std::process::id(),
+        &installation.binary_path,
+        managed_gui.as_deref(),
+        shortcut.as_deref(),
+        receipt.as_deref(),
+        cargo_owned,
     );
-    if cargo_owned {
-        commands.push_str("& cargo uninstall tr300-tui *> $null; ");
-    }
-    commands.push_str(&format!(
-        "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
-        powershell_escape(&installation.binary_path.to_string_lossy())
-    ));
-    if let Some(root) = managed_gui {
-        commands.push_str(&format!(
-            "Remove-Item -LiteralPath '{}' -Recurse -Force -ErrorAction Stop; ",
-            powershell_escape(&root.to_string_lossy())
-        ));
-        if let Some(shortcut) = windows_managed_gui_shortcut() {
-            commands.push_str(&format!(
-                "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
-                powershell_escape(&shortcut.to_string_lossy())
-            ));
-        }
-        commands.push_str(
-            "Remove-Item -LiteralPath 'Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SD-300-Managed' -Recurse -Force -ErrorAction SilentlyContinue; ",
-        );
-    }
-    if let Some(receipt) = receipt {
-        commands.push_str(&format!(
-            "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
-            powershell_escape(&receipt.to_string_lossy())
-        ));
-        if let Some(parent) = receipt.parent() {
-            commands.push_str(&format!(
-                "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
-                powershell_escape(&parent.to_string_lossy())
-            ));
-        }
-    }
     Command::new("powershell.exe")
         .args([
             "-NoProfile",
@@ -2792,6 +3027,59 @@ fn schedule_windows_file_cleanup(
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("Could not schedule post-exit cleanup: {error}"))
+}
+
+#[cfg(any(windows, test))]
+fn windows_managed_cleanup_commands(
+    process_id: u32,
+    binary: &Path,
+    managed_gui: Option<&Path>,
+    shortcut: Option<&Path>,
+    receipt: Option<&Path>,
+    cargo_owned: bool,
+) -> String {
+    let mut commands = format!("Wait-Process -Id {process_id} -ErrorAction SilentlyContinue; ");
+    if cargo_owned {
+        commands.push_str("& cargo uninstall tr300-tui *> $null; ");
+    }
+    commands.push_str(&format!(
+        "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
+        powershell_escape(&binary.to_string_lossy())
+    ));
+    if !cargo_owned {
+        // These fixed per-user integrations remain SD-300-owned even when an
+        // interrupted earlier removal already deleted the GUI payload root.
+        // Always scheduling them makes a retry complete rather than report
+        // success while leaving Start/Search or Installed Apps residue.
+        if let Some(shortcut) = shortcut {
+            commands.push_str(&format!(
+                "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
+                powershell_escape(&shortcut.to_string_lossy())
+            ));
+        }
+        commands.push_str(
+            "Remove-Item -LiteralPath 'Registry::HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SD-300-Managed' -Recurse -Force -ErrorAction SilentlyContinue; ",
+        );
+    }
+    if let Some(root) = managed_gui {
+        commands.push_str(&format!(
+            "$sd300Root='{}'; for($i=0;$i -lt 50 -and (Test-Path -LiteralPath $sd300Root);$i++){{ Remove-Item -LiteralPath $sd300Root -Recurse -Force -ErrorAction SilentlyContinue; if(Test-Path -LiteralPath $sd300Root){{ Start-Sleep -Milliseconds 100 }} }}; ",
+            powershell_escape(&root.to_string_lossy()),
+        ));
+    }
+    if let Some(receipt) = receipt {
+        commands.push_str(&format!(
+            "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
+            powershell_escape(&receipt.to_string_lossy())
+        ));
+        if let Some(parent) = receipt.parent() {
+            commands.push_str(&format!(
+                "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
+                powershell_escape(&parent.to_string_lossy())
+            ));
+        }
+    }
+    commands
 }
 
 #[cfg(windows)]
@@ -2861,24 +3149,63 @@ fn uninstall_windows_native(
             .global_worker_id()
             .ok_or_else(|| "Refused a non-Global elevated uninstall request".to_string())?;
         let exit_code = launch_elevated_windows_uninstall_worker(channel, &handoff.backup)?;
-        if exit_code != 0 {
+        if exit_code == WINDOWS_WORKER_MSI_COMMITTED_NEEDS_REPAIR as u32 {
+            return Err(
+                "Windows Installer committed the Global MSI uninstall, but removal verification or final cleanup failed; the installed executable was not restored. Retry from Installed Apps or the original MSI if SD-300 remains discoverable."
+                .into(),
+            );
+        }
+        let msi_completion = (installation.channel == InstallChannel::MsiGlobal)
+            .then(|| {
+                i32::try_from(exit_code)
+                    .ok()
+                    .and_then(windows_installer_completion)
+            })
+            .flatten();
+        if exit_code != 0
+            && !matches!(
+                msi_completion,
+                Some(WindowsInstallerCompletion::RebootRequired(_))
+            )
+        {
             return Err(format!(
                 "The elevated {} uninstaller exited with code {exit_code}; verify the installed command before retrying",
                 installation.channel.label()
             ));
         }
         return Ok(format!(
-            "{} uninstall completed; final running-image cleanup was scheduled",
-            installation.channel.label()
+            "{} uninstall completed; final running-image cleanup was scheduled{}",
+            installation.channel.label(),
+            if matches!(
+                msi_completion,
+                Some(WindowsInstallerCompletion::RebootRequired(_))
+            ) {
+                "; Windows Installer requires a reboot"
+            } else {
+                ""
+            }
         ));
     }
 
     let handoff = WindowsUninstallImageHandoff::begin()?;
-    let result = execute_windows_native_uninstaller(installation, quiet_stdout);
-    handoff.finish(result)?;
+    let execution = match execute_windows_native_uninstaller(installation, quiet_stdout) {
+        Ok(execution) => execution,
+        Err(message) => {
+            return handoff.finish(Err(message)).map(|()| {
+                "Windows native uninstall failed before it returned an execution result".into()
+            })
+        }
+    };
+    let verification = verify_windows_native_uninstalled(installation);
+    handoff.finish_execution(execution, verification)?;
     Ok(format!(
-        "{} uninstall completed; final running-image cleanup was scheduled",
-        installation.channel.label()
+        "{} uninstall completed; final running-image cleanup was scheduled{}",
+        installation.channel.label(),
+        if execution.reboot_required() {
+            "; Windows Installer requires a reboot"
+        } else {
+            ""
+        }
     ))
 }
 
@@ -2886,7 +3213,7 @@ fn uninstall_windows_native(
 fn execute_windows_native_uninstaller(
     installation: &Installation,
     quiet_stdout: bool,
-) -> std::result::Result<(), String> {
+) -> std::result::Result<WindowsNativeUninstallExecution, String> {
     let registrations = native_registrations();
     let registration = registrations
         .iter()
@@ -2895,7 +3222,7 @@ fn execute_windows_native_uninstaller(
     match installation.channel {
         InstallChannel::MsiGlobal | InstallChannel::MsiCorporate => {
             let msiexec = trusted_windows_system_executable(Path::new("msiexec.exe"))?;
-            run_status(
+            let completion = run_windows_installer_status(
                 Command::new(msiexec).args([
                     "/x",
                     &registration.key_name,
@@ -2906,6 +3233,7 @@ fn execute_windows_native_uninstaller(
                 ]),
                 quiet_stdout,
             )?;
+            Ok(WindowsNativeUninstallExecution::MsiCommitted(completion))
         }
         InstallChannel::ExeGlobal | InstallChannel::ExeCorporate => {
             let command_line = registration
@@ -2935,9 +3263,16 @@ fn execute_windows_native_uninstaller(
                 ]),
                 quiet_stdout,
             )?;
+            Ok(WindowsNativeUninstallExecution::Exe)
         }
-        _ => return Err("The detected channel is not a Windows native installer".into()),
+        _ => Err("The detected channel is not a Windows native installer".into()),
     }
+}
+
+#[cfg(windows)]
+fn verify_windows_native_uninstalled(
+    installation: &Installation,
+) -> std::result::Result<(), String> {
     if native_registrations()
         .iter()
         .any(|candidate| candidate.channel == installation.channel)
@@ -3293,6 +3628,94 @@ mod tests {
             windows_quote_command_arg(r"C:\Program Files\sd300\backup.exe"),
             r#""C:\Program Files\sd300\backup.exe""#
         );
+    }
+
+    #[test]
+    fn windows_installer_success_codes_preserve_committed_reboot_state() {
+        assert_eq!(
+            windows_installer_completion(0),
+            Some(WindowsInstallerCompletion::Complete)
+        );
+        assert_eq!(
+            windows_installer_completion(1641),
+            Some(WindowsInstallerCompletion::RebootRequired(1641))
+        );
+        assert_eq!(
+            windows_installer_completion(3010),
+            Some(WindowsInstallerCompletion::RebootRequired(3010))
+        );
+        assert_eq!(windows_installer_completion(1603), None);
+        assert_eq!(windows_installer_completion(-1), None);
+        assert!(
+            UpdateExecution::WindowsMsiCommitted(WindowsInstallerCompletion::Complete)
+                .windows_msi_committed()
+        );
+        assert!(
+            UpdateExecution::WindowsMsiCommitted(WindowsInstallerCompletion::RebootRequired(3010))
+                .windows_msi_committed()
+        );
+        assert!(!UpdateExecution::Standard.windows_msi_committed());
+        assert_eq!(
+            UpdateExecution::WindowsMsiCommitted(WindowsInstallerCompletion::RebootRequired(1641))
+                .worker_exit_code(),
+            1641
+        );
+        assert_eq!(
+            UpdateExecution::WindowsMsiCommitted(WindowsInstallerCompletion::RebootRequired(3010))
+                .worker_exit_code(),
+            3010
+        );
+        let committed_failure =
+            UpdateExecution::WindowsMsiCommitted(WindowsInstallerCompletion::RebootRequired(3010))
+                .post_commit_failure("GUI verification failed".into());
+        assert!(committed_failure.contains("already committed"));
+        assert!(committed_failure.contains("prior executable was not restored"));
+        assert_eq!(
+            UpdateExecution::Standard.post_commit_failure("ordinary failure".into()),
+            "ordinary failure"
+        );
+        #[cfg(windows)]
+        {
+            let uninstall = WindowsNativeUninstallExecution::MsiCommitted(
+                WindowsInstallerCompletion::RebootRequired(1641),
+            );
+            assert!(uninstall.windows_msi_committed());
+            assert!(uninstall.reboot_required());
+            assert_eq!(uninstall.worker_exit_code(), 1641);
+        }
+    }
+
+    #[test]
+    fn managed_windows_cleanup_removes_integrations_when_gui_root_is_already_missing() {
+        let commands = windows_managed_cleanup_commands(
+            42,
+            Path::new(r"C:\Users\test\bin\sd300.exe"),
+            None,
+            Some(Path::new(
+                r"C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\SD-300.lnk",
+            )),
+            Some(Path::new(r"C:\Users\test\.sd300\install-receipt.json")),
+            false,
+        );
+        assert!(commands.contains("SD-300.lnk"));
+        assert!(commands.contains("Uninstall\\SD-300-Managed"));
+        assert!(commands.contains("install-receipt.json"));
+        assert!(!commands.contains("$sd300Root="));
+    }
+
+    #[test]
+    fn managed_windows_cleanup_retries_a_proven_gui_root() {
+        let commands = windows_managed_cleanup_commands(
+            42,
+            Path::new(r"C:\Users\test\bin\sd300.exe"),
+            Some(Path::new(r"C:\Users\test\AppData\Local\Programs\SD-300")),
+            None,
+            None,
+            false,
+        );
+        assert!(commands.contains("for($i=0;$i -lt 50"));
+        assert!(commands.contains("Test-Path -LiteralPath $sd300Root"));
+        assert!(commands.contains("Uninstall\\SD-300-Managed"));
     }
 
     #[cfg(windows)]

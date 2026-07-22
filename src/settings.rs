@@ -186,6 +186,7 @@ fn remove_settings_files_at(path: &Path) -> Result<(), String> {
         let name = name.to_string_lossy();
         let owned = name == SETTINGS_FILE
             || (name.starts_with("settings.corrupt-") && name.ends_with(".json"))
+            || (name.starts_with("settings.unsupported-") && name.ends_with(".json"))
             || (name.starts_with(".settings-") && name.ends_with(".tmp"));
         if !owned {
             continue;
@@ -245,7 +246,7 @@ fn set_launch_at_login_for(
         .map_err(|error| format!("could not open the per-user startup key: {error}"))?;
     if !enabled {
         match run.get_value::<String, _>(VALUE_NAME) {
-            Ok(existing) if existing.contains("sd300-gui.exe") => run
+            Ok(existing) if windows_startup_command_is_owned(&existing, executable) => run
                 .delete_value(VALUE_NAME)
                 .map_err(|error| format!("could not remove SD-300 launch-at-login: {error}"))?,
             Ok(_) => return Err(
@@ -261,6 +262,18 @@ fn set_launch_at_login_for(
     if start_hidden {
         command.push_str(" --hidden");
     }
+    match run.get_value::<String, _>(VALUE_NAME) {
+        Ok(existing) if existing == command => return Ok(()),
+        Ok(existing) if windows_startup_command_is_owned(&existing, executable) => {}
+        Ok(_) => {
+            return Err(
+                "the SD-300 startup value already exists but is not owned by this GUI; it was preserved"
+                    .into(),
+            )
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("could not inspect launch-at-login: {error}")),
+    }
     run.set_value(VALUE_NAME, &command)
         .map_err(|error| format!("could not enable launch-at-login: {error}"))?;
     let verified: String = run
@@ -270,6 +283,22 @@ fn set_launch_at_login_for(
         return Err("the launch-at-login value did not verify byte-for-byte".into());
     }
     Ok(())
+}
+
+#[cfg(windows)]
+fn windows_startup_command_is_owned(command: &str, executable: &Path) -> bool {
+    let Some(remainder) = command.strip_prefix('"') else {
+        return false;
+    };
+    let Some((command_path, arguments)) = remainder.split_once('"') else {
+        return false;
+    };
+    let normalized_command_path = command_path.replace('/', "\\");
+    let normalized_executable = executable.to_string_lossy().replace('/', "\\");
+    if !normalized_command_path.eq_ignore_ascii_case(&normalized_executable) {
+        return false;
+    }
+    matches!(arguments, " --startup" | " --startup --hidden")
 }
 
 #[cfg(target_os = "macos")]
@@ -318,7 +347,7 @@ fn set_launch_at_login_for(
     let contents = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{MARKER}\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n  <key>Label</key><string>dev.qubetx.sd300</string>\n  <key>ProgramArguments</key>\n  <array>\n{argument_xml}\n  </array>\n  <key>RunAtLoad</key><true/>\n</dict>\n</plist>\n"
     );
-    write_owned_text_file(&path, contents.as_bytes())
+    write_owned_text_file(&path, contents.as_bytes(), MARKER)
 }
 
 #[cfg(target_os = "linux")]
@@ -348,7 +377,7 @@ fn set_launch_at_login_for(
     let contents = format!(
         "[Desktop Entry]\n{MARKER}\nType=Application\nName=SD-300\nComment=Open the SD-300 native system monitor\nExec=\"{executable}\" --startup\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
     );
-    write_owned_text_file(&path, contents.as_bytes())
+    write_owned_text_file(&path, contents.as_bytes(), MARKER)
 }
 
 #[cfg(target_os = "linux")]
@@ -389,10 +418,33 @@ fn remove_owned_text_file(path: &Path, marker: &str) -> Result<(), String> {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn write_owned_text_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+fn write_owned_text_file(path: &Path, bytes: &[u8], marker: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "launch-at-login path had no parent".to_string())?;
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+                return Err(format!(
+                    "{} exists but is not a regular SD-300-owned file; it was preserved",
+                    path.display()
+                ));
+            }
+            let existing = fs::read(path)
+                .map_err(|error| format!("could not inspect {}: {error}", path.display()))?;
+            if existing == bytes {
+                return Ok(());
+            }
+            if !String::from_utf8_lossy(&existing).contains(marker) {
+                return Err(format!(
+                    "{} exists but is not SD-300-owned; it was preserved",
+                    path.display()
+                ));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("could not inspect {}: {error}", path.display())),
+    }
     let temp = parent.join(format!(".sd300-startup-{}.tmp", std::process::id()));
     fs::write(&temp, bytes).map_err(|error| format!("could not stage launch-at-login: {error}"))?;
     if let Err(error) = fs::rename(&temp, path) {
@@ -447,10 +499,17 @@ fn load_from_path(path: &Path) -> Result<SettingsDocument, String> {
     let bytes =
         fs::read(path).map_err(|error| format!("could not read {}: {error}", path.display()))?;
     match serde_json::from_slice::<SettingsDocument>(&bytes) {
-        Ok(document) => {
-            validate(&document)?;
-            Ok(document)
+        Ok(document) if document.schema_version != SETTINGS_SCHEMA_VERSION => {
+            preserve_settings(path, "unsupported")?;
+            Ok(SettingsDocument::default())
         }
+        Ok(document) => match validate(&document) {
+            Ok(()) => Ok(document),
+            Err(_) => {
+                preserve_corrupt(path)?;
+                Ok(SettingsDocument::default())
+            }
+        },
         Err(_) => {
             preserve_corrupt(path)?;
             Ok(SettingsDocument::default())
@@ -459,14 +518,18 @@ fn load_from_path(path: &Path) -> Result<SettingsDocument, String> {
 }
 
 fn preserve_corrupt(path: &Path) -> Result<PathBuf, String> {
+    preserve_settings(path, "corrupt")
+}
+
+fn preserve_settings(path: &Path, reason: &str) -> Result<PathBuf, String> {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let preserved = path.with_file_name(format!("settings.corrupt-{stamp}.json"));
+    let preserved = path.with_file_name(format!("settings.{reason}-{stamp}.json"));
     fs::rename(path, &preserved).map_err(|error| {
         format!(
-            "settings were corrupt but could not be preserved as {}: {error}",
+            "settings were {reason} but could not be preserved as {}: {error}",
             preserved.display()
         )
     })?;
@@ -603,6 +666,84 @@ mod tests {
     }
 
     #[test]
+    fn load_preserves_newer_schema_before_returning_safe_defaults() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("SD-300").join(SETTINGS_FILE);
+        fs::create_dir_all(path.parent().expect("parent")).expect("settings directory");
+        let mut document = SettingsDocument {
+            schema_version: SETTINGS_SCHEMA_VERSION + 1,
+            ..SettingsDocument::default()
+        };
+        document.gui.last_section = 4;
+        fs::write(
+            &path,
+            serde_json::to_vec_pretty(&document).expect("serialize newer settings"),
+        )
+        .expect("write newer settings");
+
+        assert_eq!(
+            load_from_path(&path).expect("preserve newer settings"),
+            SettingsDocument::default()
+        );
+        assert!(!path.exists());
+        let preserved = fs::read_dir(path.parent().expect("parent"))
+            .expect("list parent")
+            .filter_map(Result::ok)
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("settings.unsupported-")
+            });
+        assert!(preserved);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_startup_ownership_requires_the_exact_gui_path_and_arguments() {
+        let executable = Path::new(r"C:\Program Files\SD-300\sd300-gui.exe");
+        assert!(windows_startup_command_is_owned(
+            r#""C:\Program Files\SD-300\sd300-gui.exe" --startup"#,
+            executable
+        ));
+        assert!(windows_startup_command_is_owned(
+            r#""c:/program files/sd-300/sd300-gui.exe" --startup --hidden"#,
+            executable
+        ));
+        assert!(!windows_startup_command_is_owned(
+            r#""C:\Other\sd300-gui.exe" --startup"#,
+            executable
+        ));
+        assert!(!windows_startup_command_is_owned(
+            r#""C:\Program Files\SD-300\sd300-gui.exe" --startup --unsafe"#,
+            executable
+        ));
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn startup_file_replacement_preserves_ambiguous_existing_content() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("startup-entry");
+        fs::write(&path, b"user-owned").expect("write ambiguous entry");
+        let error = write_owned_text_file(&path, b"# SD-300 managed\nnew", "# SD-300 managed")
+            .expect_err("ambiguous entry must be preserved");
+        assert!(error.contains("preserved"));
+        assert_eq!(
+            fs::read(&path).expect("read preserved entry"),
+            b"user-owned"
+        );
+
+        fs::write(&path, b"# SD-300 managed\nold").expect("write owned entry");
+        write_owned_text_file(&path, b"# SD-300 managed\nnew", "# SD-300 managed")
+            .expect("replace owned entry");
+        assert_eq!(
+            fs::read(&path).expect("read replaced entry"),
+            b"# SD-300 managed\nnew"
+        );
+    }
+
+    #[test]
     fn cleanup_removes_only_owned_settings_files_and_preserves_exports() {
         let temp = tempfile::tempdir().expect("tempdir");
         let directory = temp.path().join("SD-300");
@@ -610,6 +751,8 @@ mod tests {
         fs::write(directory.join(SETTINGS_FILE), b"{}").expect("settings");
         fs::write(directory.join("settings.corrupt-123.json"), b"broken")
             .expect("preserved corrupt settings");
+        fs::write(directory.join("settings.unsupported-124.json"), b"newer")
+            .expect("preserved newer settings");
         fs::write(directory.join(".settings-1-2.tmp"), b"staged").expect("staging file");
         fs::write(directory.join("exported-report.json"), b"user export").expect("export");
 
@@ -617,6 +760,7 @@ mod tests {
 
         assert!(!directory.join(SETTINGS_FILE).exists());
         assert!(!directory.join("settings.corrupt-123.json").exists());
+        assert!(!directory.join("settings.unsupported-124.json").exists());
         assert!(!directory.join(".settings-1-2.tmp").exists());
         assert!(directory.join("exported-report.json").is_file());
         assert!(directory.is_dir());
