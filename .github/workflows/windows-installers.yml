@@ -793,10 +793,20 @@ jobs:
               -not (Test-Path $receipt -PathType Leaf)) {
             throw 'Cargo managed completion did not install the complete Windows product'
           }
-          $selfTest = (& $gui --self-test --json) | ConvertFrom-Json
-          if (-not $selfTest.success -or $selfTest.product_version -ne '${{ steps.meta.outputs.version }}') {
+          # GUI-subsystem executables yield no output through direct pipe capture
+          # on a consoleless runner; redirect to files like the other call sites.
+          $selfTestOut = Join-Path $env:RUNNER_TEMP "cargo-completion-selftest-$([Guid]::NewGuid().ToString('N')).out"
+          $selfTestProcess = Start-Process -FilePath $gui -ArgumentList '--self-test', '--json' `
+            -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $selfTestOut -RedirectStandardError "$selfTestOut.err"
+          $selfTest = $null
+          try { $selfTest = (@(Get-Content -LiteralPath $selfTestOut -ErrorAction SilentlyContinue) -join "`n") | ConvertFrom-Json } catch {}
+          if ($selfTestProcess.ExitCode -ne 0 -or -not $selfTest -or -not $selfTest.success -or
+              $selfTest.product_version -ne '${{ steps.meta.outputs.version }}') {
+            Write-Host "CARGO-SELFTEST-EXIT: $($selfTestProcess.ExitCode)"
+            Get-Content -LiteralPath $selfTestOut, "$selfTestOut.err" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "CARGO-SELFTEST: $_" }
             throw 'installed GUI self-test failed after Cargo completion'
           }
+          Remove-Item -LiteralPath $selfTestOut, "$selfTestOut.err" -Force -ErrorAction SilentlyContinue
 
           $current = Invoke-Sd300Json -Executable $binary -Arguments @('update', '--json')
           if (-not $current.success -or $current.install_channel -ne 'powershell-installer' -or
