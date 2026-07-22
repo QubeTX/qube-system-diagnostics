@@ -3,7 +3,7 @@ use std::process::{Command, Output};
 use std::sync::{Mutex, OnceLock};
 
 use clap::Parser;
-use sd_300::cli::{ActionArgs, Cli, Command as CliCommand, ReportArgs};
+use sd_300::cli::{ActionArgs, Cli, Command as CliCommand, ReportArgs, UpdateActionArgs};
 use serde_json::Value;
 
 const V2_LONG_HELP: &str = include_str!("fixtures/v2.0.6/help.stdout");
@@ -219,7 +219,10 @@ fn v2_command_and_legacy_flag_parser_contract_is_unchanged() {
         Cli::try_parse_from(["sd300", "update", "--json"]).expect("update --json should parse");
     assert_eq!(
         update.command,
-        Some(CliCommand::Update(ActionArgs { json: true }))
+        Some(CliCommand::Update(UpdateActionArgs {
+            json: true,
+            relaunch_gui: false,
+        }))
     );
 
     let install =

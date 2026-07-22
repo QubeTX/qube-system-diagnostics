@@ -130,13 +130,13 @@ function engineMetadataTestVersion(repoRoot) {
 
 function nativeMarkupVersions(repoRoot) {
   const text = readSource(repoRoot, "gui/src/app.native");
-  const versions = [...text.matchAll(new RegExp(`\\bv(${semverPattern})\\b`, "g"))].map(
+  // Visible version labels bind to {productVersionLabel}, which derives from
+  // the checked gui/src/engine.zig expected_product_version at comptime, so
+  // zero literals is the healthy state. Any literal that does appear must
+  // still match the release.
+  return [...text.matchAll(new RegExp(`\\bv(${semverPattern})\\b`, "g"))].map(
     (match) => match[1],
   );
-  if (versions.length === 0) {
-    throw new Error("Could not find a visible v<version> label in gui/src/app.native.");
-  }
-  return versions;
 }
 
 function stagedZonVersion(repoRoot, relativePath) {

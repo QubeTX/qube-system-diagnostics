@@ -6,12 +6,22 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ---
 
-## Not yet released — small corrections
+## July 22, 2026 — update from inside the app
+
+**Added**
+
+- You can now update SD-300 from inside the desktop app or from its tray menu. One click runs the very same trusted update the terminal command performs: the app closes while the update installs, then reopens on its own once it succeeds. If you're already up to date, the app simply stays open.
+- If an update can't start — for example when the installation is damaged — the app says so plainly and points you to the terminal command, and a small log file records what happened so it can be diagnosed afterward. A failed update never leaves you without the working copy you already had.
 
 **Fixed**
 
 - Fixed a leftover internal label in the app's sidebar that read "QUALIFICATION" next to the version. It now simply shows the version the app is actually running.
 - Fixed an automated post-release check that reported a problem even when a release had published correctly, because the service it asked has started turning away anonymous requests. It now asks the same source the package manager itself uses.
+
+**Behind the scenes**
+
+- The version shown on the app's About panel now always comes from the running engine itself — the same arrangement the sidebar already uses — so neither can ever drift out of date, and the release checks were taught about that arrangement.
+- The About panel's wording now explains that the in-app update hands the real work to the command-line tool, which stays in charge of installation ownership, elevation, and recovery; removing SD-300 still happens from the terminal.
 
 ---
 

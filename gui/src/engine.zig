@@ -5,7 +5,7 @@ const windows = std.os.windows;
 
 pub const expected_abi_version: u32 = 1;
 pub const expected_schema_version: u32 = 1;
-pub const expected_product_version = "3.0.0";
+pub const expected_product_version = "3.1.0";
 
 pub const status_ok: i32 = 0;
 pub const status_unchanged: i32 = 1;
@@ -105,6 +105,7 @@ const AbiVersionFn = *const fn () callconv(.c) u32;
 const MetadataFn = *const fn (?[*]u8, usize, *usize) callconv(.c) i32;
 const WriteSettingsFn = *const fn ([*]const u8, usize) callconv(.c) i32;
 const SetLaunchAtLoginFn = *const fn (u32, u32) callconv(.c) i32;
+const RequestUpdateFn = *const fn (?[*]u8, usize, *usize) callconv(.c) i32;
 const CreateFn = *const fn (*?*anyopaque) callconv(.c) i32;
 const HandleFn = *const fn (?*anyopaque) callconv(.c) i32;
 const RequestExportFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
@@ -192,6 +193,7 @@ pub const Runtime = struct {
     read_settings_fn: MetadataFn,
     write_settings_fn: WriteSettingsFn,
     set_launch_at_login_fn: SetLaunchAtLoginFn,
+    request_update_fn: RequestUpdateFn,
     request_export_fn: RequestExportFn,
     read_export_status_fn: ReadExportStatusFn,
     topic_sequences: [9]u64 = [_]u64{0} ** 9,
@@ -224,6 +226,7 @@ pub const Runtime = struct {
         const read_settings_fn = try library.lookup(MetadataFn, "sd300_engine_read_settings");
         const write_settings_fn = try library.lookup(WriteSettingsFn, "sd300_engine_write_settings");
         const set_launch_at_login_fn = try library.lookup(SetLaunchAtLoginFn, "sd300_engine_set_launch_at_login");
+        const request_update_fn = try library.lookup(RequestUpdateFn, "sd300_engine_request_update");
         const request_export_fn = try library.lookup(RequestExportFn, "sd300_engine_request_export");
         const read_export_status_fn = try library.lookup(ReadExportStatusFn, "sd300_engine_read_export_status");
 
@@ -261,6 +264,7 @@ pub const Runtime = struct {
             .read_settings_fn = read_settings_fn,
             .write_settings_fn = write_settings_fn,
             .set_launch_at_login_fn = set_launch_at_login_fn,
+            .request_update_fn = request_update_fn,
             .request_export_fn = request_export_fn,
             .read_export_status_fn = read_export_status_fn,
         };
@@ -404,6 +408,25 @@ pub const Runtime = struct {
         if (self.set_launch_at_login_fn(@intFromBool(enabled), @intFromBool(start_hidden)) != status_ok) {
             return error.EngineLaunchAtLoginFailed;
         }
+    }
+
+    pub const UpdateRequest = struct {
+        ok: bool,
+        message: []const u8,
+    };
+
+    /// Ask the engine to spawn the installed CLI's detached update
+    /// coordinator. The status is authoritative; `message` (borrowed from
+    /// `buffer`) carries the resolved CLI path or the failure reason and is
+    /// empty when the engine's text did not fit the caller's buffer.
+    pub fn requestUpdate(self: *Runtime, buffer: []u8) UpdateRequest {
+        var required: usize = 0;
+        const status = self.request_update_fn(buffer.ptr, buffer.len, &required);
+        const fit = required > 0 and required <= buffer.len;
+        return .{
+            .ok = status == status_ok,
+            .message = if (fit) buffer[0 .. required - 1] else buffer[0..0],
+        };
     }
 
     pub fn requestExport(self: *Runtime, kind: ExportKind) !void {

@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     if let Some(command) = cli.command {
         match command {
             Command::Update(args) => {
-                let exit_code = sd_300::update::run(args.json)?;
+                let exit_code = sd_300::update::run_with_relaunch(args.json, args.relaunch_gui)?;
                 std::process::exit(exit_code);
             }
             Command::Install(args) => {

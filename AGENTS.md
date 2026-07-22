@@ -90,7 +90,12 @@ The binary is named `sd300` (not `sd-300`). The crates.io package name is `tr300
   the installed app and reports a managed install/update repair instruction if
   the companion is absent.
 - Managed/native install and update own CLI+GUI as one composite product but
-  never launch the app. Proven-owner uninstall removes both frontends and their
+  never launch the app, with one deliberate v3.1.0 exception: the GUI's own
+  "Update now" surfaces spawn the CLI coordinator (`update --json
+  --relaunch-gui`), and only that hidden flag plus a successful transaction
+  relaunches the monitor through the idempotent singleton Open route.
+  Installs, ordinary terminal updates, and failed updates still never launch
+  the app. Proven-owner uninstall removes both frontends and their
   owned integrations/data without deleting ambiguous paths or user exports.
 - Existing Cargo-owned v2 users intentionally update twice: Cargo installs the
   v3 CLI first, then the second same-version update performs the transactional

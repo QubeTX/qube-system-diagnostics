@@ -81,6 +81,7 @@ pub const Msg = union(enum) {
     density_comfortable,
     export_redacted_snapshot,
     export_capabilities,
+    update_now,
     export_poll: native_sdk.EffectTimer,
     content_scrolled: canvas.ScrollState,
     scan_drivers,
@@ -543,6 +544,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
         .export_redacted_snapshot => requestExport(model, fx, .redacted_snapshot),
         .export_capabilities => requestExport(model, fx, .capabilities),
+        .update_now => requestUpdateNow(model),
         .export_poll => |timer| {
             if (timer.outcome == .fired and model.export_pending) pollExport(model, fx);
         },
@@ -565,6 +567,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
 
 pub fn onCommand(name: []const u8) ?Msg {
     if (std.mem.eql(u8, name, "app.open")) return .open_window;
+    if (std.mem.eql(u8, name, "app.update")) return .update_now;
     if (std.mem.eql(u8, name, "app.quit")) return .quit_app;
     return null;
 }
@@ -794,6 +797,32 @@ fn requestDriverScan(model: *Model) void {
     };
     model.detail.drivers_ready = false;
     model.status_buffer.set("Driver scan requested · running asynchronously outside the renderer thread");
+}
+
+/// Hand the update to the installed CLI's detached coordinator through the
+/// engine. The GUI process never mutates the installation itself: the CLI
+/// runs its proven owner-preserving transaction, closes this app through the
+/// authenticated quit endpoint mid-update, and relaunches it only after
+/// success (an already-current product keeps the app open and simply focuses
+/// it through the singleton Open route).
+fn requestUpdateNow(model: *Model) void {
+    const runtime = active_engine orelse {
+        model.status_buffer.set("Update unavailable — the GUI engine companion is not loaded. Run `sd300 update` from a terminal.");
+        return;
+    };
+    var message_buffer: [512]u8 = undefined;
+    const request = runtime.requestUpdate(&message_buffer);
+    if (request.ok) {
+        model.status_buffer.set("Update started · the monitor will close while the update runs and reopen when it finishes.");
+        return;
+    }
+    if (request.message.len > 0) {
+        var scratch: [384]u8 = undefined;
+        const message = std.fmt.bufPrint(&scratch, "Update could not start · {s}", .{request.message}) catch "Update could not start. Run `sd300 update` from a terminal.";
+        model.status_buffer.set(message);
+    } else {
+        model.status_buffer.set("Update could not start. Run `sd300 update` from a terminal.");
+    }
 }
 
 const ExportStatus = struct {
@@ -1315,6 +1344,7 @@ const initial_tray_items = [_]native_sdk.platform.TrayMenuItem{
     .{ .label = "Disk health · scanning", .enabled = false },
     .{ .separator = true },
     .{ .id = 1, .label = "Open SD-300", .command = "app.open" },
+    .{ .id = 3, .label = "Update SD-300", .command = "app.update" },
     .{ .separator = true },
     .{ .id = 2, .label = "Quit SD-300", .command = "app.quit" },
 };
@@ -1327,9 +1357,10 @@ pub fn statusItem(model: *const Model, scratch: *NativeApp.StatusItemScratch) Na
     scratch.items[4] = .{ .label = model.tray_health_buffer.text(), .enabled = false };
     scratch.items[5] = .{ .separator = true };
     scratch.items[6] = .{ .id = 1, .label = "Open SD-300", .command = "app.open" };
-    scratch.items[7] = .{ .separator = true };
-    scratch.items[8] = .{ .id = 2, .label = "Quit SD-300", .command = "app.quit" };
-    return .{ .title = "SD", .items = scratch.items[0..9] };
+    scratch.items[7] = .{ .id = 3, .label = "Update SD-300", .command = "app.update" };
+    scratch.items[8] = .{ .separator = true };
+    scratch.items[9] = .{ .id = 2, .label = "Quit SD-300", .command = "app.quit" };
+    return .{ .title = "SD", .items = scratch.items[0..10] };
 }
 
 pub fn isSelfTest(args: []const []const u8) bool {

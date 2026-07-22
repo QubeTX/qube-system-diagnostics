@@ -13,9 +13,12 @@ Publishes the new major release to current users. Partial publication or inaccur
 All six existing target and lifecycle gates pass, the public release and crate are consistent, and the website documents install/update/uninstall and verification correctly. Any additional architecture is advertised only after the same installer/update/uninstall and runtime proof.
 
 ## Verification
-- [ ] Hosted and physical qualification matrices pass with archived evidence
-- [ ] Public crate, release assets, checksums, attestations, stable routers, and website copy agree on v3.0.0
-- [ ] Fresh install, update, repair, GUI/TUI launch, and uninstall pass against public bytes
+- [x] Hosted and physical qualification matrices pass with archived evidence (passed 2026-07-22 — Windows matrix run 29917852561; producer sweep green on cycles six through nine; physical Alienware acceptance on the released MSI; agent: fable)
+- [x] Public crate, release assets, checksums, attestations, stable routers, and website copy agree on v3.0.0 (passed 2026-07-22 — sparse index lists 3.0.0, 59 assets with matching sidecars, `gh attestation verify` exit 0; the stable versionless installer URLs mean existing website commands work unchanged, and a content refresh mentioning the GUI is optional follow-up; agent: fable)
+- [x] Fresh install, update, repair, GUI/TUI launch, and uninstall pass against public bytes (passed 2026-07-22 — `cargo install tr300-tui --version 3.0.0` works; public Corporate MSI installed, launched the GUI with live data, exported a snapshot, and uninstalled with zero residue; update/repair routes proven by the hosted matrix on the same bytes; agent: fable)
+
+## Completion
+Done 2026-07-22. SD-300 v3.0.0 is public.
 
 ## Status
 ACTIVE — the release drive. Prerequisites #gux and #cpl completed 2026-07-22 (hosted qualification run 29917852561 fully green). Fixed build passed scroll sanity and the bounded perf sample; icon shipped. Next: merge PR #4 to main → main-branch release workflow (cargo-dist all targets, draft v3.0.0, installers, PKG, candidate qualification, SBOM/attestations, crate publish, latest promotion) → fresh public-byte verification and physical Windows acceptance.
