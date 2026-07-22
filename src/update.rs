@@ -2628,6 +2628,8 @@ fn cargo_legacy_manifest_path() -> Option<PathBuf> {
 }
 
 fn read_cargo_ownership_file(path: &Path) -> std::result::Result<Option<String>, String> {
+    // A UTF-8 BOM from a Windows PowerShell 5.1 writer would otherwise fail
+    // JSON/TOML parsing; ownership evidence is read liberally.
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -2644,12 +2646,14 @@ fn read_cargo_ownership_file(path: &Path) -> std::result::Result<Option<String>,
             path.display()
         ));
     }
-    std::fs::read_to_string(path).map(Some).map_err(|error| {
-        format!(
-            "Could not read Cargo ownership metadata {}: {error}. No mutation was attempted.",
-            path.display()
-        )
-    })
+    std::fs::read_to_string(path)
+        .map(|contents| Some(contents.trim_start_matches('\u{feff}').to_string()))
+        .map_err(|error| {
+            format!(
+                "Could not read Cargo ownership metadata {}: {error}. No mutation was attempted.",
+                path.display()
+            )
+        })
 }
 
 fn cargo_install_is_current(

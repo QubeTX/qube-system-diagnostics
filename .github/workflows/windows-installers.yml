@@ -730,7 +730,7 @@ jobs:
           Copy-Item -LiteralPath $env:SD300_CANDIDATE_BINARY -Destination $staged -Force
           Move-Item -LiteralPath $staged -Destination $destination -Force
           $rustcMetadata = (rustc -vV) -join "`n"
-          @{
+          $crates2 = @{
             installs = @{
               ("tr300-tui $($env:SD300_EXPECTED_VERSION) (registry+https://github.com/rust-lang/crates.io-index)") = @{
                 version_req = $null; bins = @('sd300.exe'); features = @()
@@ -738,11 +738,12 @@ jobs:
                 profile = 'release'; target = $env:SD300_CARGO_TARGET; rustc = $rustcMetadata
               }
             }
-          } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $env:CARGO_HOME '.crates2.json') -Encoding utf8
-          Set-Content -LiteralPath (Join-Path $env:CARGO_HOME '.crates.toml') -Encoding utf8 -Value @(
-            '[v1]',
-            ('"tr300-tui ' + $env:SD300_EXPECTED_VERSION + ' (registry+https://github.com/rust-lang/crates.io-index)" = ["sd300.exe"]')
-          )
+          }
+          # This handler runs under Windows PowerShell 5.1, whose utf8 is BOM'd;
+          # real Cargo writes BOM-less manifests, so mirror that exactly.
+          [IO.File]::WriteAllText((Join-Path $env:CARGO_HOME '.crates2.json'), ($crates2 | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+          $cratesToml = "[v1]`n" + '"tr300-tui ' + $env:SD300_EXPECTED_VERSION + ' (registry+https://github.com/rust-lang/crates.io-index)" = ["sd300.exe"]' + "`n"
+          [IO.File]::WriteAllText((Join-Path $env:CARGO_HOME '.crates.toml'), $cratesToml, [Text.UTF8Encoding]::new($false))
           '@ | Set-Content -LiteralPath $env:SD300_CARGO_SHIM_HANDLER -Encoding utf8
           rustc (Join-Path $shim 'cargo-shim.rs') -o (Join-Path $shim 'cargo.exe')
           if ($LASTEXITCODE -ne 0) { throw 'could not build the Windows Cargo migration shim' }

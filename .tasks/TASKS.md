@@ -6,7 +6,7 @@
 
 ## To-Do
 - [ ] **Qualify and release SD-300 v3.0.0 on all six existing targets** - pass compatibility, lifecycle, performance, provenance, hosted, physical Windows, and public-byte gates across Windows x86-64, macOS x86-64/ARM64, Linux GNU x86-64/ARM64, and Linux musl x86-64; probe additional SDK architectures without silently expanding the owned release contract (needs #gux, #cpl) (ms #v3n) #qv3
-  - [ ] Run a bounded post-fix performance sanity sample (formal budget re-proof in Backlog #sok)
+  - [x] Run a bounded post-fix performance sanity sample (formal budget re-proof in Backlog #sok)
   - [x] Design and implement the app, taskbar, tray, and installer icons with Quiver arrow-1.1-max
   - [ ] Merge PR #4 to main and drive the release workflow to full green
   - [ ] Verify fresh public bytes, Cargo install, and physical Windows acceptance
@@ -25,7 +25,7 @@
   - [x] Complete audience modes, settings, exports, sorting/filtering, and unavailable-state parity
   - [x] Attribute the early clean soak exit to its graceful-quit source
   - [x] Attribute the scroll lag with a warmed-state damage benchmark and record ADR 0002
-  - [ ] Reproduce and eliminate the severe minute-old scroll/input lag on scrollable sections
+  - [x] Reproduce and eliminate the severe minute-old scroll/input lag on scrollable sections
   - [x] Qualify keyboard, scaling, tray/autostart interaction; sustained-performance evidence moved to Backlog #sok
 - [ ] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration (needs #nsp) (ms #v3n) #cpl
   - [x] Land the reviewed receipt-parent cleanup fix with lockstep changelogs and ADR

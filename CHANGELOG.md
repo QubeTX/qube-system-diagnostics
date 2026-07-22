@@ -225,6 +225,10 @@ qualification has completed.
   process returns and can lose that race. The retirement now waits briefly
   for self-deletion and reaps a data-less leftover uninstaller, reclaiming
   the directory only when empty.
+- Fixed Cargo ownership evidence (`.crates.toml`/`.crates2.json`) being
+  rejected when a Windows PowerShell 5.1 writer prefixed a UTF-8 byte-order
+  mark: detection reads now strip a leading BOM, while transactional manifest
+  editing stays byte-exact and fails safely.
 - Fixed managed receipts written with a UTF-8 byte-order mark (any Windows
   PowerShell 5.1 `Set-Content -Encoding utf8` writer) failing ownership
   verification with "does not prove an exact cargo-dist binary": receipt
