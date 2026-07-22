@@ -299,7 +299,7 @@ index 06fcb48..767ae24 100644
 +}
 +#endif
 diff --git a/src/platform/windows/webview2_host.cpp b/src/platform/windows/webview2_host.cpp
-index 5ad2932..2d1e6a6 100644
+index 5ad2932..e8a76bc 100644
 --- a/src/platform/windows/webview2_host.cpp
 +++ b/src/platform/windows/webview2_host.cpp
 @@ -369,6 +369,20 @@ struct ChildWebView {
@@ -363,7 +363,49 @@ index 5ad2932..2d1e6a6 100644
      BITMAPINFO info = {};
      info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
      info.bmiHeader.biWidth = view.gpu_buf_width;
-@@ -5072,7 +5104,13 @@ static bool createNativeWindow(Host *host, Window &window) {
+@@ -2683,7 +2715,31 @@ static LRESULT CALLBACK gpuSurfaceProc(HWND hwnd, UINT message, WPARAM wparam, L
+             break;
+         case WM_MOUSEWHEEL:
+         case WM_MOUSEHWHEEL: {
+-            POINT point = { (int)(short)LOWORD(lparam), (int)(short)HIWORD(lparam) };
++            /* Coalesce a burst of queued wheel notches for THIS surface into
++             * one scroll input. The single-threaded message pump can deliver
++             * wheel messages faster than a fully populated section reconciles,
++             * and each ungrouped notch drives its own scroll model update and
++             * display-list rebuild; that backlog is the reported "smooth at
++             * first, laggy after a while" scroll regression. Summing the
++             * same-axis, same-modifier notches already waiting reaches the
++             * SAME final offset the individual events would, so a burst costs
++             * one reconcile and one repaint at the latest offset per pump
++             * drain (the frame grid already caps presents at one per interval,
++             * and the low-priority frame timer only fires once this queue is
++             * drained). Each candidate is peeked WITHOUT removal first, so a
++             * differing gesture — a modifier change, or the other wheel axis —
++             * is left queued for its own dispatch rather than folded in. */
++            int wheel_notches = (short)HIWORD(wparam);
++            LPARAM latest_lparam = lparam;
++            const WPARAM burst_modifiers = LOWORD(wparam) & (MK_CONTROL | MK_SHIFT);
++            MSG queued_wheel = {};
++            while (PeekMessageW(&queued_wheel, hwnd, message, message, PM_NOREMOVE)) {
++                if ((LOWORD(queued_wheel.wParam) & (MK_CONTROL | MK_SHIFT)) != burst_modifiers) break;
++                PeekMessageW(&queued_wheel, hwnd, message, message, PM_REMOVE);
++                wheel_notches += (short)HIWORD(queued_wheel.wParam);
++                latest_lparam = queued_wheel.lParam;
++            }
++            POINT point = { (int)(short)LOWORD(latest_lparam), (int)(short)HIWORD(latest_lparam) };
+             ScreenToClient(hwnd, &point);
+             const double x = (double)point.x / scale;
+             const double y = (double)point.y / scale;
+@@ -2693,7 +2749,7 @@ static LRESULT CALLBACK gpuSurfaceProc(HWND hwnd, UINT message, WPARAM wparam, L
+              * host uses; forward wheel rotation (positive Win32 delta) means
+              * scroll up, which the shared input semantics express as a
+              * negative delta_y. */
+-            const double delta = (double)(short)HIWORD(wparam) / (double)WHEEL_DELTA * 40.0;
++            const double delta = (double)wheel_notches / (double)WHEEL_DELTA * 40.0;
+             const double delta_x = message == WM_MOUSEHWHEEL ? delta : 0;
+             const double delta_y = message == WM_MOUSEWHEEL ? -delta : 0;
+             emitGpuSurfaceInput(host, *view, kGpuInputScroll, x, y, 0, delta_x, delta_y, "", "", gpuModifierFlags());
+@@ -5072,7 +5128,13 @@ static bool createNativeWindow(Host *host, Window &window) {
      }
      ShowWindow(hwnd, SW_SHOW);
      UpdateWindow(hwnd);
@@ -378,7 +420,7 @@ index 5ad2932..2d1e6a6 100644
      return true;
  }
 
-@@ -5876,12 +5914,6 @@ int native_sdk_windows_note_gpu_surface_input(Host *host, uint64_t window_id, co
+@@ -5876,12 +5938,6 @@ int native_sdk_windows_note_gpu_surface_input(Host *host, uint64_t window_id, co
  }
 
  int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id, const char *label, size_t label_len, size_t width, size_t height, double scale, int has_dirty_rect, double dirty_x, double dirty_y, double dirty_width, double dirty_height, const uint8_t *rgba8, size_t rgba8_len) {
@@ -391,7 +433,7 @@ index 5ad2932..2d1e6a6 100644
      if (!host || label_len == 0) return 0;
      auto found = host->native_views.find(nativeViewKey(window_id, slice(label, label_len)));
      if (found == host->native_views.end() || found->second.kind != kViewGpuSurface || !found->second.hwnd) return 0;
-@@ -5898,15 +5930,73 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
+@@ -5898,15 +5954,73 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
       * the redirection surface's alpha is 0 — the app's pixels must read
       * as opaque there or the whole header band would vanish under DWM
       * chrome (only the punched button hole yields on purpose). */
@@ -474,7 +516,7 @@ index 5ad2932..2d1e6a6 100644
      }
      view.gpu_buf_width = (int)width;
      view.gpu_buf_height = (int)height;
-@@ -5926,7 +6016,17 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
+@@ -5926,7 +6040,17 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
          view.gpu_sample_color = ((uint32_t)sa << 24) | ((uint32_t)sr << 16) | ((uint32_t)sg << 8) | (uint32_t)sb;
      }
 

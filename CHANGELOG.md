@@ -185,6 +185,24 @@ qualification has completed.
   product-owned `Transactions` directory inside the receipt root after commit
   or rollback cleanup, which kept the receipt root from emptying at uninstall.
   The directory is now removed only when empty; unrelated content preserves it.
+- Fixed the severe warmed-state scroll lag on scrollable GUI sections: every
+  scroll frame is architecturally a full-viewport software repaint
+  (~16-22 ms), and queued wheel messages could arrive faster than that service
+  rate on the single-threaded update queue — after the 60-sample histories
+  fill, mandatory per-second chart repaints join the same queue and the
+  backlog becomes user-visible. The Windows host now coalesces same-axis,
+  same-modifier wheel bursts into one scroll input at the summed delta, so a
+  burst costs one reconcile and one repaint at the final offset (ADR 0002;
+  measured by the new warmed-state benchmark).
+- Fixed a mid-session tray toggle stranding a hidden, icon-less process (or
+  quitting past a still-live tray icon): the close-to-tray quit decision now
+  consults the startup-effective tray presence for this session rather than
+  the persisted preference, matching the RESTART REQUIRED semantics.
+- Fixed up to 30 seconds of stale data after restoring a minimized window:
+  collection cadence now follows the close-to-tray policy-hidden state rather
+  than raw visibility, so a minimized window keeps one-second sampling and the
+  foreground collection profile and restore is instantly fresh; tray-hidden
+  windows keep the 30-second cadence.
 
 ### Removed
 

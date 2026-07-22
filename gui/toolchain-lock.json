@@ -8,7 +8,7 @@
     "npm_git_head": "349618a1385dedea361fbfe3b74ddba40ab6ee66",
     "zig_content_hash": "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
     "renderer_patch": "patches/native-sdk-0.5.4-software-render.patch",
-  "renderer_patch_sha256": "b7af0bc02554c0c29aa334e1aa4fb8cecfd8ecf867531d082933d91b05024f4e"
+  "renderer_patch_sha256": "557dacc4780967b73a5e12d02a805f5cba53c8e3687e9d5eacffb5547633d7df"
   },
   "zig": {
     "version": "0.16.0",
