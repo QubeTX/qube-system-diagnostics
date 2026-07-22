@@ -557,8 +557,18 @@ jobs:
             if ((& $installedCli --version).Trim() -ne 'sd300 ${{ steps.meta.outputs.version }}') {
               throw 'legacy Cargo MSI takeover installed the wrong CLI version'
             }
-            $selfTestRaw = @(& $installedGui --self-test --json 2>&1)
-            $selfTestExit = $LASTEXITCODE
+            # A GUI-subsystem executable yields no output through direct pipe
+            # capture on a consoleless runner; redirect to files like every
+            # other self-test call site.
+            $selfTestOut = Join-Path $env:RUNNER_TEMP "legacy-selftest-$([Guid]::NewGuid().ToString('N')).out"
+            $selfTestErrFile = "$selfTestOut.err"
+            $selfTestProcess = Start-Process -FilePath $installedGui -ArgumentList '--self-test', '--json' `
+              -Wait -PassThru -WindowStyle Hidden `
+              -RedirectStandardOutput $selfTestOut -RedirectStandardError $selfTestErrFile
+            $selfTestExit = $selfTestProcess.ExitCode
+            $selfTestRaw = @(Get-Content -LiteralPath $selfTestOut -ErrorAction SilentlyContinue) +
+              @(Get-Content -LiteralPath $selfTestErrFile -ErrorAction SilentlyContinue)
+            Remove-Item -LiteralPath $selfTestOut, $selfTestErrFile -Force -ErrorAction SilentlyContinue
             $selfTest = $null
             try { $selfTest = ($selfTestRaw -join "`n") | ConvertFrom-Json } catch {}
             if (-not $selfTest -or -not $selfTest.success -or $selfTest.product_version -ne '${{ steps.meta.outputs.version }}') {
