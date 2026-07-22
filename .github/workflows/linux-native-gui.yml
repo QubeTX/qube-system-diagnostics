@@ -64,12 +64,16 @@ jobs:
               echo "release $tag targets $target_commitish, but this producer checkout is $source_sha" >&2
               exit 1
             }
-            git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
-            tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
-            [[ $tag_sha == "$source_sha" ]] || {
-              echo "tag $tag resolves to $tag_sha, but this producer checkout is $source_sha" >&2
-              exit 1
-            }
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+              tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
+              [[ $tag_sha == "$source_sha" ]] || {
+                echo "tag $tag resolves to $tag_sha, but this producer checkout is $source_sha" >&2
+                exit 1
+              }
+            else
+              echo "draft $tag has no tag ref yet; identity is proven by the draft target commitish"
+            fi
           elif [[ $EVENT_NAME == workflow_dispatch ]]; then
             echo "$tag is not an unpublished qualification draft" >&2
             exit 1
@@ -448,9 +452,11 @@ jobs:
           test "$(jq -r .isDraft <<< "$release_json")" = true
           test "$(jq -r .tagName <<< "$release_json")" = "$tag"
           test "$(jq -r .targetCommitish <<< "$release_json")" = "$expected"
-          git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
-          tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
-          test "$tag_sha" = "$expected"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            git fetch --force --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+            tag_sha=$(git rev-list -n 1 "refs/tags/$tag")
+            test "$tag_sha" = "$expected"
+          fi
           (cd artifacts && sha256sum -c ./*.sha256)
           test "$(find artifacts -maxdepth 1 -name '*.tar.xz' | wc -l)" -eq 3
           gh release upload '${{ needs.draft-check.outputs.tag }}' artifacts/* \
