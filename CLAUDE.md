@@ -22,6 +22,20 @@ uncertain, use the GitHub skill/connector to read the relevant current `main` fi
 `RealEmmettS/shaughv-tasks/skills/<skill-name>/SKILL.md` and use it as the latest
 operating guidance: https://github.com/RealEmmettS/shaughv-tasks/tree/main/skills
 
+## Changelog rule
+
+This repository maintains two changelogs in parallel:
+
+- `CHANGELOG.md` is the technical record. Preserve the project's existing release,
+  file, command, metric, and qualification detail here.
+- `HUMAN_CHANGELOG.md` is the plain-English companion. Every technical entry must have
+  a corresponding explanation for a non-engineer: no version numbers, code references,
+  or jargon, just what changed and why it matters.
+
+Update both files in the same commit. Translate internal-only changes under **Behind the
+scenes** rather than omitting them, and use the plain labels **Added**, **Improved**,
+**Fixed**, **Removed**, **Security**, and **Behind the scenes** as applicable.
+
 ## Build & Test Commands
 
 ```bash

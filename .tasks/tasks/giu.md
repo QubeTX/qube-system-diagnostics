@@ -28,7 +28,8 @@ The app and supported tray menus can initiate an available update without embedd
 - [ ] Existing `sd300 update`, JSON stdout, bare TUI launch, direct installer repair, tray, and uninstall contracts remain compatible
 
 ## Status
-Backlog. Captured for post-v3 work after reviewing the still-active Goose coordinator design; no v3 product scope or lifecycle contract was changed.
+To-Do, explicitly blocked by final v3 qualification and release task #qv3. The board now attaches this follow-on coordinator to milestone #v3n for visibility, but it remains post-release work: no current v3 product scope or lifecycle contract changed.
 
 ## Activity
 - 2026-07-21 17:53 — created from the operator's request and deliberately deferred from v3 after inspecting the active Goose updater-coordinator investigation (agent: codex)
+- 2026-07-22 00:27 — reconciled the detail with the board index: queued in To-Do behind #qv3 and visible under #v3n, still explicitly post-release rather than a current release blocker (agent: codex)

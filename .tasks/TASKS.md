@@ -2,14 +2,11 @@
 
 ## Backlog
 
-- [ ] **Add safe in-app and tray-driven updates** - let nontechnical users launch the existing owner-preserving CLI+GUI update transaction from the desktop app through a verified coordinator that relaunches only after success #giu
-
 ## To-Do
-
 - [ ] **Qualify and release SD-300 v3.0.0 on all six existing targets** - pass compatibility, lifecycle, performance, provenance, hosted, physical Windows, and public-byte gates across Windows x86-64, macOS x86-64/ARM64, Linux GNU x86-64/ARM64, and Linux musl x86-64; probe additional SDK architectures without silently expanding the owned release contract (needs #gux, #cpl) (ms #v3n) #qv3
+- [ ] **Add safe in-app and tray-driven updates** - let nontechnical users launch the existing owner-preserving CLI+GUI update transaction from the desktop app through a verified coordinator that relaunches only after success (needs #qv3) (ms #v3n) #giu
 
 ## Active
-
 - [ ] **Prove the pinned Native SDK, shared Rust engine, and Windows MSI vertical slice** - establish v2 compatibility baselines, a native CPU/memory GUI, reproducible dependencies, and an installed Corporate MSI smoke before full UI work (ms #v3n) #nsp
   - [x] Capture immutable v2.0.6 CLI/TUI compatibility fixtures
   - [x] Scaffold the pinned native-rendered Zig application without a local-path dependency
@@ -25,7 +22,6 @@
 - [ ] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration (needs #nsp) (ms #v3n) #cpl
 
 ## Done
-
 - [x] **Align driver and thermal health reporting** - Alienware driver parity, truthful thermal provider coverage, and lifecycle fix-forward release are live in v2.0.6 #dth
   - [x] Use authoritative Windows PnP problem-code precedence
   - [x] Show every genuine driver issue counted by the overview

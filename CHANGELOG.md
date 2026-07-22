@@ -32,6 +32,33 @@ qualification has completed.
 - Added GUI self-test, product-version consistency, dependency lock,
   developer-path leakage, performance, lifecycle, and compatibility
   qualification surfaces.
+- Added complete native User and Technician presentations for all nine
+  diagnostic destinations, including source/provenance and shown/total state,
+  bounded histories, process sorting/search, network/driver filtering,
+  connection paging, disk reliability/activity detail, driver services, and
+  explicit unavailable/unsupported/permission-denied observations.
+- Added asynchronous GUI driver rescans, redacted snapshot and capability
+  exports, in-app interaction help, cause-to-detail navigation, persisted last
+  destination, and per-destination collection subscriptions.
+- Added a fixed-layout process-summary ABI and a reusable Windows process
+  sampler that perform one bounded inventory query for GUI process ranking and
+  live CPU/memory updates without sharing mutable state with the TUI.
+- Added authenticated cross-process GUI lifecycle endpoints for graceful
+  close, uninstall/update handoff, singleton focus, and Windows UI-thread Open
+  routing, plus launch-at-login ownership and hidden-start support.
+- Added target-pinned Windows, macOS, Linux GNU, and Linux musl build wrappers,
+  clean-cache and warmed/offline dependency restore checks, package inventory
+  and self-test manifests, and target-specific private-runtime packaging.
+- Added private GTK runtime closure discovery for Linux, with architecture,
+  ELF interpreter/RUNPATH/dependency, distro-owner, license, checksum, and SPDX
+  `CONTAINS` validation on blank pinned Ubuntu and Alpine hosts.
+- Added immutable v2.0.6 CLI/TUI help, version, parse-error, capability,
+  report/redaction, lifecycle, and noninteractive TUI fixtures so the additive
+  GUI work cannot silently rewrite the existing terminal contracts.
+- Added a Windows performance harness that isolates GUI settings, selects a
+  real section, samples window and engine processes independently, records
+  first/last memory windows, and fails if the app exits before the requested
+  duration.
 
 ### Changed
 
@@ -62,6 +89,138 @@ qualification has completed.
   including immutable package URLs, integrity/content hashes, per-host Zig
   checksums, and the reviewed Native SDK renderer patch. Global installations
   and developer-local dependency paths are rejected by distribution checks.
+- Reworked the Native SDK 0.5.4 software renderer with hash-verified downstream
+  fixes for bounded gradient stops, multi-region dirty rendering, retained
+  base fragments and glyph coverage, a persistent Windows top-down DIB/memory
+  DC, GTK 4.0/4.10 dialog compatibility, configured-entry model hashing, and
+  deterministic ReleaseFast tests against pristine npm restores.
+- Kept one-second foreground collection/presentation while replacing full
+  per-tick JSON process envelopes, repeated timer construction, and redundant
+  process inventories with bounded binary projections, reusable buffers,
+  stable process ranking, in-place counter refresh, and a repeating timer.
+- Disabled Native SDK per-event trace serialization in distributable builds
+  while retaining panic capture, explicit self-test output, renderer
+  instrumentation, and opt-in qualification traces.
+- Expanded GUI settings and observation ownership so corrupt settings recover
+  through an atomic rewrite, user exports survive uninstall, startup/tray
+  choices remain independent, and GUI preferences cannot change TUI defaults.
+- Reworked Windows MSI/EXE and managed takeover transactions so Cargo ownership
+  transfer is journaled and byte-restorable across `.crates.toml`,
+  `.crates2.json`, the Cargo binary, and the managed receipt; only the exact
+  proven `tr300-tui` owner is retired after companion qualification succeeds.
+- Hardened managed archive extraction against links, special files, duplicate
+  canonical paths, manifest/inventory/hash disagreement, traversal, and
+  concurrent PATH/profile mutation; rollback restores the exact previous
+  PATH/profile/GitHub Actions state where owned.
+- Expanded exact-source release qualification with immutable v2.0.6 public
+  wrapper/archive/MSI/EXE hashes, synthetic-prior and real-prior update/repair/
+  uninstall lanes, same-version companion repair, deliberate failure
+  injection, and branch-only qualification that cannot publish or replace
+  release assets.
+
+### Fixed
+
+- Prevented Windows collector subprocesses from flashing console windows by
+  applying the no-window contract to every GUI-owned command path.
+- Fixed blank or partially rendered Native SDK frames caused by gradient-stop
+  overflow, repeated platform-source compilation, incorrect configured-entry
+  hashing, and stale damage/glyph coverage.
+- Fixed the high foreground CPU path caused by repeated software command-list
+  replay, per-present DIB reconstruction, development event tracing, full
+  process-envelope serialization, duplicate process queries, and timer churn.
+- Fixed a false one-frame process CPU spike by committing the Windows process
+  sampling baseline only after the complete fallible inventory query succeeds.
+- Fixed tray, startup, singleton, and close-policy disagreements: hidden startup
+  is explicit, tray-off close quits, repeated Open focuses the existing process,
+  and the Windows private Open message is handled on the Native SDK UI thread.
+- Fixed composite installer defects found by real and hosted trials, including
+  overlong WiX deferred CustomActionData, deferred `CARGO_HOME` resolution,
+  repair-time `FileKey` validation, same-version reinstall properties leaking
+  into major upgrades, pre-qualification Cargo cleanup, missing notice
+  components, and GUI self-tests that incorrectly required a console stdout
+  pipe under Windows Installer.
+- Fixed Global Inno uninstall hooks that attempted `ExecAsOriginalUser` in an
+  unsupported uninstall context; update/install still preserve the original
+  user where required, while uninstall uses the proven owner token.
+- Fixed Windows Installer committed-result handling so exit 1641/3010 is
+  treated as committed reboot success and later verification failures do not
+  perform an unsafe CLI-only rollback of an already-committed MSI transaction.
+- Fixed managed Windows retry cleanup so Start/Search, Installed Apps, PATH,
+  receipt, and shortcut ownership are retried even if an interrupted earlier
+  attempt already removed the GUI payload root.
+- Fixed Linux native package construction across merged-`/usr` ownership,
+  private GTK search paths, musl dynamic `cdylib` linking, container Git trust,
+  runtime dependency traversal, Alpine public-domain license evidence, Debian
+  common-license symlinks, and architecture-specific blank-host launch.
+- Fixed macOS hosted builds for Xcode's Security/libDER search path, duplicate
+  platform sources, stable engine install identity, and release debug/developer
+  path leakage before signing.
+- Fixed the large-output command-drain regression test to use its existing slow
+  command deadline on hosted Windows while leaving production probe deadlines
+  unchanged.
+- Replaced the unbounded actionlint/ShellCheck integration that left multiple
+  hung `actionlint.exe` processes with bounded workflow parsing and separate
+  ShellCheck validation over extracted Bash blocks and repository scripts.
+
+### Security and release integrity
+
+- Moved the commercial Makira source face out of the public Git graph and into
+  trusted-runner reconstruction guarded by exact SHA-256. This protects the
+  bytes but does not establish an app-embedding license; license evidence is
+  still required before publication.
+- Required source commit, triggering SHA, coordinated product version, draft
+  target, immutable tag, package manifest, checksums, SBOM, and attestations to
+  agree before an artifact can be attached or promoted.
+- Required exact owned paths, receipt/registration identity, publisher,
+  install scope, artifact kind, and trusted system executables before Windows
+  cleanup, takeover, or uninstall can authorize mutation.
+- Preserved unrelated Cargo packages, user-exported reports, ambiguous paths,
+  and nonempty shared state roots across takeover, rollback, repair, and
+  uninstall qualification.
+
+### Qualification completed so far
+
+- Exact-head ordinary CI passes Rust format/Clippy/tests/release/target checks,
+  security audit, and Native GUI build/test/package lanes for Windows x86-64,
+  macOS Intel/Apple Silicon, Linux GNU x86-64/ARM64, and Linux musl x86-64.
+- Physical Alienware qualification passes all nine destinations, both audience
+  modes, keyboard navigation, maximized scaling, redacted export, singleton
+  focus, hidden startup, repeated close-to-tray, launch-at-login add/remove,
+  default close/exit, and exact adjacent-engine self-test.
+- Physical Corporate MSI qualification passes injected post-Cargo failure and
+  exact rollback, successful v2.0.6 takeover, current-version missing-engine
+  repair, CLI/snapshot/capability checks, GUI launch/focus/export, supported
+  uninstall, user-export preservation, and exact restoration of the original
+  Cargo-owned v2.0.6 fixture.
+- The release-shaped Processes workload passed a 15-minute foreground sample
+  at 1.58% of one logical core with 84.78 MiB average working set and 227.2 MiB
+  average private memory, and a 30-minute hidden sample at 0.18% with 64.98 MiB
+  working set and 206.65 MiB private memory.
+- Local gates pass 107 Rust unit tests, seven immutable-v2 CLI compatibility
+  tests, release build, crates.io dry run, strict product-version checks,
+  dependency/path-leak verification, and 31 optimized Native SDK tests with
+  one expected platform skip.
+
+### Known open qualification issues
+
+- The operator reports severe scrolling/input lag on scrollable GUI sections
+  after the end-user app has been open for roughly one minute. Average CPU and
+  memory samples do not clear this release-blocking interaction regression.
+- The first exact two-hour soak attempt is invalid: the GUI exited cleanly with
+  code 0 after roughly 25 minutes, the harness failed as designed, and the JSON
+  result is empty. The graceful-exit source and a replacement soak remain open.
+- Exact-head Windows installer qualification still fails managed PowerShell
+  uninstall because Windows PowerShell tries to prompt while removing a
+  nonempty receipt parent. The working tree contains an unqualified empty-only
+  directory cleanup plus unrelated-sibling preservation test; it is not yet a
+  committed or hosted-proven fix.
+- Native SDK exposes the Windows/Linux GUI as a named canvas but not as an
+  internal screen-reader control tree. The existing TUI remains the documented
+  accessible fallback until the SDK provides that platform capability.
+- Makira app-embedding license evidence or an authorized open-font replacement,
+  signed/notarized final packages, provenance attestations, immutable tag and
+  release publication, fresh public-byte verification, website verification,
+  and final physical acceptance remain incomplete.
 
 ### Release qualification
 
