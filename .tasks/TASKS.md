@@ -1,9 +1,13 @@
 # Tasks
 
 ## Backlog
+- [ ] **Run the released-bytes two-hour soak and capture frame/input percentiles** - TASK FOR CODEX; unattended, machine-quarantined two-hour Processes soak plus formal frame-p95/input-p95 evidence on the public v3 bytes, with exit-attribution awareness; replaces the pre-release soak gate the operator waived on 2026-07-22 (needs #qv3) (ms #v3n) #sok
 
 ## To-Do
 - [ ] **Qualify and release SD-300 v3.0.0 on all six existing targets** - pass compatibility, lifecycle, performance, provenance, hosted, physical Windows, and public-byte gates across Windows x86-64, macOS x86-64/ARM64, Linux GNU x86-64/ARM64, and Linux musl x86-64; probe additional SDK architectures without silently expanding the owned release contract (needs #gux, #cpl) (ms #v3n) #qv3
+  - [ ] Re-prove foreground and hidden performance budgets on the fixed build
+  - [ ] Merge PR #4 to main and drive the release workflow to full green
+  - [ ] Verify fresh public bytes, Cargo install, and physical Windows acceptance
 - [ ] **Add safe in-app and tray-driven updates** - let nontechnical users launch the existing owner-preserving CLI+GUI update transaction from the desktop app through a verified coordinator that relaunches only after success (needs #qv3) (ms #v3n) #giu
 
 ## Active
@@ -17,9 +21,12 @@
   - [x] Lock the approved Warm Carbon design and bundled font hierarchy
   - [x] Make all nine navigation destinations functional with bounded live projections
   - [x] Complete audience modes, settings, exports, sorting/filtering, and unavailable-state parity
+  - [x] Attribute the early clean soak exit to its graceful-quit source
   - [ ] Reproduce and eliminate the severe minute-old scroll/input lag on scrollable sections
   - [ ] Qualify keyboard, scaling, tray/autostart, and sustained renderer performance
 - [ ] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration (needs #nsp) (ms #v3n) #cpl
+  - [x] Land the reviewed receipt-parent cleanup fix with lockstep changelogs and ADR
+  - [ ] Pass exact-head hosted Windows Native Installers qualification with sibling preservation
 
 ## Done
 - [x] **Align driver and thermal health reporting** - Alienware driver parity, truthful thermal provider coverage, and lifecycle fix-forward release are live in v2.0.6 #dth

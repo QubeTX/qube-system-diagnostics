@@ -28,7 +28,7 @@
 | Project | Status |
 |---|---|
 | SD-300 v2.0.2 | Complete: Windows accuracy, full updater lifecycle, installers, parity, release, offline bundle, and website rollout |
-| SD-300 v3.0.0 | Active on `codex/sd300-v3-native-gui`: additive Native SDK GUI and composite lifecycle; draft PR #4; exact-head ordinary CI green; final soak, Windows cleanup rerun, font license, signing, provenance, and public-byte gates open |
+| SD-300 v3.0.0 | Active on `codex/sd300-v3-native-gui`: Fable release drive (2026-07-22) — soak exit attributed (operator close, no defect), pre-release soak waived to #sok, Makira operator-authorized, uninstall fix reviewed and landing, scroll-lag fix ladder in progress, then merge PR #4 → main release; #giu follows as Phase 2 (v3.1.0) |
 
 ## Preferences
 
