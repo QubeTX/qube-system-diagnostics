@@ -860,10 +860,16 @@ jobs:
           if (-not $release.isDraft) { throw "$tag is no longer an unpublished qualification draft" }
           if ($release.tagName -ne $tag) { throw "release tag $($release.tagName) does not match $tag" }
           if ($release.targetCommitish -ne $expected) { throw "$tag targets $($release.targetCommitish), expected $expected" }
-          git fetch --force --depth=1 origin "refs/tags/$($tag):refs/tags/$($tag)"
-          if ($LASTEXITCODE -ne 0) { throw "could not fetch $tag for final source verification" }
-          $tagSha = (git rev-list -n 1 "refs/tags/$tag").Trim()
-          if ($tagSha -ne $expected) { throw "$tag resolves to $tagSha, expected $expected" }
+          # GitHub materializes the release tag only at publish, so an
+          # unpublished draft has no ref to fetch; its identity is already
+          # proven by the verified target commitish above.
+          git ls-remote --exit-code --tags origin "refs/tags/$tag" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            git fetch --force --depth=1 origin "refs/tags/$($tag):refs/tags/$($tag)"
+            if ($LASTEXITCODE -ne 0) { throw "could not fetch $tag for final source verification" }
+            $tagSha = (git rev-list -n 1 "refs/tags/$tag").Trim()
+            if ($tagSha -ne $expected) { throw "$tag resolves to $tagSha, expected $expected" }
+          }
           gh release upload '${{ steps.meta.outputs.tag }}' `
             target/native/sd300-windows-x64-* `
             target/native/sd300-gui-windows-x86_64.zip* `
