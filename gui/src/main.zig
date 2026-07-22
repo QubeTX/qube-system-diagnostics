@@ -1163,6 +1163,24 @@ pub fn qubeTokens(model: *const Model) canvas.DesignTokens {
         .stroke_width = 1,
     };
     tokens.pixel_snap = .{ .geometry = true, .text = true };
+    // Wheel scrolling is a DISCRETE, bounded step here — one notch moves the
+    // content by its delta and stops. The Native SDK default scroll physics
+    // impart a kinetic VELOCITY proportional to the wheel delta
+    // (`ScrollState.applyWheelWithRubberband`: `velocity = scaled_delta *
+    // wheel_velocity_scale`, default scale 60), which the per-frame kinetic
+    // stepper then glides until it clamps at the content edge. On Windows the
+    // host surface proc coalesces a burst of queued wheel notches into ONE
+    // scroll input at the SUMMED delta (to bound repaints); with a nonzero
+    // velocity scale that summed delta becomes a summed VELOCITY, launching a
+    // full-range momentum glide from a single physical detent (a
+    // high-resolution wheel emits many sub-notch messages per detent that
+    // coalesce to a whole notch's delta). Zeroing the wheel velocity scale
+    // keeps the coalesced SUMMED OFFSET — the burst still costs one reconcile
+    // and one repaint at the final offset — while removing the momentum, so a
+    // notch is a bounded ~40px step in the wheel's direction regardless of how
+    // the platform batches its messages. Engine kinetic momentum is unused by
+    // this app; keyboard and (macOS) native-driver scrolling are unaffected.
+    tokens.scroll.wheel_velocity_scale = 0;
     return tokens;
 }
 

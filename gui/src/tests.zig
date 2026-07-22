@@ -366,6 +366,38 @@ test "all nine navigation messages select exactly one real section" {
     }
 }
 
+test "wheel scrolling is a bounded discrete step, never a momentum glide" {
+    // The Windows host coalesces a burst of queued wheel notches into ONE
+    // scroll input at the SUMMED delta. With the SDK-default scroll physics
+    // that summed delta also becomes a summed kinetic VELOCITY, which the
+    // per-frame stepper glides across the whole content range (the reported
+    // "one click scrolls the entire page" regression). The app's tokens must
+    // disable wheel momentum so the coalesced offset applies as a bounded
+    // step with nothing left to glide.
+    const model = main.initialModel();
+    const physics = main.qubeTokens(&model).scroll;
+    try testing.expectEqual(@as(f32, 0), physics.wheel_velocity_scale);
+
+    // A coalesced 5-notch (5 * 40px) downward burst on a long page.
+    const start = canvas.ScrollState{ .offset = 0, .viewport_extent = 600, .content_extent = 5000 };
+    const after = start.applyWheel(200, physics);
+    // The summed offset is preserved (coalescing goal) ...
+    try testing.expectEqual(@as(f32, 200), after.offset);
+    // ... but no velocity survives, so there is no momentum to integrate.
+    try testing.expectEqual(@as(f32, 0), after.velocity);
+    try testing.expect(!after.needsKineticStep(physics));
+    // A kinetic step is a no-op: the step is exactly the applied offset.
+    try testing.expectEqual(@as(f32, 200), after.stepKinetic(16, physics).offset);
+
+    // Guard the mechanism: the SDK DEFAULT physics WOULD launch a full-range
+    // momentum glide from the identical coalesced delta — the behavior the app
+    // deliberately opts out of.
+    const default_physics = canvas.ScrollPhysics{};
+    const defaulted = start.applyWheel(200, default_physics);
+    try testing.expect(defaulted.velocity != 0);
+    try testing.expect(defaulted.needsKineticStep(default_physics));
+}
+
 test "drivers view exposes a real asynchronous rescan action" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
