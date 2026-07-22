@@ -161,6 +161,14 @@ qualification has completed.
 - Replaced the unbounded actionlint/ShellCheck integration that left multiple
   hung `actionlint.exe` processes with bounded workflow parsing and separate
   ShellCheck validation over extracted Bash blocks and repository scripts.
+- Fixed managed PowerShell uninstall failing in noninteractive Windows
+  PowerShell when the receipt parent directory contained unrelated files: the
+  cleanup now removes the parent only when empty via nonrecursive
+  `[IO.Directory]::Delete`, treats Win32 `ERROR_DIR_NOT_EMPTY` (145) as the
+  expected preservation outcome, and rethrows every other failure into the
+  existing rollback path. Hosted qualification now plants an unrelated sibling
+  beside the receipt and requires byte-exact preservation plus complete
+  owned-state removal (ADR 0003).
 
 ### Security and release integrity
 
@@ -206,14 +214,16 @@ qualification has completed.
 - The operator reports severe scrolling/input lag on scrollable GUI sections
   after the end-user app has been open for roughly one minute. Average CPU and
   memory samples do not clear this release-blocking interaction regression.
-- The first exact two-hour soak attempt is invalid: the GUI exited cleanly with
-  code 0 after roughly 25 minutes, the harness failed as designed, and the JSON
-  result is empty. The graceful-exit source and a replacement soak remain open.
-- Exact-head Windows installer qualification still fails managed PowerShell
-  uninstall because Windows PowerShell tries to prompt while removing a
-  nonempty receipt parent. The working tree contains an unqualified empty-only
-  directory cleanup plus unrelated-sibling preservation test; it is not yet a
-  committed or hosted-proven fix.
+- The first exact two-hour soak attempt was invalidated by an operator window
+  close (attributed 2026-07-22 with harness, code-path, and event-log evidence;
+  ADR 0001 — not a product defect). The pre-release soak gate was explicitly
+  waived by the operator; the two-hour soak and formal frame/input percentile
+  evidence move to a tracked post-release task against released bytes.
+- Exact-head Windows installer qualification previously failed managed
+  PowerShell uninstall on a nonempty-receipt-parent prompt. The empty-only
+  cleanup and unrelated-sibling preservation proof are now committed and
+  locally validated (ADR 0003); a fresh hosted Windows qualification run
+  remains the authoritative Windows PowerShell 5.1 proof.
 - Native SDK exposes the Windows/Linux GUI as a named canvas but not as an
   internal screen-reader control tree. The existing TUI remains the documented
   accessible fallback until the SDK provides that platform capability.

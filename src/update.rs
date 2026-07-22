@@ -3349,8 +3349,11 @@ fn windows_managed_cleanup_commands(
             powershell_escape(&receipt.to_string_lossy())
         ));
         if let Some(parent) = receipt.parent() {
+            // The receipt is owned, but its parent may contain unrelated state. Remove the
+            // directory only when empty; Win32 ERROR_DIR_NOT_EMPTY (145) is the expected
+            // preservation outcome and every other I/O failure remains fatal.
             commands.push_str(&format!(
-                "Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue; ",
+                "try{{[IO.Directory]::Delete('{}',$false)}}catch [IO.DirectoryNotFoundException]{{}}catch [IO.IOException]{{if(($_.Exception.HResult -band 0xFFFF) -ne 145){{throw}}}}; ",
                 powershell_escape(&parent.to_string_lossy())
             ));
         }
@@ -4496,6 +4499,9 @@ mod tests {
         assert!(commands.contains("install-receipt.json"));
         assert!(commands
             .contains("[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames"));
+        assert!(commands.contains("[IO.Directory]::Delete('C:\\Users\\test\\.sd300',$false)"));
+        assert!(commands.contains("HResult -band 0xFFFF) -ne 145"));
+        assert!(!commands.contains("Remove-Item -LiteralPath 'C:\\Users\\test\\.sd300'"));
         assert!(!commands.contains("$sd300Root="));
     }
 

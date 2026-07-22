@@ -231,6 +231,10 @@ function Assert-GuiUninstallState([string]$Export, [string]$Channel) {
 
 function Assert-ManagedUninstall([string]$Binary, [string]$Channel) {
     $export = Set-GuiUninstallFixture $Channel
+    $receiptRoot = Split-Path -Parent $managedReceipt
+    $unrelatedReceiptSibling = Join-Path $receiptRoot "$Channel-unrelated-user-file.txt"
+    $unrelatedReceiptBytes = [Text.UTF8Encoding]::new($false).GetBytes('preserve unrelated receipt sibling')
+    [IO.File]::WriteAllBytes($unrelatedReceiptSibling, $unrelatedReceiptBytes)
     $lines = @(& $Binary uninstall --json)
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0 -or $lines.Count -ne 1) {
@@ -243,10 +247,24 @@ function Assert-ManagedUninstall([string]$Binary, [string]$Channel) {
     for ($attempt = 0; $attempt -lt 600; $attempt++) {
         if (-not (Test-Path -LiteralPath $managedBinary) -and
             -not (Test-Path -LiteralPath $managedReceipt) -and
-            -not (Test-Path -LiteralPath (Split-Path -Parent $managedReceipt)) -and
             -not (Test-Path -LiteralPath $managedGuiRoot) -and
             -not (Test-Path -LiteralPath $managedGuiShortcut) -and
             -not (Test-Path -LiteralPath $managedGuiRegistration)) {
+            $preservedReceiptBytes = if (Test-Path -LiteralPath $unrelatedReceiptSibling -PathType Leaf) {
+                [IO.File]::ReadAllBytes($unrelatedReceiptSibling)
+            } else {
+                $null
+            }
+            if ($null -eq $preservedReceiptBytes -or
+                [Convert]::ToBase64String($preservedReceiptBytes) -cne [Convert]::ToBase64String($unrelatedReceiptBytes)) {
+                throw "$Channel uninstall did not preserve the unrelated receipt sibling exactly"
+            }
+            Remove-Item -LiteralPath $unrelatedReceiptSibling -Force
+            $unexpectedReceiptEntries = @(Get-ChildItem -LiteralPath $receiptRoot -Force -ErrorAction SilentlyContinue)
+            if ($unexpectedReceiptEntries.Count -gt 0) {
+                throw "$Channel uninstall left unexpected receipt-root entries: $($unexpectedReceiptEntries.Name -join ', ')"
+            }
+            [IO.Directory]::Delete($receiptRoot, $false)
             Assert-GuiUninstallState $export $Channel
             return
         }
