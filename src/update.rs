@@ -1176,14 +1176,30 @@ pub fn run_windows_update_worker(_channel: &str, _version: &str, _backup: &Path)
 }
 
 #[cfg(windows)]
+/// The elevated worker's stdio is lost across the UAC boundary, so its
+/// failure detail is relayed through a report file at a path both sides
+/// derive from the parent-chosen backup location.
+#[cfg(any(windows, test))]
+fn worker_error_report_path(backup: &Path) -> PathBuf {
+    backup.with_extension("uninstall-error.log")
+}
+
 pub fn run_windows_uninstall_worker(channel: &str, backup: &Path) -> i32 {
+    let report = |message: &str| {
+        let _ = std::fs::write(worker_error_report_path(backup), message);
+    };
     let Some(channel) = InstallChannel::from_global_worker_id(channel) else {
+        report("the uninstall worker received an unknown channel");
         return 2;
     };
     let installation = match detect_installation() {
         Ok(installation) if installation.channel == channel => installation,
-        Ok(_) => return 2,
+        Ok(_) => {
+            report("the detected installation no longer matches the requested channel");
+            return 2;
+        }
         Err(message) => {
+            report(&message);
             eprintln!("SD-300 uninstall worker preflight failed safely: {message}");
             return 2;
         }
@@ -1191,6 +1207,7 @@ pub fn run_windows_uninstall_worker(channel: &str, backup: &Path) -> i32 {
     let handoff = match WindowsUninstallImageHandoff::begin_with_backup(backup) {
         Ok(handoff) => handoff,
         Err(message) => {
+            report(&message);
             eprintln!("SD-300 uninstall worker failed safely: {message}");
             return 2;
         }
@@ -1198,19 +1215,22 @@ pub fn run_windows_uninstall_worker(channel: &str, backup: &Path) -> i32 {
     let execution = match execute_windows_native_uninstaller(&installation, true) {
         Ok(execution) => execution,
         Err(message) => {
+            report(&message);
             return match handoff.finish(Err(message)) {
                 Ok(()) => 2,
                 Err(message) => {
+                    report(&message);
                     eprintln!("SD-300 uninstall worker failed safely: {message}");
                     2
                 }
-            }
+            };
         }
     };
     let verification = verify_windows_native_uninstalled(&installation);
     match handoff.finish_execution(execution, verification) {
         Ok(execution) => execution.worker_exit_code(),
         Err(message) => {
+            report(&message);
             eprintln!("SD-300 uninstall worker failed safely: {message}");
             if execution.windows_msi_committed() {
                 execution.committed_worker_failure_exit_code()
@@ -3714,11 +3734,19 @@ fn uninstall_windows_native(
                 Some(WindowsInstallerCompletion::RebootRequired(_))
             )
         {
+            // The elevated worker's stdio is lost across the UAC boundary;
+            // relay its failure detail from the shared report file.
+            let report_path = worker_error_report_path(&handoff.backup);
+            let detail = std::fs::read_to_string(&report_path)
+                .map(|contents| format!("; worker: {}", contents.trim().replace('\n', " | ")))
+                .unwrap_or_default();
+            let _ = std::fs::remove_file(&report_path);
             return Err(format!(
-                "The elevated {} uninstaller exited with code {exit_code}; verify the installed command before retrying",
+                "The elevated {} uninstaller exited with code {exit_code}; verify the installed command before retrying{detail}",
                 installation.channel.label()
             ));
         }
+        let _ = std::fs::remove_file(worker_error_report_path(&handoff.backup));
         return Ok(format!(
             "{} uninstall completed; final running-image cleanup was scheduled{}",
             installation.channel.label(),
