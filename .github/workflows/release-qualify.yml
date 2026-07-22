@@ -195,9 +195,12 @@ jobs:
             echo 'installer placeholder was not rendered' >&2
             exit 1
           fi
+          # cargo-dist's generated installer documents PATH semantics with a
+          # literal placeholder example; it is upstream boilerplate in a
+          # comment, not a leaked build path.
           if grep -aR -E \
             '([A-Za-z]:[\\/]Users[\\/]|/Users/[^/]+/|/home/[^/]+/|AppData[\\/](Local|Roaming)|node_modules[\\/]@native-sdk[\\/]cli)' \
-            qualification; then
+            qualification | grep -v '/home/myuser/\.myapp'; then
             echo 'release-facing asset contains a developer-local path' >&2
             exit 1
           fi
