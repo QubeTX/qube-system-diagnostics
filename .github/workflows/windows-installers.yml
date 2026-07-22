@@ -684,7 +684,8 @@ jobs:
           $env:SD300_CARGO_SHIM_HANDLER = Join-Path $shim 'install-candidate.ps1'
           $cargoBin = Join-Path $env:CARGO_HOME 'bin'
           $null = New-Item -ItemType Directory -Path $cargoBin, $env:XDG_CONFIG_HOME, `
-            $env:APPDATA, $env:LOCALAPPDATA -Force
+            $env:APPDATA, $env:LOCALAPPDATA, `
+            (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs') -Force
           Copy-Item -LiteralPath target\published-v2.0.6\sd300.exe `
             -Destination (Join-Path $cargoBin 'sd300.exe')
           $rustcMetadata = (rustc -vV) -join "`n"
