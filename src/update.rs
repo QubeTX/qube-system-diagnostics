@@ -3799,16 +3799,37 @@ fn execute_windows_native_uninstaller(
                     "The registered EXE uninstaller points outside its install root".into(),
                 );
             }
-            run_status(
+            let inno_log = std::env::temp_dir()
+                .join(format!("sd300-exe-uninstall-{}.log", std::process::id()));
+            let outcome = run_status(
                 Command::new(&executable).args([
                     "/VERYSILENT",
                     "/SUPPRESSMSGBOXES",
                     "/NORESTART",
                     "/SD300GUIALREADYSTOPPED",
                     "/PRESERVEGUISTATE",
+                    &format!("/LOG={}", inno_log.display()),
                 ]),
                 quiet_stdout,
-            )?;
+            );
+            if let Err(error) = outcome {
+                let tail = std::fs::read_to_string(&inno_log)
+                    .map(|contents| {
+                        contents
+                            .lines()
+                            .rev()
+                            .take(25)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    })
+                    .unwrap_or_else(|_| "uninstall log unavailable".to_string());
+                let _ = std::fs::remove_file(&inno_log);
+                return Err(format!("{error}; uninstall log tail: {tail}"));
+            }
+            let _ = std::fs::remove_file(&inno_log);
             reap_orphaned_inno_uninstaller(&executable);
             Ok(WindowsNativeUninstallExecution::Exe)
         }
