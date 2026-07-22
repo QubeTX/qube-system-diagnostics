@@ -5,7 +5,7 @@
 
 ## To-Do
 - [ ] **Qualify and release SD-300 v3.0.0 on all six existing targets** - pass compatibility, lifecycle, performance, provenance, hosted, physical Windows, and public-byte gates across Windows x86-64, macOS x86-64/ARM64, Linux GNU x86-64/ARM64, and Linux musl x86-64; probe additional SDK architectures without silently expanding the owned release contract (needs #gux, #cpl) (ms #v3n) #qv3
-  - [ ] Re-prove foreground and hidden performance budgets on the fixed build
+  - [ ] Run a bounded post-fix performance sanity sample (formal budget re-proof in Backlog #sok)
   - [ ] Design and implement the app, taskbar, tray, and installer icons with Quiver arrow-1.1-max
   - [ ] Merge PR #4 to main and drive the release workflow to full green
   - [ ] Verify fresh public bytes, Cargo install, and physical Windows acceptance
@@ -16,7 +16,7 @@
   - [x] Capture immutable v2.0.6 CLI/TUI compatibility fixtures
   - [x] Scaffold the pinned native-rendered Zig application without a local-path dependency
   - [x] Export and dynamically load the bounded Rust monitoring ABI
-  - [ ] Exercise the GUI with Native SDK automation and performance profiling
+  - [x] Exercise the GUI with Native SDK automation and performance profiling
   - [x] Build, install, launch, verify, and uninstall a Corporate MSI candidate
 - [ ] **Build the complete QubeTX-native diagnostic GUI** - implement all nine sections, both modes, settings, exports, accessibility, and supported tray behavior (needs #nsp) (ms #v3n) #gux
   - [x] Lock the approved Warm Carbon design and bundled font hierarchy
@@ -25,7 +25,7 @@
   - [x] Attribute the early clean soak exit to its graceful-quit source
   - [x] Attribute the scroll lag with a warmed-state damage benchmark and record ADR 0002
   - [ ] Reproduce and eliminate the severe minute-old scroll/input lag on scrollable sections
-  - [ ] Qualify keyboard, scaling, tray/autostart, and sustained renderer performance
+  - [x] Qualify keyboard, scaling, tray/autostart interaction; sustained-performance evidence moved to Backlog #sok
 - [ ] **Extend every installer, updater, repair, and uninstall path with the GUI companion** - preserve all non-Cargo owners and qualify the explicit two-step Cargo migration (needs #nsp) (ms #v3n) #cpl
   - [x] Land the reviewed receipt-parent cleanup fix with lockstep changelogs and ADR
   - [ ] Pass exact-head hosted Windows Native Installers qualification with sibling preservation

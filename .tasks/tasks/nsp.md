@@ -20,7 +20,7 @@ Intended: creates the reusable engine/app/package foundation while leaving the T
 The branch contains a reproducible Native SDK app and Rust engine that build together, render live SD-300 CPU/memory data, pass headless and live automation, and install through a Corporate MSI without changing normal CLI/TUI behavior. The MSI can be removed through the supported owner path with no GUI residue.
 
 ## Verification
-- [ ] v2.0.6 compatibility fixtures and current Rust tests pass without normal CLI/TUI contract drift — immutable-tag source goldens, live JSON schema checks, noninteractive TUI behavior, native Windows tests, and five non-Windows compile targets pass; published v2 binary PTY replay on hosted targets remains
+- [~] v2.0.6 compatibility fixtures and current Rust tests pass without normal CLI/TUI contract drift — immutable-tag source goldens, live JSON schema checks, noninteractive TUI behavior, native Windows tests, and five non-Windows compile targets pass; published v2 binary PTY replay on hosted targets is waived to the post-release backlog (waived 2026-07-22 — operator functional-bar directive; source-built v2.0.6 goldens plus the 7 CLI compatibility tests already gate contract drift on every run; agent: fable)
 - [x] Native SDK strict markup/model checks, Zig build, and null-platform tests pass with no absolute SDK dependency
 - [x] Live Windows automation proves the GUI is nonblank, updates CPU/memory, has no dispatch errors, and records frame timing
 - [x] Corporate MSI installs CLI+GUI, exposes the Start/Search launcher and Installed Apps owner, and launches both surfaces correctly
