@@ -4,7 +4,7 @@ set -euo pipefail
 
 target=${1:-}
 output_dir=${2:-}
-version=${3:-3.1.1}
+version=${3:-3.1.2}
 case "$target" in
   linux-gnu-x86_64|linux-gnu-arm64|linux-musl-x86_64) ;;
   *) echo "unsupported Linux GUI package target: $target" >&2; exit 64 ;;
@@ -38,11 +38,17 @@ runtime="$root/lib/runtime"
 declare -A runtime_sources=()
 mkdir -p "$root/bin" "$root/libexec/assets" "$runtime/lib" \
   "$runtime/share/glib-2.0/schemas" "$root/share/applications" \
-  "$root/share/icons/hicolor/256x256/apps" "$root/share/licenses/sd300"
+  "$root/share/licenses/sd300"
 install -m 755 "$binary" "$root/libexec/sd300-gui"
 install -m 755 "$engine" "$root/libexec/libsd300_engine.so"
-install -m 644 "$repo_root/gui/assets/icon.png" "$root/libexec/assets/icon.png"
-install -m 644 "$repo_root/gui/assets/icon.png" "$root/share/icons/hicolor/256x256/apps/sd300.png"
+install -m 644 "$repo_root/gui/assets/generated/app-icon-512.png" "$root/libexec/assets/app-icon.png"
+for size in 16 24 32 48 64 128 256 512; do
+  icon_dir="$root/share/icons/hicolor/${size}x${size}/apps"
+  mkdir -p "$icon_dir"
+  install -m 644 \
+    "$repo_root/gui/assets/generated/linux/hicolor/${size}x${size}/apps/sd300.png" \
+    "$icon_dir/sd300.png"
+done
 for notice in PRODUCT-LICENSE.md IBM-PLEX-OFL-1.1.txt NATIVE-SDK-APACHE-2.0.txt; do
   install -m 644 "$stage/licenses/$notice" "$root/share/licenses/sd300/$notice"
 done

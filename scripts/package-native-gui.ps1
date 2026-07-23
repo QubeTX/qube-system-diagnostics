@@ -23,14 +23,21 @@ if (-not $OutputDirectory) {
 }
 $package = (Resolve-Path -LiteralPath $PackageRoot).Path
 $bin = Join-Path $package 'bin'
+$runtimeAssets = @(
+    'app-icon.png',
+    'app-icon.ico',
+    'tray-icon.ico',
+    'tray-icon-dark.ico',
+    'tray-icon-light.ico'
+)
 $required = @(
     (Join-Path $bin 'sd300-gui.exe'),
     (Join-Path $bin 'sd300_engine.dll'),
-    (Join-Path $bin 'assets\icon.png'),
     (Join-Path $bin 'licenses\PRODUCT-LICENSE.md'),
     (Join-Path $bin 'licenses\IBM-PLEX-OFL-1.1.txt'),
     (Join-Path $bin 'licenses\NATIVE-SDK-APACHE-2.0.txt')
 )
+$required += $runtimeAssets | ForEach-Object { Join-Path $bin (Join-Path 'assets' $_) }
 foreach ($path in $required) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Native GUI package input is incomplete: $path"
@@ -51,16 +58,23 @@ $null = New-Item -ItemType Directory -Path (Join-Path $stageFull 'assets') -Forc
 $null = New-Item -ItemType Directory -Path (Join-Path $stageFull 'licenses') -Force
 Copy-Item -LiteralPath $required[0] -Destination (Join-Path $stageFull 'sd300-gui.exe')
 Copy-Item -LiteralPath $required[1] -Destination (Join-Path $stageFull 'sd300_engine.dll')
-Copy-Item -LiteralPath $required[2] -Destination (Join-Path $stageFull 'assets\icon.png')
-Copy-Item -LiteralPath $required[3] -Destination (Join-Path $stageFull 'licenses\PRODUCT-LICENSE.md')
-Copy-Item -LiteralPath $required[4] -Destination (Join-Path $stageFull 'licenses\IBM-PLEX-OFL-1.1.txt')
-Copy-Item -LiteralPath $required[5] -Destination (Join-Path $stageFull 'licenses\NATIVE-SDK-APACHE-2.0.txt')
+Copy-Item -LiteralPath $required[2] -Destination (Join-Path $stageFull 'licenses\PRODUCT-LICENSE.md')
+Copy-Item -LiteralPath $required[3] -Destination (Join-Path $stageFull 'licenses\IBM-PLEX-OFL-1.1.txt')
+Copy-Item -LiteralPath $required[4] -Destination (Join-Path $stageFull 'licenses\NATIVE-SDK-APACHE-2.0.txt')
+foreach ($asset in $runtimeAssets) {
+    Copy-Item -LiteralPath (Join-Path $bin (Join-Path 'assets' $asset)) `
+        -Destination (Join-Path $stageFull (Join-Path 'assets' $asset))
+}
 
 $files = @()
 foreach ($relative in @(
     'sd300-gui.exe',
     'sd300_engine.dll',
-    'assets/icon.png',
+    'assets/app-icon.png',
+    'assets/app-icon.ico',
+    'assets/tray-icon.ico',
+    'assets/tray-icon-dark.ico',
+    'assets/tray-icon-light.ico',
     'licenses/PRODUCT-LICENSE.md',
     'licenses/IBM-PLEX-OFL-1.1.txt',
     'licenses/NATIVE-SDK-APACHE-2.0.txt'

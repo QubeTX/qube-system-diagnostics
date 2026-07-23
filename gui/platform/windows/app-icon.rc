@@ -1,0 +1,2 @@
+#define IDI_SD300_APP 101
+IDI_SD300_APP ICON "app-icon.ico"

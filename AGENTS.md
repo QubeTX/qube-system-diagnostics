@@ -458,9 +458,11 @@ In source code, use `#[cfg(target_os = "windows")]` / `#[cfg(target_os = "linux"
   optimization; hidden/tray mode may coalesce to its required summaries. Never
   create an unbounded renderer queue or hide a collector regression by lowering
   data fidelity.
-- **Tray/startup lifecycle** — tray and launch-at-login are independent and
-  default off. Windows/macOS close-to-tray only when enabled. Linux has no tray
-  under Native SDK 0.5.4, closes normally, and must never autostart hidden.
+- **Tray/startup lifecycle** — tray and launch-at-login are independent. The
+  GUI tray and close-to-tray behavior default on; launch-at-login defaults off.
+  The TUI never creates a tray. Windows/macOS keep the GUI process alive after X
+  only when a tray exists and close-to-tray is enabled; Linux has no tray under
+  Native SDK 0.5.4, closes normally, and must never autostart hidden.
 - **Performance is release-blocking** — qualify 15-minute foreground,
   30-minute hidden, and two-hour soak runs. Budgets are <=2% of one logical core
   foreground, <=1% hidden, <=150 MiB working set/RSS, <=300 MiB private

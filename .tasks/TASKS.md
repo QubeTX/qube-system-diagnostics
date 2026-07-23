@@ -12,6 +12,18 @@
 ## To-Do
 
 ## Active
+- [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - operator-directed corrective work after the installed Windows GUI exposed generic app and tray icons; deliver selected artwork, embedded Win32 identity, packaged runtime assets, and update/uninstall proof (ms #v3n) (owner codex) #n7k
+  - [x] Reconstruct the current artwork and Windows icon-delivery failure
+    > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.
+  - [x] Explore and select the final flat-isometric SD-300 direction
+  - [x] Import the operator-selected Quiver app and tray SVG masters
+  - [x] Generate deterministic platform assets and wire runtime, build, install, update, and uninstall
+  - [ ] Qualify Windows associated, taskbar, Alt+Tab, and tray icons plus package lifecycle
+- [ ] **Keep tray monitoring alive after closing the GUI, with an explicit setting and live tooltip** - next-patch requirement bundled with #n7k: tray-enabled Windows/macOS sessions default to closing the window into the background, expose a GUI close-to-tray toggle, retain tray Quit, and show a bounded live hardware summary on hover (ms #v3n) (owner codex) #ctt
+  - [x] Add the close-to-tray GUI setting and migration-safe default
+  - [x] Make window close hide or fully quit according to the effective setting
+  - [x] Publish a bounded live hardware summary through Windows/macOS tray tooltips
+  - [ ] Qualify toggle, close, reopen, tooltip, update, and tray Quit behavior
 
 ## Done
 - [x] **Release-workflow hygiene: skip cleanly on post-release same-version main pushes** - PUBLIC as v3.1.1 2026-07-23 02:10 UTC (tag 4c612be). Refined release.yml source-check so an already-fully-published version whose main source commit differs from its immutable tag SKIPS deploy cleanly (green) instead of failing; guard still fires on real deploy-path conflicts (fresh version with a conflicting tag, or crate-published/release-missing repair from the wrong commit). All four branches simulated before shipping; documented as a warn-and-investigate note in AGENTS.md. Shipped the v3.1.0 post-release docs (ADRs 0004/0005, README pass, gui-engine testing-doc fix). Verified public: crate installs to `sd300 3.1.1`, release promoted to latest (59 assets, 26 sidecars, SBOM), `gh attestation verify` returns two SLSA attestations bound to 4c612be. Release recovery note: a mis-timed board push during the release split the branch head from the draft target (eba3195 vs 4c612be) and I wrongly canceled two workflow_run producers (they branch-head-associate) — recovered by deleting the draft and re-running Release from 4c612be so all provenance is single-commit; lessons recorded in operator memory (done 2026-07-23) (ms #v3n) (agent: opus)

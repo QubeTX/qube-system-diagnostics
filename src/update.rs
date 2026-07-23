@@ -3962,7 +3962,11 @@ fn verify_windows_native_uninstalled(
         installation.binary_path.clone(),
         root.join("app").join("sd300-gui.exe"),
         root.join("app").join("sd300_engine.dll"),
-        root.join("app").join("assets").join("icon.png"),
+        root.join("app").join("assets").join("app-icon.png"),
+        root.join("app").join("assets").join("app-icon.ico"),
+        root.join("app").join("assets").join("tray-icon.ico"),
+        root.join("app").join("assets").join("tray-icon-dark.ico"),
+        root.join("app").join("assets").join("tray-icon-light.ico"),
         root.join("app").join("licenses").join("PRODUCT-LICENSE.md"),
         root.join("app")
             .join("licenses")

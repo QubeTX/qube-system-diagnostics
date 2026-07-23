@@ -235,11 +235,31 @@
                             <Directory Id='GuiAssets' Name='assets'>
                                 <Component Id='GuiIconAsset' Guid='9B9F4946-F13E-4C74-999C-9723231930D8'>
                                     <File
-                                        Id='GuiIconPng'
-                                        Name='icon.png'
+                                        Id='GuiAppIconPng'
+                                        Name='app-icon.png'
                                         DiskId='1'
-                                        Source='$(var.NativeGuiBinDir)\assets\icon.png'
+                                        Source='$(var.NativeGuiBinDir)\assets\app-icon.png'
                                         KeyPath='yes'/>
+                                    <File
+                                        Id='GuiAppIconIco'
+                                        Name='app-icon.ico'
+                                        DiskId='1'
+                                        Source='$(var.NativeGuiBinDir)\assets\app-icon.ico'/>
+                                    <File
+                                        Id='GuiTrayIconIco'
+                                        Name='tray-icon.ico'
+                                        DiskId='1'
+                                        Source='$(var.NativeGuiBinDir)\assets\tray-icon.ico'/>
+                                    <File
+                                        Id='GuiTrayIconDarkIco'
+                                        Name='tray-icon-dark.ico'
+                                        DiskId='1'
+                                        Source='$(var.NativeGuiBinDir)\assets\tray-icon-dark.ico'/>
+                                    <File
+                                        Id='GuiTrayIconLightIco'
+                                        Name='tray-icon-light.ico'
+                                        DiskId='1'
+                                        Source='$(var.NativeGuiBinDir)\assets\tray-icon-light.ico'/>
                                 </Component>
                             </Directory>
                             <Directory Id='GuiLicenses' Name='licenses'>

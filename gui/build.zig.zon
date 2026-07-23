@@ -1,7 +1,7 @@
 .{
     .name = .gui,
     .fingerprint = 0xd4ff50f85a707070,
-    .version = "3.1.1",
+    .version = "3.1.2",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .native_sdk = .{
@@ -9,5 +9,5 @@
             .hash = "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
         },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "platform", "app.zon", "README.md" },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "tools", "assets", "platform", "app.zon", "README.md" },
 }

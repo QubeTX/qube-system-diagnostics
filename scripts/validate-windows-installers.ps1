@@ -46,6 +46,34 @@ function Invoke-GuiSelfTest([string]$Gui, [string]$Context) {
     }
 }
 
+function Assert-Sd300EmbeddedIcon([string]$Gui, [string]$Context) {
+    Add-Type -AssemblyName System.Drawing
+    $icon = [Drawing.Icon]::ExtractAssociatedIcon([IO.Path]::GetFullPath($Gui))
+    if ($null -eq $icon) {
+        throw "$Context executable exposes no associated application icon"
+    }
+    $bitmap = $icon.ToBitmap()
+    try {
+        $orangePixels = 0
+        for ($y = 0; $y -lt $bitmap.Height; $y++) {
+            for ($x = 0; $x -lt $bitmap.Width; $x++) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                if ($pixel.A -gt 0 -and $pixel.R -ge 200 -and
+                    $pixel.G -ge 40 -and $pixel.G -le 140 -and $pixel.B -le 90) {
+                    $orangePixels++
+                }
+            }
+        }
+        if ($orangePixels -lt 8) {
+            throw "$Context associated icon does not contain the selected SD-300 orange geometry"
+        }
+    }
+    finally {
+        $bitmap.Dispose()
+        $icon.Dispose()
+    }
+}
+
 function Set-ManagedFixture {
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $managedBinary) -Force
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $managedReceipt) -Force
@@ -94,6 +122,21 @@ function Assert-NativeInstall([string]$Binary, [string]$Channel) {
     if (-not (Test-Path -LiteralPath $gui -PathType Leaf)) {
         throw "$Channel GUI companion is missing: $gui"
     }
+    $assets = Join-Path (Split-Path -Parent $gui) 'assets'
+    foreach ($asset in @(
+        'app-icon.png',
+        'app-icon.ico',
+        'tray-icon.ico',
+        'tray-icon-dark.ico',
+        'tray-icon-light.ico'
+    )) {
+        $assetPath = Join-Path $assets $asset
+        if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf) -or
+            (Get-Item -LiteralPath $assetPath).Length -eq 0) {
+            throw "$Channel GUI companion is missing required identity asset: $assetPath"
+        }
+    }
+    Assert-Sd300EmbeddedIcon $gui $Channel
     $notices = Join-Path (Split-Path -Parent $gui) 'licenses'
     foreach ($notice in @(
         'PRODUCT-LICENSE.md',

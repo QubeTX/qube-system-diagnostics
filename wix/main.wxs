@@ -232,11 +232,31 @@
                         <Directory Id='GuiAssets' Name='assets'>
                             <Component Id='GuiIconAsset' Guid='C57A0E7D-43DE-49F6-B390-F22B6BC44A08'>
                                 <File
-                                    Id='GuiIconPng'
-                                    Name='icon.png'
+                                    Id='GuiAppIconPng'
+                                    Name='app-icon.png'
                                     DiskId='1'
-                                    Source='$(var.NativeGuiBinDir)\assets\icon.png'
+                                    Source='$(var.NativeGuiBinDir)\assets\app-icon.png'
                                     KeyPath='yes'/>
+                                <File
+                                    Id='GuiAppIconIco'
+                                    Name='app-icon.ico'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\assets\app-icon.ico'/>
+                                <File
+                                    Id='GuiTrayIconIco'
+                                    Name='tray-icon.ico'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\assets\tray-icon.ico'/>
+                                <File
+                                    Id='GuiTrayIconDarkIco'
+                                    Name='tray-icon-dark.ico'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\assets\tray-icon-dark.ico'/>
+                                <File
+                                    Id='GuiTrayIconLightIco'
+                                    Name='tray-icon-light.ico'
+                                    DiskId='1'
+                                    Source='$(var.NativeGuiBinDir)\assets\tray-icon-light.ico'/>
                             </Component>
                         </Directory>
                         <Directory Id='GuiLicenses' Name='licenses'>

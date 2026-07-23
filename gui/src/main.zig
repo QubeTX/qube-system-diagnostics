@@ -74,6 +74,7 @@ pub const Msg = union(enum) {
     toggle_audience_mode,
     toggle_temperature_unit,
     toggle_tray,
+    toggle_close_to_tray,
     toggle_launch_at_login,
     toggle_reduced_motion,
     density_compact,
@@ -140,7 +141,11 @@ pub const Model = struct {
     window_visible: bool = true,
     audience_mode: settings.AudienceMode = .user,
     temperature_unit: settings.TemperatureUnit = .celsius,
-    tray_enabled: bool = false,
+    tray_enabled: bool = true,
+    // GUI-only close behavior. It is meaningful only when this running
+    // session actually owns a status item; terminal/TUI launches never read
+    // this document and never create a tray icon.
+    close_to_tray: bool = true,
     // Whether a tray status item actually exists for THIS running session,
     // fixed once at startup from the effective tray decision (tray_supported AND
     // the persisted `tray_enabled`) that also gates status-item creation. This
@@ -163,6 +168,7 @@ pub const Model = struct {
     tray_gpu_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("GPU · unavailable"),
     tray_storage_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("Storage · waiting for inventory"),
     tray_health_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("Disk health · scanning"),
+    tray_tooltip_buffer: canvas.TextBuffer(192) = canvas.TextBuffer(192).init("SD-300 — hardware summary is starting"),
 
     pub const view_unbound = .{
         "window_visible",
@@ -187,6 +193,7 @@ pub const Model = struct {
         "tray_gpu_buffer",
         "tray_storage_buffer",
         "tray_health_buffer",
+        "tray_tooltip_buffer",
         "last_monitor_section",
         "clock",
         "engine_ready",
@@ -418,7 +425,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 // mid-session toggle is RESTART REQUIRED, so enabling tray now
                 // must not strand a hidden, icon-less process, and disabling it
                 // now must not kill a still-live tray icon.
-                if (shouldQuitForHiddenWindow(model.tray_session_active, window_visibility.mainWindowPolicyHidden())) {
+                if (shouldQuitForHiddenWindow(model.tray_session_active, model.close_to_tray, window_visibility.mainWindowPolicyHidden())) {
                     fx.quitApp();
                     return;
                 }
@@ -512,6 +519,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             } else {
                 model.status_buffer.set("Tray is unavailable on Linux in Native SDK 0.5.4.");
             }
+        },
+        .toggle_close_to_tray => {
+            model.close_to_tray = !model.close_to_tray;
+            persistSettings(model);
         },
         .toggle_launch_at_login => {
             const desired = !model.launch_at_login;
@@ -616,16 +627,17 @@ pub fn refreshIntervalMs(visible: bool) u64 {
 }
 
 /// Windows and macOS use a host-level hide close policy so tray mode can keep
-/// collecting. With no live tray status item THIS session, turn that same close
-/// into the normal, graceful quit on the next already-scheduled model tick. The
+/// collecting. With no live tray status item THIS session, or when the GUI-only
+/// close-to-tray preference is disabled, turn that same close into the normal,
+/// graceful quit on the next already-scheduled model tick. The
 /// first argument is the STARTUP-EFFECTIVE tray presence, never the persisted
 /// `tray_enabled` preference: a mid-session settings toggle only takes effect on
 /// the next launch (RESTART REQUIRED), so the icon's real existence — not a
 /// pending preference — governs whether a policy-hidden window may keep running.
 /// A minimized window is deliberately not policy-hidden and must never satisfy
 /// this predicate.
-pub fn shouldQuitForHiddenWindow(tray_session_active: bool, policy_hidden: bool) bool {
-    return !tray_session_active and policy_hidden;
+pub fn shouldQuitForHiddenWindow(tray_session_active: bool, close_to_tray: bool, policy_hidden: bool) bool {
+    return policy_hidden and (!tray_session_active or !close_to_tray);
 }
 
 fn scheduleRefresh(fx: *Effects, visible: bool) void {
@@ -763,6 +775,7 @@ fn settingsDocument(model: *const Model) settings.Document {
         .audience_mode = model.audience_mode,
         .temperature_unit = model.temperature_unit,
         .tray_enabled = model.tray_enabled,
+        .close_to_tray = model.close_to_tray,
         .launch_at_login = model.launch_at_login,
         .reduced_motion = model.reduced_motion,
         .chart_density = model.chart_density,
@@ -780,7 +793,7 @@ fn persistSettings(model: *Model) void {
         return;
     };
     if (model.settings_restart_required) {
-        model.status_buffer.set("Settings saved · restart SD-300 to apply the tray/close behavior change.");
+        model.status_buffer.set("Settings saved · restart SD-300 to apply tray availability.");
     } else {
         model.status_buffer.set("GUI settings saved · terminal defaults remain unchanged.");
     }
@@ -1060,6 +1073,7 @@ pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     var memory_text: [64]u8 = undefined;
     const memory_label = std.fmt.bufPrint(&memory_text, "Memory · {d:.1}%", .{model.memory_percent}) catch "Memory · live";
     model.tray_memory_buffer.set(memory_label);
+    updateTrayTooltip(model);
     updateFastSummaryFreshness(model);
 }
 
@@ -1106,6 +1120,23 @@ pub fn applyTraySummary(model: *Model, summary: engine.TraySummary) void {
         3 => "Disk health · critical",
         else => "Disk health · unknown",
     });
+    updateTrayTooltip(model);
+}
+
+fn updateTrayTooltip(model: *Model) void {
+    var buffer: [192]u8 = undefined;
+    const tooltip = std.fmt.bufPrint(
+        &buffer,
+        "SD-300 — {s} | {s} | {s} | {s} | {s}",
+        .{
+            model.tray_cpu_buffer.text(),
+            model.tray_memory_buffer.text(),
+            model.tray_gpu_buffer.text(),
+            model.tray_storage_buffer.text(),
+            model.tray_health_buffer.text(),
+        },
+    ) catch "SD-300 — live hardware monitoring";
+    model.tray_tooltip_buffer.set(tooltip);
 }
 
 fn pushHistory(history: *[history_sample_count]f64, sample: f64) void {
@@ -1133,6 +1164,7 @@ pub fn initialModelWithSettings(document: settings.Document) Model {
         .audience_mode = document.gui.audience_mode,
         .temperature_unit = document.gui.temperature_unit,
         .tray_enabled = document.gui.tray_enabled,
+        .close_to_tray = document.gui.close_to_tray,
         // Session-effective tray presence, computed identically to `effective_tray`
         // in main() (which gates status-item creation). Captured once here so the
         // running session never conflates the persisted preference with the icon
@@ -1360,7 +1392,7 @@ pub fn statusItem(model: *const Model, scratch: *NativeApp.StatusItemScratch) Na
     scratch.items[7] = .{ .id = 3, .label = "Update SD-300", .command = "app.update" };
     scratch.items[8] = .{ .separator = true };
     scratch.items[9] = .{ .id = 2, .label = "Quit SD-300", .command = "app.quit" };
-    return .{ .title = "SD", .items = scratch.items[0..10] };
+    return .{ .title = "SD", .tooltip = model.tray_tooltip_buffer.text(), .items = scratch.items[0..10] };
 }
 
 pub fn isSelfTest(args: []const []const u8) bool {
@@ -1378,11 +1410,20 @@ fn hasArg(args: []const []const u8, expected: []const u8) bool {
     return false;
 }
 
-fn iconPath(allocator: std.mem.Allocator, executable_dir: []const u8) ![]u8 {
-    return if (builtin.os.tag == .macos)
-        std.fs.path.resolve(allocator, &.{ executable_dir, "..", "Resources", "assets", "icon.png" })
-    else
-        std.fs.path.join(allocator, &.{ executable_dir, "assets", "icon.png" });
+fn applicationIconPath(allocator: std.mem.Allocator, executable_dir: []const u8) ![]u8 {
+    return switch (builtin.os.tag) {
+        .windows => std.fs.path.join(allocator, &.{ executable_dir, "assets", "app-icon.ico" }),
+        .macos => std.fs.path.resolve(allocator, &.{ executable_dir, "..", "Resources", "assets", "app-icon.png" }),
+        else => std.fs.path.join(allocator, &.{ executable_dir, "assets", "app-icon.png" }),
+    };
+}
+
+fn trayIconPath(allocator: std.mem.Allocator, executable_dir: []const u8) ![]u8 {
+    return switch (builtin.os.tag) {
+        .windows => std.fs.path.join(allocator, &.{ executable_dir, "assets", "tray-icon.ico" }),
+        .macos => std.fs.path.resolve(allocator, &.{ executable_dir, "..", "Resources", "assets", "tray-icon-template.png" }),
+        else => error.UnsupportedTrayPlatform,
+    };
 }
 
 fn writeJsonLine(io: std.Io, allocator: std.mem.Allocator, value: anytype) !void {
@@ -1497,8 +1538,13 @@ pub fn main(init: std.process.Init) !void {
     defer window_visibility.uninstallOpenMessageRoute();
     const executable_dir = try std.process.executableDirPathAlloc(init.io, std.heap.page_allocator);
     defer std.heap.page_allocator.free(executable_dir);
-    const icon_path = try iconPath(std.heap.page_allocator, executable_dir);
-    defer std.heap.page_allocator.free(icon_path);
+    const app_icon_path = try applicationIconPath(std.heap.page_allocator, executable_dir);
+    defer std.heap.page_allocator.free(app_icon_path);
+    const tray_icon_path = if (effective_tray)
+        try trayIconPath(std.heap.page_allocator, executable_dir)
+    else
+        null;
+    defer if (tray_icon_path) |path| std.heap.page_allocator.free(path);
     const dynamic_shell_windows = [_]native_sdk.ShellWindow{.{
         .label = "main",
         .title = "SD-300 System Diagnostics",
@@ -1531,7 +1577,7 @@ pub fn main(init: std.process.Init) !void {
         .on_command = onCommand,
         .status_item = if (effective_tray) .{
             .title = "SD",
-            .icon_path = icon_path,
+            .icon_path = tray_icon_path.?,
             .tooltip = "SD-300 System Diagnostics",
             .items = &initial_tray_items,
         } else null,
@@ -1549,7 +1595,7 @@ pub fn main(init: std.process.Init) !void {
         .app_name = "SD-300",
         .window_title = "SD-300 System Diagnostics",
         .bundle_id = "dev.qubetx.sd300",
-        .icon_path = icon_path,
+        .icon_path = app_icon_path,
         .default_frame = geometry.RectF.init(0, 0, window_width, window_height),
         .restore_state = true,
         .js_window_api = false,

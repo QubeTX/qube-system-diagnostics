@@ -320,11 +320,12 @@
           <panel padding="20" background="surface" radius="lg">
             <column gap="14">
               <text>Desktop lifecycle</text>
-              <if test="{trayAvailable}"><row cross="center"><column gap="3" grow="1"><text>Tray / status item</text><text foreground="text_muted">When enabled, close hides the window; Quit terminates collection. Default is off.</text></column><if test="{tray_enabled}"><button variant="outline" on-press="toggle_tray">Enabled · disable</button></if><else><button variant="outline" on-press="toggle_tray">Disabled · enable</button></else></row></if>
+              <if test="{trayAvailable}"><row cross="center"><column gap="3" grow="1"><text>Tray / status item</text><text foreground="text_muted">The GUI opens with background monitoring available by default. Tray Quit always terminates collection.</text></column><if test="{tray_enabled}"><button variant="outline" on-press="toggle_tray">Enabled · disable</button></if><else><button variant="outline" on-press="toggle_tray">Disabled · enable</button></else></row></if>
               <else><row cross="center"><column gap="3" grow="1"><text>Tray / status item</text><text foreground="text_muted">Unavailable on Linux in Native SDK 0.5.4; closing the window exits.</text></column><badge variant="outline">UNAVAILABLE</badge></row></else>
+              <if test="{trayAvailable}"><row cross="center"><column gap="3" grow="1"><text>Keep monitoring after closing the window</text><text foreground="text_muted">When the tray is running, X hides the GUI while live collection and the hardware tooltip continue. Turn this off to make X quit the GUI and tray together.</text></column><if test="{close_to_tray}"><button variant="outline" on-press="toggle_close_to_tray">On · close quits</button></if><else><button variant="outline" on-press="toggle_close_to_tray">Off · keep in tray</button></else></row></if>
               <row cross="center"><column gap="3" grow="1"><text>Launch at login</text><text foreground="text_muted">Starts hidden only when the tray is enabled; otherwise opens the monitor visibly.</text></column><if test="{launch_at_login}"><button variant="outline" on-press="toggle_launch_at_login">Enabled · disable</button></if><else><button variant="outline" on-press="toggle_launch_at_login">Disabled · enable</button></else></row>
               <row cross="center"><column gap="3" grow="1"><text>Update SD-300</text><text foreground="text_muted">Runs the same trusted update as the terminal, closes the monitor during the update, and reopens it when finished.</text></column><button variant="outline" on-press="update_now">Update now</button></row>
-              <if test="{settings_restart_required}"><badge variant="outline">RESTART REQUIRED FOR TRAY / CLOSE BEHAVIOR</badge></if>
+              <if test="{settings_restart_required}"><badge variant="outline">RESTART REQUIRED FOR TRAY AVAILABILITY</badge></if>
             </column>
           </panel>
 

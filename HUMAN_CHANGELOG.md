@@ -6,10 +6,42 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ---
 
-## Not yet released — lessons written down
+## July 23, 2026 — SD-300 now looks like SD-300 and keeps monitoring
+
+**Added**
+
+- Replaced the generic heart-monitor-style artwork with the chosen isometric
+  SD/300 block. The app now has a matching, simpler tray symbol that stays
+  legible in both light and dark system themes.
+- The desktop tray now starts by default on Windows and macOS. Closing the
+  window keeps monitoring active, and hovering over the tray symbol shows a
+  concise live summary of the computer’s basic health.
+- Added a desktop setting for people who prefer the X button to quit the whole
+  app and remove the tray symbol. Terminal launches remain exactly as before
+  and never create a tray icon.
+
+**Fixed**
+
+- Fixed the blank Windows icon at its source: the artwork is now built into the
+  app itself and appears consistently in the window, task switcher, shortcuts,
+  installer, and installed-programs list.
+- Fixed updates and every installer format so the new app and tray artwork
+  travels with the rest of the product, is checked for damage during an update,
+  and is removed with the app during uninstall.
+- Completed the equivalent app-icon packaging for macOS and all standard Linux
+  desktop icon sizes, while keeping the macOS menu-bar symbol monochrome so the
+  system can adapt it automatically.
 
 **Behind the scenes**
 
+- Added one repeatable icon-export check so future builds can reproduce the
+  exact same platform files from the chosen source artwork instead of relying
+  on hand-edited copies.
+- Fixed a build-only conflict between the Windows icon resource and the app’s
+  full code-analysis check, so adding the real icon does not weaken the release
+  test suite.
+- Made the app-discovery test independent of whichever public SD-300 version is
+  installed on the computer running it.
 - Wrote down, for future maintainers, exactly what went wrong during a recent publishing hiccup and how to avoid it: a change was pushed to the project while a release was still being assembled, which briefly confused the automated packaging steps and led to some being stopped by mistake. Nothing that reached the public was ever affected. The recovery steps, the "don't push while a release is running" rule, and a note that a one-off Apple signing timeout is just a transient glitch are now all documented, plus a follow-up task to make the automation itself more resistant to this in the future.
 
 ---

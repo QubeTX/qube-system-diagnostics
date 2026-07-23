@@ -212,7 +212,7 @@ New-Item -ItemType Directory -Path $appStage -Force | Out-Null
 foreach ($file in @("build.zig", "app.zon", "README.md")) {
     Copy-Item -LiteralPath (Join-Path $guiRoot $file) -Destination (Join-Path $appStage $file) -Force
 }
-foreach ($directory in @("src", "assets", "platform")) {
+foreach ($directory in @("src", "assets", "platform", "tools")) {
     Copy-Item -LiteralPath (Join-Path $guiRoot $directory) -Destination (Join-Path $appStage $directory) -Recurse -Force
 }
 Copy-Item -LiteralPath (Join-Path $guiRoot "node_modules\@native-sdk\cli") -Destination $sdkStage -Recurse -Force
@@ -222,12 +222,12 @@ $stageZon = @'
 .{
     .name = .gui,
     .fingerprint = 0xd4ff50f85a707070,
-    .version = "3.1.1",
+    .version = "3.1.2",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .native_sdk = .{ .path = "../sdk" },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "platform", "app.zon", "README.md" },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "platform", "tools", "app.zon", "README.md" },
 }
 '@
 Set-Content -LiteralPath (Join-Path $appStage "build.zig.zon") -Value $stageZon -Encoding utf8NoBOM
