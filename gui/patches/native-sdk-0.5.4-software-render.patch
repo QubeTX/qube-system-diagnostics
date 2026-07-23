@@ -2,7 +2,7 @@ diff --git a/build/app.zig b/build/app.zig
 index 05facc3..24c9f71 100644
 --- a/build/app.zig
 +++ b/build/app.zig
-@@ -623,7 +623,20 @@ pub fn addAppArtifacts(b: *std.Build, dep: *std.Build.Dependency, app_options: A
+@@ -623,10 +623,27 @@ pub fn addAppArtifacts(b: *std.Build, dep: *std.Build.Dependency, app_options: A
          .target = target,
          .optimize = optimize,
      });
@@ -24,7 +24,14 @@ index 05facc3..24c9f71 100644
      const analysis_obj = b.addObject(.{
          .name = b.fmt("{s}-analysis", .{app_options.name}),
          .root_module = analysis_mod,
-@@ -669,7 +682,12 @@ pub fn addAppArtifacts(b: *std.Build, dep: *std.Build.Dependency, app_options: A
+         .use_llvm = useLlvmWorkaround(target),
+     });
++    // A full semantic-analysis object still resolves the app's platform FFI.
++    // Linux exposes dlopen and friends through libc, so declare the dependency
++    // even though this object is intentionally never linked or executed.
++    if (target.result.os.tag == .linux) analysis_mod.link_libc = true;
+     test_step.dependOn(&analysis_obj.step);
+@@ -669,7 +686,12 @@ pub fn addAppArtifacts(b: *std.Build, dep: *std.Build.Dependency, app_options: A
      });
      const contract_run = b.addRunArtifact(contract_exe);
      contract_run.setCwd(b.path(app_options.app_root));

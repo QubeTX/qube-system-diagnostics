@@ -39,7 +39,7 @@ The newest section is work in progress. It is deliberately candid about what has
   on hand-edited copies.
 - Fixed a build-only conflict between the Windows icon resource and the app’s
   full code-analysis check, so adding the real icon does not weaken the release
-  test suite.
+  test suite on Windows, macOS, or Linux.
 - Made the app-discovery test independent of whichever public SD-300 version is
   installed on the computer running it.
 - Wrote down, for future maintainers, exactly what went wrong during a recent publishing hiccup and how to avoid it: a change was pushed to the project while a release was still being assembled, which briefly confused the automated packaging steps and led to some being stopped by mistake. Nothing that reached the public was ever affected. The recovery steps, the "don't push while a release is running" rule, and a note that a one-off Apple signing timeout is just a transient glitch are now all documented, plus a follow-up task to make the automation itself more resistant to this in the future.

@@ -17,11 +17,11 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "6bab637c1a6c7da21937af9afc343bb172505176acd7c1934dee6035633c211a",
+  patchHash: "346b26bb366718740b929b3a758ab653f5f53904fd70e6c3a8b270958aa28ced",
 };
 
 const files = new Map([
-  ["build/app.zig", ["0b224d560c66f0a111c1cc333c3f81002ab25811dabb81d85d174a89ed491595", "2ec07a2971870de4d13c695ce4152f33788f89d800ed0f4dc6c908b4e39d2d0b"]],
+  ["build/app.zig", ["0b224d560c66f0a111c1cc333c3f81002ab25811dabb81d85d174a89ed491595", "26cf51a704eef3be95471b364b989808c10eed9905ffb4f993d689c7ae248e28"]],
   ["src/app_runner/root.zig", ["e085afe9f414a5ef0c21388e0bb1436bf05cb346349d6e87ca7e352c38b0c4e0", "5a3cbdbe53a4a68c93a49defb6024d20f335bda176697342a3c79163ce880340"]],
   ["src/platform/linux/gtk_host.c", ["da73fa340df0f577cc09873ae0c6d5e6d94bc7ca8024a68ad51d2df94cd93af7", "772f4e3d01366e5b31ad138cab1e6977bfc6e081c6a962cbb27336fc7bd2e14f"]],
   ["src/platform/macos/appkit_host.h", ["56e44b321b7011ef6bd2b85d97b2e9f6d1b502ceb3421032dfe15b53eb1b6d32", "6f5c6f6756667cf740d6181548141befd3a01970da4d09872de81d806cd90aa5"]],

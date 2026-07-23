@@ -32,6 +32,8 @@ All notable changes to SD-300 will be documented in this file.
 - Kept executable-only Win32 resource inputs out of Native SDK's test-only COFF
   analysis object, preserving full semantic analysis while allowing the
   resource-bearing Windows release build and Native test graph to coexist.
+  Declared libc explicitly for that analysis object on Linux so its
+  bundle-relative engine `dlopen` path remains fully checked on GNU and musl.
 - Made GUI companion discovery inject its per-user application root so an
   installed public copy cannot contaminate the missing-companion unit test.
 
