@@ -4,8 +4,26 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-07-23
+
+### Fixed
+
+- Fixed the Release workflow's `source-check` immutability guard failing a
+  `main` push when the already-published version's source commit differs from
+  its immutable release tag. Post-release commits to `main` (docs, follow-up
+  work) legitimately advance past the tagged release commit, so that case now
+  skips deployment cleanly (green) instead of erroring. The guard still fires
+  on genuine deploy-path conflicts — a fresh version whose tag already exists
+  at a different commit, or a crate-published/release-missing hosting repair
+  from the wrong commit — so an immutable release can never be re-pointed.
+  (v3.1.0 post-release docs commits red under the pre-fix guard; ADR 0005.)
+
 ### Changed
 
+- Documented the immutable-tag guard in `AGENTS.md` as a warn-and-investigate
+  note so a future agent treats a red "Immutable tag … resolves to …" Release
+  check as a real deploy-path conflict to diagnose (bump the version or repair
+  from the tagged commit), never something to force or silently bump away.
 - Recorded the architecture decisions behind the v3 releases as ADRs: 0004
   (the v3.0.0 release-scope two-bar model — functional bar shipped, evidence
   bar deferred to owned backlog tasks) and 0005 (the in-app update

@@ -6,10 +6,15 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ---
 
-## Not yet released — the record of how it all works
+## July 23, 2026 — a quieter release process
+
+**Fixed**
+
+- Fixed the automated release process so that ordinary follow-up changes to the project (like documentation) no longer show a false alarm. Publishing a version permanently locks that version to the exact snapshot it was built from; afterward, everyday edits move the project forward past that snapshot, which the safety check used to flag as if something were wrong. It now recognizes that this is normal and stays quiet, while still stopping any real attempt to change what an already-published version means.
 
 **Behind the scenes**
 
+- Added a clear note in the contributor guide explaining that release safety alarm — what it means, and to investigate rather than override it — so future maintainers don't mistake a genuine warning for noise or a harmless case for a problem.
 - Wrote down, in the project's permanent decision records, how the new in-app update actually works under the hood and why it was built that way, plus the judgment calls made while getting the desktop release out the door. Future maintainers — human or AI — can now read the reasoning instead of re-deriving it.
 - Gave the project's front page an accuracy pass: it no longer describes the desktop app as "still being tested," it explains the new update-from-the-app option, and its command list is complete.
 - Fixed a misleading line in the contributor guide that pointed at a test command which quietly skipped one component's tests; the guide now spells out the extra command that actually runs them.

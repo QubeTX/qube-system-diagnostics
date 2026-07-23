@@ -136,23 +136,29 @@ jobs:
             fi
 
             tag_exists=false
+            tag_sha=""
             if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
               tag_exists=true
               git fetch --force --depth=1 origin "refs/tags/${tag}:refs/tags/${tag}"
               tag_sha=$(git rev-list -n 1 "refs/tags/${tag}")
-              source_sha=$(git rev-parse HEAD)
-              if [ "$tag_sha" != "$source_sha" ]; then
-                echo "::error::Immutable tag ${tag} resolves to ${tag_sha}, but this release source is ${source_sha}."
-                exit 1
-              fi
             fi
+            source_sha=$(git rev-parse HEAD)
 
+            # The immutable-tag guard must only fire on paths that would DEPLOY
+            # this version. A version that is already fully published legitimately
+            # accumulates later main commits (docs, follow-up work) past its
+            # tagged release commit, so a differing source SHA there is expected
+            # and must skip cleanly rather than red the workflow.
             if [ "$release_is_draft" = true ]; then
               echo "::error::Qualification draft ${tag} already exists. Finish or delete that exact draft before changing ${version} source state."
               exit 1
             elif [ "$crate_exists" = true ] && [ "$release_exists" = true ]; then
-              echo "Crate ${package_name} ${version} and GitHub release ${tag} already exist; this main push will verify but skip deploy."
+              echo "Crate ${package_name} ${version} and GitHub release ${tag} already exist; this main push will verify but skip deploy (source ${source_sha}, immutable tag ${tag} at ${tag_sha:-none})."
             elif [ "$crate_exists" = true ] && [ "$release_exists" = false ]; then
+              if [ "$tag_exists" = true ] && [ "$tag_sha" != "$source_sha" ]; then
+                echo "::error::Immutable tag ${tag} resolves to ${tag_sha}, but this hosting-repair source is ${source_sha}. Repair from the tagged commit or bump the version."
+                exit 1
+              fi
               echo "Crate ${package_name} ${version} exists but GitHub release ${tag} is missing; will rebuild artifacts and finish hosting."
               publishing=true
               should_deploy=true
@@ -160,6 +166,10 @@ jobs:
               echo "::error::Partial release state for ${tag}: crate_exists=${crate_exists}, release_exists=${release_exists}, tag_exists=${tag_exists}. Bump the patch version or repair the partial release manually."
               exit 1
             else
+              if [ "$tag_exists" = true ] && [ "$tag_sha" != "$source_sha" ]; then
+                echo "::error::Immutable tag ${tag} resolves to ${tag_sha}, but this release source is ${source_sha}."
+                exit 1
+              fi
               publishing=true
               should_deploy=true
             fi

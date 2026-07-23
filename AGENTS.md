@@ -278,7 +278,10 @@ branch first. Build and exercise the composite Windows MSI before merging to
 9. Verify exact public bytes, attestations, stable routers, install/update/repair/uninstall, and application discovery before calling the release complete
 
 On `main`, the release workflow reads the package name/version, checks crates.io, GitHub Releases, and tags, then:
-- skips deployment if the exact version is already fully published everywhere
+- skips deployment cleanly (green) if the exact version is already fully
+  published everywhere — including later `main` commits at that same version
+  (post-release docs, follow-up work) whose source commit differs from the
+  immutable release tag; that difference is expected, not a violation
 - repairs a crates.io-published/GitHub-release-missing state by rebuilding artifacts and finishing release hosting
 - fails other partial-release states so a human can repair or bump forward
 - runs cargo-dist artifact builds for all configured targets before hosting anything
@@ -294,6 +297,21 @@ On `main`, the release workflow reads the package name/version, checks crates.io
 - creates SHA-256 sidecars, an SPDX SBOM, and GitHub attestations for the release
   subjects; `gh attestation verify <asset> -R QubeTX/qube-system-diagnostics`
   is the documented provenance check, not a substitute for platform code signing
+
+**Immutable-tag guard (warn and investigate — do not blind-fix).** The
+`source-check` "Resolve release metadata" step protects an immutable published
+version tag from being re-pointed at a different commit. If a Release run reds
+with `Immutable tag vX resolves to <A>, but this release source is <B>`, do not
+force it and do not silently bump to make it disappear. Warn and investigate:
+confirm whether `Cargo.toml` should have been bumped (a real new release) or
+whether this is a benign same-version push. As of 3.1.1 the guard fires only on
+paths that would actually deploy (a fresh version, or crate-published /
+release-missing hosting repair); a fully published version whose `main` has
+advanced now skips cleanly. A red here therefore means a genuine deploy-path
+conflict — resolve it by bumping the version or repairing from the tagged
+commit, never by weakening the guard. (First encountered 2026-07-23 on v3.1.0
+post-release docs commits, which failed under the pre-3.1.1 guard; see ADR 0005
+context and the `sd300-product-architecture` operator memory.)
 
 Version tag pushes (`v*.*.*`) remain supported for explicit/manual releases, but the normal automation path is main-branch push. `CARGO_REGISTRY_TOKEN` must exist as a GitHub Actions secret; never commit registry tokens or publish from a local machine unless the user explicitly asks for an emergency manual publish after CI status has been checked.
 

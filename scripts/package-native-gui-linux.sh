@@ -4,7 +4,7 @@ set -euo pipefail
 
 target=${1:-}
 output_dir=${2:-}
-version=${3:-3.1.0}
+version=${3:-3.1.1}
 case "$target" in
   linux-gnu-x86_64|linux-gnu-arm64|linux-musl-x86_64) ;;
   *) echo "unsupported Linux GUI package target: $target" >&2; exit 64 ;;

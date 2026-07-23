@@ -3,7 +3,7 @@
     .name = "sd300-gui",
     .display_name = "SD-300",
     .description = "Native system diagnostics and live performance monitoring.",
-    .version = "3.1.0",
+    .version = "3.1.1",
     .icons = .{"assets/icon.png"},
     .platforms = .{ "windows", "macos" },
     .permissions = .{ "view", "command" },

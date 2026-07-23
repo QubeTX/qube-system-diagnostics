@@ -5,7 +5,7 @@ const windows = std.os.windows;
 
 pub const expected_abi_version: u32 = 1;
 pub const expected_schema_version: u32 = 1;
-pub const expected_product_version = "3.1.0";
+pub const expected_product_version = "3.1.1";
 
 pub const status_ok: i32 = 0;
 pub const status_unchanged: i32 = 1;
