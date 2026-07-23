@@ -26,6 +26,39 @@ version, which applies to every session here:
   cannot see the Windows tray; tray work uses programmatic dispatch plus a
   manual operator check.
 
+### Convergence protocol for long qualification loops
+
+For hosted CI, installer, UI-automation, and performance loops, turn the rules
+above into an explicit control loop:
+
+- Define one cycle before starting it: one failing gate, the new information the
+  cycle should produce, the authoritative runtime/oracle, and the abort
+  condition. Keep one local candidate per failing lane; parallel research is
+  fine, but do not mix several candidate fixes into one measurement.
+- Once a fix is locally validated on a feature branch, commit it, push it, and
+  dispatch the target oracle in the same cycle. The only normal exceptions are
+  an explicit operator request to pause/handoff or a genuinely dangerous,
+  irreversible action. "Ready for review" is not a resting state.
+- If a failure cannot distinguish between the live hypotheses, the next change
+  is diagnostic instrumentation. Do not spend a second product-fix cycle
+  guessing at a silent result.
+- After two consecutive cycles produce no new evidence, or roughly one hour
+  passes without a new falsifiable result, stop the loop. Audit the process tree
+  and hung tools, attached observers, artifact identity, exact target runtime,
+  and whether the gate owner still considers the gate release-blocking. Do not
+  run a third cycle with the same shape.
+- Separate the functional release bar from the evidence bar at planning time.
+  When the functional bar passes but an evidence gate is expensive, state its
+  time/cost and deferral risk to the operator; record any answer as a dated
+  waiver plus an owned backlog task.
+- Before trusting a benchmark, record the exact artifact/build mode and runtime,
+  close observers, and quarantine the machine. If a result is surprising,
+  repeat the unchanged artifact after cleaning the environment before changing
+  product code.
+- End every cycle with a task-board activity entry containing the result,
+  commit/run identifier, and next hypothesis. A handoff should pass conclusions
+  and decision-ready evidence, not merely a large dirty worktree.
+
 `docs/adr/` holds the numbered decision records behind the current
 architecture — soak-exit attribution (0001), warmed-scroll root cause (0002),
 uninstall receipt-parent cleanup (0003), the v3 release-scope two-bar model
