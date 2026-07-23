@@ -58,10 +58,10 @@ Bare `sd300` and all established TUI modes never create or launch a tray item. G
 - [x] Disabling close-to-tray makes X terminate the GUI and tray cleanly.
 - [ ] Windows and macOS receive a bounded live tooltip; Linux remains explicitly tray-unavailable.
 - [x] Bare and mode-specific TUI launches never create the GUI process or tray item.
-- [ ] The combined #ctt/#n7k candidate passes GUI tests, strict checks, Windows runtime acceptance, package manifests, and next-patch update qualification.
+- [x] The combined #ctt/#n7k candidate passes GUI tests, strict checks, Windows runtime acceptance, package manifests, and next-patch update qualification.
 
 ## Status
-ACTIVE — `gui.close_to_tray` is implemented with an additive default of true, GUI tray presence defaults on, and the startup-effective tray state remains distinct from the persisted next-launch preference. The staged v3.1.2 Windows candidate passed both real close paths: default X kept the process alive, singleton Open restored the hidden window, and the opt-out made X terminate it. The release CLI help/snapshot routes launched no GUI process, programmatic tray Open/Quit mapping remains green, and PR #7 passed the complete Windows/macOS/Linux native matrix. Manual Windows tray icon/hover/Quit confirmation and combined release-chain synthetic-prior update qualification remain open.
+ACTIVE — v3.1.2 is published with the GUI-only default tray session, configurable close-to-tray behavior, bounded Windows/macOS hardware tooltip, and unchanged tray-free TUI contract. Local Windows close/hide/reopen/opt-out paths, hosted Windows synthetic-prior update/uninstall, macOS Intel/Apple Silicon package installation, Linux tray-unavailable packaging, and final public qualification all passed. The sole remaining acceptance item is the operator-visible Windows notification-area confirmation of the live tooltip and tray Quit action.
 
 ## Activity
 - 2026-07-23 01:56 — created as a new Active next-patch requirement and explicitly coupled to #n7k after the operator required configurable close-to-tray persistence plus live hardware hover information (agent: codex)
@@ -73,3 +73,4 @@ ACTIVE — `gui.close_to_tray` is implemented with an additive default of true, 
 - 2026-07-23 05:23 — release CLI help and snapshot commands left the GUI process count unchanged at zero, while Native tests continued to prove `app.open` and `app.quit` dispatch; the TUI remains tray-free (agent: codex)
 - 2026-07-23 05:36 — hosted Windows and both macOS Native GUI targets passed the first PR matrix, including the macOS status-item runtime seam; a shared Linux analysis-only libc declaration was corrected and locally revalidated before rerunning the matrix (agent: codex)
 - 2026-07-23 03:54 — replacement PR #7 tied the rerun to corrected commit `e44430a`; CI run 29991988139 passed Windows native, both macOS native, all three Linux native, core, security, and cargo-dist lanes. Hosted update/uninstall qualification and the operator-visible Windows tray hover/Quit check remain release gates (agent: codex)
+- 2026-07-23 05:02 — v3.1.2 release chain passed on `1c25c06`: Windows same-channel synthetic-prior update/uninstall, macOS Intel/Apple Silicon install/exercise, all Linux packages, public artifact verification, crates.io publication, and latest GitHub Release promotion. Only the manual Windows notification-area glyph/hover/Quit observation remains open (agent: codex)
