@@ -13,6 +13,7 @@
 ## Active
 
 ## Done
+- [ ] **Release-workflow hygiene: skip cleanly on post-release same-version main pushes** - v3.1.1 releasing (eba3195). Refined release.yml source-check so an already-fully-published version whose main source commit differs from its immutable tag SKIPS deploy cleanly (green) instead of failing; guard still fires on real deploy-path conflicts (fresh version with a conflicting tag, or crate-published/release-missing repair from the wrong commit). All branches simulated before shipping. Documented as a warn-and-investigate note in AGENTS.md; ships the v3.1.0 post-release docs (ADRs 0004/0005, README pass, gui-engine testing-doc fix). Verifying public bytes (ms #v3n)
 - [x] **Add safe in-app and tray-driven updates** - PUBLIC as v3.1.0 2026-07-23 00:25 UTC (merge 2b4c9a5, PR #5): Settings/tray "Update now" spawns the installed CLI as a detached coordinator running the existing owner-preserving transaction; hidden --relaunch-gui reopens only after success; architecture committed in ADR 0005. Crate live (`cargo install tr300-tui --version 3.1.0` -> sd300 3.1.0), release promoted to latest with 59 assets + SHA-256 sidecars + SPDX SBOM, `gh attestation verify` returns two SLSA attestations bound to 2b4c9a5. Carried the two post-release fixes (sidebar label, crate convergence poll) (done 2026-07-23) (ms #v3n) #giu
   - [x] Implement the update trigger in settings and tray with a detached engine-spawned coordinator
   - [x] Add the hidden CLI relaunch flag gated to successful transactions
