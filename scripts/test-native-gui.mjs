@@ -47,7 +47,7 @@ mkdirSync(appStage, { recursive: true });
 for (const name of ["build.zig", "app.zon", "README.md"]) {
   copyRequired(resolve(guiRoot, name), resolve(appStage, name));
 }
-for (const name of ["src", "assets", "platform"]) {
+for (const name of ["src", "assets", "platform", "tools"]) {
   copyRequired(resolve(guiRoot, name), resolve(appStage, name));
 }
 copyRequired(sdkRoot, sdkStage);
@@ -67,7 +67,7 @@ writeFileSync(resolve(appStage, "build.zig.zon"), `.{
     .dependencies = .{
         .native_sdk = .{ .path = "../sdk" },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "platform", "app.zon", "README.md" },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "platform", "tools", "app.zon", "README.md" },
 }
 `, "utf8");
 

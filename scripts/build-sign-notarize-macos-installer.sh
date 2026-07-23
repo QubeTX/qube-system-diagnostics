@@ -202,6 +202,19 @@ app_bundle="${work_dir}/SD-300.app"
 app_executable="${app_bundle}/Contents/MacOS/sd300-gui"
 app_engine="${app_bundle}/Contents/MacOS/libsd300_engine.dylib"
 [[ -d $app_bundle && -f $app_executable ]] || { echo 'Native SDK packager did not produce the expected app bundle' >&2; exit 1; }
+app_icon="${app_bundle}/Contents/Resources/AppIcon.icns"
+runtime_app_icon="${app_bundle}/Contents/Resources/assets/app-icon.png"
+tray_template="${app_bundle}/Contents/Resources/assets/tray-icon-template.png"
+for required_identity_asset in "$app_icon" "$runtime_app_icon" "$tray_template"; do
+    [[ -s $required_identity_asset ]] || {
+        echo "macOS app bundle is missing an SD-300 identity asset: $required_identity_asset" >&2
+        exit 1
+    }
+done
+grep -Fq '<string>AppIcon.icns</string>' "${app_bundle}/Contents/Info.plist" || {
+    echo 'macOS app bundle does not declare the generated SD-300 application icon' >&2
+    exit 1
+}
 app_notices="${app_bundle}/Contents/Resources/licenses"
 mkdir -p "$app_notices"
 for notice in PRODUCT-LICENSE.md IBM-PLEX-OFL-1.1.txt NATIVE-SDK-APACHE-2.0.txt; do

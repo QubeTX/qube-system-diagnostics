@@ -63,6 +63,34 @@ function Invoke-GuiSelfTest([string]$Gui, [string]$Context) {
     }
 }
 
+function Assert-Sd300EmbeddedIcon([string]$Gui, [string]$Context) {
+    Add-Type -AssemblyName System.Drawing
+    $icon = [Drawing.Icon]::ExtractAssociatedIcon([IO.Path]::GetFullPath($Gui))
+    if ($null -eq $icon) {
+        throw "$Context executable exposes no associated application icon"
+    }
+    $bitmap = $icon.ToBitmap()
+    try {
+        $orangePixels = 0
+        for ($y = 0; $y -lt $bitmap.Height; $y++) {
+            for ($x = 0; $x -lt $bitmap.Width; $x++) {
+                $pixel = $bitmap.GetPixel($x, $y)
+                if ($pixel.A -gt 0 -and $pixel.R -ge 200 -and
+                    $pixel.G -ge 40 -and $pixel.G -le 140 -and $pixel.B -le 90) {
+                    $orangePixels++
+                }
+            }
+        }
+        if ($orangePixels -lt 8) {
+            throw "$Context associated icon does not contain the selected SD-300 orange geometry"
+        }
+    }
+    finally {
+        $bitmap.Dispose()
+        $icon.Dispose()
+    }
+}
+
 function Remove-MsiByName([string]$DisplayName) {
     foreach ($root in @(
         'Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
@@ -148,6 +176,20 @@ function Assert-GuiCompanion([string]$Root, [string]$Channel) {
         -not (Test-Path -LiteralPath $engine -PathType Leaf)) {
         throw "$Channel update did not install a complete GUI companion under $guiRoot"
     }
+    foreach ($asset in @(
+        'app-icon.png',
+        'app-icon.ico',
+        'tray-icon.ico',
+        'tray-icon-dark.ico',
+        'tray-icon-light.ico'
+    )) {
+        $assetPath = Join-Path $guiRoot "app\assets\$asset"
+        if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf) -or
+            (Get-Item -LiteralPath $assetPath).Length -eq 0) {
+            throw "$Channel update did not install required GUI identity asset $assetPath"
+        }
+    }
+    Assert-Sd300EmbeddedIcon $gui $Channel
     foreach ($notice in @(
         'PRODUCT-LICENSE.md',
         'IBM-PLEX-OFL-1.1.txt',
@@ -178,6 +220,10 @@ function Assert-GuiCompanion([string]$Root, [string]$Channel) {
             -not (Test-Path -LiteralPath $managedGuiShortcut -PathType Leaf) -or
             -not (Test-Path -LiteralPath $managedGuiRegistration)) {
             throw 'managed PowerShell update did not install its proven GUI ownership and discovery integrations'
+        }
+        $displayIcon = (Get-ItemProperty -LiteralPath $managedGuiRegistration).DisplayIcon
+        if ($displayIcon -ne (Join-Path $managedGuiRoot 'app\assets\app-icon.ico')) {
+            throw 'managed PowerShell update did not register the selected SD-300 icon for Installed Apps'
         }
     }
 }

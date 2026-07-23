@@ -1,6 +1,6 @@
 [package]
 name = "tr300-tui"
-version = "3.1.1"
+version = "3.1.2"
 edition = "2021"
 rust-version = "1.95"
 authors = ["Emmett S <hey@emmetts.dev>"]

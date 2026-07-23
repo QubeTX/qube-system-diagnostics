@@ -402,6 +402,8 @@ function Install-Sd300GuiPayload([string]$StagedRoot, [string]$CliBinary) {
     New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $Sd300Version -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name Publisher -Value 'Emmett S' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $root -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name DisplayIcon `
+        -Value (Join-Path $root 'app\assets\app-icon.ico') -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name UninstallString -Value ('"' + $CliBinary + '" uninstall') -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null

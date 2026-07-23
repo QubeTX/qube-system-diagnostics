@@ -1,8 +1,37 @@
 diff --git a/build/app.zig b/build/app.zig
-index 05facc3..8164d2f 100644
+index 05facc3..24c9f71 100644
 --- a/build/app.zig
 +++ b/build/app.zig
-@@ -669,7 +669,12 @@ pub fn addAppArtifacts(b: *std.Build, dep: *std.Build.Dependency, app_options: A
+@@ -623,10 +623,27 @@ pub fn addAppArtifacts(b: *std.Build, dep: *std.Build.Dependency, app_options: A
+         .target = target,
+         .optimize = optimize,
+     });
+-    analysis_mod.addImport("app", test_app_mod);
++    // Analyze a clean instance of the app module rather than the executable's
++    // linked module. Applications may attach executable-only inputs such as a
++    // Win32 .rc icon after createApp returns; importing that linked module into
++    // a COFF build-obj would ask Zig to combine multiple objects into one.
++    const analysis_app_mod = appModule(
++        b,
++        dep,
++        target,
++        app_optimize,
++        app_options,
++        options_mod,
++        ts_stage,
++    );
++    analysis_mod.addImport("app", analysis_app_mod);
+     const analysis_obj = b.addObject(.{
+         .name = b.fmt("{s}-analysis", .{app_options.name}),
+         .root_module = analysis_mod,
+         .use_llvm = useLlvmWorkaround(target),
+     });
++    // A full semantic-analysis object still resolves the app's platform FFI.
++    // Linux exposes dlopen and friends through libc, so declare the dependency
++    // even though this object is intentionally never linked or executed.
++    if (target.result.os.tag == .linux) analysis_mod.link_libc = true;
+     test_step.dependOn(&analysis_obj.step);
+@@ -669,7 +686,12 @@ pub fn addAppArtifacts(b: *std.Build, dep: *std.Build.Dependency, app_options: A
      });
      const contract_run = b.addRunArtifact(contract_exe);
      contract_run.setCwd(b.path(app_options.app_root));
@@ -93,12 +122,12 @@ index 06fcb48..767ae24 100644
 +    host->frame_timer = 0;
 +    return G_SOURCE_REMOVE;
  }
-
+ 
  static void on_resize(GtkWidget *widget, GParamSpec *pspec, gpointer data) {
 @@ -5515,6 +5523,7 @@ static char *native_sdk_bytes_to_string(const char *bytes, size_t len) {
      return bytes && len > 0 ? native_sdk_strndup(bytes, len) : NULL;
  }
-
+ 
 +#if GTK_CHECK_VERSION(4, 10, 0)
  static void native_sdk_open_dialog_done(GObject *source, GAsyncResult *result, gpointer data) {
      native_sdk_file_dialog_state_t *state = data;
@@ -235,12 +264,12 @@ index 06fcb48..767ae24 100644
 +    return written;
 +}
 +#endif
-
+ 
  typedef struct native_sdk_alert_state {
      GMainLoop *loop;
      int response;
  } native_sdk_alert_state_t;
-
+ 
 +#if GTK_CHECK_VERSION(4, 10, 0)
  static void native_sdk_alert_done(GObject *source, GAsyncResult *result, gpointer data) {
      native_sdk_alert_state_t *state = data;
@@ -298,14 +327,185 @@ index 06fcb48..767ae24 100644
 +    return 2;
 +}
 +#endif
+diff --git a/src/platform/macos/appkit_host.h b/src/platform/macos/appkit_host.h
+index 7f6d6ec..32393e1 100644
+--- a/src/platform/macos/appkit_host.h
++++ b/src/platform/macos/appkit_host.h
+@@ -651,6 +651,9 @@ void native_sdk_appkit_update_tray_menu(native_sdk_appkit_host_t *host, const ui
+  * the icon-only square well, or the app-name initial when there is no
+  * icon either — the same fallbacks as create. */
+ void native_sdk_appkit_update_tray_title(native_sdk_appkit_host_t *host, const char *title, size_t title_len);
++/* Replace the live status-item hover text without re-creating or
++ * reshuffling the menu-bar item. Empty clears the tooltip. */
++void native_sdk_appkit_update_tray_tooltip(native_sdk_appkit_host_t *host, const char *tooltip, size_t tooltip_len);
+ void native_sdk_appkit_remove_tray(native_sdk_appkit_host_t *host);
+ void native_sdk_appkit_set_tray_callback(native_sdk_appkit_host_t *host, native_sdk_appkit_tray_callback_t callback, void *context);
+ 
+diff --git a/src/platform/macos/appkit_host.m b/src/platform/macos/appkit_host.m
+index e725386..107fe63 100644
+--- a/src/platform/macos/appkit_host.m
++++ b/src/platform/macos/appkit_host.m
+@@ -11021,6 +11021,16 @@ void native_sdk_appkit_update_tray_title(native_sdk_appkit_host_t *host, const c
+     }
+ }
+ 
++void native_sdk_appkit_update_tray_tooltip(native_sdk_appkit_host_t *host, const char *tooltip, size_t tooltip_len) {
++    NativeSdkAppKitHost *object = (__bridge NativeSdkAppKitHost *)host;
++    @autoreleasepool {
++        if (!object.statusItem) return;
++        object.statusItem.button.toolTip = tooltip && tooltip_len > 0
++            ? ([[NSString alloc] initWithBytes:tooltip length:tooltip_len encoding:NSUTF8StringEncoding] ?: @"")
++            : nil;
++    }
++}
++
+ void native_sdk_appkit_remove_tray(native_sdk_appkit_host_t *host) {
+     NativeSdkAppKitHost *object = (__bridge NativeSdkAppKitHost *)host;
+     if (object.statusItem) {
+diff --git a/src/platform/macos/root.zig b/src/platform/macos/root.zig
+index d79e639..ce8fc8b 100644
+--- a/src/platform/macos/root.zig
++++ b/src/platform/macos/root.zig
+@@ -345,6 +345,7 @@ extern fn native_sdk_appkit_show_message_dialog(host: *AppKitHost, opts: *const
+ extern fn native_sdk_appkit_create_tray(host: *AppKitHost, icon_path: [*]const u8, icon_path_len: usize, title: [*]const u8, title_len: usize, tooltip: [*]const u8, tooltip_len: usize) void;
+ extern fn native_sdk_appkit_update_tray_menu(host: *AppKitHost, item_ids: [*]const u32, labels: [*]const [*]const u8, label_lens: [*]const usize, separators: [*]const c_int, enabled_flags: [*]const c_int, count: usize) void;
+ extern fn native_sdk_appkit_update_tray_title(host: *AppKitHost, title: [*]const u8, title_len: usize) void;
++extern fn native_sdk_appkit_update_tray_tooltip(host: *AppKitHost, tooltip: [*]const u8, tooltip_len: usize) void;
+ extern fn native_sdk_appkit_remove_tray(host: *AppKitHost) void;
+ extern fn native_sdk_appkit_set_tray_callback(host: *AppKitHost, callback: AppKitTrayCallback, context: ?*anyopaque) void;
+ 
+@@ -627,6 +628,7 @@ pub const MacPlatform = struct {
+                 .create_tray_fn = createTray,
+                 .update_tray_menu_fn = updateTrayMenu,
+                 .update_tray_title_fn = updateTrayTitle,
++                .update_tray_tooltip_fn = updateTrayTooltip,
+                 .remove_tray_fn = removeTray,
+                 .configure_security_policy_fn = configureSecurityPolicy,
+                 .configure_menus_fn = configureMenus,
+@@ -2125,6 +2127,11 @@ fn updateTrayTitle(context: ?*anyopaque, title: []const u8) anyerror!void {
+     native_sdk_appkit_update_tray_title(self.host, title.ptr, title.len);
+ }
+ 
++fn updateTrayTooltip(context: ?*anyopaque, tooltip: []const u8) anyerror!void {
++    const self: *MacPlatform = @ptrCast(@alignCast(context.?));
++    native_sdk_appkit_update_tray_tooltip(self.host, tooltip.ptr, tooltip.len);
++}
++
+ fn removeTray(context: ?*anyopaque) anyerror!void {
+     const self: *MacPlatform = @ptrCast(@alignCast(context.?));
+     native_sdk_appkit_remove_tray(self.host);
+diff --git a/src/platform/null_platform.zig b/src/platform/null_platform.zig
+index 7004256..4bc2604 100644
+--- a/src/platform/null_platform.zig
++++ b/src/platform/null_platform.zig
+@@ -414,6 +414,7 @@ pub const NullPlatform = struct {
+     tray_create_count: usize = 0,
+     tray_update_count: usize = 0,
+     tray_title_update_count: usize = 0,
++    tray_tooltip_update_count: usize = 0,
+     tray_remove_count: usize = 0,
+     window_event_window_id: WindowId = 0,
+     window_event_name: [max_window_event_name_bytes]u8 = undefined,
+@@ -683,6 +684,7 @@ pub const NullPlatform = struct {
+                 .create_tray_fn = createTray,
+                 .update_tray_menu_fn = updateTrayMenu,
+                 .update_tray_title_fn = updateTrayTitle,
++                .update_tray_tooltip_fn = updateTrayTooltip,
+                 .remove_tray_fn = removeTray,
+                 .open_external_url_fn = openExternalUrl,
+                 .reveal_path_fn = revealPath,
+@@ -1327,6 +1329,13 @@ pub const NullPlatform = struct {
+         self.tray_title_update_count += 1;
+     }
+ 
++    fn updateTrayTooltip(context: ?*anyopaque, tooltip: []const u8) anyerror!void {
++        const self: *NullPlatform = @ptrCast(@alignCast(context.?));
++        self.tray_tooltip = undefined;
++        self.tray_tooltip_len = (try copyInto(&self.tray_tooltip, tooltip)).len;
++        self.tray_tooltip_update_count += 1;
++    }
++
+     fn removeTray(context: ?*anyopaque) anyerror!void {
+         const self: *NullPlatform = @ptrCast(@alignCast(context.?));
+         self.tray_item_count = 0;
+@@ -2378,6 +2387,10 @@ pub const NullPlatform = struct {
+         return self.tray_title_update_count;
+     }
+ 
++    pub fn trayTooltipUpdateCount(self: *const NullPlatform) usize {
++        return self.tray_tooltip_update_count;
++    }
++
+     pub fn trayRemoveCount(self: *const NullPlatform) usize {
+         return self.tray_remove_count;
+     }
+diff --git a/src/platform/types.zig b/src/platform/types.zig
+index 8944b82..569cb1d 100644
+--- a/src/platform/types.zig
++++ b/src/platform/types.zig
+@@ -2182,6 +2182,7 @@ pub const PlatformServices = struct {
+     create_tray_fn: ?*const fn (context: ?*anyopaque, options: TrayOptions) anyerror!void = null,
+     update_tray_menu_fn: ?*const fn (context: ?*anyopaque, items: []const TrayMenuItem) anyerror!void = null,
+     update_tray_title_fn: ?*const fn (context: ?*anyopaque, title: []const u8) anyerror!void = null,
++    update_tray_tooltip_fn: ?*const fn (context: ?*anyopaque, tooltip: []const u8) anyerror!void = null,
+     remove_tray_fn: ?*const fn (context: ?*anyopaque) anyerror!void = null,
+     configure_security_policy_fn: ?*const fn (context: ?*anyopaque, policy: security.Policy) anyerror!void = null,
+     configure_menus_fn: ?*const fn (context: ?*anyopaque, menus: []const Menu) anyerror!void = null,
+@@ -2637,6 +2638,13 @@ pub const PlatformServices = struct {
+         return title_fn(self.context, title);
+     }
+ 
++    /// Replace the live status-item hover text without re-creating the
++    /// item. The platform copies the bounded UTF-8 slice before return.
++    pub fn updateTrayTooltip(self: PlatformServices, tooltip: []const u8) anyerror!void {
++        const tooltip_fn = self.update_tray_tooltip_fn orelse return error.UnsupportedService;
++        return tooltip_fn(self.context, tooltip);
++    }
++
+     pub fn removeTray(self: PlatformServices) anyerror!void {
+         const remove_fn = self.remove_tray_fn orelse return error.UnsupportedService;
+         return remove_fn(self.context);
+diff --git a/src/platform/windows/root.zig b/src/platform/windows/root.zig
+index 535d89d..02eabf9 100644
+--- a/src/platform/windows/root.zig
++++ b/src/platform/windows/root.zig
+@@ -163,6 +163,7 @@ extern fn native_sdk_windows_show_message_dialog(host: *WindowsHost, opts: *cons
+ extern fn native_sdk_windows_show_notification(host: *WindowsHost, title: [*]const u8, title_len: usize, subtitle: [*]const u8, subtitle_len: usize, body: [*]const u8, body_len: usize) c_int;
+ extern fn native_sdk_windows_create_tray(host: *WindowsHost, icon_path: [*]const u8, icon_path_len: usize, tooltip: [*]const u8, tooltip_len: usize) c_int;
+ extern fn native_sdk_windows_update_tray_menu(host: *WindowsHost, item_ids: [*]const u32, labels: [*]const [*]const u8, label_lens: [*]const usize, separators: [*]const c_int, enabled_flags: [*]const c_int, count: usize) c_int;
++extern fn native_sdk_windows_update_tray_tooltip(host: *WindowsHost, tooltip: [*]const u8, tooltip_len: usize) c_int;
+ extern fn native_sdk_windows_remove_tray(host: *WindowsHost) void;
+ extern fn native_sdk_windows_add_recent_document(host: *WindowsHost, path: [*]const u8, path_len: usize) c_int;
+ extern fn native_sdk_windows_clear_recent_documents(host: *WindowsHost) c_int;
+@@ -338,6 +339,7 @@ pub const WindowsPlatform = struct {
+                 .show_notification_fn = showNotification,
+                 .create_tray_fn = createTray,
+                 .update_tray_menu_fn = updateTrayMenu,
++                .update_tray_tooltip_fn = updateTrayTooltip,
+                 .remove_tray_fn = removeTray,
+                 .open_external_url_fn = openExternalUrl,
+                 .reveal_path_fn = revealPath,
+@@ -1150,6 +1152,12 @@ fn updateTrayMenu(context: ?*anyopaque, items: []const platform_mod.TrayMenuItem
+     if (native_sdk_windows_update_tray_menu(self.host, &ids, &labels, &label_lens, &separators, &enabled_flags, count) == 0) return error.UnsupportedService;
+ }
+ 
++fn updateTrayTooltip(context: ?*anyopaque, tooltip: []const u8) anyerror!void {
++    const self: *WindowsPlatform = @ptrCast(@alignCast(context.?));
++    if (self.web_engine != .system) return error.UnsupportedService;
++    if (native_sdk_windows_update_tray_tooltip(self.host, tooltip.ptr, tooltip.len) == 0) return error.UnsupportedService;
++}
++
+ fn removeTray(context: ?*anyopaque) anyerror!void {
+     const self: *WindowsPlatform = @ptrCast(@alignCast(context.?));
+     if (self.web_engine != .system) return error.UnsupportedService;
 diff --git a/src/platform/windows/webview2_host.cpp b/src/platform/windows/webview2_host.cpp
-index 5ad2932..e8a76bc 100644
+index 5ad2932..9e84877 100644
 --- a/src/platform/windows/webview2_host.cpp
 +++ b/src/platform/windows/webview2_host.cpp
 @@ -369,6 +369,20 @@ struct ChildWebView {
  #endif
  };
-
+ 
 +struct GpuDibSurface {
 +    HDC dc = nullptr;
 +    HBITMAP bitmap = nullptr;
@@ -331,9 +531,87 @@ index 5ad2932..e8a76bc 100644
      int gpu_buf_width = 0;
      int gpu_buf_height = 0;
      /* ONE frame-event scheduler per surface (the macOS design): every
-@@ -2494,13 +2509,30 @@ static void gpuSurfaceScheduleFrameEmission(Host *host, NativeView &view) {
+@@ -561,6 +576,10 @@ struct Host {
+     std::string window_title;
+     std::string bundle_id;
+     std::string icon_path;
++    HICON app_icon_large = nullptr;
++    HICON app_icon_small = nullptr;
++    bool destroy_app_icon_large = false;
++    bool destroy_app_icon_small = false;
+     EventCallback callback = nullptr;
+     void *callback_context = nullptr;
+     BridgeCallback bridge_callback = nullptr;
+@@ -576,6 +595,8 @@ struct Host {
+     std::vector<Menu> menus;
+     std::map<uint32_t, std::string> menu_commands;
+     std::vector<TrayItem> tray_items;
++    std::string tray_icon_path;
++    std::string tray_tooltip;
+     int external_link_action = 0;
+     bool app_active = false;
+     bool notification_icon_added = false;
+@@ -596,6 +617,7 @@ struct Host {
+ };
+ 
+ static std::string webViewKey(uint64_t window_id, const std::string &label);
++static bool windowsSystemUsesDarkTheme();
+ 
+ static std::string slice(const char *bytes, size_t len) {
+     return bytes && len > 0 ? std::string(bytes, len) : std::string();
+@@ -675,20 +697,44 @@ static NOTIFYICONDATAW notificationIconData(Host *host) {
+     return data;
  }
-
+ 
+-static HICON loadNotificationIcon(Host *host, const std::string &icon_path, bool *destroy_icon) {
++static HICON loadIconAtSize(Host *host, const std::string &icon_path, int width, int height, bool *destroy_icon) {
+     *destroy_icon = false;
+-    std::string path = !icon_path.empty() ? icon_path : (host ? host->icon_path : std::string());
+-    if (!path.empty()) {
+-        std::wstring wide_path = widen(path);
+-        HICON icon = reinterpret_cast<HICON>(LoadImageW(nullptr, wide_path.c_str(), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE));
++    if (!icon_path.empty()) {
++        std::wstring wide_path = widen(icon_path);
++        HICON icon = reinterpret_cast<HICON>(LoadImageW(nullptr, wide_path.c_str(), IMAGE_ICON, width, height, LR_LOADFROMFILE | LR_DEFAULTCOLOR));
+         if (icon) {
+             *destroy_icon = true;
+             return icon;
+         }
+     }
++    if (host && host->instance) {
++        HICON resource_icon = reinterpret_cast<HICON>(LoadImageW(host->instance, MAKEINTRESOURCEW(101), IMAGE_ICON, width, height, LR_DEFAULTCOLOR));
++        if (resource_icon) {
++            *destroy_icon = true;
++            return resource_icon;
++        }
++    }
+     return LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
+ }
+ 
++static std::string themedTrayIconPath(const std::string &icon_path) {
++    if (icon_path.size() < 4 || icon_path.substr(icon_path.size() - 4) != ".ico") return icon_path;
++    const std::string stem = icon_path.substr(0, icon_path.size() - 4);
++    const std::string variant = stem + (windowsSystemUsesDarkTheme() ? "-light.ico" : "-dark.ico");
++    const DWORD attrs = GetFileAttributesW(widen(variant).c_str());
++    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0 ? variant : icon_path;
++}
++
++static HICON loadNotificationIcon(Host *host, const std::string &icon_path, bool *destroy_icon) {
++    const std::string path = themedTrayIconPath(!icon_path.empty() ? icon_path : (host ? host->icon_path : std::string()));
++    HICON icon = loadIconAtSize(host, path, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), destroy_icon);
++    if (icon) return icon;
++    *destroy_icon = false;
++    return host && host->app_icon_small
++        ? host->app_icon_small
++        : LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
++}
++
+ static bool setNotificationIcon(Host *host, const std::string &icon_path, const std::string &tooltip, bool update_existing) {
+     if (!host) return false;
+     if (host->notification_icon_added && !update_existing) return true;
+@@ -2494,13 +2540,30 @@ static void gpuSurfaceScheduleFrameEmission(Host *host, NativeView &view) {
+ }
+ 
  static void paintGpuSurface(NativeView &view, HWND hwnd, HDC dc) {
 -    if (view.gpu_bgra.empty() || view.gpu_buf_width <= 0 || view.gpu_buf_height <= 0) return;
 +    if ((!view.gpu_dib || !view.gpu_dib->dc) && view.gpu_bgra.empty()) return;
@@ -343,7 +621,7 @@ index 5ad2932..e8a76bc 100644
      const int client_width = rect.right - rect.left;
      const int client_height = rect.bottom - rect.top;
      if (client_width <= 0 || client_height <= 0) return;
-
+ 
 +    /* Keep the decoded frame selected into a persistent memory DC. This
 +     * makes steady-state paints a device-to-device blit instead of asking
 +     * GDI to interpret and upload the full DIB byte buffer on every
@@ -363,7 +641,7 @@ index 5ad2932..e8a76bc 100644
      BITMAPINFO info = {};
      info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
      info.bmiHeader.biWidth = view.gpu_buf_width;
-@@ -2683,7 +2715,31 @@ static LRESULT CALLBACK gpuSurfaceProc(HWND hwnd, UINT message, WPARAM wparam, L
+@@ -2683,7 +2746,31 @@ static LRESULT CALLBACK gpuSurfaceProc(HWND hwnd, UINT message, WPARAM wparam, L
              break;
          case WM_MOUSEWHEEL:
          case WM_MOUSEHWHEEL: {
@@ -396,7 +674,7 @@ index 5ad2932..e8a76bc 100644
              ScreenToClient(hwnd, &point);
              const double x = (double)point.x / scale;
              const double y = (double)point.y / scale;
-@@ -2693,7 +2749,7 @@ static LRESULT CALLBACK gpuSurfaceProc(HWND hwnd, UINT message, WPARAM wparam, L
+@@ -2693,7 +2780,7 @@ static LRESULT CALLBACK gpuSurfaceProc(HWND hwnd, UINT message, WPARAM wparam, L
               * host uses; forward wheel rotation (positive Win32 delta) means
               * scroll up, which the shared input semantics express as a
               * negative delta_y. */
@@ -405,7 +683,69 @@ index 5ad2932..e8a76bc 100644
              const double delta_x = message == WM_MOUSEHWHEEL ? delta : 0;
              const double delta_y = message == WM_MOUSEWHEEL ? -delta : 0;
              emitGpuSurfaceInput(host, *view, kGpuInputScroll, x, y, 0, delta_x, delta_y, "", "", gpuModifierFlags());
-@@ -5072,7 +5128,13 @@ static bool createNativeWindow(Host *host, Window &window) {
+@@ -4517,6 +4604,29 @@ static bool windowsAppsUseDarkTheme() {
+     return dark;
+ }
+ 
++/* The taskbar/notification area follows SystemUsesLightTheme, which may
++ * deliberately differ from the app theme. A dark taskbar needs the white
++ * monochrome tray companion; a light taskbar needs the black one. */
++static bool windowsSystemUsesDarkTheme() {
++    HMODULE advapi = LoadLibraryW(L"advapi32.dll");
++    if (!advapi) return false;
++    using RegGetValueWFn = LSTATUS(WINAPI *)(HKEY, LPCWSTR, LPCWSTR, DWORD, LPDWORD, PVOID, LPDWORD);
++    auto reg_get_value = reinterpret_cast<RegGetValueWFn>(
++        reinterpret_cast<void *>(GetProcAddress(advapi, "RegGetValueW")));
++    bool dark = false;
++    if (reg_get_value) {
++        DWORD value = 1;
++        DWORD size = sizeof(value);
++        if (reg_get_value(HKEY_CURRENT_USER,
++                          L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
++                          L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size) == ERROR_SUCCESS) {
++            dark = value == 0;
++        }
++    }
++    FreeLibrary(advapi);
++    return dark;
++}
++
+ /* Standard-chrome titlebars follow the OS app color scheme: the
+  * immersive-dark attribute flips the DWM caption to its dark palette,
+  * so an app rendering the dark theme (apps follow the OS scheme through
+@@ -4930,7 +5040,12 @@ static LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wparam, LPARA
+         case WM_SETTINGCHANGE:
+         case WM_THEMECHANGED:
+         case WM_SYSCOLORCHANGE:
+-            if (host) emitAppearanceIfChanged(host, false);
++            if (host) {
++                emitAppearanceIfChanged(host, false);
++                if (host->tray_active) {
++                    setNotificationIcon(host, host->tray_icon_path, host->tray_tooltip, true);
++                }
++            }
+             break;
+         case WM_CLOSE:
+             /* close_policy .hide: the user's close (caption X, Alt+F4)
+@@ -4995,6 +5110,8 @@ static ATOM registerClass(Host *host) {
+     wc.hInstance = host->instance;
+     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
++    wc.hIcon = host->app_icon_large;
++    wc.hIconSm = host->app_icon_small;
+     wc.lpszClassName = L"NativeSdkWindowsHost";
+     return RegisterClassExW(&wc);
+ }
+@@ -5056,6 +5173,8 @@ static bool createNativeWindow(Host *host, Window &window) {
+         host->instance,
+         host);
+     if (!hwnd) return false;
++    if (host->app_icon_large) SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(host->app_icon_large));
++    if (host->app_icon_small) SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(host->app_icon_small));
+     DragAcceptFiles(hwnd, TRUE);
+     window.hwnd = hwnd;
+     applyMenusToWindow(host, window);
+@@ -5072,7 +5191,13 @@ static bool createNativeWindow(Host *host, Window &window) {
      }
      ShowWindow(hwnd, SW_SHOW);
      UpdateWindow(hwnd);
@@ -419,10 +759,29 @@ index 5ad2932..e8a76bc 100644
 +    PostMessageW(hwnd, kRequestFrameMessage, 0, 0);
      return true;
  }
-
-@@ -5876,12 +5938,6 @@ int native_sdk_windows_note_gpu_surface_input(Host *host, uint64_t window_id, co
+ 
+@@ -5108,6 +5233,8 @@ Host *native_sdk_windows_create(const char *app_name, size_t app_name_len, const
+     host->window_title = slice(window_title, window_title_len);
+     host->bundle_id = slice(bundle_id, bundle_id_len);
+     host->icon_path = slice(icon_path, icon_path_len);
++    host->app_icon_large = loadIconAtSize(host, host->icon_path, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), &host->destroy_app_icon_large);
++    host->app_icon_small = loadIconAtSize(host, host->icon_path, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), &host->destroy_app_icon_small);
+     Window window;
+     window.id = 1;
+     window.label = slice(window_label, window_label_len);
+@@ -5147,6 +5274,9 @@ void native_sdk_windows_destroy(Host *host) {
+     audioReleaseSession(host, true);
+     removeNotificationIcon(host);
+     destroyAllWindows(host);
++    UnregisterClassW(L"NativeSdkWindowsHost", host->instance);
++    if (host->destroy_app_icon_large && host->app_icon_large) DestroyIcon(host->app_icon_large);
++    if (host->destroy_app_icon_small && host->app_icon_small) DestroyIcon(host->app_icon_small);
+     const bool com_initialized = host->com_initialized;
+     delete host;
+     if (com_initialized) CoUninitialize();
+@@ -5876,12 +6006,6 @@ int native_sdk_windows_note_gpu_surface_input(Host *host, uint64_t window_id, co
  }
-
+ 
  int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id, const char *label, size_t label_len, size_t width, size_t height, double scale, int has_dirty_rect, double dirty_x, double dirty_y, double dirty_width, double dirty_height, const uint8_t *rgba8, size_t rgba8_len) {
 -    (void)scale;
 -    (void)has_dirty_rect;
@@ -433,7 +792,7 @@ index 5ad2932..e8a76bc 100644
      if (!host || label_len == 0) return 0;
      auto found = host->native_views.find(nativeViewKey(window_id, slice(label, label_len)));
      if (found == host->native_views.end() || found->second.kind != kViewGpuSurface || !found->second.hwnd) return 0;
-@@ -5898,15 +5954,73 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
+@@ -5898,15 +6022,73 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
       * the redirection surface's alpha is 0 — the app's pixels must read
       * as opaque there or the whole header band would vanish under DWM
       * chrome (only the punched button hole yields on purpose). */
@@ -516,10 +875,10 @@ index 5ad2932..e8a76bc 100644
      }
      view.gpu_buf_width = (int)width;
      view.gpu_buf_height = (int)height;
-@@ -5926,7 +6040,17 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
+@@ -5926,7 +6108,17 @@ int native_sdk_windows_present_gpu_surface_pixels(Host *host, uint64_t window_id
          view.gpu_sample_color = ((uint32_t)sa << 24) | ((uint32_t)sr << 16) | ((uint32_t)sg << 8) | (uint32_t)sb;
      }
-
+ 
 -    InvalidateRect(view.hwnd, nullptr, FALSE);
 +    if (partial_copy) {
 +        RECT dirty_pixels = {
@@ -535,12 +894,36 @@ index 5ad2932..e8a76bc 100644
      /* A present is the completion producer on the surface's single
       * frame-event scheduler: the completion event it arms is what
       * drives the runtime's frame loop (an armed animation presents,
+@@ -6203,11 +6395,23 @@ int native_sdk_windows_create_tray(Host *host, const char *icon_path, size_t ico
+     if (!host) return 0;
+     std::string icon = slice(icon_path, icon_path_len);
+     std::string tip = slice(tooltip, tooltip_len);
++    host->tray_icon_path = icon;
++    host->tray_tooltip = tip;
+     if (!setNotificationIcon(host, icon, tip, true)) return 0;
+     host->tray_active = true;
+     return 1;
+ }
+ 
++int native_sdk_windows_update_tray_tooltip(Host *host, const char *tooltip, size_t tooltip_len) {
++    if (!host || !host->tray_active) return 0;
++    host->tray_tooltip = slice(tooltip, tooltip_len);
++    NOTIFYICONDATAW data = notificationIconData(host);
++    if (!data.hWnd) return 0;
++    data.uFlags = NIF_TIP;
++    copyWideField(data.szTip, ARRAYSIZE(data.szTip), widen(host->tray_tooltip));
++    return Shell_NotifyIconW(NIM_MODIFY, &data) ? 1 : 0;
++}
++
+ int native_sdk_windows_update_tray_menu(Host *host, const uint32_t *item_ids, const char *const *labels, const size_t *label_lens, const int *separators, const int *enabled_flags, size_t count) {
+     if (!host || !host->tray_active) return 0;
+     host->tray_items.clear();
 diff --git a/src/primitives/canvas/reference.zig b/src/primitives/canvas/reference.zig
 index bbf819b..981199f 100644
 --- a/src/primitives/canvas/reference.zig
 +++ b/src/primitives/canvas/reference.zig
 @@ -84,6 +84,56 @@ const referenceDistanceToSegment = reference_paths.referenceDistanceToSegment;
-
+ 
  const max_reference_text_layout_lines: usize = 64;
  const max_reference_blur_kernel_samples: usize = 4096;
 +const reference_damage_union_fallback_ratio: f32 = 0.75;
@@ -593,13 +976,13 @@ index bbf819b..981199f 100644
 +        std.sort.pdq(geometry.RectF, self.rects[0..self.count], {}, referenceDamageRectLessThan);
 +    }
 +};
-
+ 
  pub const ReferenceImage = struct {
      id: ImageId,
 @@ -177,6 +227,11 @@ pub const ReferenceRenderSurface = struct {
          key: ReferenceRenderMemo.Key,
      };
-
+ 
 +    const GlyphMemoProbe = struct {
 +        memo: *ReferenceRenderMemo,
 +        key: ReferenceRenderMemo.Key,
@@ -611,7 +994,7 @@ index bbf819b..981199f 100644
 @@ -238,6 +293,127 @@ pub const ReferenceRenderSurface = struct {
          }
      }
-
+ 
 +    fn glyphMemoProbe(self: ReferenceRenderSurface, pixel_rect: ReferencePixelRect, params_hash: u64) ?GlyphMemoProbe {
 +        const memo = self.render_memo orelse return null;
 +        return .{
@@ -739,7 +1122,7 @@ index bbf819b..981199f 100644
 @@ -283,6 +459,204 @@ pub const ReferenceRenderSurface = struct {
          for (pass.commands) |command| try self.renderCommand(referenceScaleCommand(command, scale), scissor);
      }
-
+ 
 +    /// Repaint a retained pixel surface through several sparse damage
 +    /// regions without replaying the complete command list once per region.
 +    ///
@@ -958,7 +1341,7 @@ index bbf819b..981199f 100644
 @@ -358,6 +739,46 @@ pub const ReferenceRenderSurface = struct {
          self.memoStore(probe, pixel_rect);
      }
-
+ 
 +    /// Opaque rounded fills need coverage work only at their two row edges.
 +    /// Coverage-one pixels are exact replacement bytes, not blended output.
 +    fn fillRoundedOpaqueSolid(
@@ -1026,11 +1409,11 @@ index bbf819b..981199f 100644
          const total = command.transform.multiply(local);
 +        const mask_key = self.glyphMaskKey(face, glyph, total);
 +        if (self.glyphMaskReplay(mask_key, total, draw_bounds, value.color, command.opacity)) return true;
-
+ 
          var builder = vector.PathBuilder(reference_glyph_path_capacity){};
          face.glyphOutline(glyph, total, &builder) catch return false;
          if (builder.slice().len == 0) return true; // Space: nothing to ink.
-
+ 
 -        const pixel_rect = referencePixelRect(draw_bounds, self.width, self.height) orelse return true;
 +        const glyph_bounds = drawing_model.pathBounds(builder.slice()) orelse return true;
 +        const clipped_bounds = geometry.RectF.intersection(glyph_bounds.normalized(), draw_bounds.normalized());
@@ -1088,9 +1471,9 @@ index bbf819b..981199f 100644
 +        self.glyphMemoStore(memo_probe, pixel_rect);
          return true;
      }
-
+ 
 @@ -915,6 +1381,14 @@ pub const ReferenceRenderSurface = struct {
-
+ 
      fn blendPixel(self: ReferenceRenderSurface, x: usize, y: usize, color: Color, opacity: f32) void {
          const index = (y * self.width + x) * 4;
 +        if (opacity >= 1 and color.a >= 1) {
@@ -1124,7 +1507,7 @@ index bbf819b..981199f 100644
      opacity: f32,
      coverage_blend: CoverageBlend,
 +    coverage_capture: ?ReferenceCoverageCapture = null,
-
+ 
      pub fn pixel(self: *ReferenceCoverageSink, x: i32, y: i32, coverage: f32) void {
 +        if (self.coverage_capture) |capture| capture.write(x, y, coverage);
          if (x < 0 or y < 0) return;
@@ -1133,7 +1516,7 @@ index bbf819b..981199f 100644
 @@ -1000,6 +1484,22 @@ const ReferenceCoverageSink = struct {
      }
  };
-
+ 
 +const ReferenceCoverageCapture = struct {
 +    coverage: []f32,
 +    origin_x: i32,
@@ -1156,7 +1539,7 @@ index bbf819b..981199f 100644
 @@ -1047,6 +1547,80 @@ fn referenceMemoParamsHash(kind: u8, command: RenderCommand, value: anytype) u64
      return hasher.final();
  }
-
+ 
 +fn referenceStaticPrefixFingerprint(
 +    width: usize,
 +    height: usize,
@@ -1237,7 +1620,7 @@ index bbf819b..981199f 100644
 @@ -1124,6 +1698,93 @@ fn referenceScaleRect(rect: geometry.RectF, scale: f32) geometry.RectF {
      return geometry.RectF.init(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale);
  }
-
+ 
 +fn referenceCanonicalDamageRegions(
 +    pass: CanvasRenderPass,
 +    damage_rects: []const geometry.RectF,
@@ -1325,7 +1708,7 @@ index bbf819b..981199f 100644
 +    if (a.height != b.height) return a.height < b.height;
 +    return a.width < b.width;
 +}
-
+ 
  fn referencePixelCenter(x: usize, y: usize) geometry.PointF {
      return geometry.PointF.init(@as(f32, @floatFromInt(x)) + 0.5, @as(f32, @floatFromInt(y)) + 0.5);
 diff --git a/src/primitives/canvas/reference_memo.zig b/src/primitives/canvas/reference_memo.zig
@@ -1353,13 +1736,13 @@ index cca05e7..f3070d6 100644
 +    pub const max_glyph_mask_entries: usize = 2048;
 +    pub const max_glyph_mask_entry_bytes: usize = 512 * 1024;
 +    pub const max_glyph_mask_total_bytes: usize = 32 * 1024 * 1024;
-
+ 
      /// Everything a memoized command's output pixels are a pure function
      /// of. Two runs with equal keys produce equal bytes, so replaying
 @@ -78,14 +93,62 @@ pub const ReferenceRenderMemo = struct {
          stamp: u64 = 0,
      };
-
+ 
 +    /// Every input that can change glyph COVERAGE. Integer translation,
 +    /// text color, opacity, destination pixels, and surface dimensions are
 +    /// deliberately absent: they affect only where/how the retained mask is
@@ -1433,7 +1816,7 @@ index cca05e7..f3070d6 100644
 +    static_prefix_height: usize = 0,
 +    static_prefix_fingerprint: u64 = 0,
 +    static_prefix_valid: bool = false,
-
+ 
      pub fn init(allocator: std.mem.Allocator) ReferenceRenderMemo {
          return .{ .allocator = allocator };
 @@ -111,6 +183,22 @@ pub const ReferenceRenderMemo = struct {
@@ -1462,7 +1845,7 @@ index cca05e7..f3070d6 100644
 @@ -118,6 +206,38 @@ pub const ReferenceRenderMemo = struct {
          self.image_scale_total_bytes = 0;
      }
-
+ 
 +    pub fn findStaticPrefix(self: *const ReferenceRenderMemo, width: usize, height: usize, fingerprint: u64) ?[]const u8 {
 +        if (!self.static_prefix_valid or
 +            self.static_prefix_width != width or
@@ -1564,7 +1947,7 @@ index cca05e7..f3070d6 100644
 +            .source_hash = source_hasher.final(),
          };
      }
-
+ 
 @@ -169,8 +336,9 @@ pub const ReferenceRenderMemo = struct {
      /// recently used entry when full; returns null when the allocator
      /// cannot supply the buffer (the command simply stays unmemoized).
@@ -1597,7 +1980,7 @@ index cca05e7..f3070d6 100644
 @@ -192,6 +363,150 @@ pub const ReferenceRenderMemo = struct {
          return victim.pixels;
      }
-
+ 
 +    fn oldestEntry(self: *ReferenceRenderMemo) ?*Entry {
 +        var oldest: ?*Entry = null;
 +        for (&self.entries) |*entry| {
@@ -1752,7 +2135,7 @@ index 1e4fb9a..1968c74 100644
 @@ -489,6 +489,364 @@ test "reference renderer clears dirty rect on retained load" {
      try expectPixelRgba8(.{ 0, 0, 255, 255 }, surface, 3, 3);
  }
-
+ 
 +test "reference damage rendering matches union pixels and retains sparse gaps across scales" {
 +    const stops = [_]GradientStop{
 +        .{ .offset = 0, .color = Color.rgb8(7, 12, 18) },
@@ -2117,7 +2500,7 @@ index 1e4fb9a..1968c74 100644
 @@ -1462,6 +1820,66 @@ test "reference renderer draws proxy text runs" {
      try expectPixelRgba8(.{ 0, 0, 0, 255 }, surface, 1, 3);
  }
-
+ 
 +test "glyph coverage masks reuse raster across position color and background" {
 +    const width: usize = 128;
 +    const height: usize = 72;
@@ -2181,6 +2564,20 @@ index 1e4fb9a..1968c74 100644
  test "reference renderer advances proxy text by utf8 scalars" {
      const commands = [_]CanvasCommand{.{ .draw_text = .{
          .id = 1,
+diff --git a/src/runtime/bridge_permission_tests.zig b/src/runtime/bridge_permission_tests.zig
+index 76ba3e4..490866b 100644
+--- a/src/runtime/bridge_permission_tests.zig
++++ b/src/runtime/bridge_permission_tests.zig
+@@ -339,6 +339,9 @@ test "runtime validates native OS actions before platform dispatch" {
+     try harness.runtime.updateTrayMenu(&.{.{ .id = 3, .label = "Settings" }});
+     try std.testing.expectEqual(@as(usize, 2), harness.null_platform.trayUpdateCount());
+     try std.testing.expectEqualStrings("Settings", harness.null_platform.trayItems()[0].label);
++    try harness.runtime.updateTrayTooltip("CPU 12% · memory 43%");
++    try std.testing.expectEqualStrings("CPU 12% · memory 43%", harness.null_platform.lastTrayTooltip());
++    try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayTooltipUpdateCount());
+     try harness.runtime.removeTray();
+     try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayRemoveCount());
+ }
 diff --git a/src/runtime/canvas_frame.zig b/src/runtime/canvas_frame.zig
 index ed90a45..58a846c 100644
 --- a/src/runtime/canvas_frame.zig
@@ -2210,7 +2607,7 @@ index ed90a45..58a846c 100644
 @@ -1391,38 +1404,64 @@ const CanvasPacketPatchDirty = struct {
      rects: [canvas.max_canvas_frame_dirty_rects]geometry.RectF = undefined,
      rect_count: usize = 0,
-
+ 
 -    /// Fold `rect` in: union with the first intersecting cluster, a new
 -    /// cluster while slots remain, else the cluster whose union grows
 -    /// the least. `bounds` stays the union of everything added.
@@ -2282,7 +2679,7 @@ index ed90a45..58a846c 100644
 +        self.rect_count -= 1;
      }
  };
-
+ 
 +fn canvasPacketDirtyRectLessThan(_: void, a: geometry.RectF, b: geometry.RectF) bool {
 +    if (a.y != b.y) return a.y < b.y;
 +    if (a.x != b.x) return a.x < b.x;
@@ -2341,7 +2738,7 @@ index ec2aa23..5b65626 100644
 @@ -1069,11 +1071,29 @@ test "pixel presents adopt a dirty-refinement baseline only for opted-in hosts a
      try std.testing.expectEqualDeep(buildGrid.rectAt(13), toggled.dirty_bounds.?);
      try std.testing.expectEqualDeep(buildGrid.rectAt(13), harness.null_platform.gpu_surface_present_dirty_bounds.?);
-
+ 
 +    // Two far-apart changes retain two raster fragments but still cross the
 +    // platform boundary as ONE pixel present carrying their bounding union.
 +    // This pins the live CPU path's command-major damage renderer without
@@ -2371,7 +2768,7 @@ index ec2aa23..5b65626 100644
      try std.testing.expectEqual(@as(u8, 2), harness.null_platform.gpu_surface_packet_present_binary_load_action);
      try std.testing.expectEqual(platform.GpuPresentPacketMode.full, harness.runtime.views[0].gpu_present_packet_mode);
 @@ -1081,9 +1101,9 @@ test "pixel presents adopt a dirty-refinement baseline only for opted-in hosts a
-
+ 
      // The packet-adopted baseline behaves exactly as before: the next
      // one-command change rides a patch.
 -    rects[15].fill_rect.fill = .{ .color = canvas.Color.rgb8(22, 163, 74) };
@@ -2382,3 +2779,244 @@ index ec2aa23..5b65626 100644
      try std.testing.expectEqual(canvas.binary_packet_load_action_patch, harness.null_platform.gpu_surface_packet_present_binary_load_action);
      try std.testing.expectEqual(platform.GpuPresentPacketMode.patch, harness.runtime.views[0].gpu_present_packet_mode);
  }
+diff --git a/src/runtime/core.zig b/src/runtime/core.zig
+index 5f4aae7..5da81e8 100644
+--- a/src/runtime/core.zig
++++ b/src/runtime/core.zig
+@@ -205,6 +205,8 @@ pub const Runtime = struct {
+     tray_created: bool = false,
+     tray_title: []const u8 = "",
+     tray_title_storage: [platform.max_tray_title_bytes]u8 = undefined,
++    tray_tooltip: []const u8 = "",
++    tray_tooltip_storage: [platform.max_tray_tooltip_bytes]u8 = undefined,
+     /// Audio playback mirror for the automation snapshot, stamped by
+     /// the ui-app layer whenever a dispatch or effect drain may have
+     /// moved the effects channel's playback state. Like the tray, the
+@@ -693,6 +695,7 @@ pub const Runtime = struct {
+     pub const createTray = SystemServiceMethods.createTray;
+     pub const updateTrayMenu = SystemServiceMethods.updateTrayMenu;
+     pub const updateTrayTitle = SystemServiceMethods.updateTrayTitle;
++    pub const updateTrayTooltip = SystemServiceMethods.updateTrayTooltip;
+     pub const removeTray = SystemServiceMethods.removeTray;
+     const trayCommandNameForItem = SystemServiceMethods.trayCommandNameForItem;
+     const supportsFeatureFromJson = SystemServiceMethods.supportsFeatureFromJson;
+diff --git a/src/runtime/system_services.zig b/src/runtime/system_services.zig
+index 97c72ea..0c39fb6 100644
+--- a/src/runtime/system_services.zig
++++ b/src/runtime/system_services.zig
+@@ -26,6 +26,7 @@ const validateSaveDialogOptions = validation.validateSaveDialogOptions;
+ const validateTrayMenuItems = validation.validateTrayMenuItems;
+ const validateTrayOptions = validation.validateTrayOptions;
+ const validateTrayTitle = validation.validateTrayTitle;
++const validateTrayTooltip = validation.validateTrayTooltip;
+ 
+ pub fn RuntimeSystemServices(comptime Runtime: type) type {
+     return struct {
+@@ -113,6 +114,7 @@ pub fn RuntimeSystemServices(comptime Runtime: type) type {
+             try self.options.platform.services.createTray(options);
+             try storeTrayItems(self, options.items);
+             self.tray_title = try copyInto(&self.tray_title_storage, options.title);
++            self.tray_tooltip = try copyInto(&self.tray_tooltip_storage, options.tooltip);
+             self.tray_created = true;
+         }
+ 
+@@ -132,11 +134,18 @@ pub fn RuntimeSystemServices(comptime Runtime: type) type {
+             self.tray_title = try copyInto(&self.tray_title_storage, title);
+         }
+ 
++        pub fn updateTrayTooltip(self: *Runtime, tooltip: []const u8) anyerror!void {
++            try validateTrayTooltip(tooltip);
++            try self.options.platform.services.updateTrayTooltip(tooltip);
++            self.tray_tooltip = try copyInto(&self.tray_tooltip_storage, tooltip);
++        }
++
+         pub fn removeTray(self: *Runtime) anyerror!void {
+             try self.options.platform.services.removeTray();
+             self.tray_item_count = 0;
+             self.tray_created = false;
+             self.tray_title = "";
++            self.tray_tooltip = "";
+         }
+ 
+         pub fn trayItemExists(self: *const Runtime, item_id: platform.TrayItemId) bool {
+diff --git a/src/runtime/ui_app.zig b/src/runtime/ui_app.zig
+index d8cc52b..f91468b 100644
+--- a/src/runtime/ui_app.zig
++++ b/src/runtime/ui_app.zig
+@@ -238,6 +238,7 @@ pub fn UiAppWithFeatures(comptime ModelT: type, comptime MsgT: type, comptime fe
+         /// runtime and platform copy what they keep).
+         pub const StatusItemState = struct {
+             title: []const u8 = "",
++            tooltip: []const u8 = "",
+             items: []const platform.TrayMenuItem = &.{},
+         };
+ 
+@@ -248,6 +249,7 @@ pub fn UiAppWithFeatures(comptime ModelT: type, comptime MsgT: type, comptime fe
+         /// apply.
+         pub const StatusItemScratch = struct {
+             title_buffer: [platform.max_tray_title_bytes]u8 = undefined,
++            tooltip_buffer: [platform.max_tray_tooltip_bytes]u8 = undefined,
+             items: [platform.max_tray_items]platform.TrayMenuItem = undefined,
+         };
+ 
+@@ -844,9 +846,13 @@ pub fn UiAppWithFeatures(comptime ModelT: type, comptime MsgT: type, comptime fe
+         /// The platform reported no tray-title seam; stop retrying (menu
+         /// updates keep flowing).
+         tray_title_unsupported: bool = false,
++        /// The platform reported no live tooltip seam; stop retrying
++        /// while title/menu updates keep flowing.
++        tray_tooltip_unsupported: bool = false,
+         /// Hashes of the last APPLIED model-derived tray state, so
+         /// rebuilds only touch the platform when the output changed.
+         tray_title_hash: u64 = 0,
++        tray_tooltip_hash: u64 = 0,
+         tray_menu_hash: u64 = 0,
+         /// Scratch handed to `status_item_fn`; on the app struct so the
+         /// returned slices outlive the apply.
+@@ -2720,16 +2726,18 @@ pub fn UiAppWithFeatures(comptime ModelT: type, comptime MsgT: type, comptime fe
+             self.status_item_installed = true;
+             const static = self.options.status_item orelse StatusItemOptions{};
+             var title = static.title;
++            var tooltip = static.tooltip;
+             var items = static.items;
+             if (self.options.status_item_fn) |state_fn| {
+                 const state = state_fn(&self.model, &self.tray_scratch);
+                 title = state.title;
++                if (state.tooltip.len > 0) tooltip = state.tooltip;
+                 items = state.items;
+             }
+             runtime.createTray(.{
+                 .title = title,
+                 .icon_path = static.icon_path,
+-                .tooltip = static.tooltip,
++                .tooltip = tooltip,
+                 .items = items,
+             }) catch |err| {
+                 ui_app_log.warn("status item install failed: {s}", .{@errorName(err)});
+@@ -2737,6 +2745,7 @@ pub fn UiAppWithFeatures(comptime ModelT: type, comptime MsgT: type, comptime fe
+             };
+             self.tray_created = true;
+             self.tray_title_hash = hashTrayTitle(title);
++            self.tray_tooltip_hash = hashTrayTooltip(tooltip);
+             self.tray_menu_hash = hashTrayMenu(items);
+         }
+ 
+@@ -2764,6 +2773,21 @@ pub fn UiAppWithFeatures(comptime ModelT: type, comptime MsgT: type, comptime fe
+                 }
+             }
+ 
++            const tooltip_hash = hashTrayTooltip(state.tooltip);
++            if (state.tooltip.len > 0 and tooltip_hash != self.tray_tooltip_hash) {
++                self.tray_tooltip_hash = tooltip_hash;
++                if (!self.tray_tooltip_unsupported) {
++                    runtime.updateTrayTooltip(state.tooltip) catch |err| {
++                        if (err == error.UnsupportedService) {
++                            self.tray_tooltip_unsupported = true;
++                            ui_app_log.warn("status item tooltip updates unsupported on this platform: title and menu updates remain active", .{});
++                        } else {
++                            ui_app_log.warn("status item tooltip update failed: {s}", .{@errorName(err)});
++                        }
++                    };
++                }
++            }
++
+             const menu_hash = hashTrayMenu(state.items);
+             if (menu_hash != self.tray_menu_hash) {
+                 self.tray_menu_hash = menu_hash;
+@@ -3218,6 +3242,12 @@ pub fn UiAppWithFeatures(comptime ModelT: type, comptime MsgT: type, comptime fe
+             return hasher.final();
+         }
+ 
++        fn hashTrayTooltip(tooltip: []const u8) u64 {
++            var hasher = std.hash.Wyhash.init(0x7261795f74697073); // "ray_tips"
++            hasher.update(tooltip);
++            return hasher.final();
++        }
++
+         fn hashTrayMenu(items: []const platform.TrayMenuItem) u64 {
+             var hasher = std.hash.Wyhash.init(0x7261795f6d656e75); // "ray_menu"
+             hasher.update(std.mem.asBytes(&items.len));
+diff --git a/src/runtime/ui_app_tests.zig b/src/runtime/ui_app_tests.zig
+index f363c14..88359a9 100644
+--- a/src/runtime/ui_app_tests.zig
++++ b/src/runtime/ui_app_tests.zig
+@@ -3110,6 +3110,7 @@ fn trayStateCommand(name: []const u8) ?TrayStateMsg {
+ /// its issue.
+ fn trayStateStatusItem(model: *const TrayStateModel, scratch: *TrayStateApp.StatusItemScratch) TrayStateApp.StatusItemState {
+     const title = std.fmt.bufPrint(&scratch.title_buffer, "ZN {d}", .{model.open_count}) catch "ZN";
++    const tooltip = std.fmt.bufPrint(&scratch.tooltip_buffer, "{d} open issues", .{model.open_count}) catch "issue tracker";
+     scratch.items[0] = .{ .id = 1, .label = "Refresh", .command = "app.refresh" };
+     scratch.items[1] = .{ .separator = true };
+     const commands = [_][]const u8{ "issue.select.0", "issue.select.1" };
+@@ -3123,7 +3124,7 @@ fn trayStateStatusItem(model: *const TrayStateModel, scratch: *TrayStateApp.Stat
+             .enabled = model.selected_issue != index,
+         };
+     }
+-    return .{ .title = title, .items = scratch.items[0..4] };
++    return .{ .title = title, .tooltip = tooltip, .items = scratch.items[0..4] };
+ }
+ 
+ test "ui app status_item_fn drives the tray title and menu from the model" {
+@@ -3148,7 +3149,7 @@ test "ui app status_item_fn drives the tray title and menu from the model" {
+     try harness.start(app);
+ 
+     // The installing frame creates the tray FROM THE MODEL: derived
+-    // title, derived dropdown, static tooltip.
++    // title, tooltip, and dropdown.
+     const frame_event = zero_platform.GpuSurfaceFrameEvent{
+         .label = canvas_label,
+         .size = geometry.SizeF.init(400, 300),
+@@ -3160,18 +3161,21 @@ test "ui app status_item_fn drives the tray title and menu from the model" {
+     try harness.runtime.dispatchPlatformEvent(app, .{ .gpu_surface_frame = frame_event });
+     try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayCreateCount());
+     try std.testing.expectEqualStrings("ZN 3", harness.null_platform.lastTrayTitle());
+-    try std.testing.expectEqualStrings("issue tracker", harness.null_platform.lastTrayTooltip());
++    try std.testing.expectEqualStrings("3 open issues", harness.null_platform.lastTrayTooltip());
+     try std.testing.expectEqual(@as(usize, 4), harness.null_platform.trayItems().len);
+     try std.testing.expectEqualStrings("Fix crash on resize", harness.null_platform.trayItems()[2].label);
+     const updates_after_install = harness.null_platform.trayUpdateCount();
+     try std.testing.expectEqual(@as(usize, 0), harness.null_platform.trayTitleUpdateCount());
++    try std.testing.expectEqual(@as(usize, 0), harness.null_platform.trayTooltipUpdateCount());
+ 
+     // A model change that only affects the TITLE re-titles the live
+     // button without rebuilding the menu or re-creating the item.
+     try harness.runtime.dispatchPlatformEvent(app, .{ .tray_action = 1 });
+     try std.testing.expectEqual(@as(u32, 4), app_state.model.open_count);
+     try std.testing.expectEqualStrings("ZN 4", harness.null_platform.lastTrayTitle());
++    try std.testing.expectEqualStrings("4 open issues", harness.null_platform.lastTrayTooltip());
+     try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayTitleUpdateCount());
++    try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayTooltipUpdateCount());
+     try std.testing.expectEqual(updates_after_install, harness.null_platform.trayUpdateCount());
+     try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayCreateCount());
+ 
+@@ -3181,6 +3185,7 @@ test "ui app status_item_fn drives the tray title and menu from the model" {
+     try std.testing.expectEqual(@as(u32, 1), app_state.model.selected_issue);
+     try std.testing.expectEqual(updates_after_install + 1, harness.null_platform.trayUpdateCount());
+     try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayTitleUpdateCount());
++    try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayTooltipUpdateCount());
+     try std.testing.expect(!harness.null_platform.trayItems()[3].enabled);
+ 
+     // A rebuild whose tray output is unchanged touches nothing (the
+@@ -3188,6 +3193,7 @@ test "ui app status_item_fn drives the tray title and menu from the model" {
+     try harness.runtime.dispatchPlatformEvent(app, .{ .tray_action = 11 });
+     try std.testing.expectEqual(updates_after_install + 1, harness.null_platform.trayUpdateCount());
+     try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayTitleUpdateCount());
++    try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayTooltipUpdateCount());
+     try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayCreateCount());
+ }
+ 
+diff --git a/src/runtime/validation.zig b/src/runtime/validation.zig
+index d111f82..2074d24 100644
+--- a/src/runtime/validation.zig
++++ b/src/runtime/validation.zig
+@@ -127,6 +127,10 @@ pub fn validateTrayTitle(title: []const u8) !void {
+     try validateTrayField(title, platform.max_tray_title_bytes);
+ }
+ 
++pub fn validateTrayTooltip(tooltip: []const u8) !void {
++    try validateTrayField(tooltip, platform.max_tray_tooltip_bytes);
++}
++
+ pub fn validateTrayMenuItems(items: []const platform.TrayMenuItem) !void {
+     if (items.len > platform.max_tray_items) return error.InvalidTrayOptions;
+     for (items, 0..) |item, index| {

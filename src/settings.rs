@@ -51,6 +51,7 @@ pub struct GuiSettings {
     pub audience_mode: AudienceMode,
     pub temperature_unit: TemperatureUnit,
     pub tray_enabled: bool,
+    pub close_to_tray: bool,
     pub launch_at_login: bool,
     pub reduced_motion: bool,
     pub chart_density: ChartDensity,
@@ -62,7 +63,8 @@ impl Default for GuiSettings {
         Self {
             audience_mode: AudienceMode::User,
             temperature_unit: TemperatureUnit::Celsius,
-            tray_enabled: false,
+            tray_enabled: true,
+            close_to_tray: true,
             launch_at_login: false,
             reduced_motion: true,
             chart_density: ChartDensity::Balanced,
@@ -632,8 +634,28 @@ mod tests {
         assert_eq!(json["schema_version"], SETTINGS_SCHEMA_VERSION);
         assert_eq!(json["shared"], serde_json::json!({}));
         assert_eq!(json["gui"]["audience_mode"], "user");
-        assert_eq!(json["gui"]["tray_enabled"], false);
+        assert_eq!(json["gui"]["tray_enabled"], true);
+        assert_eq!(json["gui"]["close_to_tray"], true);
         assert!(json.get("tui").is_none());
+    }
+
+    #[test]
+    fn additive_gui_lifecycle_fields_migrate_to_safe_defaults() {
+        let document: SettingsDocument = serde_json::from_value(serde_json::json!({
+            "schema_version": SETTINGS_SCHEMA_VERSION,
+            "shared": {},
+            "gui": {
+                "audience_mode": "technician",
+                "temperature_unit": "fahrenheit"
+            }
+        }))
+        .expect("deserialize prior settings");
+
+        assert_eq!(document.gui.audience_mode, AudienceMode::Technician);
+        assert_eq!(document.gui.temperature_unit, TemperatureUnit::Fahrenheit);
+        assert!(document.gui.tray_enabled);
+        assert!(document.gui.close_to_tray);
+        assert!(!document.gui.launch_at_login);
     }
 
     #[test]

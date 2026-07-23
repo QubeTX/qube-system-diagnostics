@@ -66,6 +66,8 @@ ChangesEnvironment=yes
 ; ARP display name. Matches the Corporate MSI's Product Name so the two
 ; installer formats show consistent labels.
 UninstallDisplayName={#MyAppFullName}
+SetupIconFile=..\wix\Product.ico
+UninstallDisplayIcon={app}\app\sd300-gui.exe
 LicenseFile=..\LICENSE.md
 SetupLogging=yes
 ; Cross-method consolidation (v3.17.0+) - see inno/global.iss for rationale.
@@ -79,7 +81,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "{#MyAppBinaryDir}\{#MyAppExeName}"; DestDir: "{app}\bin"; Flags: ignoreversion; AfterInstall: ConsolidatePriorCli
 Source: "{#MyAppGuiBinDir}\sd300-gui.exe"; DestDir: "{app}\app"; Flags: ignoreversion
 Source: "{#MyAppGuiBinDir}\sd300_engine.dll"; DestDir: "{app}\app"; Flags: ignoreversion
-Source: "{#MyAppGuiBinDir}\assets\icon.png"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\app-icon.png"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\app-icon.ico"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\tray-icon.ico"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\tray-icon-dark.ico"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\tray-icon-light.ico"; DestDir: "{app}\app\assets"; Flags: ignoreversion
 Source: "{#MyAppGuiBinDir}\licenses\*"; DestDir: "{app}\app\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

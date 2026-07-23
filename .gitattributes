@@ -1,5 +1,5 @@
 # Build inputs whose exact bytes are part of the reviewed dependency lock.
-gui/patches/*.patch text eol=lf
+gui/patches/*.patch text eol=lf whitespace=-blank-at-eol
 
 # Compatibility fixtures are byte-stable Unix text on every checkout. Tests
 # normalize the executable's platform line endings before comparing them.

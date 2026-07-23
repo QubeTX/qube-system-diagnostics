@@ -9,7 +9,10 @@ ND-300 (Network Diagnostic).
 > release targets with verified public artifacts — SHA-256 sidecars, an SPDX
 > SBOM, GitHub attestations, and physical Windows installer acceptance.
 > v3.1.0 adds safe in-app and tray-driven updates that run the same
-> owner-preserving CLI transaction.
+> owner-preserving CLI transaction. v3.1.2 replaces the generic/ECG identity
+> with the isometric SD/300 mark and makes GUI background monitoring explicit:
+> the tray defaults on, closing the window keeps it running by default, and a
+> live hover summary exposes basic hardware health.
 
 ## Install
 
@@ -221,12 +224,17 @@ Settings live at `%APPDATA%\SD-300\settings.json` on Windows,
 `~/Library/Application Support/SD-300/settings.json` on macOS, and
 `${XDG_CONFIG_HOME:-~/.config}/sd300/settings.json` on Linux.
 
-Tray and launch-at-login are independent and default off. Windows and macOS use
-one app process with a supported tray/status item: Open restores the window and
-Quit terminates it. Closing hides the window only when tray mode is enabled;
-otherwise it exits. Native SDK 0.5.4 does not provide the required Linux tray,
-so Linux closes normally and launch-at-login must open a visible window rather
-than leave an undiscoverable background process.
+Tray and launch-at-login are independent. The GUI tray defaults on; startup
+defaults off. On Windows and macOS, closing the window keeps the tray and
+monitoring engine alive by default, Open restores the singleton window, Quit
+terminates the GUI, and the tray tooltip carries a bounded live CPU, memory,
+GPU, storage, and disk-health summary. The GUI setting “Keep monitoring after
+closing the window” can make X quit the GUI and tray instead. Turning the tray
+off applies on the next GUI launch. Bare `sd300`, `--user`, and `--tech` remain
+tray-free because the TUI never starts the GUI process. Native SDK 0.5.4 does
+not provide the required Linux tray, so Linux closes normally and
+launch-at-login must open a visible window rather than leave an undiscoverable
+background process.
 
 The GUI provides keyboard navigation, visible focus, text equivalents for
 charts, reduced motion, and an internally audited semantic tree on every target.

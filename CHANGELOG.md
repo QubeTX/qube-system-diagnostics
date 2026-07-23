@@ -4,6 +4,39 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+## [3.1.2] - 2026-07-23
+
+### Added
+
+- Replaced the rejected ECG-style artwork with the operator-selected flat
+  isometric SD/300 block and a simplified monochrome companion tray glyph.
+  Added a deterministic, pinned-SDK export/check step that derives seven-size
+  Windows ICOs, macOS ICNS/template assets, a 512 px runtime image, and the
+  complete Linux hicolor size set from the committed masters.
+- Added a GUI-only `close_to_tray` preference. The Windows/macOS GUI tray and
+  close-to-tray behavior now default on, while launch-at-login remains off and
+  every CLI/TUI launch remains tray-free. The tray publishes a bounded live
+  tooltip covering CPU, memory, GPU, storage, and disk health.
+
+### Fixed
+
+- Embedded the multi-resolution application ICO in `sd300-gui.exe`, assigned
+  both Win32 window icon sizes, loaded a dedicated tray ICO instead of passing
+  a PNG to `IMAGE_ICON`, and selected black/white tray variants for the current
+  Windows system theme. macOS now loads the monochrome template at runtime and
+  its app bundle must contain the generated application icon.
+- Carried every new identity asset through Windows native archives, WiX and
+  Inno installers, managed-install manifests, Installed Apps identity,
+  updater hash verification, ownership checks, and conservative uninstall
+  verification. Linux packages now install every supported hicolor size.
+- Kept executable-only Win32 resource inputs out of Native SDK's test-only COFF
+  analysis object, preserving full semantic analysis while allowing the
+  resource-bearing Windows release build and Native test graph to coexist.
+  Declared libc explicitly for that analysis object on Linux so its
+  bundle-relative engine `dlopen` path remains fully checked on GNU and musl.
+- Made GUI companion discovery inject its per-user application root so an
+  installed public copy cannot contaminate the missing-companion unit test.
+
 ### Changed
 
 - Recorded the v3.1.1 release-operations incident and its prevention: a

@@ -66,6 +66,8 @@ ChangesEnvironment=yes
 ; ARP display name. Matches the MSI Global's Product Name so users see the
 ; same label regardless of which installer they used.
 UninstallDisplayName={#MyAppFullName}
+SetupIconFile=..\wix\Product.ico
+UninstallDisplayIcon={app}\app\sd300-gui.exe
 ; Embed the LICENSE.md file so the installer wizard shows it (PolyForm
 ; Noncommercial 1.0.0).
 LicenseFile=..\LICENSE.md
@@ -92,7 +94,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "{#MyAppBinaryDir}\{#MyAppExeName}"; DestDir: "{app}\bin"; Flags: ignoreversion; AfterInstall: ConsolidatePriorCli
 Source: "{#MyAppGuiBinDir}\sd300-gui.exe"; DestDir: "{app}\app"; Flags: ignoreversion
 Source: "{#MyAppGuiBinDir}\sd300_engine.dll"; DestDir: "{app}\app"; Flags: ignoreversion
-Source: "{#MyAppGuiBinDir}\assets\icon.png"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\app-icon.png"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\app-icon.ico"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\tray-icon.ico"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\tray-icon-dark.ico"; DestDir: "{app}\app\assets"; Flags: ignoreversion
+Source: "{#MyAppGuiBinDir}\assets\tray-icon-light.ico"; DestDir: "{app}\app\assets"; Flags: ignoreversion
 Source: "{#MyAppGuiBinDir}\licenses\*"; DestDir: "{app}\app\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

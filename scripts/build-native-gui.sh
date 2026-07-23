@@ -66,17 +66,17 @@ esac
 rm -rf "$stage_root"
 mkdir -p "$app_stage"
 cp "$gui_root/build.zig" "$gui_root/app.zon" "$gui_root/README.md" "$app_stage/"
-cp -R "$gui_root/src" "$gui_root/assets" "$gui_root/platform" "$app_stage/"
+cp -R "$gui_root/src" "$gui_root/assets" "$gui_root/platform" "$gui_root/tools" "$app_stage/"
 cp -R "$gui_root/node_modules/@native-sdk/cli" "$sdk_stage"
 cp "$engine_artifact" "$app_stage/$engine"
 cat > "$app_stage/build.zig.zon" <<'ZON'
 .{
     .name = .gui,
     .fingerprint = 0xd4ff50f85a707070,
-    .version = "3.1.1",
+    .version = "3.1.2",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{ .native_sdk = .{ .path = "../sdk" } },
-    .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "platform", "app.zon", "README.md" },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "platform", "tools", "app.zon", "README.md" },
 }
 ZON
 

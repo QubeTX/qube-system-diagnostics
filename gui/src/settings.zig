@@ -24,7 +24,8 @@ pub const Shared = struct {};
 pub const Gui = struct {
     audience_mode: AudienceMode = .user,
     temperature_unit: TemperatureUnit = .celsius,
-    tray_enabled: bool = false,
+    tray_enabled: bool = true,
+    close_to_tray: bool = true,
     launch_at_login: bool = false,
     reduced_motion: bool = true,
     chart_density: ChartDensity = .balanced,
@@ -61,7 +62,26 @@ test "GUI defaults are isolated from terminal behavior" {
     const document: Document = .{};
     try std.testing.expectEqual(AudienceMode.user, document.gui.audience_mode);
     try std.testing.expectEqual(TemperatureUnit.celsius, document.gui.temperature_unit);
-    try std.testing.expect(!document.gui.tray_enabled);
+    try std.testing.expect(document.gui.tray_enabled);
+    try std.testing.expect(document.gui.close_to_tray);
     try std.testing.expect(!document.gui.launch_at_login);
     try std.testing.expect(document.gui.reduced_motion);
+}
+
+test "prior GUI settings inherit tray lifecycle defaults without a schema bump" {
+    const allocator = std.testing.allocator;
+    const parsed = try std.json.parseFromSlice(
+        Document,
+        allocator,
+        \\{"schema_version":1,"shared":{},"gui":{"audience_mode":"technician","temperature_unit":"fahrenheit"}}
+    ,
+        .{ .ignore_unknown_fields = true },
+    );
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(AudienceMode.technician, parsed.value.gui.audience_mode);
+    try std.testing.expectEqual(TemperatureUnit.fahrenheit, parsed.value.gui.temperature_unit);
+    try std.testing.expect(parsed.value.gui.tray_enabled);
+    try std.testing.expect(parsed.value.gui.close_to_tray);
+    try std.testing.expect(!parsed.value.gui.launch_at_login);
 }

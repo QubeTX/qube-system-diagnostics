@@ -1569,7 +1569,7 @@ mod tests {
             serde_json::from_slice(&buffer[..required - 1]).expect("valid metadata JSON");
         assert_eq!(metadata["abi_version"], ABI_VERSION);
         assert_eq!(metadata["schema_version"], SCHEMA_VERSION);
-        assert_eq!(metadata["product_version"], "3.1.1");
+        assert_eq!(metadata["product_version"], "3.1.2");
     }
 
     #[test]
@@ -1624,7 +1624,7 @@ mod tests {
         let envelope: serde_json::Value =
             serde_json::from_slice(&state.json).expect("valid topic JSON");
         assert_eq!(envelope["schema_version"], SCHEMA_VERSION);
-        assert_eq!(envelope["product_version"], "3.1.1");
+        assert_eq!(envelope["product_version"], "3.1.2");
         assert_eq!(envelope["target"], target_label());
         assert_eq!(envelope["topic"], "warnings");
         assert_eq!(envelope["sequence"], 1);

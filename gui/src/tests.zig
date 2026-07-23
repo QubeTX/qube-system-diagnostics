@@ -561,10 +561,11 @@ test "tray commands map to real show and graceful quit effects" {
     try testing.expectEqual(@as(u32, 1), actions.quit_count);
 }
 
-test "close-policy hide quits only when tray is disabled" {
-    try testing.expect(main.shouldQuitForHiddenWindow(false, true));
-    try testing.expect(!main.shouldQuitForHiddenWindow(true, true));
-    try testing.expect(!main.shouldQuitForHiddenWindow(false, false));
+test "close-policy hide respects session tray presence and GUI preference" {
+    try testing.expect(main.shouldQuitForHiddenWindow(false, true, true));
+    try testing.expect(!main.shouldQuitForHiddenWindow(true, true, true));
+    try testing.expect(main.shouldQuitForHiddenWindow(true, false, true));
+    try testing.expect(!main.shouldQuitForHiddenWindow(false, false, false));
 }
 
 test "close-policy quit consults startup tray presence, not the live setting" {
@@ -592,9 +593,9 @@ test "close-policy quit consults startup tray presence, not the live setting" {
         try testing.expect(tray_off.tray_enabled);
         try testing.expect(!tray_off.tray_session_active);
         try testing.expect(tray_off.settings_restart_required);
-        try testing.expect(main.shouldQuitForHiddenWindow(tray_off.tray_session_active, true));
+        try testing.expect(main.shouldQuitForHiddenWindow(tray_off.tray_session_active, tray_off.close_to_tray, true));
         // The pre-fix input would have wrongly refused to quit.
-        try testing.expect(!main.shouldQuitForHiddenWindow(tray_off.tray_enabled, true));
+        try testing.expect(!main.shouldQuitForHiddenWindow(tray_off.tray_enabled, tray_off.close_to_tray, true));
     }
 
     // BUG 1 symmetric case: launch tray-ON, then disable tray in settings. The
@@ -604,9 +605,15 @@ test "close-policy quit consults startup tray presence, not the live setting" {
     if (tray_supported) {
         try testing.expect(!tray_on.tray_enabled);
         try testing.expect(tray_on.tray_session_active);
-        try testing.expect(!main.shouldQuitForHiddenWindow(tray_on.tray_session_active, true));
+        try testing.expect(!main.shouldQuitForHiddenWindow(tray_on.tray_session_active, tray_on.close_to_tray, true));
         // The pre-fix input would have wrongly quit and killed a live icon.
-        try testing.expect(main.shouldQuitForHiddenWindow(tray_on.tray_enabled, true));
+        try testing.expect(main.shouldQuitForHiddenWindow(tray_on.tray_enabled, tray_on.close_to_tray, true));
+
+        // The close preference is live even though tray availability is a
+        // startup decision: turning it off makes the next X quit both.
+        main.update(&tray_on, .toggle_close_to_tray, &fx);
+        try testing.expect(!tray_on.close_to_tray);
+        try testing.expect(main.shouldQuitForHiddenWindow(tray_on.tray_session_active, tray_on.close_to_tray, true));
     }
 }
 
@@ -633,8 +640,8 @@ test "minimized window keeps foreground cadence via policy-hidden not visibility
     // The quit path is unaffected: a minimized window is never policy-hidden and
     // so can never satisfy the quit predicate, while a real tray-hidden window
     // still can when no session tray icon exists.
-    try testing.expect(!main.shouldQuitForHiddenWindow(false, minimized.policy_hidden));
-    try testing.expect(main.shouldQuitForHiddenWindow(false, tray_hidden.policy_hidden));
+    try testing.expect(!main.shouldQuitForHiddenWindow(false, true, minimized.policy_hidden));
+    try testing.expect(main.shouldQuitForHiddenWindow(false, true, tray_hidden.policy_hidden));
 }
 
 test "external singleton open enters the typed model update path" {
@@ -683,6 +690,11 @@ test "tray state exposes live summaries and explicit Open and Quit" {
     var scratch: main.NativeApp.StatusItemScratch = .{};
     const state = main.statusItem(&model, &scratch);
     try testing.expectEqualStrings("SD", state.title);
+    try testing.expect(std.mem.indexOf(u8, state.tooltip, "CPU · 7.3%") != null);
+    try testing.expect(std.mem.indexOf(u8, state.tooltip, "Memory · 44.5%") != null);
+    try testing.expect(std.mem.indexOf(u8, state.tooltip, "GPU · 12.5%") != null);
+    try testing.expect(std.mem.indexOf(u8, state.tooltip, "Storage free · 43.3%") != null);
+    try testing.expect(std.mem.indexOf(u8, state.tooltip, "Disk health · good") != null);
     try testing.expectEqual(@as(usize, 10), state.items.len);
     try testing.expectEqualStrings("CPU · 7.3%", state.items[0].label);
     try testing.expect(!state.items[0].enabled);

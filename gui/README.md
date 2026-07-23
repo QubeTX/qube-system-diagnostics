@@ -138,12 +138,17 @@ its remembered mode and unit, geometry, chart density, navigation, tray,
 close behavior, launch-at-login, and reduced-motion settings. None of these may
 change the next TUI launch, its chooser, or existing terminal defaults.
 
-Tray and launch-at-login are independent and default off:
+Tray and launch-at-login are independent. The GUI tray defaults on and
+launch-at-login defaults off:
 
-- Windows and macOS use one app process. When tray is enabled, close hides;
-  Open restores; Quit terminates. Without tray, close exits.
+- Windows and macOS use one GUI process. With the default close-to-tray setting,
+  close hides while the tray keeps collecting; Open restores; Quit terminates.
+  The tray tooltip shows a bounded live CPU, memory, GPU, storage, and
+  disk-health summary. Turning close-to-tray off makes X terminate the GUI and
+  tray. Turning the tray off applies on the next GUI launch.
 - Linux has no tray under Native SDK 0.5.4. It uses its Linux manifest and exits
   on close. Launch-at-login must open visibly so no unreachable process remains.
+- The CLI/TUI process never creates a tray or reads these GUI-only settings.
 
 ## Accessibility support
 
@@ -166,6 +171,13 @@ amber energy, a subtle non-flat background gradient and fading grid, and
 existing green/amber/red health semantics. Avoid generic purple-gradient “AI”
 styling, blur-heavy cards, continuous ambient animation, custom cursors, and
 other decorative work that costs legibility or idle performance.
+
+The product mark is the operator-selected flat isometric SD/300 block. Its SVG
+and raster masters live under `assets/icon-source`; the companion tray master
+is a simplified monochrome form of the same geometry. Regenerate every
+committed ICO/ICNS/PNG/hicolor derivative with `zig build generate-icons` and
+verify byte-for-byte determinism with `zig build check-icons`. Never hand-edit
+generated icon outputs.
 
 Makira is the primary face for body copy, headings, navigation, and large
 numbers. IBM Plex Mono is secondary for technical labels and compact numeric

@@ -333,8 +333,10 @@ fn windows_session_id(process_id: u32) -> Option<u32> {
 
 fn locate() -> Option<PathBuf> {
     let current = std::env::current_exe().ok();
+    let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
     locate_from(
         current.as_deref(),
+        local_app_data.as_deref(),
         home_dir().as_deref(),
         xdg_data_home().as_deref(),
     )
@@ -351,6 +353,7 @@ pub(crate) fn companion_path_present() -> bool {
 
 fn locate_from(
     _current_exe: Option<&Path>,
+    _local_app_data: Option<&Path>,
     _home: Option<&Path>,
     _xdg_data: Option<&Path>,
 ) -> Option<PathBuf> {
@@ -373,9 +376,9 @@ fn locate_from(
     }
 
     #[cfg(windows)]
-    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+    if let Some(local_app_data) = _local_app_data {
         candidates.push(
-            PathBuf::from(local_app_data)
+            local_app_data
                 .join("Programs")
                 .join("SD-300")
                 .join("app")
@@ -567,7 +570,7 @@ mod tests {
     #[test]
     fn absent_companion_is_not_mistaken_for_the_tui_binary() {
         let missing = PathBuf::from("definitely-not-an-sd300-install/bin/sd300");
-        assert!(locate_from(Some(&missing), None, None).is_none());
+        assert!(locate_from(Some(&missing), None, None, None).is_none());
     }
 
     #[test]
