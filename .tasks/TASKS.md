@@ -7,6 +7,7 @@
 - [ ] **Resolve Makira embedding-license evidence** - obtain vendor documentation for the purchased face or replace with an open font in a patch release; operator-led #mkl
 - [ ] **Run physical macOS acceptance on real hardware** - installed PKG lifecycle, GUI/status-item behavior, and notarization experience when Mac access returns #mac
 - [ ] **Improve GUI screen-reader accessibility beyond the named canvas** - track Native SDK accessibility-tree support; TUI remains the documented fallback #acc
+- [ ] **Harden the release chain against branch-head drift** - make the `workflow_run`-triggered producers and the qualify gate check out the triggering Release's commit (`github.event.workflow_run.head_sha`) rather than the branch head, and add a `concurrency` group to `Release` so a second push queues instead of racing. Root cause of the v3.1.1 release scare (see the post-mortem addendum): a mid-release `main` push desynchronized the chain from the release commit. Do this as its own reviewed change with a full local + hosted dry-run; do not rush it onto a live release. Until then, the operational discipline in AGENTS.md (never push during a release) is the safeguard #rlx
 
 ## To-Do
 

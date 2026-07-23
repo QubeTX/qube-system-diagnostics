@@ -313,6 +313,30 @@ commit, never by weakening the guard. (First encountered 2026-07-23 on v3.1.0
 post-release docs commits, which failed under the pre-3.1.1 guard; see ADR 0005
 context and the `sd300-product-architecture` operator memory.)
 
+**Release-operations discipline (learned the hard way in v3.1.1; full account
+in the post-mortem addendum).** A release is a multi-workflow chain — `Release`
+builds the draft, then `workflow_run`-triggered producers (`Windows Native
+Installers`, `macOS Universal Package`, `Linux Native GUI Packages`) attach
+native installers, then `Qualify and Publish Release` verifies and publishes.
+
+- **Never push to `main` while a release is in flight.** Hold every push until
+  the version's tag is live (`git ls-remote --tags origin | grep vX`). A second
+  push moves the branch head and desynchronizes the whole chain from the
+  release's commit, breaking the qualify identity check
+  (`release vX targets <A>, but this qualification checkout is <B>`).
+- **`workflow_run` producers are associated with the branch head at trigger
+  time, not the release's commit.** The real release's producers can appear in
+  `gh run list` under a newer SHA. That is normal — do **not** cancel a producer
+  because of the SHA it displays.
+- **Recovery from a straddled/partial draft is deterministic:** `gh release
+  delete vX --yes` (drafts carry no tag, so nothing immutable is touched), then
+  `gh run rerun <the Release run on the intended commit>` so the draft target,
+  producers, and qualify checkout all originate from one commit. Never patch a
+  straddled draft in place.
+- **One macOS signing failure with `A timestamp was expected but was not found`
+  is a transient Apple timestamp-server flake** — re-run the job once; only a
+  repeat justifies adding a `codesign` timestamp retry.
+
 Version tag pushes (`v*.*.*`) remain supported for explicit/manual releases, but the normal automation path is main-branch push. `CARGO_REGISTRY_TOKEN` must exist as a GitHub Actions secret; never commit registry tokens or publish from a local machine unless the user explicitly asks for an emergency manual publish after CI status has been checked.
 
 The package was moved to `tr300-tui` so the project can publish while keeping the installed command and product identity as `sd300` / SD-300. After release, verify `cargo install tr300-tui --version {VERSION}` installs `sd300` and that the GitHub Release assets are present.

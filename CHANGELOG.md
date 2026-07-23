@@ -4,6 +4,19 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Recorded the v3.1.1 release-operations incident and its prevention: a
+  mid-release `main` push desynchronized the `workflow_run`-triggered producer
+  and qualify chain from the release commit, and the real release's producers
+  (branch-head-associated) were briefly misread as rogue. Documented the
+  deterministic recovery (delete draft + re-run Release from one commit) and
+  the standing rules — never push during a release; producers under a newer SHA
+  are not rogue; a single macOS timestamp-signing failure is a transient flake
+  — in `AGENTS.md` and the Codex post-mortem addendum. Filed backlog task
+  `#rlx` to pin `workflow_run` consumers to the triggering commit and add a
+  `Release` concurrency group as a reviewed, standalone hardening change.
+
 ## [3.1.1] - 2026-07-23
 
 ### Fixed

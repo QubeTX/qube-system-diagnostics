@@ -216,11 +216,69 @@ And the shortest version of all of it:
 
 ---
 
+## Addendum (2026-07-23): the v3.1.1 release-operations incident
+
+A self-inflicted release scare during the v3.1.1 patch, recorded so the exact
+mistake is never repeated. Nothing public was ever corrupted; the cost was time
+and several avoidable rebuild cycles.
+
+**What happened.** While the v3.1.1 Release workflow was in flight (draft built
+from commit `eba3195`), a one-line task-board commit (`4c612be`) was pushed to
+`main`. That moved the branch head. Three things then went wrong in sequence:
+
+1. The native-installer producers (`Windows Native Installers`, `macOS Universal
+   Package`, `Linux Native GUI Packages`) trigger on `workflow_run` of "Release"
+   and GitHub associates such runs with the **branch head at trigger time**, so
+   the real release's producers appeared in `gh run list` under the *newer*
+   `4c612be` SHA. They were misread as rogue duplicate runs and two were
+   cancelled — leaving the draft missing its Windows and macOS installers.
+2. The qualify gate then failed its identity check: `release v3.1.1 targets
+   eba3195…, but this qualification checkout is 4c612be…`. The draft's target
+   commit and the branch head had diverged, and the gate correctly refuses to
+   publish a draft it can't tie to the checkout.
+3. A transient Apple timestamp-server flake (`libsd300_engine.dylib: A timestamp
+   was expected but was not found`) failed one macOS signing attempt on top of
+   the rest.
+
+**How it was handled.** Each step was root-caused from logs before acting, not
+guessed. The deterministic recovery was to make every artifact single-commit:
+`gh release delete v3.1.1 --yes` (a draft has no tag yet, so nothing immutable
+is touched), then `gh run rerun <the 4c612be Release run>` so the draft target,
+the producers, and the qualify checkout all originate from the current branch
+head `4c612be`. The macOS flake cleared with a plain job re-run. Final proof:
+every asset's attestation resolves to `4c612be` (single-commit provenance),
+checksums match sidecars, the crate installs to `sd300 3.1.1`, and the hosted
+producers exercised install/takeover/update/uninstall on all platforms.
+
+**How to avoid it — release-operations rules (now also in `AGENTS.md`):**
+
+- **Never push to `main` while a release is in flight.** Hold every push until
+  the version's tag is live. A second same-version push moves the branch head
+  and desynchronizes the whole `workflow_run` chain from the release's commit.
+- **Producers/qualify are `workflow_run`-triggered and branch-head-associated.**
+  A producer showing under a newer SHA than the release is normal, not rogue.
+  Do **not** cancel a producer because of the SHA it displays.
+- **Recovery is delete-draft + re-run-Release-from-one-commit**, never a partial
+  patch of a straddled draft. The `source-check` draft-exists guard requires the
+  old draft gone first.
+- **A single macOS signing failure with a timestamp error is a transient Apple
+  infrastructure flake** — re-run the job once before treating it as real; only
+  a repeat justifies adding a `codesign` timestamp retry.
+
+The residual systemic fragility (that `workflow_run` consumers checkout the
+branch head rather than the triggering Release's commit) is owned as hardening
+task `#rlx`, to be done as its own reviewed change — not rushed on top of a
+just-stabilized release.
+
+---
+
 ## Related records
 
 - ADR 0001 — soak early-exit attribution (the "mystery" that was a window close)
 - ADR 0002 — warmed-state scroll latency root cause and fix ladder
 - ADR 0003 — managed uninstall receipt-parent cleanup, plus the 5.1 exit-code addendum
+- ADR 0004 — v3.0.0 release-scope two-bar model (functional bar vs evidence bar)
+- ADR 0005 — the in-app update coordinator (v3.1.0 #giu)
 - `docs/agents/handoff/2026-07-21-001-*` and `2026-07-22-002-*` — the inherited handoffs, which were accurate and are the reason the closing session could move fast
-- `.tasks/tasks/{cpl,gux,nsp,qv3}.md` — the cycle-by-cycle activity log of the closing session
-- Backlog tasks `#sok`, `#ext`, `#hrd`, `#mkl`, `#mac`, `#acc` — the evidence debt, written down and owned
+- `.tasks/tasks/{cpl,gux,nsp,qv3,giu}.md` — the cycle-by-cycle activity log of the closing session
+- Backlog tasks `#sok`, `#ext`, `#hrd`, `#mkl`, `#mac`, `#acc`, `#rlx` — the evidence and hardening debt, written down and owned
