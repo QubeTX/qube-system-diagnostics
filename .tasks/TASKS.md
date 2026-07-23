@@ -11,14 +11,14 @@
 ## To-Do
 
 ## Active
-- [ ] **Add safe in-app and tray-driven updates** - let nontechnical users launch the existing owner-preserving CLI+GUI update transaction from the desktop app; ships as v3.1.0 with the two pending post-release fixes (ms #v3n) #giu
+
+## Done
+- [x] **Add safe in-app and tray-driven updates** - PUBLIC as v3.1.0 2026-07-23 00:25 UTC (merge 2b4c9a5, PR #5): Settings/tray "Update now" spawns the installed CLI as a detached coordinator running the existing owner-preserving transaction; hidden --relaunch-gui reopens only after success; architecture committed in ADR 0005. Crate live (`cargo install tr300-tui --version 3.1.0` -> sd300 3.1.0), release promoted to latest with 59 assets + SHA-256 sidecars + SPDX SBOM, `gh attestation verify` returns two SLSA attestations bound to 2b4c9a5. Carried the two post-release fixes (sidebar label, crate convergence poll) (done 2026-07-23) (ms #v3n) #giu
   - [x] Implement the update trigger in settings and tray with a detached engine-spawned coordinator
   - [x] Add the hidden CLI relaunch flag gated to successful transactions
   - [x] Validate: Rust and native tests, strict checks, local installed-copy coordinator exercise
   - [x] Bump product version surfaces to 3.1.0 with lockstep changelogs
-  - [ ] Merge, release, and verify public bytes
-
-## Done
+  - [x] Merge, release, and verify public bytes (crate, latest release, attestations, stable URLs)
 - [x] **Qualify and release SD-300 v3.0.0 on all six existing targets** - PUBLIC 2026-07-22 15:02 UTC with 59 assets, live crate, three verified attestations, and physical Windows acceptance on the released MSI; stable versionless installer URLs keep existing website commands working unchanged (done 2026-07-22) (ms #v3n) #qv3
   - [x] Re-prove foreground and hidden performance budgets on the fixed build
   - [x] Design and implement the app, taskbar, tray, and installer icons with Quiver arrow-1.1-max
