@@ -28,7 +28,8 @@
 | Project | Status |
 |---|---|
 | SD-300 v2.0.2 | Complete: Windows accuracy, full updater lifecycle, installers, parity, release, offline bundle, and website rollout |
-| SD-300 v3.0.0 | Active on `codex/sd300-v3-native-gui`: Fable release drive (2026-07-22) — soak exit attributed (operator close, no defect), pre-release soak waived to #sok, Makira operator-authorized, uninstall fix reviewed and landing, scroll-lag fix ladder in progress, then merge PR #4 → main release; #giu follows as Phase 2 (v3.1.0) |
+| SD-300 v3.0.0 | Released and publicly verified 2026-07-22 15:02 UTC (PR #4 → main, 59 assets, live crate, attestations, physical Windows MSI acceptance) |
+| SD-300 v3.1.0 | In-app/tray updates (#giu) on `codex/sd300-giu-in-app-updates` PR #5 (2026-07-22): coordinator architecture per ADR 0005; all local gates green; merge → main release → public-byte verify, then post-release docs push (ADRs 0004/0005, README pass, memory) and branch cleanup |
 
 ## Preferences
 

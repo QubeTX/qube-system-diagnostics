@@ -22,8 +22,8 @@ Rules:
 | [0001](0001-soak-early-exit-attribution.md) | Soak early-exit attribution: operator window close, not a product defect | Accepted |
 | [0002](0002-warmed-scroll-latency-root-cause.md) | Warmed-state scroll latency: full-viewport scroll frames + queue collision | Accepted |
 | [0003](0003-managed-uninstall-receipt-parent-cleanup.md) | Managed uninstall removes the receipt parent only when empty | Accepted |
-
-Planned: 0004 (v3.0.0 release-scope decisions — lands with the release).
+| [0004](0004-v3-release-scope-decisions.md) | v3.0.0 release scope: functional bar now, evidence bar deferred deliberately | Accepted |
+| [0005](0005-in-app-update-coordinator.md) | In-app updates spawn the CLI as a detached coordinator; the GUI never mutates the installation | Accepted |
 
 ## Dual-frontend contract pointer
 

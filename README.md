@@ -5,18 +5,21 @@ an additive native desktop monitor. Part of the **QubeTX 300 Series** alongside
 [TR-300](https://github.com/QubeTX/qube-machine-report) (Machine Report) and
 ND-300 (Network Diagnostic).
 
-> **v3.0.0 qualification status:** the native GUI is being qualified on the six
-> release targets listed below. This branch documents the v3 release contract;
-> it does not claim that v3.0.0 has already passed every hosted or physical test
-> or that its artifacts have been published.
+> **Release status:** v3.0.0 shipped the native desktop monitor on all six
+> release targets with verified public artifacts — SHA-256 sidecars, an SPDX
+> SBOM, GitHub attestations, and physical Windows installer acceptance.
+> v3.1.0 adds safe in-app and tray-driven updates that run the same
+> owner-preserving CLI transaction.
 
 ## Install
 
 The managed channel is recommended on every platform. Installer filenames
 and public commands are stable and always resolve the latest qualified release.
-Beginning with the qualified v3.0.0 release, managed wrappers and native
-installers install the CLI/TUI and desktop app as one product. Installation and
-update never launch the GUI automatically.
+Since v3.0.0, managed wrappers and native installers install the CLI/TUI and
+desktop app as one product. Ordinary installation and update never launch the
+GUI automatically; the one exception is the app's own "Update now" action,
+which reopens the monitor only after a successful update (see
+[Install, Update, and Uninstall Semantics](#install-update-and-uninstall-semantics)).
 
 ### Windows (recommended)
 
@@ -142,15 +145,24 @@ Navigate between 9 sections using number keys:
 ## Usage
 
 ```
-sd300              # Interactive mode selection
-sd300 --user       # Launch directly into User Mode
-sd300 --tech       # Launch directly into Technician Mode
-sd300 gui          # Launch or focus the installed desktop monitor
-sd300 update       # Check for and install the latest release
-sd300 --update     # Legacy update flag
-sd300 --help       # Show help
-sd300 --version    # Show version
+sd300                    # Interactive mode selection
+sd300 --user             # Launch directly into User Mode
+sd300 --tech             # Launch directly into Technician Mode
+sd300 gui                # Launch or focus the installed desktop monitor
+sd300 update             # Check for and install the latest release
+sd300 --update           # Legacy update flag
+sd300 install            # Deliberate preferred managed install
+sd300 uninstall          # Remove the product through its proven owner
+sd300 snapshot --json    # Redacted noninteractive diagnostic snapshot
+sd300 capabilities --json # Capability/provenance matrix
+sd300 --help             # Show help
+sd300 --version          # Show version
 ```
+
+Updates can also be started from the desktop app itself: the Settings page's
+"Update now" button and the tray's "Update SD-300" item run this same `sd300
+update` transaction through a detached coordinator and reopen the app when it
+succeeds.
 
 ## Install, Update, and Uninstall Semantics
 

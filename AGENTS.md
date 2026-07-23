@@ -26,6 +26,13 @@ version, which applies to every session here:
   cannot see the Windows tray; tray work uses programmatic dispatch plus a
   manual operator check.
 
+`docs/adr/` holds the numbered decision records behind the current
+architecture — soak-exit attribution (0001), warmed-scroll root cause (0002),
+uninstall receipt-parent cleanup (0003), the v3 release-scope two-bar model
+(0004), and the in-app update coordinator (0005). Read the relevant ADR before
+reworking any of those areas; supersede with a new ADR rather than silently
+diverging.
+
 ## Task management system
 
 This repository uses the git-tracked `.tasks/` board for milestones, active work, verification, and cross-session handoff. At session start, read `.tasks/TASKS.md`, `.tasks/MILESTONES.md`, `.tasks/CLAUDE.md`, and every Active task's detail file. Keep each Active task's `## Status`, `## Verification`, and newest `## Activity` entry current as work progresses. Launch or repair the live board with `node .tasks/board-server.mjs ensure --open` and read its identity-bound port from `.tasks/.board-server.json`.
@@ -72,6 +79,7 @@ cargo run -- capabilities --json # Capability/provenance matrix
 cargo run -- --help            # Show help with keybindings and sections
 cargo clippy                   # Lint
 cargo test                     # Run tests (assert_cmd/predicates available for CLI integration tests)
+cd gui-engine && cargo test --locked # Engine-crate tests — NOT run by root cargo test (workspace-excluded)
 cd gui && npm ci               # Restore the exact Native SDK dependency graph
 cd gui && npm run check        # Native SDK strict model/manifest check
 cd gui && npm test             # Native SDK/Zig tests
@@ -216,10 +224,12 @@ Wire the change end to end, in this order.
    and `Msg` field against the view: a field the view does not bind must be added
    to the relevant `view_unbound` tuple (one on `Msg`, one on `Model`) or the
    strict check fails.
-7. **Tests.** Add or extend Rust unit tests (including the gui-engine ABI layout
-   assertions) run by `cargo test --locked`; keep the GUI strict check green
-   (`npm --prefix gui run check`); and exercise the native tests
-   (`npm --prefix gui test`).
+7. **Tests.** Add or extend Rust unit tests run by `cargo test --locked` —
+   and remember gui-engine is workspace-excluded, so its tests (topic-envelope
+   contract, metadata, worker-join) only run via `cd gui-engine && cargo test
+   --locked`; the `#[repr(C)]` layout assertions live on the Zig side as
+   comptime checks. Keep the GUI strict check green (`npm --prefix gui run
+   check`) and exercise the native tests (`npm --prefix gui test`).
 8. **Parity and changelog.** The same change must wire both frontends, or
    explicitly document the field as platform/frontend-unavailable — parity is a
    release invariant. Update `CHANGELOG.md` and `HUMAN_CHANGELOG.md` in lockstep.
@@ -227,10 +237,16 @@ Wire the change end to end, in this order.
 ### Testing quick reference
 
 ```bash
-cargo test --locked                                                  # Rust unit/integration + ABI layout
+cargo test --locked                                                  # Root crate unit/integration (gui-engine NOT included)
+cd gui-engine && cargo test --locked                                 # Engine crate: envelope/metadata/worker tests
 npm --prefix gui run check                                           # Native SDK strict model/binding check
 SD300_RENDER_BENCH=1 npm --prefix gui test -- -Doptimize=ReleaseFast # native tests + render benchmark
 ```
+
+gui-engine is not clippy-gated in CI (root clippy is); its C-ABI surface
+carries accepted `not_unsafe_ptr_arg_deref` findings — new `extern "C"`
+entries follow the established guarded-pointer pattern (see ADR 0005 and
+Backlog #hrd) rather than chasing that lint.
 
 The Native SDK is a pinned, patched dependency. Never edit the staged SDK under
 the npm or Zig caches directly; changes go through

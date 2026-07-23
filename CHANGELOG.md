@@ -4,7 +4,33 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Recorded the architecture decisions behind the v3 releases as ADRs: 0004
+  (the v3.0.0 release-scope two-bar model — functional bar shipped, evidence
+  bar deferred to owned backlog tasks) and 0005 (the in-app update
+  coordinator: GUI intent → engine ABI → detached CLI spawn from proven
+  absolute paths → owner-preserving transaction → success-gated relaunch).
+  `CLAUDE.md` and `AGENTS.md` now point agents at the ADR series before any
+  rework of those areas.
+- Refreshed `README.md` for post-release accuracy: replaced the stale v3.0.0
+  qualification banner with the released status, documented the in-app
+  "Update now" surfaces, and completed the command list with `install`,
+  `uninstall`, `snapshot --json`, and `capabilities --json`.
+- Corrected the contributor testing docs in `CLAUDE.md`/`AGENTS.md`: gui-engine
+  is workspace-excluded, so root `cargo test --locked` never runs its tests —
+  the recipe and quick reference now name `cd gui-engine && cargo test
+  --locked` explicitly and note the crate's accepted non-gated C-ABI clippy
+  findings.
+
 ## [3.1.0] - 2026-07-22
+
+Released 2026-07-23 00:25 UTC (merge `2b4c9a5`). Public verification on the
+released artifacts: the crate installs and reports the new version (`cargo
+install tr300-tui --version 3.1.0` → `sd300 3.1.0`), the GitHub release is
+published and promoted to `latest` with 59 assets and their SHA-256 sidecars,
+`gh attestation verify` returns two SLSA provenance attestations bound to build
+commit `2b4c9a5`, and the stable versionless installer URLs resolve.
 
 ### Added
 

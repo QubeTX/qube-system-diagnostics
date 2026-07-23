@@ -54,6 +54,7 @@ cargo run -- capabilities --json # Capability/provenance matrix
 cargo run -- --help            # Show help with keybindings and sections
 cargo clippy                   # Lint
 cargo test                     # Run tests (assert_cmd/predicates available for CLI integration tests)
+cd gui-engine && cargo test --locked # Engine-crate tests — NOT run by root cargo test (workspace-excluded)
 cd gui && npm ci               # Restore the exact Native SDK dependency graph
 cd gui && npm run check        # Native SDK strict model/manifest check
 cd gui && npm test             # Native SDK/Zig tests
@@ -90,6 +91,11 @@ The binary is named `sd300` (not `sd-300`). The crates.io package name is `tr300
   settings belong under `shared`; window, navigation, GUI mode/unit, chart,
   tray, startup, close, and motion choices belong under `gui` and must never
   change TUI session defaults.
+- `docs/adr/` records the decisions behind this contract; ADR 0005 specifies
+  the in-app update coordinator (GUI intent → engine ABI → detached CLI
+  spawn from proven absolute paths → owner-preserving transaction → gated
+  relaunch) and ADR 0004 the release-scope two-bar model. Read the relevant
+  ADR before reworking these areas; supersede rather than silently diverge.
 
 ## Dual-frontend editing model
 
@@ -198,10 +204,12 @@ Wire the change end to end, in this order.
    and `Msg` field against the view: a field the view does not bind must be added
    to the relevant `view_unbound` tuple (one on `Msg`, one on `Model`) or the
    strict check fails.
-7. **Tests.** Add or extend Rust unit tests (including the gui-engine ABI layout
-   assertions) run by `cargo test --locked`; keep the GUI strict check green
-   (`npm --prefix gui run check`); and exercise the native tests
-   (`npm --prefix gui test`).
+7. **Tests.** Add or extend Rust unit tests run by `cargo test --locked` —
+   and remember gui-engine is workspace-excluded, so its tests (topic-envelope
+   contract, metadata, worker-join) only run via `cd gui-engine && cargo test
+   --locked`; the `#[repr(C)]` layout assertions live on the Zig side as
+   comptime checks. Keep the GUI strict check green (`npm --prefix gui run
+   check`) and exercise the native tests (`npm --prefix gui test`).
 8. **Parity and changelog.** The same change must wire both frontends, or
    explicitly document the field as platform/frontend-unavailable — parity is a
    release invariant. Update `CHANGELOG.md` and `HUMAN_CHANGELOG.md` in lockstep.
@@ -209,10 +217,16 @@ Wire the change end to end, in this order.
 ### Testing quick reference
 
 ```bash
-cargo test --locked                                                  # Rust unit/integration + ABI layout
+cargo test --locked                                                  # Root crate unit/integration (gui-engine NOT included)
+cd gui-engine && cargo test --locked                                 # Engine crate: envelope/metadata/worker tests
 npm --prefix gui run check                                           # Native SDK strict model/binding check
 SD300_RENDER_BENCH=1 npm --prefix gui test -- -Doptimize=ReleaseFast # native tests + render benchmark
 ```
+
+gui-engine is not clippy-gated in CI (root clippy is); its C-ABI surface
+carries accepted `not_unsafe_ptr_arg_deref` findings — new `extern "C"`
+entries follow the established guarded-pointer pattern (see ADR 0005 and
+Backlog #hrd) rather than chasing that lint.
 
 The Native SDK is a pinned, patched dependency. Never edit the staged SDK under
 the npm or Zig caches directly; changes go through
