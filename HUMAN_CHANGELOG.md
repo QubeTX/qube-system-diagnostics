@@ -28,6 +28,8 @@ The newest section is work in progress. It is deliberately candid about what has
   the chosen mark from the app itself, and confirmed the replacement icon
   files remain covered and damage-checked by the existing update and uninstall
   ownership rules.
+- Fixed the final Mac installer check so it follows the chosen prebuilt icon's
+  real filename instead of looking for the old automatically generated name.
 
 ---
 

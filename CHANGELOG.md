@@ -25,6 +25,10 @@ All notable changes to SD-300 will be documented in this file.
   still exposes the multi-resolution ICO through associated-icon extraction,
   and the managed archive manifest hash-verifies the replacement PNG/ICO under
   the existing update and uninstall ownership paths.
+- Aligned final macOS PKG validation with Native SDK's prebuilt-container
+  contract: the explicitly supplied ICNS keeps its `app-icon.icns` basename in
+  the app bundle and `Info.plist`, rather than the `AppIcon.icns` name reserved
+  for SDK-generated or fallback artwork.
 
 ## [3.1.2] - 2026-07-23
 
