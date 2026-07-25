@@ -12,7 +12,9 @@ ND-300 (Network Diagnostic).
 > owner-preserving CLI transaction. v3.1.2 replaces the generic/ECG identity
 > with the isometric SD/300 mark and makes GUI background monitoring explicit:
 > the tray defaults on, closing the window keeps it running by default, and a
-> live hover summary exposes basic hardware health.
+> live hover summary exposes basic hardware health. v3.1.3 removes the app
+> mark's black plate on Windows/Linux and gives macOS a transparent-corner,
+> softened isometric treatment while retaining the monochrome tray identity.
 
 ## Install
 
