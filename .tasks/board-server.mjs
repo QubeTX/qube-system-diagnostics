@@ -32,6 +32,7 @@ const MILESTONES_MD = path.join(TASKS_DIR, 'MILESTONES.md');
 const CLAUDE_MD = path.join(TASKS_DIR, 'CLAUDE.md');
 const MEMORY_DIR = path.join(TASKS_DIR, 'memory');
 const TASK_DETAIL_DIR = path.join(TASKS_DIR, 'tasks'); // per-task detail files: tasks/<id>.md
+const TASK_DETAIL_TOMBSTONE_DIR = path.join(TASKS_DIR, '.task-detail-tombstones');
 const MILESTONE_DETAIL_DIR = path.join(TASKS_DIR, 'milestones'); // per-milestone detail files: milestones/<id>.md
 const SECURE_DIR_NAME = 'secure'; // .tasks/secure — never served, never watched (secrets; see tasks-memory)
 const CONFIG_FILE = path.join(TASKS_DIR, 'config.json'); // setup-owned; served read-only at /api/config
@@ -122,6 +123,36 @@ function writeJsonSafe(file, obj) {
 
 async function fileMtimeMs(file) {
   try { return Math.floor((await fsp.stat(file)).mtimeMs); } catch { return 0; }
+}
+
+async function readOptionalUtf8(file) {
+  try {
+    return await fsp.readFile(file, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return '';
+    throw error;
+  }
+}
+
+async function unlinkOptional(file) {
+  try {
+    await fsp.unlink(file);
+  } catch (error) {
+    if (!error || error.code !== 'ENOENT') throw error;
+  }
+}
+
+function taskStates(markdown) {
+  const states = new Map();
+  for (const line of markdown.split(/\r?\n/)) {
+    const match = line.match(/^- \[([ xX])\]\s+.*#([0-9a-z]{2,8})\s*$/);
+    if (match) states.set(match[2].toLowerCase(), match[1] === ' ' ? 'open' : 'checked');
+  }
+  return states;
+}
+
+function taskLineIsChecked(markdown, id) {
+  return taskStates(markdown).get(id) === 'checked';
 }
 
 function pidAlive(pid) {
@@ -244,6 +275,28 @@ async function serve({ open = false, port: requested } = {}) {
   const sseClients = new Set();
   const lastSelfWrite = new Map(); // kind → {at, revision}; suppress only its watcher echo
   const watcherDebounce = new Map();
+  const taskDetailWrites = new Map(); // target → serialized compare-and-write promise
+  let tasksWriteTail = Promise.resolve(); // serialize TASKS.md compare-and-write operations
+
+  function detailRevision(content) {
+    return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+  }
+
+  function withTaskDetailWriteLock(target, work) {
+    const previous = taskDetailWrites.get(target) || Promise.resolve();
+    const run = previous.catch(() => {}).then(work);
+    taskDetailWrites.set(target, run);
+    run.finally(() => {
+      if (taskDetailWrites.get(target) === run) taskDetailWrites.delete(target);
+    }).catch(() => {});
+    return run;
+  }
+
+  function withTasksWriteLock(work) {
+    const run = tasksWriteTail.then(work, work);
+    tasksWriteTail = run.catch(() => {});
+    return run;
+  }
 
   function broadcast(kind, writer = '') {
     const payload = `event: change\ndata: ${JSON.stringify({
@@ -334,30 +387,190 @@ async function serve({ open = false, port: requested } = {}) {
 
       if (pathname === '/api/tasks') {
         if (req.method === 'GET') {
-          const md = await fsp.readFile(TASKS_MD, 'utf8').catch(() => '# Tasks\n');
+          const durable = await readOptionalUtf8(TASKS_MD);
+          const md = durable || '# Tasks\n';
           const mtime = await fileMtimeMs(TASKS_MD);
-          return send(res, 200, 'text/markdown; charset=utf-8', md, { 'X-Board-Mtime': String(mtime) });
+          return send(res, 200, 'text/markdown; charset=utf-8', md, {
+            'X-Board-Mtime': String(mtime),
+            'X-Board-Revision': detailRevision(md),
+          });
         }
         if (req.method === 'POST') {
           const body = await readBody(req);
-          // Optimistic concurrency: when the client tells us which version it edited
-          // (X-Base-Mtime), reject with 409 if the file changed underneath it — so an
-          // agent's write is never silently stomped by a stale browser save. The 409
-          // body carries the latest content + mtime so the client can reconcile.
-          const base = req.headers['x-base-mtime'];
-          if (base !== undefined && base !== '') {
-            const current = await fileMtimeMs(TASKS_MD);
-            if (String(current) !== String(base)) {
-              const latest = await fsp.readFile(TASKS_MD, 'utf8').catch(() => '# Tasks\n');
-              return send(res, 409, 'text/markdown; charset=utf-8', latest, { 'X-Board-Mtime': String(current) });
-            }
+          const completionId = String(req.headers['x-completion-task-id'] || '').toLowerCase();
+          const completionRevision = String(req.headers['x-completion-detail-revision'] || '');
+          const deletionId = String(req.headers['x-delete-task-id'] || '').toLowerCase();
+          if (!!completionId !== !!completionRevision
+              || (completionId && !/^[0-9a-z]{2,8}$/.test(completionId))
+              || (deletionId && !/^[0-9a-z]{2,8}$/.test(deletionId))
+              || (completionId && deletionId)) {
+            return send(res, 400, 'application/json', JSON.stringify({
+              error: 'invalid guarded task transition',
+            }));
           }
-          const tmp = TASKS_MD + '.tmp';
-          await fsp.writeFile(tmp, body, 'utf8');
-          await fsp.rename(tmp, TASKS_MD);
-          const mtime = await fileMtimeMs(TASKS_MD);
-          markSelfWrite('tasks', String(req.headers['x-board-client'] || ''), mtime);
-          return send(res, 200, 'application/json', JSON.stringify({ ok: true, mtime }), { 'X-Board-Mtime': String(mtime) });
+
+          const writeTasks = async () => {
+            // Content-hash CAS is authoritative for current clients; mtime remains a backward-
+            // compatible fallback. TASKS writes are serialized so two same-base requests cannot
+            // both pass their comparison, even on filesystems with coarse timestamp resolution.
+            const durable = await readOptionalUtf8(TASKS_MD);
+            const latest = durable || '# Tasks\n';
+            const currentMtime = await fileMtimeMs(TASKS_MD);
+            const currentBoardRevision = detailRevision(latest);
+            const baseBoardRevision = String(req.headers['x-base-board-revision'] || '');
+            const baseMtime = req.headers['x-base-mtime'];
+            const stale = baseBoardRevision
+              ? baseBoardRevision !== currentBoardRevision
+              : baseMtime !== undefined && baseMtime !== ''
+                && String(currentMtime) !== String(baseMtime);
+            if (stale) {
+              return send(res, 409, 'text/markdown; charset=utf-8', latest, {
+                'X-Board-Mtime': String(currentMtime),
+                'X-Board-Revision': currentBoardRevision,
+              });
+            }
+            if ((completionId || deletionId) && !baseBoardRevision) {
+              return send(res, 428, 'application/json', JSON.stringify({
+                error: 'guarded task transition requires a board content revision',
+              }), {
+                'X-Board-Mtime': String(currentMtime),
+                'X-Board-Revision': currentBoardRevision,
+              });
+            }
+
+            const currentStates = taskStates(latest);
+            const nextStates = taskStates(body);
+            const newlyChecked = [...nextStates.entries()]
+              .filter(([id, state]) => state === 'checked' && currentStates.get(id) !== 'checked')
+              .map(([id]) => id);
+            const removedIds = [...currentStates.keys()].filter(id => !nextStates.has(id));
+            if (newlyChecked.length) {
+              if (!completionId) {
+                return send(res, 428, 'application/json', JSON.stringify({
+                  error: 'new task completion requires a detail revision',
+                  taskIds: newlyChecked,
+                }));
+              }
+              if (newlyChecked.length !== 1 || newlyChecked[0] !== completionId) {
+                return send(res, 400, 'application/json', JSON.stringify({
+                  error: 'completion precondition does not match the checked transition',
+                  taskIds: newlyChecked,
+                }));
+              }
+            } else if (completionId) {
+              return send(res, 400, 'application/json', JSON.stringify({
+                error: 'completion precondition supplied without a new checked transition',
+              }));
+            }
+            if (removedIds.length) {
+              if (!deletionId) {
+                return send(res, 428, 'application/json', JSON.stringify({
+                  error: 'task removal requires a guarded delete transition',
+                  taskIds: removedIds,
+                }));
+              }
+              if (removedIds.length !== 1 || removedIds[0] !== deletionId) {
+                return send(res, 400, 'application/json', JSON.stringify({
+                  error: 'delete precondition does not match the removed task',
+                  taskIds: removedIds,
+                }));
+              }
+            } else if (deletionId) {
+              return send(res, 400, 'application/json', JSON.stringify({
+                error: 'delete precondition supplied without a removed task',
+                taskId: deletionId,
+              }));
+            }
+
+            // A completion write is coupled to the exact task-detail revision the dashboard
+            // certified. The same per-task lock serializes browser detail writes with this
+            // compare-and-board-write section: whichever request wins makes the other retry.
+            if (completionId) {
+              const detailTarget = path.join(TASK_DETAIL_DIR, completionId + '.md');
+              const currentDetail = await readOptionalUtf8(detailTarget);
+              const currentRevision = detailRevision(currentDetail);
+              if (currentRevision !== completionRevision) {
+                return send(res, 412, 'application/json', JSON.stringify({
+                  error: 'task detail changed before completion',
+                  taskId: completionId,
+                  actualRevision: currentRevision,
+                }), { 'X-Detail-Revision': currentRevision });
+              }
+            }
+
+            // Guarded deletion first moves the detail out of its live id path. If the board
+            // write fails, restore it; after a successful board write, cleanup can fail only
+            // into the hidden tombstone directory, never into a future reused task id.
+            let detailTombstone = null;
+            let detailCleanupWarning = '';
+            if (deletionId) {
+              const detailTarget = path.join(TASK_DETAIL_DIR, deletionId + '.md');
+              const tombstoneDir = TASK_DETAIL_TOMBSTONE_DIR;
+              await fsp.mkdir(tombstoneDir, { recursive: true });
+              detailTombstone = path.join(
+                tombstoneDir,
+                `${deletionId}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.md`
+              );
+              try {
+                await fsp.rename(detailTarget, detailTombstone);
+              } catch (error) {
+                if (error && error.code === 'ENOENT') detailTombstone = null;
+                else throw error;
+              }
+            }
+
+            const tmp = TASKS_MD + '.tmp';
+            try {
+              await fsp.writeFile(tmp, body, 'utf8');
+              await fsp.rename(tmp, TASKS_MD);
+            } catch (error) {
+              if (detailTombstone) {
+                try {
+                  await fsp.rename(
+                    detailTombstone,
+                    path.join(TASK_DETAIL_DIR, deletionId + '.md')
+                  );
+                } catch (restoreError) {
+                  error.detailRestoreError = restoreError.message;
+                }
+              }
+              throw error;
+            }
+
+            if (detailTombstone) {
+              try {
+                await fsp.unlink(detailTombstone);
+              } catch (error) {
+                detailCleanupWarning = `detail tombstone retained: ${error.message}`;
+              }
+            }
+            const mtime = await fileMtimeMs(TASKS_MD);
+            const boardRevision = detailRevision(body);
+            markSelfWrite('tasks', String(req.headers['x-board-client'] || ''), mtime);
+            if (deletionId) {
+              markSelfWrite('detail', String(req.headers['x-board-client'] || ''));
+            }
+            return send(res, 200, 'application/json', JSON.stringify({
+              ok: true,
+              mtime,
+              detailCleanup: !detailCleanupWarning,
+              ...(detailCleanupWarning ? { warning: detailCleanupWarning } : {}),
+            }), {
+              'X-Board-Mtime': String(mtime),
+              'X-Board-Revision': boardRevision,
+              ...(completionRevision ? { 'X-Detail-Revision': completionRevision } : {}),
+            });
+          };
+
+          const guardedId = completionId || deletionId;
+          if (guardedId) {
+            const detailTarget = path.join(TASK_DETAIL_DIR, guardedId + '.md');
+            return await withTaskDetailWriteLock(
+              detailTarget,
+              () => withTasksWriteLock(writeTasks)
+            );
+          }
+          return await withTasksWriteLock(writeTasks);
         }
       }
 
@@ -422,30 +635,81 @@ async function serve({ open = false, port: requested } = {}) {
         if (!/^[0-9a-z]{2,8}$/.test(id)) return send(res, 400, 'application/json', JSON.stringify({ error: 'bad id' }));
         const target = path.join(TASK_DETAIL_DIR, id + '.md');
         if (req.method === 'GET') {
-          const content = await fsp.readFile(target, 'utf8').catch(() => '');
-          return send(res, 200, 'text/markdown; charset=utf-8', content);
+          const content = await readOptionalUtf8(target);
+          return send(res, 200, 'text/markdown; charset=utf-8', content, {
+            'X-Detail-Revision': detailRevision(content),
+          });
         }
         if (req.method === 'POST') {
           const body = await readBody(req);
-          await fsp.mkdir(TASK_DETAIL_DIR, { recursive: true });
-          const tmp = target + '.tmp';
-          await fsp.writeFile(tmp, body, 'utf8');
-          await fsp.rename(tmp, target);
-          markSelfWrite('detail', String(req.headers['x-board-client'] || ''));
-          return send(res, 200, 'application/json', JSON.stringify({ ok: true }));
+          return await withTaskDetailWriteLock(
+            target,
+            () => withTasksWriteLock(async () => {
+              const board = await readOptionalUtf8(TASKS_MD);
+              const state = taskStates(board).get(id);
+              if (!state) {
+                return send(res, 409, 'application/json', JSON.stringify({
+                  error: 'task no longer exists; stale detail write refused',
+                  taskId: id,
+                }));
+              }
+              if (state === 'checked') {
+                return send(res, 423, 'application/json', JSON.stringify({
+                  error: 'reopen the completed task before editing its detail',
+                  taskId: id,
+                }));
+              }
+              const current = await readOptionalUtf8(target);
+              const currentRevision = detailRevision(current);
+              const baseRevision = String(req.headers['x-base-revision'] || '');
+              if (!baseRevision) {
+                return send(res, 428, 'application/json', JSON.stringify({
+                  error: 'task detail revision required',
+                }), { 'X-Detail-Revision': currentRevision });
+              }
+              if (baseRevision !== currentRevision) {
+                return send(res, 409, 'text/markdown; charset=utf-8', current, {
+                  'X-Detail-Revision': currentRevision,
+                });
+              }
+              await fsp.mkdir(TASK_DETAIL_DIR, { recursive: true });
+              const tmp = target + '.tmp';
+              await fsp.writeFile(tmp, body, 'utf8');
+              await fsp.rename(tmp, target);
+              const nextRevision = detailRevision(body);
+              markSelfWrite('detail', String(req.headers['x-board-client'] || ''));
+              return send(res, 200, 'application/json', JSON.stringify({
+                ok: true, revision: nextRevision,
+              }), { 'X-Detail-Revision': nextRevision });
+            })
+          );
         }
         if (req.method === 'DELETE') {
-          // Called when a task is deleted, so its detail file can't outlive it (and a
-          // future task that happens to reuse the id never inherits stale content).
-          await fsp.unlink(target).catch(() => {});
-          markSelfWrite('detail', String(req.headers['x-board-client'] || ''));
-          return send(res, 200, 'application/json', JSON.stringify({ ok: true }));
+          // Direct cleanup is allowed only after TASKS.md no longer names the task. Current
+          // dashboards use the guarded /api/tasks deletion transaction instead.
+          return await withTaskDetailWriteLock(
+            target,
+            () => withTasksWriteLock(async () => {
+              const board = await readOptionalUtf8(TASKS_MD);
+              if (taskStates(board).has(id)) {
+                return send(res, 409, 'application/json', JSON.stringify({
+                  error: 'remove the task through guarded /api/tasks before deleting its detail',
+                  taskId: id,
+                }));
+              }
+              await unlinkOptional(target);
+              markSelfWrite('detail', String(req.headers['x-board-client'] || ''));
+              return send(res, 200, 'application/json', JSON.stringify({ ok: true }));
+            })
+          );
         }
       }
 
       // Per-milestone detail file (rich description + Completed archive + activity log):
-      // .tasks/milestones/<id>.md — same semantics as /api/task. The id regex + fixed directory
-      // confine both detail routes inside .tasks/; secure/ is structurally unreachable from here.
+      // .tasks/milestones/<id>.md. This older surface shares task-detail id validation, lazy
+      // files, atomic replacement, and deletion, but not the task Verification route's
+      // revision precondition. The id regex + fixed directory confine both detail routes inside
+      // .tasks/; secure/ is structurally unreachable from here.
       if (pathname === '/api/milestone') {
         const id = (url.searchParams.get('id') || '').toLowerCase();
         if (!/^[0-9a-z]{2,8}$/.test(id)) return send(res, 400, 'application/json', JSON.stringify({ error: 'bad id' }));
@@ -552,6 +816,7 @@ async function serve({ open = false, port: requested } = {}) {
     if (n.startsWith('.board-') || n.startsWith('.install-manifest') ||
         n === 'package.json' || n === 'package-lock.json' || n.endsWith('.tmp') ||
         n === '.gitignore' ||
+        n === '.task-detail-tombstones' || n.startsWith('.task-detail-tombstones' + path.sep) ||
         n === SECURE_DIR_NAME || n.startsWith(SECURE_DIR_NAME + path.sep) ||
         n === 'vendor' || n.startsWith('vendor' + path.sep) ||
         n === 'node_modules' || n.startsWith('node_modules' + path.sep)) return;
@@ -613,7 +878,7 @@ function reminderFor(event, hookInput, url) {
   const tail = ` — the live board at ${url} (.tasks/TASKS.md).`;
   switch (event) {
     case 'SessionStart':
-      return { key: 'session', text: `[task board] This repo uses a live SHAUGHV task board${tail} Keep it current so the operator has full visibility: as you start, finish, or discover work — and around commits, pushes, and subagents — update .tasks/TASKS.md (move items between sections, check off completed work, add new ones). Use proper subtasks for small board-visible steps: indented checkbox rows under the parent task, with optional indented detail lines; do not bury those steps as plain text in the parent description or call them sub-items. The board auto-syncs; you just edit the file. For each task, keep a rich, self-contained description in .tasks/tasks/<id>.md (lead with a plain-English TT;DR, then exhaustive context — goal, plan, files, decisions, what's done vs. left) so ANY agent that picks the task up later, at any stage, has everything it needs to continue. Log meaningful changes under its ## Activity section.` };
+      return { key: 'session', text: `[task board] This repo uses a live SHAUGHV task board${tail} Keep .tasks/TASKS.md current as work starts, finishes, or changes. Use indented checkbox subtasks for small board-visible steps. For each Active task, keep .tasks/tasks/<id>.md as a compact continuation packet: objective/acceptance and scope; verified state with exact evidence pointers; unresolved Verification; conditional Evidence and Attempts; decisions and failed-route re-entry conditions; Status; exact next action; and concise Activity. Keep raw logs/history at stable paths instead of pasting exhaustive context. Missing required evidence stays open—it is not an agent waiver.` };
     case 'PostToolUse': {
       const cmd = (hookInput?.tool_input?.command || '').toString();
       if (/\bgit\s+push\b/.test(cmd)) return { key: 'push', text: `[task board] You just pushed. Make sure .tasks/TASKS.md reflects what landed — check off completed items and add any follow-ups — so the operator's board stays accurate.` };
@@ -621,11 +886,11 @@ function reminderFor(event, hookInput, url) {
       return null;
     }
     case 'ExitPlanMode':
-      return { key: 'plan', text: `[task board] A plan was just approved. Mirror its steps into .tasks/TASKS.md as Active items so the operator can track execution against the board.` };
+      return { key: 'plan', text: `[task board] A plan was just approved. Capture its stable dependency skeleton in .tasks/TASKS.md, but put only the current bounded window in Active, with its predicted observation and redirect condition; later steps stay coarse in To-Do or Backlog.` };
     case 'SubagentStart':
       return { key: 'subagent-start', text: `[task board] A subagent is starting. If it changes the plan or completes work, make sure .tasks/TASKS.md reflects it so the operator keeps visibility.` };
     case 'SubagentStop':
-      return { key: 'subagent-stop', text: `[task board] A subagent just finished. Reflect any completed or newly-discovered work in .tasks/TASKS.md.` };
+      return { key: 'subagent-stop', text: `[task board] A subagent just finished. Ingest its artifacts, evidence, terminal state, failed routes, and next action before updating .tasks/TASKS.md; do not mark work complete from the subagent's closing prose alone.` };
     default:
       return { key: 'generic', text: `[task board] Keep .tasks/TASKS.md current so the operator has full visibility.` };
   }

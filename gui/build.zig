@@ -29,7 +29,8 @@ pub fn build(b: *std.Build) void {
     generate_icons_run.setCwd(b.path("."));
     generate_icons_run.addArgs(&.{
         "generate",
-        "assets/icon-source/app-icon.png",
+        "assets/icon-source/app-icon.svg",
+        "assets/icon-source/app-icon-macos.svg",
         "assets/icon-source/tray-icon.svg",
         "assets/generated",
     });
@@ -41,7 +42,8 @@ pub fn build(b: *std.Build) void {
     check_icons_run.setCwd(b.path("."));
     check_icons_run.addArgs(&.{
         "check",
-        "assets/icon-source/app-icon.png",
+        "assets/icon-source/app-icon.svg",
+        "assets/icon-source/app-icon-macos.svg",
         "assets/icon-source/tray-icon.svg",
         "assets/generated",
     });
@@ -104,7 +106,11 @@ pub fn build(b: *std.Build) void {
         else => @panic("SD-300 GUI engine is supported only on Windows, macOS, and Linux"),
     };
     const install_engine = b.addInstallBinFile(b.path(engine_name), engine_name);
-    const install_icon = b.addInstallBinFile(b.path("assets/generated/app-icon-512.png"), "assets/app-icon.png");
+    const runtime_icon_source = if (os == .macos)
+        "assets/generated/app-icon-macos-512.png"
+    else
+        "assets/generated/app-icon-512.png";
+    const install_icon = b.addInstallBinFile(b.path(runtime_icon_source), "assets/app-icon.png");
     const install_app_ico = b.addInstallBinFile(b.path("assets/generated/app-icon.ico"), "assets/app-icon.ico");
     const install_tray_ico = b.addInstallBinFile(b.path("assets/generated/tray-icon.ico"), "assets/tray-icon.ico");
     const install_tray_dark_ico = b.addInstallBinFile(b.path("assets/generated/tray-icon-dark.ico"), "assets/tray-icon-dark.ico");

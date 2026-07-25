@@ -48,6 +48,7 @@ pub fn main(init: std.process.Init) !void {
 
     const mode_text = args.next() orelse return usage();
     const app_source_path = args.next() orelse return usage();
+    const macos_source_path = args.next() orelse return usage();
     const tray_source_path = args.next() orelse return usage();
     const output_root = args.next() orelse return usage();
     if (args.next() != null) return usage();
@@ -66,14 +67,19 @@ pub fn main(init: std.process.Init) !void {
 
     const app_source_bytes = try cwd.readFileAlloc(io, app_source_path, allocator, .limited(64 * 1024 * 1024));
     defer allocator.free(app_source_bytes);
-    var app_source = try loadSource(allocator, app_source_bytes, .png, app_source_path);
+    var app_source = try loadSourceForPath(allocator, app_source_bytes, app_source_path);
     defer app_source.deinit(allocator);
 
-    try emitAppAssets(allocator, writer, output_root, &app_source);
+    const macos_source_bytes = try cwd.readFileAlloc(io, macos_source_path, allocator, .limited(4 * 1024 * 1024));
+    defer allocator.free(macos_source_bytes);
+    var macos_source = try loadSourceForPath(allocator, macos_source_bytes, macos_source_path);
+    defer macos_source.deinit(allocator);
+
+    try emitAppAssets(allocator, writer, output_root, &app_source, &macos_source);
 
     const tray_source_bytes = try cwd.readFileAlloc(io, tray_source_path, allocator, .limited(4 * 1024 * 1024));
     defer allocator.free(tray_source_bytes);
-    var tray_source = try loadSource(allocator, tray_source_bytes, .svg, tray_source_path);
+    var tray_source = try loadSourceForPath(allocator, tray_source_bytes, tray_source_path);
     defer tray_source.deinit(allocator);
 
     try emitTrayAssets(allocator, writer, output_root, &tray_source);
@@ -85,10 +91,22 @@ pub fn main(init: std.process.Init) !void {
 
 fn usage() error{InvalidArguments} {
     std.debug.print(
-        "usage: export-icons <generate|check> <app-source.png> <tray-source.svg> <output-root>\n",
+        "usage: export-icons <generate|check> <app-source> <macos-source> <tray-source> <output-root>\n",
         .{},
     );
     return error.InvalidArguments;
+}
+
+fn loadSourceForPath(
+    allocator: std.mem.Allocator,
+    bytes: []const u8,
+    path: []const u8,
+) !app_icon.Source {
+    const kind = app_icon.sourceKindForPath(path) orelse {
+        std.debug.print("selected icon source has an unsupported extension: {s}\n", .{path});
+        return error.InvalidIconSource;
+    };
+    return loadSource(allocator, bytes, kind, path);
 }
 
 fn loadSource(
@@ -111,24 +129,32 @@ fn emitAppAssets(
     writer: AssetWriter,
     output_root: []const u8,
     source: *const app_icon.Source,
+    macos_source: *const app_icon.Source,
 ) !void {
     const ico = try app_icon.buildIco(allocator, source);
     defer allocator.free(ico);
     try emitAt(allocator, writer, output_root, "app-icon.ico", ico);
 
-    const icns = try app_icon.buildIcns(allocator, source);
+    const icns = try app_icon.buildIcns(allocator, macos_source);
     defer allocator.free(icns);
     try emitAt(allocator, writer, output_root, "app-icon.icns", icns);
 
     const runtime_png = try app_icon.buildSquarePng(allocator, source, 512);
     defer allocator.free(runtime_png);
+    try validateAppDerivative(allocator, runtime_png, "transparent app icon", 20, 45);
     try emitAt(allocator, writer, output_root, "app-icon-512.png", runtime_png);
     try writer.emit("assets/app-icon.png", runtime_png);
     try writer.emit("assets/icon.png", runtime_png);
 
+    const macos_runtime_png = try app_icon.buildSquarePng(allocator, macos_source, 512);
+    defer allocator.free(macos_runtime_png);
+    try validateAppDerivative(allocator, macos_runtime_png, "macOS app icon", 5, null);
+    try emitAt(allocator, writer, output_root, "app-icon-macos-512.png", macos_runtime_png);
+
     inline for (app_icon.linux_sizes) |size| {
         const png = try app_icon.buildSquarePng(allocator, source, size);
         defer allocator.free(png);
+        try validateAppDerivative(allocator, png, "Linux app icon", 20, 45);
         const relative = try std.fmt.allocPrint(
             allocator,
             "linux/hicolor/{d}x{d}/apps/sd300.png",
@@ -136,6 +162,58 @@ fn emitAppAssets(
         );
         defer allocator.free(relative);
         try emitAt(allocator, writer, output_root, relative, png);
+    }
+}
+
+fn validateAppDerivative(
+    allocator: std.mem.Allocator,
+    png: []const u8,
+    label: []const u8,
+    minimum_transparent_percent: usize,
+    maximum_dark_percent: ?usize,
+) !void {
+    var loaded = try loadSource(allocator, png, .png, label);
+    defer loaded.deinit(allocator);
+    const image = loaded.image orelse return error.InvalidIconSource;
+    const total = image.width * image.height;
+    var transparent: usize = 0;
+    var orange: usize = 0;
+    var light: usize = 0;
+    var dark: usize = 0;
+    var offset: usize = 0;
+    while (offset < image.pixels.len) : (offset += 4) {
+        const red = image.pixels[offset];
+        const green = image.pixels[offset + 1];
+        const blue = image.pixels[offset + 2];
+        const alpha = image.pixels[offset + 3];
+        if (alpha <= 8) transparent += 1;
+        if (alpha >= 192) {
+            // Tiny vector renders anti-alias the off-white key forms into
+            // neutral gray coverage; count that retained light structure
+            // instead of requiring a fully opaque source-color pixel.
+            if (red >= 150 and green >= 150 and blue >= 150) light += 1;
+            if (red >= 220 and green <= 110 and blue <= 80) orange += 1;
+            if (red <= 70 and green <= 70 and blue <= 75) dark += 1;
+        }
+    }
+
+    const bad_transparency = transparent * 100 < total * minimum_transparent_percent;
+    const bad_dark_coverage = if (maximum_dark_percent) |limit|
+        dark * 100 > total * limit
+    else
+        false;
+    if (bad_transparency or bad_dark_coverage or orange == 0 or light == 0) {
+        std.debug.print(
+            "{s} failed transparency/palette validation: transparent={d}% dark={d}% orange={d} light={d}\n",
+            .{
+                label,
+                transparent * 100 / total,
+                dark * 100 / total,
+                orange,
+                light,
+            },
+        );
+        return error.InvalidIconSource;
     }
 }
 
