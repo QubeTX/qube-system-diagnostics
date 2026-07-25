@@ -12,7 +12,7 @@
 ## To-Do
 
 ## Active
-- [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - operator-directed corrective work after the installed Windows GUI exposed generic app and tray icons; deliver selected artwork, embedded Win32 identity, packaged runtime assets, and update/uninstall proof (ms #v3n) (owner codex) #n7k
+- [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k
   - [x] Reconstruct the current artwork and Windows icon-delivery failure
     > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.
   - [x] Explore and select the final flat-isometric SD-300 direction
@@ -21,7 +21,7 @@
   - [x] Replace the plated app badge with the approved platform-tailored transparent mark
     > Windows/Linux now use the free-floating transparent cube; macOS uses a transparent-corner isometric graphite halo. The tray glyph is unchanged.
   - [ ] Qualify Windows associated, taskbar, Alt+Tab, and tray icons plus package lifecycle
-- [ ] **Keep tray monitoring alive after closing the GUI, with an explicit setting and live tooltip** - next-patch requirement bundled with #n7k: tray-enabled Windows/macOS sessions default to closing the window into the background, expose a GUI close-to-tray toggle, retain tray Quit, and show a bounded live hardware summary on hover (ms #v3n) (owner codex) #ctt
+- [ ] **Keep tray monitoring alive after closing the GUI, with an explicit setting and live tooltip** - PUBLIC and requalified with #n7k in v3.1.3: tray-enabled Windows/macOS sessions close into the background by default, expose a GUI close-to-tray toggle, retain tray Quit, and publish a bounded live hardware summary on hover; only the operator-visible Windows notification-area check remains (ms #v3n) (owner codex) #ctt
   - [x] Add the close-to-tray GUI setting and migration-safe default
   - [x] Make window close hide or fully quit according to the effective setting
   - [x] Publish a bounded live hardware summary through Windows/macOS tray tooltips
