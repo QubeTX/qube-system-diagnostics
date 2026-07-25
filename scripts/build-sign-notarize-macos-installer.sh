@@ -202,7 +202,11 @@ app_bundle="${work_dir}/SD-300.app"
 app_executable="${app_bundle}/Contents/MacOS/sd300-gui"
 app_engine="${app_bundle}/Contents/MacOS/libsd300_engine.dylib"
 [[ -d $app_bundle && -f $app_executable ]] || { echo 'Native SDK packager did not produce the expected app bundle' >&2; exit 1; }
-app_icon="${app_bundle}/Contents/Resources/AppIcon.icns"
+# Native SDK preserves the basename of an explicitly supplied prebuilt ICNS.
+# Keep this in lockstep with gui/app.zon's selected macOS container instead of
+# checking the AppIcon.icns name used only for SDK-generated/default artwork.
+app_icon_name='app-icon.icns'
+app_icon="${app_bundle}/Contents/Resources/${app_icon_name}"
 runtime_app_icon="${app_bundle}/Contents/Resources/assets/app-icon.png"
 tray_template="${app_bundle}/Contents/Resources/assets/tray-icon-template.png"
 for required_identity_asset in "$app_icon" "$runtime_app_icon" "$tray_template"; do
@@ -211,7 +215,7 @@ for required_identity_asset in "$app_icon" "$runtime_app_icon" "$tray_template";
         exit 1
     }
 done
-grep -Fq '<string>AppIcon.icns</string>' "${app_bundle}/Contents/Info.plist" || {
+grep -Fq "<string>${app_icon_name}</string>" "${app_bundle}/Contents/Info.plist" || {
     echo 'macOS app bundle does not declare the generated SD-300 application icon' >&2
     exit 1
 }
