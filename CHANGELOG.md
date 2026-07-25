@@ -4,6 +4,28 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Removed the application mark's black square plate on Windows and Linux so
+  the operator-selected orange/off-white SD/300 block now floats on transparent
+  system surfaces. macOS uses a separate art-directed master with transparent
+  corners and a softened isometric graphite halo, preserving the same mark
+  while giving the Dock a deliberate native silhouette. The monochrome tray
+  identity is unchanged.
+- Split deterministic application-icon export into a transparent Windows/Linux
+  master and a macOS master while retaining prebuilt ICO and ICNS precedence
+  for their native package formats. The original operator-selected raster is
+  preserved as source evidence rather than used as a plated production asset.
+
+### Fixed
+
+- Extended icon export checks to reject missing transparency, missing
+  orange/off-white structures, or a reintroduced dark plate across every Linux
+  hicolor size and the shared Windows/runtime image. The Windows release EXE
+  still exposes the multi-resolution ICO through associated-icon extraction,
+  and the managed archive manifest hash-verifies the replacement PNG/ICO under
+  the existing update and uninstall ownership paths.
+
 ## [3.1.2] - 2026-07-23
 
 ### Added

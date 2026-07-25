@@ -172,12 +172,17 @@ existing green/amber/red health semantics. Avoid generic purple-gradient â€œAIâ€
 styling, blur-heavy cards, continuous ambient animation, custom cursors, and
 other decorative work that costs legibility or idle performance.
 
-The product mark is the operator-selected flat isometric SD/300 block. Its SVG
-and raster masters live under `assets/icon-source`; the companion tray master
-is a simplified monochrome form of the same geometry. Regenerate every
-committed ICO/ICNS/PNG/hicolor derivative with `zig build generate-icons` and
-verify byte-for-byte determinism with `zig build check-icons`. Never hand-edit
-generated icon outputs.
+The product mark is the operator-selected flat isometric SD/300 block. Windows
+and Linux use the free-floating transparent master at
+`assets/icon-source/app-icon.svg`; macOS uses
+`assets/icon-source/app-icon-macos.svg`, which keeps transparent corners around
+a softened isometric graphite halo. The original selected raster is retained
+as `app-icon-selected-original.png` for source evidence, not production export.
+The companion tray master remains a simplified monochrome form of the same
+geometry. Regenerate every committed ICO/ICNS/PNG/hicolor derivative with
+`zig build generate-icons` and verify byte-for-byte determinism plus the
+required transparency and palette structure with `zig build check-icons`.
+Never hand-edit generated icon outputs.
 
 Makira is the primary face for body copy, headings, navigation, and large
 numbers. IBM Plex Mono is secondary for technical labels and compact numeric

@@ -18,6 +18,8 @@
   - [x] Explore and select the final flat-isometric SD-300 direction
   - [x] Import the operator-selected Quiver app and tray SVG masters
   - [x] Generate deterministic platform assets and wire runtime, build, install, update, and uninstall
+  - [x] Replace the plated app badge with the approved platform-tailored transparent mark
+    > Windows/Linux now use the free-floating transparent cube; macOS uses a transparent-corner isometric graphite halo. The tray glyph is unchanged.
   - [ ] Qualify Windows associated, taskbar, Alt+Tab, and tray icons plus package lifecycle
 - [ ] **Keep tray monitoring alive after closing the GUI, with an explicit setting and live tooltip** - next-patch requirement bundled with #n7k: tray-enabled Windows/macOS sessions default to closing the window into the background, expose a GUI close-to-tray toggle, retain tray Quit, and show a bounded live hardware summary on hover (ms #v3n) (owner codex) #ctt
   - [x] Add the close-to-tray GUI setting and migration-safe default

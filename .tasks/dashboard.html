@@ -1775,6 +1775,7 @@
     let hasChanges = false;
     let currentView = 'board';
     let quickAddSection = null;
+    let taskBoardReloadDeferred = false;
 
     const board = document.getElementById('board');
     const listView = document.getElementById('listView');
@@ -2649,6 +2650,11 @@
         if (idx !== -1) { task = sectionTasks[idx]; fromSectionId = section.id; fromIdx = idx; break; }
       }
       if (!task) return;
+      if (task.checked) {
+        showStatus('Reopen the completed task before moving or reordering it');
+        renderTasks();
+        return;
+      }
 
       // Gate: a blocked task can't be moved INTO the Active column until its prerequisites
       // are done. (Reordering within a column, or moving elsewhere, is always allowed.)
@@ -2685,26 +2691,85 @@
       renderTasks();
     }
 
-    function deleteTask(task) {
-      if (!confirm(`Delete "${task.title}"?`)) return;
+    async function deleteTask(task) {
+      if (!SERVER_MODE) {
+        denyNudge('Open the live localhost board to delete tasks — static mode cannot atomically remove TASKS.md state and its detail file');
+        return false;
+      }
+      if (isSaving) {
+        denyNudge('A board save is still finishing — retry deletion when it settles');
+        return false;
+      }
+
+      let removed = null;
       for (const section of sections) {
         const sectionTasks = tasks[section.id] || [];
         const idx = sectionTasks.findIndex(t => t.id === task.id);
-        if (idx !== -1) { sectionTasks.splice(idx, 1); break; }
+        if (idx !== -1) {
+          removed = { sectionId: section.id, index: idx };
+          sectionTasks.splice(idx, 1);
+          break;
+        }
       }
-      // Drop the per-task detail file so it can't outlive the task (or bleed into a future
-      // task that reuses the id). Fire-and-forget; server mode only.
-      if (SERVER_MODE && task.id) {
-        fetch('/api/task?id=' + encodeURIComponent(task.id), {
-          method: 'DELETE', headers: serverWriteHeaders(),
-        }).then(verifyServerResponse).catch(() => {});
+      if (!removed) return false;
+
+      if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+      isSaving = true;
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: serverWriteHeaders('text/markdown', {
+            'X-Base-Mtime': String(lastModified),
+            'X-Base-Board-Revision': lastBoardRevision,
+            'X-Delete-Task-Id': task.id,
+          }),
+          body: toMarkdown(),
+        });
+        verifyServerResponse(res);
+        if (res.status === 409) {
+          tasks[removed.sectionId].splice(
+            Math.min(removed.index, tasks[removed.sectionId].length),
+            0,
+            task
+          );
+          taskBoardReloadDeferred = true;
+          renderTasks();
+          showStatus('Board changed before deletion — close the task to reload, then review and retry');
+          return false;
+        }
+        if (!res.ok) throw new Error(`guarded task deletion returned ${res.status}`);
+        const result = await res.json().catch(() => ({ ok: true, detailCleanup: true }));
+        lastModified = Number(res.headers.get('X-Board-Mtime')) || lastModified;
+        lastBoardRevision = res.headers.get('X-Board-Revision') || lastBoardRevision;
+        hasChanges = false;
+        saveBtn.disabled = true;
+        tmDetailPersistence.delete(task.id);
+        markBoardUpdated();
+        renderTasks();
+        showStatus(result.detailCleanup === false
+          ? 'Task deleted; an inaccessible detail tombstone was retained outside live task ids'
+          : 'Task and its detail file deleted');
+        return true;
+      } catch (e) {
+        tasks[removed.sectionId].splice(
+          Math.min(removed.index, tasks[removed.sectionId].length),
+          0,
+          task
+        );
+        renderTasks();
+        showStatus('Task deletion failed: ' + e.message);
+        return false;
+      } finally {
+        isSaving = false;
+        if (hasChanges && !taskBoardReloadDeferred && !saveTimeout) {
+          saveTimeout = setTimeout(autoSave, 500);
+        }
       }
-      markChanged();
-      renderTasks();
     }
 
     let saveTimeout = null;
     let lastModified = 0;
+    let lastBoardRevision = '';
     let watchInterval = null;
     let isSaving = false;
 
@@ -2781,10 +2846,17 @@
         verifyServerResponse(res);
         if (!res.ok) throw new Error(`task source returned ${res.status}`);
         const content = await res.text();
-        lastModified = Number(res.headers.get('X-Board-Mtime')) || 0;
+        const incomingMtime = Number(res.headers.get('X-Board-Mtime')) || 0;
+        const incomingRevision = res.headers.get('X-Board-Revision') || '';
+        if (!incomingRevision) throw new Error('task source omitted its concurrency revision');
         const result = parseTaskMarkdown(content);
-        sections = result.sections;
-        tasks = result.tasks;
+        if (!applyTaskSnapshot(result)) {
+          taskBoardReloadDeferred = true;
+          showStatus('Board changed while this task has unsaved detail work — close it to reload');
+          return;
+        }
+        lastModified = incomingMtime;
+        lastBoardRevision = incomingRevision;
         taskFileName = 'TASKS.md';
         if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
         hasChanges = false;
@@ -2802,24 +2874,35 @@
       try {
         const res = await fetch('/api/tasks', {
           method: 'POST',
-          headers: serverWriteHeaders('text/markdown', { 'X-Base-Mtime': String(lastModified) }),
+          headers: serverWriteHeaders('text/markdown', {
+            'X-Base-Mtime': String(lastModified),
+            'X-Base-Board-Revision': lastBoardRevision,
+          }),
           body: toMarkdown(),
         });
         verifyServerResponse(res);
         if (res.status === 409) {
           // An agent changed TASKS.md under us — reload latest rather than stomp its write.
           const latest = await res.text();
-          lastModified = Number(res.headers.get('X-Board-Mtime')) || lastModified;
+          const incomingMtime = Number(res.headers.get('X-Board-Mtime')) || lastModified;
+          const incomingRevision = res.headers.get('X-Board-Revision') || lastBoardRevision;
           const result = parseTaskMarkdown(latest);
-          sections = result.sections;
-          tasks = result.tasks;
+          if (!applyTaskSnapshot(result)) {
+            taskBoardReloadDeferred = true;
+            showStatus('Board changed on disk while this task has unsaved detail work — close it to reload');
+            return;
+          }
+          lastModified = incomingMtime;
+          lastBoardRevision = incomingRevision;
           hasChanges = false;
           saveBtn.disabled = true;
           renderTasks();
           showStatus('Board changed on disk — reloaded. Re-apply your edit.');
           return;
         }
+        if (!res.ok) throw new Error(`task save returned ${res.status}`);
         lastModified = Number(res.headers.get('X-Board-Mtime')) || lastModified;
+        lastBoardRevision = res.headers.get('X-Board-Revision') || lastBoardRevision;
         hasChanges = false;
         saveBtn.disabled = true;
         showStatus('Saved');
@@ -2827,6 +2910,75 @@
         showStatus('Save failed: ' + e.message);
       } finally {
         isSaving = false;
+      }
+    }
+
+    async function saveVerifiedTaskCompletion(task, detailRevision) {
+      if (!SERVER_MODE) {
+        denyNudge('Open the live localhost board to complete tasks — static mode cannot atomically bind the checklist revision to TASKS.md');
+        return false;
+      }
+      if (isSaving) {
+        denyNudge('A board save is still finishing — retry completion when it settles');
+        return false;
+      }
+      if (!detailRevision || !lastBoardRevision) {
+        denyNudge('The durable board or checklist has no revision — close and reopen the task before completing it');
+        return false;
+      }
+
+      if (saveTimeout) { clearTimeout(saveTimeout); saveTimeout = null; }
+      const priorChecked = task.checked;
+      task.checked = true;
+      const body = toMarkdown();
+      task.checked = priorChecked;
+      isSaving = true;
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: serverWriteHeaders('text/markdown', {
+            'X-Base-Mtime': String(lastModified),
+            'X-Base-Board-Revision': lastBoardRevision,
+            'X-Completion-Task-Id': task.id,
+            'X-Completion-Detail-Revision': detailRevision,
+          }),
+          body,
+        });
+        verifyServerResponse(res);
+        if (res.status === 409) {
+          taskBoardReloadDeferred = true;
+          showStatus('TASKS.md changed before completion — close the task to reload, then re-check it');
+          return false;
+        }
+        if (res.status === 412) {
+          tmDetailLoaded = false;
+          const persistence = detailPersistenceState(task.id);
+          persistence.revision = null;
+          persistence.baseBody = null;
+          persistence.error = new Error('task detail changed before completion');
+          denyNudge('The durable checklist changed before completion — close and reopen the task to review it');
+          return false;
+        }
+        if (!res.ok) throw new Error(`completion save returned ${res.status}`);
+
+        task.checked = true;
+        lastModified = Number(res.headers.get('X-Board-Mtime')) || lastModified;
+        lastBoardRevision = res.headers.get('X-Board-Revision') || lastBoardRevision;
+        hasChanges = false;
+        saveBtn.disabled = true;
+        markBoardUpdated();
+        renderTasks();
+        if (tmTask === task) tmCheckboxEl.className = 'checkbox checked';
+        showStatus('Completed and saved against the verified checklist revision');
+        return true;
+      } catch (e) {
+        showStatus('Completion save failed: ' + e.message);
+        return false;
+      } finally {
+        isSaving = false;
+        if (hasChanges && !taskBoardReloadDeferred && !saveTimeout) {
+          saveTimeout = setTimeout(autoSave, 500);
+        }
       }
     }
 
@@ -2847,19 +2999,23 @@
           if (change.writer && change.writer === boardClientId) return;
           const kind = change.kind || 'tasks';
           if (kind === 'tasks') {
-            if (!hasChanges && !isSaving) loadTasksFromServer(false);
+            if (!hasChanges && !isSaving) {
+              if (tmTask) {
+                taskBoardReloadDeferred = true;
+                showStatus('Board changed outside this tab — close the open task to refresh');
+              } else {
+                loadTasksFromServer(false);
+              }
+            }
           } else if (kind === 'milestones') {
             if (!msSaving) loadMilestonesFromServer().then(() => renderTasks());
           } else if (kind === 'detail') {
-            // An agent edited a detail file — refresh the open task modal (never while
-            // the operator is mid-edit in the description textarea).
-            if (tmTask && !tmDescEditing) {
-              fetch('/api/task?id=' + encodeURIComponent(tmTask.id)).then(r => r.text()).then(t => {
-                if (!tmTask || tmDescEditing) return;
-                tmDetail = parseDetail(t);
-                tmDetailLoaded = true;
-                renderTaskModalBody();
-              }).catch(() => {});
+            // A generic detail event does not identify which task changed. Never replace an
+            // open modal: Note/Owner/prerequisite fields can hold unblurred browser drafts
+            // even when the description is not in edit mode. Completion re-reads and
+            // revision-checks its own detail; close/reopen is the explicit refresh boundary.
+            if (tmTask) {
+              showStatus('Task detail changed outside this tab — close and reopen it to refresh; completion will re-check durable state');
             }
           } else if (kind === 'config') {
             loadBoardIdentityFromServer();
@@ -2871,15 +3027,14 @@
     }
 
     async function checkForExternalChanges() {
-      if (!taskFileHandle || hasChanges || isSaving) return;
+      if (!taskFileHandle || hasChanges || isSaving || tmTask) return;
       try {
         const file = await taskFileHandle.getFile();
         if (file.lastModified > lastModified) {
           lastModified = file.lastModified;
           const content = await file.text();
           const result = parseTaskMarkdown(content);
-          sections = result.sections;
-          tasks = result.tasks;
+          if (!applyTaskSnapshot(result)) return;
           renderTasks();
           markBoardUpdated();
           showStatus('Reloaded');
@@ -3420,8 +3575,17 @@
         switchTaskView('board');
         startWatching();
         taskFileName = file.name;
+        let folderWarning = '';
+        if (memoryDirHandle) {
+          try {
+            staticTasksFolderVerified = await verifyStaticTasksFolder(memoryDirHandle);
+          } catch (e) {
+            staticTasksFolderVerified = false;
+            folderWarning = ' — reselect the matching .tasks folder before using task details; completion requires the live board';
+          }
+        }
         updateSourceDisplay();
-        showStatus('Loaded ' + file.name);
+        showStatus('Loaded ' + file.name + folderWarning);
       } catch (e) {
         if (e.name !== 'AbortError') { showStatus('Error: ' + e.message); }
       }
@@ -3452,11 +3616,25 @@
     // ============================================================
 
     let memoryDirHandle = null;
+    let staticTasksFolderVerified = false;
     let memoryData = {
       claudeMd: null,
       memoryFiles: [],
       memoryDirs: {}
     };
+
+    async function verifyStaticTasksFolder(folderHandle) {
+      if (SERVER_MODE) return true;
+      if (!folderHandle || !taskFileHandle) return false;
+      const folderTaskHandle = await folderHandle.getFileHandle('TASKS.md');
+      if (typeof folderTaskHandle.isSameEntry !== 'function') {
+        throw new Error('This browser cannot verify that TASKS.md and the selected .tasks folder match');
+      }
+      if (!(await folderTaskHandle.isSameEntry(taskFileHandle))) {
+        throw new Error('Selected folder does not contain the active TASKS.md');
+      }
+      return true;
+    }
 
     const memoryEmptyState = document.getElementById('memoryEmptyState');
     const memoryMainContent = document.getElementById('memoryMainContent');
@@ -3584,7 +3762,12 @@
     async function loadMemoryDirectory() {
       if (SERVER_MODE) { await loadMemoryFromServer(); return; }
       try {
-        memoryDirHandle = await window.showDirectoryPicker();
+        const selectedDirHandle = await window.showDirectoryPicker();
+        const folderVerified = taskFileHandle
+          ? await verifyStaticTasksFolder(selectedDirHandle)
+          : false;
+        memoryDirHandle = selectedDirHandle;
+        staticTasksFolderVerified = folderVerified;
 
         memoryData = { claudeMd: null, memoryFiles: [], memoryDirs: {} };
 
@@ -3629,6 +3812,7 @@
         memoryMainContent.style.display = 'flex';
         updateSourceDisplay();
         showStatus('Loaded memory from ' + memoryDirHandle.name);
+        if (tmTask && staticTasksFolderVerified) await loadTaskDetailForModal(tmTask);
 
       } catch (e) {
         if (e.name !== 'AbortError') { showStatus('Error: ' + e.message); }
@@ -4133,8 +4317,8 @@
     // ============================================================
     // Clicking a card opens this modal; ALL task editing happens here (title, note,
     // description, subtasks, prerequisites, column, done, delete). The rich per-task
-    // description + activity log live in a server-side file (.tasks/tasks/<id>.md) fetched
-    // on open and saved via /api/task — server mode only (file:// has nowhere to write it).
+    // description + activity log live in .tasks/tasks/<id>.md. Server mode uses /api/task;
+    // file:// mode reads and writes only after the operator selects the matching .tasks folder.
     const taskModalOverlay = document.getElementById('taskModalOverlay');
     const tmTitleEl = document.getElementById('tmTitle');
     const tmIdEl = document.getElementById('tmId');
@@ -4147,6 +4331,13 @@
     let tmDescEditing = false;
     let tmDescDirty = false;
     let tmDescExpanded = false;              // read-only description: Show more/less state, survives re-renders
+    let tmDetailMutationPending = false;
+    let tmDetailMutationEpoch = 0;            // prevents an old modal save from unlocking a newer one
+    let tmDetailLoadEpoch = 0;                // newest modal/detail read wins, even for the same task
+    let tmCompletionPending = false;
+    let tmCompletionEpoch = 0;                // same guard for completion checks across modal switches
+    let tmDeletionPending = false;
+    const tmDetailPersistence = new Map();    // task id → serialized save queue + last error
 
     function nowStamp() {
       const d = new Date();
@@ -4155,7 +4346,7 @@
     }
     function dateStamp() { return nowStamp().slice(0, 10); }
 
-    // The operator's display name — stamped on waivers and (optionally) activity, so a
+    // The operator's display name — stamped on contract changes and (optionally) activity, so a
     // shared board's record shows who did what. Asked once, kept in localStorage.
     function operatorName() {
       let n = null;
@@ -4165,6 +4356,32 @@
         try { localStorage.setItem('shaughv-tasks-operator', n); } catch (_) {}
       }
       return n;
+    }
+
+    function verificationContractChange(action, itemText) {
+      const label = (itemText || 'this verification check').replace(/\s+/g, ' ').trim();
+      const authorized = confirm(
+        `${action} changes the task's acceptance contract.\n\n` +
+        `Continue only if you are authorized to make this decision.`
+      );
+      if (!authorized) return null;
+      const rawReason = prompt(
+        `${action}: "${label}"\n\n` +
+        'Record why this criterion is being removed, deferred, or made not applicable:'
+      );
+      if (rawReason === null) return null;
+      const reason = rawReason.replace(/[\r\n()]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!reason) {
+        denyNudge('A recorded reason is required for a verification contract change');
+        return null;
+      }
+      const who = operatorName().replace(/[\r\n()]+/g, ' ').replace(/\s+/g, ' ').trim() || 'operator';
+      return { who, reason };
+    }
+
+    function hasAuditableWaiver(v) {
+      return v.state !== 'waived'
+        || /^\d{4}-\d{2}-\d{2}\s+[—-]\s+[^:]+:\s+\S/.test(v.waived || '');
     }
 
     // ===== Section-aware detail parse/serialize =====
@@ -4301,55 +4518,326 @@
       return html;
     }
 
+    async function readStaticTaskDetailBody(taskId) {
+      if (!memoryDirHandle || !staticTasksFolderVerified) {
+        throw new Error('Select the matching .tasks folder before loading task details');
+      }
+      try {
+        const tasksDir = await memoryDirHandle.getDirectoryHandle('tasks');
+        const detailHandle = await tasksDir.getFileHandle(taskId + '.md');
+        return await (await detailHandle.getFile()).text();
+      } catch (e) {
+        if (e.name === 'NotFoundError') return '';
+        throw e;
+      }
+    }
+
+    function applyTaskSnapshot(result) {
+      const openId = tmTask && tmTask.id;
+      let replacement = null;
+      if (openId) {
+        if (tmDescEditing && tmDescDirty
+            || tmDetailMutationPending || tmCompletionPending || tmDeletionPending) {
+          return false;
+        }
+        for (const section of result.sections) {
+          replacement = (result.tasks[section.id] || []).find(t => t.id === openId) || null;
+          if (replacement) break;
+        }
+      }
+
+      sections = result.sections;
+      tasks = result.tasks;
+      taskBoardReloadDeferred = false;
+
+      if (openId && replacement) {
+        // Every modal handler closes over the task object current at render time. Rebind and
+        // rerender after a board snapshot replacement so no handler mutates a detached object.
+        tmTask = replacement;
+        tmTitleEl.value = replacement.title;
+        tmIdEl.textContent = '#' + replacement.id;
+        tmCheckboxEl.className = 'checkbox ' + (replacement.checked ? 'checked' : '');
+        renderTaskModalBody();
+      } else if (openId && !replacement) {
+        tmDetailMutationEpoch += 1;
+        tmDetailLoadEpoch += 1;
+        tmCompletionEpoch += 1;
+        taskModalOverlay.classList.remove('visible');
+        tmTask = null;
+        tmDescEditing = false;
+        tmDescDirty = false;
+        showStatus('The open task was removed outside this tab; the modal was closed');
+      }
+      return true;
+    }
+
+    async function readTaskDetail(taskId) {
+      if (SERVER_MODE) {
+        const res = await fetch('/api/task?id=' + encodeURIComponent(taskId), { cache: 'no-store' });
+        verifyServerResponse(res);
+        if (!res.ok) throw new Error(`task detail source returned ${res.status}`);
+        const body = await res.text();
+        const revision = res.headers.get('X-Detail-Revision');
+        if (!revision) throw new Error('task detail source omitted its concurrency revision');
+        return { body, revision };
+      }
+      return { body: await readStaticTaskDetailBody(taskId), revision: null };
+    }
+
+    async function writeTaskDetail(taskId, body, baseRevision, baseBody) {
+      if (SERVER_MODE) {
+        if (!baseRevision) throw new Error('task detail has no base revision; reload before saving');
+        const res = await fetch('/api/task?id=' + encodeURIComponent(taskId), {
+          method: 'POST',
+          headers: serverWriteHeaders('text/markdown', { 'X-Base-Revision': baseRevision }),
+          body,
+        });
+        verifyServerResponse(res);
+        if (res.status === 409) {
+          const error = new Error('task detail changed outside this tab; stale save refused');
+          error.code = 'DETAIL_CONFLICT';
+          error.latest = {
+            body: await res.text(),
+            revision: res.headers.get('X-Detail-Revision'),
+          };
+          throw error;
+        }
+        if (res.status === 423) {
+          const error = new Error('task was completed before this detail edit could be saved');
+          error.code = 'TASK_COMPLETED';
+          throw error;
+        }
+        if (!res.ok) throw new Error(`task detail save returned ${res.status}`);
+        const revision = res.headers.get('X-Detail-Revision');
+        if (!revision) throw new Error('task detail save omitted its concurrency revision');
+        markBoardUpdated();
+        return { body, revision };
+      }
+      if (!memoryDirHandle || !staticTasksFolderVerified) {
+        throw new Error('Select the matching .tasks folder before saving task details');
+      }
+      if (baseBody === null || baseBody === undefined) {
+        throw new Error('task detail has no loaded base; reload before saving');
+      }
+      // File System Access has no atomic compare-and-swap. Compare exact durable bytes
+      // immediately before the whole-file write and fail closed on any detected external edit.
+      const currentBody = await readStaticTaskDetailBody(taskId);
+      if (currentBody !== baseBody) {
+        const error = new Error('task detail changed outside this tab; stale save refused');
+        error.code = 'DETAIL_CONFLICT';
+        error.latest = { body: currentBody, revision: null };
+        throw error;
+      }
+      const tasksDir = await memoryDirHandle.getDirectoryHandle('tasks', { create: true });
+      const detailHandle = await tasksDir.getFileHandle(taskId + '.md', { create: true });
+      const writable = await detailHandle.createWritable();
+      await writable.write(body);
+      await writable.close();
+      return { body, revision: null };
+    }
+
+    async function loadTaskDetailForModal(task) {
+      const taskId = task.id;
+      const loadEpoch = ++tmDetailLoadEpoch;
+      tmDetailLoaded = false;
+      if (tmTask === task) renderTaskModalBody();
+      try {
+        const source = await readTaskDetail(taskId);
+        const loaded = parseDetail(source.body);
+        if (tmTask !== task || loadEpoch !== tmDetailLoadEpoch) return false;
+        tmDetail = loaded;
+        tmDetailLoaded = true;
+        const persistence = detailPersistenceState(taskId);
+        if (persistence.pending === 0) {
+          persistence.revision = source.revision;
+          persistence.baseBody = source.body;
+          persistence.error = null;
+        }
+        renderTaskModalBody();
+        return true;
+      } catch (e) {
+        if (tmTask === task && loadEpoch === tmDetailLoadEpoch) {
+          tmDetail = parseDetail('');
+          tmDetailLoaded = false;
+          renderTaskModalBody();
+          showStatus('Task detail load failed: ' + e.message);
+        }
+        return false;
+      }
+    }
+
     async function openTaskModal(task) {
+      tmDetailMutationEpoch += 1;
+      tmDetailLoadEpoch += 1;
+      tmCompletionEpoch += 1;
       tmTask = task;
       tmDescEditing = false;
       tmDescDirty = false;
       tmDescExpanded = false;
+      tmDetailMutationPending = false;
+      tmCompletionPending = false;
+      tmDeletionPending = false;
       tmDetail = parseDetail('');
-      tmDetailLoaded = !SERVER_MODE;   // file:// has no detail files — nothing to wait for
+      tmDetailLoaded = false;
       tmTitleEl.value = task.title;
       tmIdEl.textContent = '#' + task.id;
       tmCheckboxEl.className = 'checkbox ' + (task.checked ? 'checked' : '');
       taskModalOverlay.classList.add('visible');
       renderTaskModalBody();
-      if (SERVER_MODE) {
-        try {
-          const res = await fetch('/api/task?id=' + encodeURIComponent(task.id));
-          tmDetail = parseDetail(await res.text());
-        } catch (_) { tmDetail = parseDetail(''); }
-        tmDetailLoaded = true;
-        if (tmTask === task) renderTaskModalBody();
-      }
+      if (SERVER_MODE || staticTasksFolderVerified) await loadTaskDetailForModal(task);
     }
 
     function closeTaskModal() {
+      if (tmDetailMutationPending || tmCompletionPending || tmDeletionPending) {
+        denyNudge(tmDeletionPending
+          ? 'Deletion is committing durable state — keep this task open until it finishes'
+          : tmCompletionPending
+            ? 'Completion is checking durable state — keep this task open until it finishes'
+            : 'A task-detail change is still saving — keep this task open until it finishes');
+        return;
+      }
       if (tmDescEditing && tmDescDirty && !confirm('Discard unsaved description edits?')) return;
+      tmDetailMutationEpoch += 1;
+      tmDetailLoadEpoch += 1;
+      tmCompletionEpoch += 1;
+      tmDetailMutationPending = false;
+      tmCompletionPending = false;
+      tmDeletionPending = false;
       taskModalOverlay.classList.remove('visible');
       tmTask = null;
       tmDescEditing = false;
       tmDescDirty = false;
+      if (taskBoardReloadDeferred) {
+        if (SERVER_MODE) loadTasksFromServer(false);
+        else checkForExternalChanges();
+      }
+    }
+
+    function detailPersistenceState(taskId) {
+      if (!tmDetailPersistence.has(taskId)) {
+        tmDetailPersistence.set(taskId, {
+          queue: Promise.resolve(true),
+          pending: 0,
+          error: null,
+          revision: null,
+          baseBody: null,
+        });
+      }
+      return tmDetailPersistence.get(taskId);
+    }
+
+    function queueTaskDetailSave(taskId, detail, activityNote) {
+      if (activityNote) detail.activity.push(`${nowStamp()} — ${activityNote}`);
+      const body = serializeDetail(detail);
+      const state = detailPersistenceState(taskId);
+      state.pending += 1;
+      const operation = state.queue.then(async () => {
+        const persisted = await writeTaskDetail(
+          taskId,
+          body,
+          state.revision,
+          state.baseBody
+        );
+        state.revision = persisted.revision;
+        state.baseBody = persisted.body;
+        state.error = null;
+        return true;
+      }).catch((e) => {
+        state.error = e;
+        if (e.code === 'DETAIL_CONFLICT' || e.code === 'TASK_COMPLETED') {
+          if (tmTask && tmTask.id === taskId) tmDetailLoaded = false;
+          if (e.code === 'TASK_COMPLETED') {
+            taskBoardReloadDeferred = true;
+            showStatus('Task completed outside this tab — detail save refused; close and reopen it');
+          } else {
+            showStatus('Task detail changed outside this tab — save refused; close and reopen the task to reload');
+          }
+        } else {
+          showStatus('Detail save failed: ' + e.message);
+        }
+        return false;
+      }).finally(() => {
+        state.pending = Math.max(0, state.pending - 1);
+      });
+      state.queue = operation;
+      return operation;
     }
 
     // Persist the per-task detail file (description + verification + activity, plus any
-    // agent-authored sections carried verbatim). Server mode only.
-    async function saveTaskDetail(activityNote) {
-      if (!SERVER_MODE || !tmTask) return;
-      if (activityNote) tmDetail.activity.push(`${nowStamp()} — ${activityNote}`);
+    // agent-authored sections carried verbatim) in live or verified static-folder mode.
+    async function saveTaskDetail(task, detail, activityNote) {
+      if (!task || !detail) return false;
+      if (task.checked) {
+        denyNudge('Reopen the completed task before changing its detail contract');
+        return false;
+      }
+      if (tmDetailMutationPending || tmCompletionPending) {
+        denyNudge(tmCompletionPending
+          ? 'Completion is checking the durable task-detail state'
+          : 'A task-detail change is still saving');
+        return false;
+      }
+      const taskId = task.id;
+      const mutationEpoch = ++tmDetailMutationEpoch;
+      tmDetailMutationPending = true;
       try {
-        const res = await fetch('/api/task?id=' + encodeURIComponent(tmTask.id), {
-          method: 'POST',
-          headers: serverWriteHeaders('text/markdown'),
-          body: serializeDetail(tmDetail),
-        });
-        verifyServerResponse(res);
-        markBoardUpdated();
-      } catch (e) { showStatus('Detail save failed: ' + e.message); }
+        return await queueTaskDetailSave(taskId, detail, activityNote);
+      } finally {
+        if (mutationEpoch === tmDetailMutationEpoch) tmDetailMutationPending = false;
+      }
+    }
+
+    async function taskDetailIsPersisted(taskId) {
+      const state = detailPersistenceState(taskId);
+      const ok = await state.queue;
+      return ok && state.pending === 0 && !state.error;
+    }
+
+    function verificationSnapshot(detail) {
+      return {
+        verification: detail.verification.map(v => ({ ...v })),
+        activity: [...detail.activity],
+      };
+    }
+
+    async function persistVerificationMutation(taskId, detail, before, activityNote) {
+      if (tmDetailMutationPending || tmCompletionPending) {
+        denyNudge(tmCompletionPending
+          ? 'Completion is checking the durable verification state'
+          : 'A verification change is still saving');
+        return false;
+      }
+      const mutationEpoch = ++tmDetailMutationEpoch;
+      tmDetailMutationPending = true;
+      if (tmTask && tmTask.id === taskId) {
+        renderTmVerification();
+        refreshTmCounts();
+      }
+      const saved = await queueTaskDetailSave(taskId, detail, activityNote);
+      if (!saved) {
+        detail.verification = before.verification;
+        detail.activity = before.activity;
+        showStatus('Verification change was not saved and has been restored');
+      }
+      if (mutationEpoch === tmDetailMutationEpoch) tmDetailMutationPending = false;
+      if (tmTask && tmTask.id === taskId) {
+        renderTmVerification();
+        renderTmActivity();
+        refreshTmCounts();
+      }
+      return saved;
     }
 
     function renderTaskModalBody() {
       const task = tmTask;
       if (!task) return;
+      const contractLocked = task.checked || tmCompletionPending || tmDeletionPending;
+      tmTitleEl.disabled = contractLocked;
+      tmBodyEl.inert = contractLocked;
+      tmBodyEl.style.pointerEvents = contractLocked ? 'none' : '';
+      tmBodyEl.style.opacity = contractLocked ? '0.72' : '';
+      if (tmCompletionPending || tmDeletionPending) tmBodyEl.setAttribute('aria-busy', 'true');
+      else tmBodyEl.removeAttribute('aria-busy');
 
       const sectionOptions = sections.map(s =>
         `<option value="${s.id}"${s.id === task.section ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
@@ -4361,11 +4849,15 @@
           }).join(', ')}</div>`
         : '';
       const needsStr = (task.needs || []).map(n => '#' + n).join(', ');
-      const liveOnly = ' <span style="text-transform:none; letter-spacing:0; color:var(--text-muted); font-weight:normal;">— live board only</span>';
+      const detailsAvailable = SERVER_MODE || staticTasksFolderVerified;
+      const detailsReady = detailsAvailable && tmDetailLoaded;
+      const detailsUnavailable = ' <span style="text-transform:none; letter-spacing:0; color:var(--text-muted); font-weight:normal;">— select the matching .tasks folder</span>';
+      const detailsLoading = ' <span style="text-transform:none; letter-spacing:0; color:var(--text-muted); font-weight:normal;">— loading durable task detail</span>';
       const msOptions = ['<option value="">None</option>'].concat(milestones.map(m =>
         `<option value="${m.id}"${m.id === task.milestoneId ? ' selected' : ''}>${escapeHtml(m.title)}</option>`)).join('');
 
       tmBodyEl.innerHTML = `
+        ${task.checked ? `<div class="tm-blocked">${icon('lock', 13)} Reopen this task before changing its contract, subtasks, or durable detail.</div>` : ''}
         <div class="tm-section-label">Column</div>
         <select id="tmSection" class="tm-note-input">${sectionOptions}</select>
 
@@ -4382,13 +4874,13 @@
         <div class="tm-section-label">Owner <span style="text-transform:none; letter-spacing:0; color:var(--text-muted); font-weight:normal;">— who's driving this (shared boards)</span></div>
         <input type="text" id="tmOwner" class="tm-note-input" placeholder="name" value="${escapeHtml(task.owner || '')}">
 
-        <div class="tm-section-label tm-row-between"><span>Description${SERVER_MODE ? '' : liveOnly}</span>${SERVER_MODE ? `<button class="tm-btn" id="tmDescToggle">${tmDescEditing ? 'Preview' : 'Edit'}</button>` : ''}</div>
+        <div class="tm-section-label tm-row-between"><span>Description${detailsAvailable ? (detailsReady ? '' : detailsLoading) : detailsUnavailable}</span>${detailsReady ? `<button class="tm-btn" id="tmDescToggle">${tmDescEditing ? 'Preview' : 'Edit'}</button>` : ''}</div>
         <div id="tmDescArea"></div>
 
         <div class="tm-section-label">${icon('check-square', 12)} Subtasks <span class="tm-count-badge" id="tmSubCount"></span></div>
         <div id="tmSubtasks"></div>
 
-        ${SERVER_MODE ? `<div class="tm-section-label">${icon('shield-check', 12)} Verification <span class="tm-count-badge" id="tmVerifyCount"></span></div>
+        ${detailsAvailable ? `<div class="tm-section-label">${icon('shield-check', 12)} Verification${detailsReady ? '' : detailsLoading} <span class="tm-count-badge" id="tmVerifyCount"></span></div>
         <div id="tmVerification"></div>` : ''}
 
         <div class="tm-section-label">Activity</div>
@@ -4499,6 +4991,10 @@
     function renderTmDesc() {
       const area = document.getElementById('tmDescArea');
       if (!area) return;
+      if (!tmDetailLoaded) {
+        area.innerHTML = '<p style="color: var(--text-muted); font-style: italic;">Task detail is loading. Editing stays locked until the durable file has been read.</p>';
+        return;
+      }
       // The header Edit/Preview toggle only governs entry into edit mode; while editing, the
       // in-area Cancel/Save buttons govern exit, so hide the header toggle to avoid a dead,
       // mislabeled control.
@@ -4509,7 +5005,7 @@
         const ta = document.createElement('textarea');
         ta.className = 'tm-desc-edit';
         ta.value = tmDetail.description || '';
-        ta.placeholder = 'TT;DR: one or two plain-English sentences on what this task is and where it stands.\n\nThen the full plan: what to build, which files/areas to touch, edge cases, acceptance criteria…';
+        ta.placeholder = 'TT;DR: one or two plain-English sentences on what this task is and where it stands.\n\nThen a stable dependency skeleton and short next-action window: predicted observation, oracle, and redirect condition…';
         ta.addEventListener('input', () => { tmDescDirty = true; });
         area.appendChild(ta);
         const actions = document.createElement('div');
@@ -4517,13 +5013,38 @@
         actions.innerHTML = '<button class="tm-btn" id="tmDescCancel">Cancel</button><button class="tm-btn" id="tmDescSave" style="border-color:var(--accent); color:var(--accent);">Save description</button>';
         area.appendChild(actions);
         ta.focus();
-        document.getElementById('tmDescCancel').addEventListener('click', () => {
+        const cancelButton = document.getElementById('tmDescCancel');
+        cancelButton.addEventListener('click', () => {
           tmDescEditing = false; tmDescDirty = false; renderTaskModalBody();
         });
-        document.getElementById('tmDescSave').addEventListener('click', async () => {
-          tmDetail.description = ta.value;
-          tmDescEditing = false; tmDescDirty = false;
-          await saveTaskDetail('description edited (operator)');
+        document.getElementById('tmDescSave').addEventListener('click', async (event) => {
+          const saveButton = event.currentTarget;
+          saveButton.disabled = true;
+          cancelButton.disabled = true;
+          const taskAtSave = tmTask;
+          const detailAtSave = tmDetail;
+          const expectedMutationEpoch = tmDetailMutationEpoch + 1;
+          const priorDescription = detailAtSave.description;
+          const priorActivity = [...detailAtSave.activity];
+          detailAtSave.description = ta.value;
+          const saved = await saveTaskDetail(taskAtSave, detailAtSave, 'description edited (operator)');
+          const modalStillCurrent = tmTask === taskAtSave
+            && tmDetail === detailAtSave
+            && tmDetailMutationEpoch === expectedMutationEpoch;
+          if (!saved) {
+            detailAtSave.description = priorDescription;
+            detailAtSave.activity = priorActivity;
+            if (modalStillCurrent) {
+              tmDescDirty = true;
+              saveButton.disabled = false;
+              cancelButton.disabled = false;
+              showStatus('Description save failed — the draft remains open');
+            }
+            return;
+          }
+          if (!modalStillCurrent) return;
+          tmDescEditing = false;
+          tmDescDirty = false;
           renderTaskModalBody();
           showStatus('Description saved');
         });
@@ -4605,13 +5126,22 @@
 
     // ===== Verification checklist (the waivable hard gate on completion) =====
     // Items live in the task DETAIL file's "## Verification" section, never in TASKS.md.
-    // Three states: open / passed / waived. An operator may waive from here without a
-    // reason (the stamp records who + when); agents editing the file must record a reason.
+    // Three states: open / passed / waived. Waiving or removing a criterion is an acceptance-
+    // contract change, so the dashboard requires an authority acknowledgement and a reason.
     function renderTmVerification() {
       const wrap = document.getElementById('tmVerification');
       if (!wrap || !tmTask || !tmDetail) return;
-      const list = tmDetail.verification || (tmDetail.verification = []);
       wrap.innerHTML = '';
+      wrap.style.pointerEvents = tmCompletionPending ? 'none' : '';
+      wrap.style.opacity = tmCompletionPending ? '0.65' : '';
+      if (!tmDetailLoaded) {
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-style: italic; font-size: 13px; color: var(--text-muted); padding: 4px 0;';
+        hint.textContent = 'Loading durable verification checks…';
+        wrap.appendChild(hint);
+        return;
+      }
+      const list = tmDetail.verification || (tmDetail.verification = []);
       list.forEach((v, idx) => {
         const row = document.createElement('div');
         row.className = 'tm-verify-row' + (v.state === 'passed' ? ' passed' : v.state === 'waived' ? ' waived' : '');
@@ -4620,47 +5150,126 @@
         cb.style.flexShrink = '0';
         if (v.state === 'waived') cb.style.opacity = '0.35';
         cb.title = v.state === 'waived' ? 'Waived — un-waive first to check it' : 'Toggle passed';
-        cb.addEventListener('click', () => {
+        cb.addEventListener('click', async () => {
           if (v.state === 'waived') return;
+          if (tmDetailMutationPending || tmCompletionPending) {
+            denyNudge(tmCompletionPending
+              ? 'Completion is checking the durable verification state'
+              : 'A verification change is still saving');
+            return;
+          }
+          const taskId = tmTask.id;
+          const detail = tmDetail;
+          const before = verificationSnapshot(detail);
           v.state = v.state === 'passed' ? 'open' : 'passed';
-          saveTaskDetail();
-          renderTmVerification();
-          refreshTmCounts();
+          await persistVerificationMutation(
+            taskId,
+            detail,
+            before,
+            `${v.state === 'passed' ? 'passed' : 'reopened'} verification criterion "${v.text}"`
+          );
         });
         const txt = document.createElement('input');
         txt.type = 'text';
         txt.className = 'tm-verify-text';
         txt.value = v.text;
-        txt.addEventListener('change', () => {
+        txt.addEventListener('change', async () => {
+          if (tmDetailMutationPending || tmCompletionPending) {
+            txt.value = v.text;
+            denyNudge(tmCompletionPending
+              ? 'Completion is checking the durable verification state'
+              : 'A verification change is still saving');
+            return;
+          }
           const nv = txt.value.trim();
-          if (!nv) list.splice(idx, 1); else v.text = nv;
-          saveTaskDetail();
-          renderTmVerification();
-          refreshTmCounts();
+          if (nv === v.text) return;
+          const taskId = tmTask.id;
+          const detail = tmDetail;
+          const before = verificationSnapshot(detail);
+          let activityNote = '';
+          if (!nv) {
+            const decision = verificationContractChange('Remove verification criterion', v.text);
+            if (!decision) {
+              txt.value = v.text;
+              return;
+            }
+            list.splice(idx, 1);
+            activityNote = `removed verification criterion "${v.text}" (${decision.who}: ${decision.reason})`;
+          } else {
+            const oldText = v.text;
+            const decision = verificationContractChange(
+              v.state !== 'open'
+                ? 'Change settled verification criterion'
+                : 'Change verification criterion',
+              v.text
+            );
+            if (!decision) {
+              txt.value = v.text;
+              return;
+            }
+            if (v.state !== 'open') {
+              v.state = 'open';
+              v.waived = null;
+              activityNote = `changed settled verification criterion "${oldText}" to "${nv}" and reset it open (${decision.who}: ${decision.reason})`;
+            } else {
+              activityNote = `changed open verification criterion "${oldText}" to "${nv}" (${decision.who}: ${decision.reason})`;
+            }
+            v.text = nv;
+          }
+          await persistVerificationMutation(taskId, detail, before, activityNote);
         });
         const waive = document.createElement('button');
         waive.className = 'tm-waive-btn';
         waive.textContent = v.state === 'waived' ? 'waived' : 'waive';
-        waive.title = v.state === 'waived' ? 'Un-waive (back to open)' : 'Waive this check — recorded with your name';
-        waive.addEventListener('click', () => {
+        waive.title = v.state === 'waived' ? 'Un-waive (back to open)' : 'Waive this check — authorized reason required';
+        waive.addEventListener('click', async () => {
+          if (tmDetailMutationPending || tmCompletionPending) {
+            denyNudge(tmCompletionPending
+              ? 'Completion is checking the durable verification state'
+              : 'A verification change is still saving');
+            return;
+          }
+          const taskId = tmTask.id;
+          const detail = tmDetail;
+          const before = verificationSnapshot(detail);
+          let activityNote = '';
           if (v.state === 'waived') {
             v.state = 'open';
             v.waived = null;
-            saveTaskDetail(`un-waived "${v.text}"`);
+            activityNote = `un-waived "${v.text}"`;
           } else {
-            const who = operatorName();
+            const decision = verificationContractChange('Waive verification criterion', v.text);
+            if (!decision) return;
             v.state = 'waived';
-            v.waived = `${dateStamp()} — ${who}`;
-            saveTaskDetail(`waived "${v.text}" (${who})`);
+            v.waived = `${dateStamp()} — ${decision.who}: ${decision.reason}`;
+            activityNote = `waived "${v.text}" (${decision.who}: ${decision.reason})`;
           }
-          renderTmVerification();
-          refreshTmCounts();
+          await persistVerificationMutation(taskId, detail, before, activityNote);
         });
         const del = document.createElement('button');
         del.className = 'tm-sub-del';
-        del.title = 'Remove check';
+        del.title = 'Remove check — authorized reason required';
         del.textContent = '×';
-        del.addEventListener('click', () => { list.splice(idx, 1); saveTaskDetail(); renderTmVerification(); refreshTmCounts(); });
+        del.addEventListener('click', async () => {
+          if (tmDetailMutationPending || tmCompletionPending) {
+            denyNudge(tmCompletionPending
+              ? 'Completion is checking the durable verification state'
+              : 'A verification change is still saving');
+            return;
+          }
+          const decision = verificationContractChange('Remove verification criterion', v.text);
+          if (!decision) return;
+          const taskId = tmTask.id;
+          const detail = tmDetail;
+          const before = verificationSnapshot(detail);
+          list.splice(idx, 1);
+          await persistVerificationMutation(
+            taskId,
+            detail,
+            before,
+            `removed verification criterion "${v.text}" (${decision.who}: ${decision.reason})`
+          );
+        });
         row.appendChild(cb); row.appendChild(txt); row.appendChild(waive); row.appendChild(del);
         if (v.state === 'waived' && v.waived) {
           const stamp = document.createElement('div');
@@ -4690,12 +5299,31 @@
         input.placeholder = 'Concrete, observable pass/fail check…';
         input.style.gridColumn = '1 / 5';
         let committed = false;
-        const commit = () => {
+        const commit = async () => {
           if (committed) return; committed = true;
           const v = input.value.trim();
-          if (v) { list.push({ text: v, state: 'open', waived: null }); saveTaskDetail(); }
-          renderTmVerification();
-          refreshTmCounts();
+          if (!v) {
+            renderTmVerification();
+            refreshTmCounts();
+            return;
+          }
+          if (tmDetailMutationPending || tmCompletionPending) {
+            denyNudge(tmCompletionPending
+              ? 'Completion is checking the durable verification state'
+              : 'A verification change is still saving');
+            renderTmVerification();
+            return;
+          }
+          const taskId = tmTask.id;
+          const detail = tmDetail;
+          const before = verificationSnapshot(detail);
+          list.push({ text: v, state: 'open', waived: null });
+          await persistVerificationMutation(
+            taskId,
+            detail,
+            before,
+            `added verification criterion "${v}"`
+          );
         };
         input.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') { e.preventDefault(); commit(); }
@@ -4716,9 +5344,9 @@
       if (!tmDetail.activity || !tmDetail.activity.length) {
         const li = document.createElement('li');
         li.className = 'tm-empty';
-        li.textContent = SERVER_MODE
+        li.textContent = (SERVER_MODE || staticTasksFolderVerified)
           ? 'No recorded activity yet — agents append a line here as they work.'
-          : 'Activity log is available on the live board.';
+          : 'Select the matching .tasks folder to load the activity log.';
         ul.appendChild(li);
         return;
       }
@@ -4744,28 +5372,93 @@
       if (t) { t.classList.remove('deny-shake'); void t.offsetWidth; t.classList.add('deny-shake'); }
     }
 
-    tmCheckboxEl.addEventListener('click', () => {
-      if (!tmTask) return;
-      if (!tmTask.checked) {
-        // Completion gates, in order: prerequisites (hard) → subtasks (hard, no waiver) →
-        // verification (hard, waivable: every item must be passed or waived).
-        const unmet = unmetNeeds(tmTask);
-        if (unmet.length) {
-          denyNudge(`Blocked — finish ${unmet.map(id => '#' + id).join(', ')} before marking done`);
-          return;
-        }
-        if (openSubtasks(tmTask).length) {
-          denyNudge('Blocked — finish or remove open subtasks before marking done');
-          return;
-        }
-        if (SERVER_MODE) {
+    tmCheckboxEl.addEventListener('click', async () => {
+      if (!tmTask || tmCompletionPending || tmDeletionPending) return;
+      const task = tmTask;
+      const completionEpoch = ++tmCompletionEpoch;
+      let completionDetailRevision = null;
+      tmCompletionPending = true;
+      tmTitleEl.disabled = true;
+      tmBodyEl.inert = true;
+      tmBodyEl.setAttribute('aria-busy', 'true');
+      tmBodyEl.style.pointerEvents = 'none';
+      tmBodyEl.style.opacity = '0.65';
+      renderTmVerification();
+      try {
+        if (!task.checked) {
+          // Completion gates, in order: prerequisites (hard) → subtasks (hard, no waiver) →
+          // persisted verification (hard, waivable only by an auditable contract change).
+          const unmet = unmetNeeds(task);
+          if (unmet.length) {
+            denyNudge(`Blocked — finish ${unmet.map(id => '#' + id).join(', ')} before marking done`);
+            return;
+          }
+          if (openSubtasks(task).length) {
+            denyNudge('Blocked — finish or remove open subtasks before marking done');
+            return;
+          }
+          if (!SERVER_MODE) {
+            denyNudge('Open the live localhost board to complete tasks — static mode cannot atomically bind verification to TASKS.md');
+            return;
+          }
           if (!tmDetailLoaded) {
-            denyNudge('Still loading verification checks — try again in a second');
+            denyNudge('Verification details are unavailable — reload the task details before completion');
+            return;
+          }
+          const detailPersisted = await taskDetailIsPersisted(task.id);
+          if (tmTask !== task || completionEpoch !== tmCompletionEpoch) return;
+          if (!detailPersisted) {
+            denyNudge('Verification changes are not durably saved — resolve the detail-save error before completion');
+            return;
+          }
+          // Re-read the authoritative detail after the local queue drains. This catches an
+          // agent or external editor that added/reopened a criterion after the modal loaded.
+          try {
+            const confirmedSource = await readTaskDetail(task.id);
+            if (tmTask !== task || completionEpoch !== tmCompletionEpoch) return;
+            tmDetail = parseDetail(confirmedSource.body);
+            tmDetailLoaded = true;
+            const persistence = detailPersistenceState(task.id);
+            persistence.revision = confirmedSource.revision;
+            persistence.baseBody = confirmedSource.body;
+            persistence.error = null;
+            completionDetailRevision = confirmedSource.revision;
+            renderTmVerification();
+            renderTmActivity();
+            refreshTmCounts();
+          } catch (e) {
+            if (tmTask !== task || completionEpoch !== tmCompletionEpoch) return;
+            tmDetailLoaded = false;
+            denyNudge('Could not re-read durable verification details — completion remains locked');
+            showStatus('Verification refresh failed: ' + e.message);
+            return;
+          }
+          // Board fields can still change while the queue/read awaits. Re-evaluate every
+          // non-detail completion gate after the final await; JavaScript then reaches the
+          // checked-state mutation without yielding to another UI event.
+          const finalUnmet = unmetNeeds(task);
+          if (finalUnmet.length) {
+            denyNudge(`Blocked — finish ${finalUnmet.map(id => '#' + id).join(', ')} before marking done`);
+            return;
+          }
+          if (openSubtasks(task).length) {
+            denyNudge('Blocked — finish or remove open subtasks before marking done');
             return;
           }
           const openV = (tmDetail.verification || []).filter(v => v.state === 'open');
           if (openV.length) {
-            denyNudge(`${openV.length} verification check${openV.length > 1 ? 's' : ''} still open — pass or waive each first`);
+            denyNudge(`${openV.length} verification check${openV.length > 1 ? 's' : ''} still open — pass each or record an authorized waiver`);
+            const sec = document.getElementById('tmVerification');
+            if (sec) {
+              sec.classList.add('tm-verify-gate');
+              sec.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'center' });
+              setTimeout(() => sec.classList.remove('tm-verify-gate'), 1600);
+            }
+            return;
+          }
+          const invalidWaivers = (tmDetail.verification || []).filter(v => !hasAuditableWaiver(v));
+          if (invalidWaivers.length) {
+            denyNudge(`${invalidWaivers.length} waiver${invalidWaivers.length > 1 ? 's are' : ' is'} missing a dated who-and-reason record — un-waive and record the authorized decision`);
             const sec = document.getElementById('tmVerification');
             if (sec) {
               sec.classList.add('tm-verify-gate');
@@ -4775,9 +5468,26 @@
             return;
           }
         }
+        if (tmTask !== task || completionEpoch !== tmCompletionEpoch) return;
+        if (task.checked) {
+          task.checked = false;
+          commitBoard();
+          renderTaskModalBody();
+        } else {
+          await saveVerifiedTaskCompletion(task, completionDetailRevision);
+        }
+      } finally {
+        if (completionEpoch === tmCompletionEpoch) {
+          tmCompletionPending = false;
+          const contractLocked = !!task.checked;
+          tmTitleEl.disabled = contractLocked;
+          tmBodyEl.inert = contractLocked;
+          tmBodyEl.removeAttribute('aria-busy');
+          tmBodyEl.style.pointerEvents = contractLocked ? 'none' : '';
+          tmBodyEl.style.opacity = contractLocked ? '0.72' : '';
+          if (tmTask === task) renderTmVerification();
+        }
       }
-      tmTask.checked = !tmTask.checked;
-      commitBoard();
     });
     tmTitleEl.addEventListener('change', () => {
       if (!tmTask) return;
@@ -4787,12 +5497,42 @@
     });
     document.getElementById('tmClose').addEventListener('click', closeTaskModal);
     document.getElementById('tmDoneBtn').addEventListener('click', closeTaskModal);
-    document.getElementById('tmDelete').addEventListener('click', () => {
+    document.getElementById('tmDelete').addEventListener('click', async () => {
       if (!tmTask) return;
+      if (tmDetailMutationPending || tmCompletionPending || tmDeletionPending) {
+        denyNudge(tmCompletionPending
+          ? 'Completion is checking durable state — wait before deleting this task'
+          : tmDeletionPending
+            ? 'Task deletion is already in progress'
+            : 'A task-detail change is still saving — wait before deleting this task');
+        return;
+      }
+      if (!SERVER_MODE) {
+        denyNudge('Open the live localhost board to delete tasks — static mode cannot atomically remove both files');
+        return;
+      }
+      if (isSaving) {
+        denyNudge('A board save is still finishing — retry deletion when it settles');
+        return;
+      }
       const t = tmTask;
-      taskModalOverlay.classList.remove('visible');
-      tmTask = null;
-      deleteTask(t);
+      if (!confirm(`Delete "${t.title}"?`)) return;
+      tmDeletionPending = true;
+      renderTaskModalBody();
+      const deleted = await deleteTask(t);
+      if (tmTask !== t) return;
+      tmDeletionPending = false;
+      if (deleted) {
+        tmDetailMutationEpoch += 1;
+        tmDetailLoadEpoch += 1;
+        tmCompletionEpoch += 1;
+        taskModalOverlay.classList.remove('visible');
+        tmTask = null;
+        tmDescEditing = false;
+        tmDescDirty = false;
+      } else {
+        renderTaskModalBody();
+      }
     });
     taskModalOverlay.addEventListener('click', (e) => { if (e.target === taskModalOverlay) closeTaskModal(); });
 

@@ -6,6 +6,31 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ---
 
+## July 25, 2026 — a lighter, platform-aware app icon
+
+**Improved**
+
+- Removed the black square behind the SD/300 app mark on Windows and Linux.
+  The orange-and-white cube now sits directly on the desktop surface instead
+  of looking like artwork pasted onto a dark tile.
+- Gave the Mac version its own treatment: the corners stay transparent, while
+  a softened isometric graphite shape supports the same orange-and-white mark
+  so it feels intentional in the Dock without becoming another square badge.
+- Kept the monochrome tray symbol exactly as selected, including the system's
+  ability to adapt it for light and dark menu bars.
+
+**Behind the scenes**
+
+- Tightened the repeatable icon check so a future change cannot accidentally
+  bring back the dark plate, lose transparency, or erase the defining orange
+  and light parts at small desktop sizes.
+- Rebuilt the real Windows app and update archive, confirmed Windows extracts
+  the chosen mark from the app itself, and confirmed the replacement icon
+  files remain covered and damage-checked by the existing update and uninstall
+  ownership rules.
+
+---
+
 ## July 23, 2026 — SD-300 now looks like SD-300 and keeps monitoring
 
 **Added**
