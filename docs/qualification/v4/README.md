@@ -1,5 +1,25 @@
 # SD-300 v4 qualification evidence
 
+The complete hosted resource comparison at 309d2f3 is retained in
+`native-resources-309d2f3.json` with all six targets, eighteen paired 900-second
+windows, exact executable identities and before/after values. It precedes the
+coordinated v4 version and later Mac focus correction, so it is evidence about
+that candidate rather than final release acceptance. All candidate windows
+shut down cleanly. Windows and Linux ARM64 pass resource gates. Remaining
+candidate failures are GNU x86-64 foreground RSS (156.10 MiB), musl foreground
+CPU (2.09% of one core), Intel Mac TUI/foreground/hidden CPU
+(2.39%/3.27%/1.93%), and Apple Silicon TUI/foreground/hidden CPU
+(2.18%/2.23%/2.19%) plus foreground/hidden RSS (188.78/162.41 MiB).
+
+The first full native interaction matrix is retained in
+`native-interaction-d2c89da.json`. Refresh stalls and shutdown pass, but every
+target has a frame or input failure. The unchanged diagnostic repeat
+[35917363148](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/35917363148)
+adds bounded per-input traces. Mac focused semantic snapshots were calling the
+assistive-action setter, recording duplicate input and clearing keyboard focus
+visibility. The fix must pass independent qualification on both native Mac runners.
+The original performance thresholds remain active; no deferral is implied.
+
 These initial measurements are diagnostic runs, not release acceptance. The
 foreground/hidden/soak matrix, native comparisons and installer qualification
 remain open. Do not infer hardware accuracy from parser fixtures or builds.

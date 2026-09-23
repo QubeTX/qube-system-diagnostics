@@ -1,0 +1,937 @@
+{
+  "schema": 1,
+  "run": "https://github.com/QubeTX/qube-system-diagnostics/actions/runs/35906954674",
+  "purpose": "Completed 900-second native before/after resource windows. This preceding candidate predates the coordinated v4 version and later Mac focus correction; failures remain release-blocking unless explicitly deferred.",
+  "limits": {
+    "foreground_cpu_percent_one_core": 2,
+    "hidden_cpu_percent_one_core": 1,
+    "summed_rss_mib": 150,
+    "windows_private_mib": 300
+  },
+  "results": [
+    {
+      "target": "windows-x86_64",
+      "identity": {
+        "candidate": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+        "baseline_cli_source": "f83ae429490aecb165921037b2f9ed994327634f",
+        "baseline_gui_source": "d4896546f190c0e5afe176f36544dca7aa806227",
+        "baseline_gui_tag": "v3.1.3",
+        "baseline_product_code_matches": true
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "before": {
+            "revision": "f83ae429490aecb165921037b2f9ed994327634f",
+            "sha256": "ed87014180061d3538b05e0c357ff0d7ab66933cd8b0b1c420073dcd7127dd95",
+            "build": "release",
+            "measured_seconds": 900.0309999999997,
+            "samples": 3589,
+            "cpu_percent_one_core": 2.183952552745406,
+            "rss_mib_max": 49.90625,
+            "private_mib_max": 18.54296875,
+            "handles_max": 891,
+            "process_count_max": 6,
+            "rss_gate": true,
+            "private_gate": true,
+            "terminal_restored": true,
+            "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+            "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "1937fb4f943b785bc65b9922b13bb9440b51cab336f861a0156eb0dc2000aae8",
+            "build": "release",
+            "measured_seconds": 900.156,
+            "samples": 3582,
+            "cpu_percent_one_core": 0.8175666217855572,
+            "rss_mib_max": 89.5703125,
+            "private_mib_max": 40.5546875,
+            "handles_max": 1277,
+            "process_count_max": 7,
+            "rss_gate": true,
+            "private_gate": true,
+            "terminal_restored": true,
+            "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+            "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -1.366385930959849,
+            "rss_mib_max": 39.6640625
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "9429698c79e9d54c6f9f12eb5ce4e73bf73200c9477ccde76159b60900e15457",
+            "engine_sha256": "0ee658212628da7ef594587a994d52fe41f085385edf7af6cfea004af8144cfe",
+            "collector_sha256": "ed87014180061d3538b05e0c357ff0d7ab66933cd8b0b1c420073dcd7127dd95",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.031,
+            "samples": 3591,
+            "cpu_percent_one_core": 1.5433496179576038,
+            "rss_mib_max": 89.19921875,
+            "private_mib_max": 213.81640625,
+            "handles_max": 968,
+            "process_count_max": 5,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "private_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": -36.213004874651816,
+            "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+            "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "4d9811c495623e3cfe03dba0df7ba32c463773979260d766c7f4bddd573c3405",
+            "engine_sha256": "42bca44501afdfc3acbe3003dcfbbe03a1ae7c2fae66700739cf30346a00c3a2",
+            "collector_sha256": "1937fb4f943b785bc65b9922b13bb9440b51cab336f861a0156eb0dc2000aae8",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.2030000000004,
+            "samples": 3591,
+            "cpu_percent_one_core": 0.49988724765414,
+            "rss_mib_max": 110.37890625,
+            "private_mib_max": 221.97265625,
+            "handles_max": 1313,
+            "process_count_max": 6,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "private_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": -39.454332782033426,
+            "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+            "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -1.0434623703034638,
+            "rss_mib_max": 21.1796875
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "9429698c79e9d54c6f9f12eb5ce4e73bf73200c9477ccde76159b60900e15457",
+            "engine_sha256": "0ee658212628da7ef594587a994d52fe41f085385edf7af6cfea004af8144cfe",
+            "collector_sha256": "ed87014180061d3538b05e0c357ff0d7ab66933cd8b0b1c420073dcd7127dd95",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.047,
+            "samples": 3592,
+            "cpu_percent_one_core": 0.06596877718608028,
+            "rss_mib_max": 60.0703125,
+            "private_mib_max": 205.51171875,
+            "handles_max": 580,
+            "process_count_max": 1,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "private_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": -40.19619385445682,
+            "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+            "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "4d9811c495623e3cfe03dba0df7ba32c463773979260d766c7f4bddd573c3405",
+            "engine_sha256": "42bca44501afdfc3acbe3003dcfbbe03a1ae7c2fae66700739cf30346a00c3a2",
+            "collector_sha256": "1937fb4f943b785bc65b9922b13bb9440b51cab336f861a0156eb0dc2000aae8",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.094,
+            "samples": 3592,
+            "cpu_percent_one_core": 0.16664926107717637,
+            "rss_mib_max": 81.98828125,
+            "private_mib_max": 213.26953125,
+            "handles_max": 865,
+            "process_count_max": 3,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "private_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": -35.29263144150418,
+            "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+            "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process"
+          },
+          "change": {
+            "cpu_percent_one_core": 0.10068048389109609,
+            "rss_mib_max": 21.91796875
+          }
+        }
+      ]
+    },
+    {
+      "target": "macos-x86_64",
+      "identity": {
+        "candidate": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+        "baseline_cli_source": "f83ae429490aecb165921037b2f9ed994327634f",
+        "baseline_gui_source": "d4896546f190c0e5afe176f36544dca7aa806227",
+        "baseline_gui_tag": "v3.1.3",
+        "baseline_product_code_matches": true
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "before": {
+            "revision": "f83ae429490aecb165921037b2f9ed994327634f",
+            "sha256": "7bac75bfb1e61b57968278098404db48ead58532e24e8519dd27d44d2c76a443",
+            "build": "release",
+            "measured_seconds": 900.1828993549998,
+            "samples": 2782,
+            "cpu_percent_one_core": 2.9667686443650134,
+            "rss_mib_max": 19.0625,
+            "fd_count_max": 28,
+            "process_count_max": 4,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 0.02095042715827411,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "3a833f62eb6e96edb686e163eec1ca2f24d6a5aa612f850c3a2984322c3b8cc7",
+            "build": "release",
+            "measured_seconds": 900.057960696,
+            "samples": 2819,
+            "cpu_percent_one_core": 2.388660279541878,
+            "rss_mib_max": 33.26953125,
+            "fd_count_max": 59,
+            "process_count_max": 9,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 1.0526023131672595,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -0.5781083648231355,
+            "rss_mib_max": 14.20703125
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "4cca72170b3e81f5886c0a37026132d224f8d973dfbf08cbcde4cd9d74e23ab0",
+            "engine_sha256": "39f3a2786907017881c6257d97cd3405fb7fa30d8ac332a301fc41c0e4ce89fc",
+            "collector_sha256": "7bac75bfb1e61b57968278098404db48ead58532e24e8519dd27d44d2c76a443",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.3697404180002,
+            "samples": 2775,
+            "cpu_percent_one_core": 3.331941051914126,
+            "rss_mib_max": 89.82421875,
+            "fd_count_max": 32,
+            "process_count_max": 4,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 4.168984092960287,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "53cb3bea75ac48754e84b6dbf784c2486fcdb7f2528d8026a11d8f95d7583294",
+            "engine_sha256": "ba916367793c138aee68c0082bce407dd31f3179d9fe14ec3ed7e14a1b553c6d",
+            "collector_sha256": "3a833f62eb6e96edb686e163eec1ca2f24d6a5aa612f850c3a2984322c3b8cc7",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.0090003289997,
+            "samples": 2785,
+            "cpu_percent_one_core": 3.271984278961119,
+            "rss_mib_max": 143.66015625,
+            "fd_count_max": 67,
+            "process_count_max": 9,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 2.3382419064748206,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -0.059956772953007054,
+            "rss_mib_max": 53.8359375
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "4cca72170b3e81f5886c0a37026132d224f8d973dfbf08cbcde4cd9d74e23ab0",
+            "engine_sha256": "39f3a2786907017881c6257d97cd3405fb7fa30d8ac332a301fc41c0e4ce89fc",
+            "collector_sha256": "7bac75bfb1e61b57968278098404db48ead58532e24e8519dd27d44d2c76a443",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.0805624929999,
+            "samples": 2793,
+            "cpu_percent_one_core": 1.1825398129384423,
+            "rss_mib_max": 72.26953125,
+            "fd_count_max": 8,
+            "process_count_max": 1,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 1.3234907034050138,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "53cb3bea75ac48754e84b6dbf784c2486fcdb7f2528d8026a11d8f95d7583294",
+            "engine_sha256": "ba916367793c138aee68c0082bce407dd31f3179d9fe14ec3ed7e14a1b553c6d",
+            "collector_sha256": "3a833f62eb6e96edb686e163eec1ca2f24d6a5aa612f850c3a2984322c3b8cc7",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.2012480489993,
+            "samples": 2785,
+            "cpu_percent_one_core": 1.932437778519178,
+            "rss_mib_max": 114.36328125,
+            "fd_count_max": 24,
+            "process_count_max": 3,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": -13.30191940197841,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": 0.7498979655807356,
+            "rss_mib_max": 42.09375
+          }
+        }
+      ]
+    },
+    {
+      "target": "macos-arm64",
+      "identity": {
+        "candidate": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+        "baseline_cli_source": "f83ae429490aecb165921037b2f9ed994327634f",
+        "baseline_gui_source": "d4896546f190c0e5afe176f36544dca7aa806227",
+        "baseline_gui_tag": "v3.1.3",
+        "baseline_product_code_matches": true
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "before": {
+            "revision": "f83ae429490aecb165921037b2f9ed994327634f",
+            "sha256": "99a68660bf14201bb78ccdfa7cb9f8a0990704be92ecf7c722185fee92c265f9",
+            "build": "release",
+            "measured_seconds": 900.2687755000001,
+            "samples": 2677,
+            "cpu_percent_one_core": 2.151234667585114,
+            "rss_mib_max": 26.890625,
+            "fd_count_max": 24,
+            "process_count_max": 4,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 0.1681882022471921,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "be31aa92dddf51d32980f7fed9f4a9185a9c7bf7efecb31d63edb12cbb35fe34",
+            "build": "release",
+            "measured_seconds": 900.0965465419999,
+            "samples": 2682,
+            "cpu_percent_one_core": 2.1798109408793827,
+            "rss_mib_max": 54.53125,
+            "fd_count_max": 58,
+            "process_count_max": 9,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 1.3676539179104452,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "change": {
+            "cpu_percent_one_core": 0.028576273294268706,
+            "rss_mib_max": 27.640625
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "4cca72170b3e81f5886c0a37026132d224f8d973dfbf08cbcde4cd9d74e23ab0",
+            "engine_sha256": "39f3a2786907017881c6257d97cd3405fb7fa30d8ac332a301fc41c0e4ce89fc",
+            "collector_sha256": "99a68660bf14201bb78ccdfa7cb9f8a0990704be92ecf7c722185fee92c265f9",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.2701019169999,
+            "samples": 2634,
+            "cpu_percent_one_core": 2.8479769510732704,
+            "rss_mib_max": 127.078125,
+            "fd_count_max": 37,
+            "process_count_max": 4,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 2.5203184410646315,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "b0499df1017601d2b181195b41ff35672b2cbc5a614a13845b67040d10617ded",
+            "engine_sha256": "1b463df79215db220abe5716ed5a05131f30f27ea23124e3d5470d9e7229ed25",
+            "collector_sha256": "be31aa92dddf51d32980f7fed9f4a9185a9c7bf7efecb31d63edb12cbb35fe34",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.3416833339998,
+            "samples": 2658,
+            "cpu_percent_one_core": 2.2336943154213005,
+            "rss_mib_max": 188.78125,
+            "fd_count_max": 62,
+            "process_count_max": 8,
+            "cpu_gate": false,
+            "rss_gate": false,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 1.2211084905660528,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -0.6142826356519699,
+            "rss_mib_max": 61.703125
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "4cca72170b3e81f5886c0a37026132d224f8d973dfbf08cbcde4cd9d74e23ab0",
+            "engine_sha256": "39f3a2786907017881c6257d97cd3405fb7fa30d8ac332a301fc41c0e4ce89fc",
+            "collector_sha256": "99a68660bf14201bb78ccdfa7cb9f8a0990704be92ecf7c722185fee92c265f9",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.0328610420001,
+            "samples": 2636,
+            "cpu_percent_one_core": 1.835507425903762,
+            "rss_mib_max": 112.1875,
+            "fd_count_max": 8,
+            "process_count_max": 1,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 2.024358365019012,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "b0499df1017601d2b181195b41ff35672b2cbc5a614a13845b67040d10617ded",
+            "engine_sha256": "1b463df79215db220abe5716ed5a05131f30f27ea23124e3d5470d9e7229ed25",
+            "collector_sha256": "be31aa92dddf51d32980f7fed9f4a9185a9c7bf7efecb31d63edb12cbb35fe34",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.3269602910004,
+            "samples": 2658,
+            "cpu_percent_one_core": 2.1865827491866994,
+            "rss_mib_max": 162.40625,
+            "fd_count_max": 27,
+            "process_count_max": 4,
+            "cpu_gate": false,
+            "rss_gate": false,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 4.067452830188699,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": 0.35107532328293733,
+            "rss_mib_max": 50.21875
+          }
+        }
+      ]
+    },
+    {
+      "target": "linux-gnu-x86_64",
+      "identity": {
+        "candidate": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+        "baseline_cli_source": "f83ae429490aecb165921037b2f9ed994327634f",
+        "baseline_gui_source": "d4896546f190c0e5afe176f36544dca7aa806227",
+        "baseline_gui_tag": "v3.1.3",
+        "baseline_product_code_matches": true
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "before": {
+            "revision": "f83ae429490aecb165921037b2f9ed994327634f",
+            "sha256": "2b77ebaefef1ae14f937a260575384af83569da9c9f30690e98f8935da1bd1d4",
+            "build": "release",
+            "measured_seconds": 900.1629083629999,
+            "samples": 3580,
+            "cpu_percent_one_core": 0.47866580148650634,
+            "rss_mib_max": 9.29296875,
+            "fd_count_max": null,
+            "process_count_max": 3,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 0.142850907821229,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "d2f5bb70aeacbebba6d33d815083c9eb37b2ff4441ec676dc014b8fc92220d7e",
+            "build": "release",
+            "measured_seconds": 900.0483542889999,
+            "samples": 3577,
+            "cpu_percent_one_core": 0.5929435873715728,
+            "rss_mib_max": 33.0703125,
+            "fd_count_max": null,
+            "process_count_max": 7,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 0.41913953081232336,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "change": {
+            "cpu_percent_one_core": 0.11427778588506649,
+            "rss_mib_max": 23.77734375
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "67ce03bb2ba672452832b5d1bd019bc255d182057b3df22c4aa29075986cacfc",
+            "engine_sha256": "b430bd33d9da6b0a384519b67f058adb98750ca16beda36ea208f894fe4d6c33",
+            "collector_sha256": "2b77ebaefef1ae14f937a260575384af83569da9c9f30690e98f8935da1bd1d4",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.1517082679998,
+            "samples": 3578,
+            "cpu_percent_one_core": 2.320801461366583,
+            "rss_mib_max": 225.92578125,
+            "fd_count_max": null,
+            "process_count_max": 3,
+            "cpu_gate": false,
+            "rss_gate": false,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 5.208946078431353,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "c927f8a716d0b283447291785604365689adbcb42c26495b61af932f4a4f0017",
+            "engine_sha256": "c3c3380b6ec566139a298aaf41a2f86c0da47cc2773cc52b4d348b07b359bdd3",
+            "collector_sha256": "d2f5bb70aeacbebba6d33d815083c9eb37b2ff4441ec676dc014b8fc92220d7e",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.2039454749993,
+            "samples": 3580,
+            "cpu_percent_one_core": 0.7063701544481398,
+            "rss_mib_max": 156.09765625,
+            "fd_count_max": null,
+            "process_count_max": 8,
+            "cpu_gate": true,
+            "rss_gate": false,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 0.7365463512569761,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -1.6144313069184433,
+            "rss_mib_max": -69.828125
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "67ce03bb2ba672452832b5d1bd019bc255d182057b3df22c4aa29075986cacfc",
+            "engine_sha256": "b430bd33d9da6b0a384519b67f058adb98750ca16beda36ea208f894fe4d6c33",
+            "collector_sha256": "2b77ebaefef1ae14f937a260575384af83569da9c9f30690e98f8935da1bd1d4",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.1092049590002,
+            "samples": 3575,
+            "cpu_percent_one_core": 0.31129622767579973,
+            "rss_mib_max": 221.1015625,
+            "fd_count_max": 264,
+            "process_count_max": 1,
+            "cpu_gate": true,
+            "rss_gate": false,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 4.98380602240897,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "c927f8a716d0b283447291785604365689adbcb42c26495b61af932f4a4f0017",
+            "engine_sha256": "c3c3380b6ec566139a298aaf41a2f86c0da47cc2773cc52b4d348b07b359bdd3",
+            "collector_sha256": "d2f5bb70aeacbebba6d33d815083c9eb37b2ff4441ec676dc014b8fc92220d7e",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.0980417969995,
+            "samples": 3570,
+            "cpu_percent_one_core": 0.12983141232780934,
+            "rss_mib_max": 133.95703125,
+            "fd_count_max": 21,
+            "process_count_max": 3,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 1.4972098214285694,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -0.1814648153479904,
+            "rss_mib_max": -87.14453125
+          }
+        }
+      ]
+    },
+    {
+      "target": "linux-gnu-arm64",
+      "identity": {
+        "candidate": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+        "baseline_cli_source": "f83ae429490aecb165921037b2f9ed994327634f",
+        "baseline_gui_source": "d4896546f190c0e5afe176f36544dca7aa806227",
+        "baseline_gui_tag": "v3.1.3",
+        "baseline_product_code_matches": true
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "before": {
+            "revision": "f83ae429490aecb165921037b2f9ed994327634f",
+            "sha256": "e726c9e9c491e2f0bc29588b456199ae17f17ece332cd05f31125ec7fd705dd8",
+            "build": "release",
+            "measured_seconds": 900.0689020819998,
+            "samples": 3560,
+            "cpu_percent_one_core": 0.7710821898130321,
+            "rss_mib_max": 9.50390625,
+            "fd_count_max": null,
+            "process_count_max": 3,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 0.19294241573033766,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "2ff0ac2e582195e5e76a5dd5f46a83a9102922f5dafd4317caeae5f5d3660e28",
+            "build": "release",
+            "measured_seconds": 900.098332002,
+            "samples": 3555,
+            "cpu_percent_one_core": 0.8773491427803749,
+            "rss_mib_max": 26.3359375,
+            "fd_count_max": null,
+            "process_count_max": 7,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 0.467495598591551,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "change": {
+            "cpu_percent_one_core": 0.10626695296734279,
+            "rss_mib_max": 16.83203125
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "c5c74ba511b32e04d50811c08a13f355e52d77160990cf4df7b1b30fd5ca975b",
+            "engine_sha256": "27cd57f81ed5484424b576fb230a4f370b32309d20e1f33073d7e409f9bdf755",
+            "collector_sha256": "e726c9e9c491e2f0bc29588b456199ae17f17ece332cd05f31125ec7fd705dd8",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.0646694380002,
+            "samples": 3558,
+            "cpu_percent_one_core": 7.4626779920091995,
+            "rss_mib_max": 219.09375,
+            "fd_count_max": null,
+            "process_count_max": 3,
+            "cpu_gate": false,
+            "rss_gate": false,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 6.634099911971816,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "0f7414f3463a42757aa82646980fe126012b8cdbd770ecbaeb914612e12956c7",
+            "engine_sha256": "b1c9caa2dd9432465514a679cd211ef607deeee089122d1072ef35bc46cc867a",
+            "collector_sha256": "2ff0ac2e582195e5e76a5dd5f46a83a9102922f5dafd4317caeae5f5d3660e28",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.0479710569998,
+            "samples": 3557,
+            "cpu_percent_one_core": 1.0901238951161007,
+            "rss_mib_max": 147.72265625,
+            "fd_count_max": null,
+            "process_count_max": 9,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 0.6817121478873105,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -6.372554096893099,
+            "rss_mib_max": -71.37109375
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "c5c74ba511b32e04d50811c08a13f355e52d77160990cf4df7b1b30fd5ca975b",
+            "engine_sha256": "27cd57f81ed5484424b576fb230a4f370b32309d20e1f33073d7e409f9bdf755",
+            "collector_sha256": "e726c9e9c491e2f0bc29588b456199ae17f17ece332cd05f31125ec7fd705dd8",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.025841876,
+            "samples": 3551,
+            "cpu_percent_one_core": 0.5717001402176304,
+            "rss_mib_max": 219.41796875,
+            "fd_count_max": 270,
+            "process_count_max": 1,
+            "cpu_gate": true,
+            "rss_gate": false,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 5.115228873239431,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "0f7414f3463a42757aa82646980fe126012b8cdbd770ecbaeb914612e12956c7",
+            "engine_sha256": "b1c9caa2dd9432465514a679cd211ef607deeee089122d1072ef35bc46cc867a",
+            "collector_sha256": "2ff0ac2e582195e5e76a5dd5f46a83a9102922f5dafd4317caeae5f5d3660e28",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.2296752019993,
+            "samples": 3553,
+            "cpu_percent_one_core": 0.18207053656970584,
+            "rss_mib_max": 124.25,
+            "fd_count_max": 15,
+            "process_count_max": 2,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 1.384859154929572,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -0.38962960364792454,
+            "rss_mib_max": -95.16796875
+          }
+        }
+      ]
+    },
+    {
+      "target": "linux-musl-x86_64",
+      "identity": {
+        "candidate": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+        "baseline_cli_source": "f83ae429490aecb165921037b2f9ed994327634f",
+        "baseline_gui_source": "d4896546f190c0e5afe176f36544dca7aa806227",
+        "baseline_gui_tag": "v3.1.3",
+        "baseline_product_code_matches": true
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "before": {
+            "revision": "f83ae429490aecb165921037b2f9ed994327634f",
+            "sha256": "13db26a59db59d785bdbb4906c772693e2812cdfcb2aed87788d952ca1ab8030",
+            "build": "release",
+            "measured_seconds": 900.0748998189999,
+            "samples": 3585,
+            "cpu_percent_one_core": 0.3287086442022728,
+            "rss_mib_max": 4.296875,
+            "fd_count_max": 29,
+            "process_count_max": 2,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 0.0050737604748603005,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "70e930e568435992fb396f0a0639d3de3f443743767ba23339d3abcf1714725a",
+            "build": "release",
+            "measured_seconds": 900.181924681,
+            "samples": 3568,
+            "cpu_percent_one_core": 0.9752640837696327,
+            "rss_mib_max": 17.7109375,
+            "fd_count_max": 59,
+            "process_count_max": 6,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "terminal_restored": true,
+            "rss_last_window_delta": 0.10404231039326106,
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process"
+          },
+          "change": {
+            "cpu_percent_one_core": 0.6465554395673598,
+            "rss_mib_max": 13.4140625
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "01adf05c9b9bcd586da972e319b2842aa62e2f6adc87f9e78e6d563042fa1292",
+            "engine_sha256": "a44c3b760c27a27d9b709a32071ddef30a2bfb624a62c5cf9c17430b1bf25983",
+            "collector_sha256": "13db26a59db59d785bdbb4906c772693e2812cdfcb2aed87788d952ca1ab8030",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.1305526710003,
+            "samples": 3579,
+            "cpu_percent_one_core": 3.0329968157384113,
+            "rss_mib_max": 78.4296875,
+            "fd_count_max": 32,
+            "process_count_max": 2,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": false,
+            "rss_last_window_delta": 5.941395308123241,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "0781c44a4c186462322236ff8d0b92e0f5797527e779cc1d3469de862ae741b5",
+            "engine_sha256": "8a5a6c93b3384ac5c9bed394dd8de3a55f86e662b9a44e684b4d80aee1275149",
+            "collector_sha256": "70e930e568435992fb396f0a0639d3de3f443743767ba23339d3abcf1714725a",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "measured_seconds": 900.2018648369994,
+            "samples": 3562,
+            "cpu_percent_one_core": 2.0901295292702957,
+            "rss_mib_max": 79.09375,
+            "fd_count_max": 42,
+            "process_count_max": 6,
+            "cpu_gate": false,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 0.40908093398876133,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -0.9428672864681156,
+            "rss_mib_max": 0.6640625
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "before": {
+            "revision": "v3.1.3",
+            "sha256": "01adf05c9b9bcd586da972e319b2842aa62e2f6adc87f9e78e6d563042fa1292",
+            "engine_sha256": "a44c3b760c27a27d9b709a32071ddef30a2bfb624a62c5cf9c17430b1bf25983",
+            "collector_sha256": "13db26a59db59d785bdbb4906c772693e2812cdfcb2aed87788d952ca1ab8030",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.1533441480001,
+            "samples": 3572,
+            "cpu_percent_one_core": 0.6633192043130696,
+            "rss_mib_max": 69.515625,
+            "fd_count_max": 23,
+            "process_count_max": 1,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": false,
+            "rss_last_window_delta": 4.2166601015406115,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "after": {
+            "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+            "sha256": "0781c44a4c186462322236ff8d0b92e0f5797527e779cc1d3469de862ae741b5",
+            "engine_sha256": "8a5a6c93b3384ac5c9bed394dd8de3a55f86e662b9a44e684b4d80aee1275149",
+            "collector_sha256": "70e930e568435992fb396f0a0639d3de3f443743767ba23339d3abcf1714725a",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "measured_seconds": 900.1871228789996,
+            "samples": 3568,
+            "cpu_percent_one_core": 0.28544309673994167,
+            "rss_mib_max": 60.0625,
+            "fd_count_max": 16,
+            "process_count_max": 2,
+            "cpu_gate": true,
+            "rss_gate": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 0.9645913799157313,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"
+          },
+          "change": {
+            "cpu_percent_one_core": -0.3778761075731279,
+            "rss_mib_max": -9.453125
+          }
+        }
+      ]
+    }
+  ]
+}

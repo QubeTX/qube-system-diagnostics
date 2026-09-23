@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Retain the complete native before/after resource matrix with exact artifact identities, measured deltas and all failed limits. Run further GTK graphics-allocation and Mac hidden-frame diagnostics on a separate branch using unchanged application artifacts, without treating observer-attached diagnostics as acceptance.
+
 - Separate macOS accessibility snapshot publication from assistive-client focus actions. Previously each focused publication called the action setter, clearing keyboard-visible focus and producing duplicate input/redraw events. Add an actual AppKit-host regression fixture on both native Mac runners; preserve external accessibility focus requests.
 
 - Retry transient partial automation snapshot reads within the existing bounded deadline. Preserve fatal identity, dispatch-error and output-limit checks after Intel Mac qualification exposed the SDK's non-atomic snapshot replacement; add regression fixtures without changing product binaries or performance thresholds.
