@@ -342,10 +342,20 @@ index 7f6d6ec..32393e1 100644
  void native_sdk_appkit_set_tray_callback(native_sdk_appkit_host_t *host, native_sdk_appkit_tray_callback_t callback, void *context);
  
 diff --git a/src/platform/macos/appkit_host.m b/src/platform/macos/appkit_host.m
-index e725386..107fe63 100644
+index e725386..1cf3518 100644
 --- a/src/platform/macos/appkit_host.m
 +++ b/src/platform/macos/appkit_host.m
-@@ -11021,6 +11021,16 @@ void native_sdk_appkit_update_tray_title(native_sdk_appkit_host_t *host, const c
+@@ -9926,6 +9926,9 @@ static int NativeSdkSpectrumComputeBands(native_sdk_spectrum_tap_state_t *state,
+ 
+ - (void)emitEventNamed:(NSString *)name detailJSON:(NSString *)detailJSON windowId:(uint64_t)windowId {
+     WKWebView *webView = [self webViewForWindowId:windowId];
++    // Native-only windows have no JavaScript bridge. Do not keep a ten-second
++    // 60 Hz frame pump alive for an event with no recipient.
++    if (!webView) return;
+     NSData *nameData = [NSJSONSerialization dataWithJSONObject:name ?: @"" options:NSJSONWritingFragmentsAllowed error:nil];
+     NSString *nameJSON = nameData ? [[NSString alloc] initWithData:nameData encoding:NSUTF8StringEncoding] : @"\"\"";
+     NSString *detail = detailJSON.length > 0 ? detailJSON : @"null";
+@@ -11021,6 +11024,16 @@ void native_sdk_appkit_update_tray_title(native_sdk_appkit_host_t *host, const c
      }
  }
  

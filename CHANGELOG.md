@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Stop macOS native-only event delivery from arming the JavaScript bridge's ten-second, 60 Hz frame keepalive when no WebView exists. Hosted thread counters and stacks attribute the hidden-window cost to this main-thread timer churn; native functional and long-window resource verification remain required.
+
 - Add bounded full-event frame-work and input-to-present qualification counters, including p95, lifetime stall maxima and sample-window coverage. Exclude automation snapshot I/O and queue wait from synchronous work. Keep automation builds in a separate staging directory and verify every patched SDK file in both build preparers; deterministic fixtures cover nesting, idle gaps and overwritten percentile windows.
 
 - Correct Mac diagnostic thread attribution after hosted task-port access denial: use public libproc thread-ID reads with documented nanosecond units, bounded identities extracted from the native stack sample, and an independent native current-thread clock fixture. Report partial coverage and separate the following CPU window from the stack sample. Give the oversized-output regression fixture its own deadline so pipe throughput cannot conflate byte-limit and timeout checks; production limits are unchanged.

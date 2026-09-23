@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- The Mac app avoids repeatedly waking its interface for messages that have no recipient. Behind the scenes, native testing checks the resulting background resource use and continued responsiveness.
+
 - Behind the scenes: responsiveness checks now include preparing a screen and reacting to input, with explicit coverage and stall reporting. Separate test builds keep automation out of the app customers install.
 
 - Behind the scenes: Mac performance investigations can read permitted thread counters without requesting debugger access. Separate checks distinguish excessive output from a slow helper, while the app keeps the same time and memory limits.

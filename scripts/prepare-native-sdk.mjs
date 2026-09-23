@@ -17,7 +17,7 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "e8f05f38e372362ffc27fe8d6b5d6c4ba974e7a563cc09d257da23a698d86da7",
+  patchHash: "057701c635aad45e48065905ff6ee5b58f08c52b0cb8b269a8e8b4716df0d837",
 };
 
 const files = new Map([
@@ -36,7 +36,7 @@ const files = new Map([
   ["src/app_runner/root.zig", ["e085afe9f414a5ef0c21388e0bb1436bf05cb346349d6e87ca7e352c38b0c4e0", "5a3cbdbe53a4a68c93a49defb6024d20f335bda176697342a3c79163ce880340"]],
   ["src/platform/linux/gtk_host.c", ["da73fa340df0f577cc09873ae0c6d5e6d94bc7ca8024a68ad51d2df94cd93af7", "772f4e3d01366e5b31ad138cab1e6977bfc6e081c6a962cbb27336fc7bd2e14f"]],
   ["src/platform/macos/appkit_host.h", ["56e44b321b7011ef6bd2b85d97b2e9f6d1b502ceb3421032dfe15b53eb1b6d32", "6f5c6f6756667cf740d6181548141befd3a01970da4d09872de81d806cd90aa5"]],
-  ["src/platform/macos/appkit_host.m", ["df07d1e67688b307752f5ff850108664d76e5c3f44335970d21fa0139f9ec7d5", "d49911a090c1d1c4383e04cbd80948e9f26ec0922078001705d82c1c4553040b"]],
+  ["src/platform/macos/appkit_host.m", ["df07d1e67688b307752f5ff850108664d76e5c3f44335970d21fa0139f9ec7d5", "908540ca2a58d0fd8a32e8350db715bd1bf82c2f073f579cc4edfdca29fadfce"]],
   ["src/platform/macos/root.zig", ["980888b6c53acf2dac2bca908f878214dce8707a71c7c8f4365aa0ade821ffc6", "920fe57a917ba11f5bfef358458e50ec3a6ca00f92ee0a5e0672f31292830f23"]],
   ["src/platform/null_platform.zig", ["f4e4fa7f018ccc443f2477e72783f31d355d928149d0fd9687c02be7fc0babc5", "114153cf720649ef50f18bbb5de8175f31eb79e550d79cfaff7300926b32422f"]],
   ["src/platform/types.zig", ["213ee148a0206039a78a1d9260ad08cf7f972bcb8f24f95b8e6e0ba986bc33df", "14e69741e8572fc2e894b7409564901e5b7cf5cd0a738fca2bd83f3d023c53fe"]],
