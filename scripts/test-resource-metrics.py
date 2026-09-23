@@ -27,6 +27,18 @@ class Process:
 
 
 class Metrics(unittest.TestCase):
+    def test_completed_window_metrics_survive_a_later_shutdown_failure(self):
+        record = runpy.run_path(str(Path(__file__).with_name("measure-gui-unix.py")))["record_window"]
+        report = {}
+        record(report, [(10, 4, 1), (12, None, 2)], 330, {(42, 100): Process()}, FamilyAttribution(42))
+        self.assertEqual(report["measured_seconds"], 330)
+        self.assertEqual(report["rss_mib_max"], 12)
+        self.assertEqual(report["process_count_max"], 2)
+        self.assertIsNone(report["fd_count_max"])
+        self.assertEqual(report["rss_last_window_delta"], 2)
+        self.assertNotIn("clean_shutdown", report)
+        self.assertNotIn("cpu_percent_one_core", report)  # Requires final wait4 accounting.
+
     def test_shutdown_evidence_distinguishes_zombies_without_private_paths(self):
         child = Process()
         child.is_running = lambda: True

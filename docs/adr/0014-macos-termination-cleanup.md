@@ -1,7 +1,7 @@
 # ADR 0014: join collectors before AppKit termination
 
 Date: 2026-09-23
-Status: Candidate; native Intel and Apple Silicon verification required
+Status: Accepted; native Intel and Apple Silicon verification passed
 Related: ADR 0008, task #v4a
 
 ## Evidence
@@ -19,3 +19,5 @@ Do not replace AppKit's delegate, alter menu/OS termination semantics, or weaken
 ## Verification
 
 A native Objective-C fixture checks synchronous notification delivery, duplicate-install prevention, removal and reinstallation. The existing full-bundle GUI smoke must then prove that real AppKit quit leaves no owned collectors on both Mac architectures. Windows native tests/strict bindings check the shared Zig bridge. CPU profiles remain diagnostic evidence, not performance acceptance.
+
+CI run 35890420111 on source 78cc519 passes all six native targets, including the notification fixture and full-bundle orderly-quit checks on both Intel and Apple Silicon. This closes the identified shutdown defect; longer resource windows remain a separate release gate.

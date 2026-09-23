@@ -43,6 +43,17 @@ match f83ae42 before use; their observed differences are task records. Each
 comparison records both source identities and every measured executable hash.
 Archive checks reject checksum mismatches, escaping paths and oversized payloads.
 
+Run 35890605196 on 78cc519 records a native musl TUI pass (1.017 percent of one
+core, 17.68 MiB peak RSS), then the immutable public GUI baseline exits with
+SIGSEGV during orderly shutdown. The original runner aborted before measuring
+the candidate GUI. The corrected runner retains that explicit baseline failure
+and continues the candidate windows; missing, malformed, oversized or unproven
+failure reports and timeouts remain fatal. Native GUI reports preserve the
+completed sampling window before shutdown and retain final CPU accounting when
+wait4 succeeds. Failed shutdown is still a failed observation. The new reporting
+and continuation behavior has eleven deterministic fixtures; native musl
+remeasurement is required before claiming a GUI resource result.
+
 `measure-tui-unix.py` uses completed [wait4 resource accounting](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/wait4.2.html).
 On Linux, descendant totals require each intervening parent to reap its children;
 the [kernel accounting contract](https://man7.org/linux/man-pages/man2/getrusage.2.html)

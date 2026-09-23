@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Preserve completed native GUI resource observations when shutdown fails, and continue candidate measurement after an explicitly reported failure in the immutable public baseline. Keep baseline failures intact; timeouts, malformed or missing reports, and candidate failures still fail qualification. Add deterministic reporting and continuation fixtures after the public musl baseline crashes on close.
+
 - Pair embedded Makira headings/readings with Gail Rock body/navigation/controls. Add reviewed private font provisioning to every native build lane and a heading-font token that keeps intrinsic measurement, paragraph wrapping, selection and rendering on the same face. Retain IBM Plex Mono for compact technical values; verify font coverage and layout/paint agreement. Bound translated glyph-edge raster comparison to one RGB code value with exact alpha; retain exact panel/shadow comparisons.
 
 - Stop and join the GUI engine from AppKit's synchronous termination notification, because `terminate:` does not unwind `main`. Preserve ordinary library-unload ownership and idempotent shutdown; add a native notification fixture and retain the complete-bundle remaining-worker gate on both Mac architectures.

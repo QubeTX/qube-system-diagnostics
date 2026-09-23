@@ -17,6 +17,10 @@ BASELINE = "f83ae429490aecb165921037b2f9ed994327634f"
 BASELINE_GUI_SOURCE = "d4896546f190c0e5afe176f36544dca7aa806227"
 
 
+class CommandFailed(RuntimeError):
+    """A completed child failed; distinct from an unbounded or interrupted run."""
+
+
 def baseline_gui(root, target):
     name = "sd300-gui-macos-universal.zip" if target.startswith("macos-") else f"sd300-gui-{target}." + ("zip" if target.startswith("windows-") else "tar.xz")
     directory = root / "target/resource-baseline-gui"
@@ -90,7 +94,25 @@ def bounded(command, seconds):
                 pass
         raise RuntimeError("Native resource qualification exceeded its deadline")
     if code:
-        raise RuntimeError(f"Native qualification command exited {code}")
+        raise CommandFailed(f"Native qualification command exited {code}")
+
+
+def measure(command, seconds, report, *, baseline=False):
+    try:
+        bounded(command, seconds)
+    except CommandFailed:
+        # A broken immutable baseline must remain a failed observation, but
+        # must not prevent measuring the replacement. Only accept an explicit,
+        # bounded failure report from the completed baseline harness. Timeouts,
+        # missing/malformed reports and every candidate failure still propagate.
+        if not baseline or not report.is_file() or report.stat().st_size > 2 * 1024 * 1024:
+            raise
+        result = json.loads(report.read_text(encoding="utf-8"))
+        if (result.get("schema") != 2 or result.get("passed") is not False
+                or result.get("revision") != "v3.1.3" or result.get("legacy_in_process") is not True
+                or not isinstance(result.get("failure"), str) or not result["failure"]):
+            raise
+        print(f"Immutable baseline failed; retain {report.name} and continue candidate measurement.", flush=True)
 
 
 def main():
@@ -155,7 +177,7 @@ def main():
                 command.append("--legacy-in-process")
             if args.target.startswith("linux-"):
                 command = ["env", "GDK_BACKEND=x11", "xvfb-run", "-a", "dbus-run-session", "--", *command]
-            bounded(command, args.seconds + 120)
+            measure(command, args.seconds + 120, report_path, baseline=label == "before")
             gui_report = json.loads(report_path.read_text(encoding="utf-8"))
             if label == "after":
                 gui_gates = ["cpu_gate", "rss_gate", "clean_shutdown"] + (["private_gate"] if windows else [])

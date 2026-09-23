@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: native Windows and GNU TUI resource gates pass; both Mac architectures exceed the CPU gate. Capture native Mac stack profiles to locate the remaining work. Windows hosted GUI resource gates pass, while the physical-host foreground run needs the tested renderer allocation change. Native Linux is qualifying the software presentation default and corrected window cleanup. Full foreground/hidden/soak and unpublished composite lifecycle qualification remain required.
+Current cycle: all six native font lanes pass in 35892988794 on 2c3a2ad, following local tests and Windows live compact/default readback. Its fifteen-minute foreground resource gates pass; the hidden window is running. Prior branch-only Windows installer qualification passes on 78cc519. Resource comparison 35890605196 retains a public-baseline musl crash, requiring corrected reporting and continuation before the candidate GUI can be measured. Final resource, composite lifecycle and publication gates remain open.
 
 ## Impact
 
@@ -49,6 +49,14 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement, bounded workers, provider fixtures, adaptive TUI, optional companion/actions, GUI parity and the expanded GUI design/interaction review are implemented. Remaining work is native performance/shutdown qualification, composite lifecycle and final release preparation. Product remains 3.1.3 until the coordinated version update. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: CI 35892988794 completes successfully on all six native targets for 2c3a2ad, closing the requested font build/layout change. Commit the validated comparison-reporting fix with visual/native evidence and dispatch a new native before/after run; the previous long run keeps its own source identity. Local hidden measurement continues without observers or compilation.
+
+- 2026-09-23 — codex: exact 2c3a2ad font bundle completes its unobserved fifteen-minute Thermals run at 1.017 percent one-core CPU, 143.88 MiB peak summed working set and 242.66 MiB private memory; all gates pass, required collectors stay present and shutdown is clean. Retain the report and start the separate thirty-minute hidden window. Do not substitute this foreground result for soak or frame/input latency evidence.
+
+- 2026-09-23 — codex: resource run 35890605196 passes the musl TUI window (1.017 percent CPU, 17.68 MiB RSS), then its public v3.1.3 GUI baseline crashes on close before the candidate GUI can run. Correct reporting first: retain completed-window memory/CPU evidence even after shutdown failure, and continue only after an explicit, bounded baseline failure report. Candidate failures/timeouts/malformed evidence stay fatal. Eleven local fixtures pass; next oracle is the native musl comparison on the corrected runner, without changing product bytes.
+
+- 2026-09-23 — codex: 2c3a2ad release-style Windows build and actual-window font readback pass: Overview, populated/default/compact Processes, and complete compact SpeedQX consent. Dismiss without a bandwidth run and close the isolated app; begin the unobserved fifteen-minute foreground window against this bundle. CI 35890420111 proves both Mac orderly-quit paths; branch-only Windows installer run 35890705371 completes successfully on 78cc519. Long resource comparison 35890605196 and native font CI 35892988794 remain in progress; none of these checks publishes a release.
 
 - 2026-09-23 — codex: Makira/Gail Rock candidate passes all 67 native tests, strict bindings, clean-restored SDK patch validation and five private build-input checks. Text raster diagnostic finds one RGB channel with a one-code-value translated coverage difference; bound that antialiasing comparison explicitly while keeping alpha/panel/shadow exact. Commit the validated font mapping and dispatch native builds; release-style visual readback follows. Separately, 78cc519 native CI 35890420111 now passes all six targets, including both Mac orderly-quit checks.
 

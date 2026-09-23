@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -42,6 +43,34 @@ class BaselineArchive(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     self.download(root, archive, hashlib.sha256(archive).hexdigest().encode() if checksum is None else checksum)
                 self.assertFalse((root / "target/resource-baseline-gui/escaped").exists())
+
+
+class BaselineFailure(unittest.TestCase):
+    def test_reported_baseline_failure_continues_without_altering_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "before-gui-foreground.json"
+            payload = json.dumps({"schema": 2, "revision": "v3.1.3", "legacy_in_process": True,
+                                  "passed": False, "failure": "GUI did not shut down cleanly: -11"})
+            report.write_text(payload, encoding="utf-8")
+            with patch.object(qualification, "bounded", side_effect=qualification.CommandFailed("exit 1")):
+                qualification.measure(["harness"], 450, report, baseline=True)
+                self.assertEqual(report.read_text(encoding="utf-8"), payload)
+                with self.assertRaises(qualification.CommandFailed):
+                    qualification.measure(["harness"], 450, report, baseline=False)
+
+    def test_missing_malformed_unproven_reports_and_timeout_still_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "before-gui-foreground.json"
+            for payload in (None, "{", "{}", json.dumps({"schema": 2, "passed": False, "failure": "exit"}), "x" * (2 * 1024 * 1024 + 1)):
+                with self.subTest(payload_size=None if payload is None else len(payload)):
+                    if payload is not None:
+                        report.write_text(payload, encoding="utf-8")
+                    with patch.object(qualification, "bounded", side_effect=qualification.CommandFailed("exit 1")):
+                        with self.assertRaises((qualification.CommandFailed, ValueError)):
+                            qualification.measure(["harness"], 450, report, baseline=True)
+            with patch.object(qualification, "bounded", side_effect=RuntimeError("deadline exceeded")):
+                with self.assertRaisesRegex(RuntimeError, "deadline exceeded"):
+                    qualification.measure(["harness"], 450, report, baseline=True)
 
 
 if __name__ == "__main__":

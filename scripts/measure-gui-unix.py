@@ -93,6 +93,17 @@ def topics(root, cli):
     return values
 
 
+def record_window(report, samples, elapsed, known, attribution):
+    """Retain completed-window observations even when orderly shutdown fails."""
+    peak = max(row[0] for row in samples)
+    window = max(1, len(samples)//10)
+    report.update(measured_seconds=elapsed, samples=len(samples),
+                  **attribution.report(), rss_gate=peak <= 150, rss_mib_max=peak,
+                  **descriptor_summary(samples), process_count_max=max(r[2] for r in samples),
+                  observed_process_identities=len(known),
+                  rss_last_window_delta=sum(r[0] for r in samples[-window:])/window-sum(r[0] for r in samples[:window])/window)
+
+
 def main():
     def interrupted(_signal, _frame):
         raise KeyboardInterrupt("Qualification interrupted")
@@ -197,6 +208,7 @@ def main():
                     checked = True
                 time.sleep(.25)
             elapsed = time.monotonic() - begin
+            record_window(report, samples, elapsed, known, attribution)
             if sys.platform == "linux":
                 report["root_mappings_after_window"] = linux_mapping_report(process.pid)
             if (visible_windows(process.pid) == 0) != args.hidden:
@@ -225,22 +237,18 @@ def main():
                 time.sleep(.05)
             if debugger:
                 report["shutdown_trace"] = debugger.finish()
+            report["clean_shutdown"] = False
+            if result is not None:
+                cpu = (result.ru_utime + result.ru_stime) / elapsed * 100
+                report.update(cpu_percent_one_core=cpu, cpu_gate=cpu <= (1 if args.hidden else 2))
+            if args.trace_shutdown or args.profile_cpu:
+                report["cpu_gate"] = report["rss_gate"] = None
             if result is None or process.returncode != 0:
                 raise RuntimeError(f"GUI did not shut down cleanly: {process.returncode}")
             report["remaining_processes"] = remaining_family(known, attribution)
             if report["remaining_processes"]["count"]:
                 raise RuntimeError("Owned helper remains after GUI shutdown")
-            cpu = (result.ru_utime + result.ru_stime) / elapsed * 100
-            peak = max(row[0] for row in samples)
-            window = max(1, len(samples)//10)
-            report.update(measured_seconds=elapsed, samples=len(samples), cpu_percent_one_core=cpu,
-                          **attribution.report(),
-                          cpu_gate=cpu <= (1 if args.hidden else 2), rss_gate=peak <= 150, rss_mib_max=peak,
-                          **descriptor_summary(samples), process_count_max=max(r[2] for r in samples),
-                          observed_process_identities=len(known), clean_shutdown=True,
-                          rss_last_window_delta=sum(r[0] for r in samples[-window:])/window-sum(r[0] for r in samples[:window])/window)
-            if args.trace_shutdown or args.profile_cpu:
-                report["cpu_gate"] = report["rss_gate"] = None
+            report["clean_shutdown"] = True
     except BaseException as error:
         report.update(passed=False, failure_type=type(error).__name__, failure=str(error))
         report["stderr_tail"] = stderr_tail[0].decode("utf-8", "replace")
