@@ -93,9 +93,7 @@ def topics(root, cli):
     return values
 
 
-def record_window(report, samples, elapsed, known, attribution)
-            report["diagnostic_frame_paths"] = dict(frame_paths)
-            report["diagnostic_only"] = True:
+def record_window(report, samples, elapsed, known, attribution):
     """Retain completed-window observations even when orderly shutdown fails."""
     peak = max(row[0] for row in samples)
     window = max(1, len(samples)//10)
@@ -221,6 +219,8 @@ def main():
                 time.sleep(.25)
             elapsed = time.monotonic() - begin
             record_window(report, samples, elapsed, known, attribution)
+            report["diagnostic_frame_paths"] = dict(frame_paths)
+            report["diagnostic_only"] = True
             if sys.platform == "linux":
                 report["root_mappings_after_window"] = linux_mapping_report(process.pid)
             if (visible_windows(process.pid) == 0) != args.hidden:
