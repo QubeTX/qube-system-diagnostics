@@ -54,6 +54,38 @@ pub fn render(frame: &mut Frame, app: &App) {
     bottom_bar::render(frame, app, chunks[2]);
 
     // Help overlay (on top of everything)
+    if app.show_findings {
+        let lines = app
+            .findings
+            .iter()
+            .flat_map(|finding| {
+                [
+                    ratatui::text::Line::from(format!("{}: {}", finding.severity, finding.title)),
+                    ratatui::text::Line::from(format!(
+                        "Evidence ({}): {}",
+                        finding.source, finding.evidence
+                    )),
+                    ratatui::text::Line::from(format!("Next: {}", finding.next_step)),
+                    ratatui::text::Line::from(""),
+                ]
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(ratatui::widgets::Clear, chunks[1]);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(if lines.is_empty() {
+                vec![ratatui::text::Line::from(
+                    "No current findings. This does not certify hardware health.",
+                )]
+            } else {
+                lines
+            })
+            .wrap(ratatui::widgets::Wrap { trim: true })
+            .block(common::content_block(
+                "Findings · Evidence and next steps · F/Esc to close",
+            )),
+            chunks[1],
+        );
+    }
     if app.show_help {
         help_overlay::render(frame, area);
     }

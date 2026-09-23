@@ -11,7 +11,7 @@ use crate::observation::Observation;
 
 #[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct NetworkData {
-    #[serde(skip)]
+    #[serde(default)]
     pub sample: SampleMeta,
     pub interfaces: Vec<InterfaceInfo>,
     pub total_download_rate: u64,
@@ -22,7 +22,7 @@ pub struct NetworkData {
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct InterfaceInfo {
-    #[serde(skip)]
+    #[serde(default)]
     pub rate_status: Observation,
     pub name: String,
     pub ip_addresses: Vec<String>,

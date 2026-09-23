@@ -2,6 +2,7 @@ pub mod app;
 pub mod cli;
 pub mod collectors;
 pub mod error;
+pub mod findings;
 pub mod gui;
 pub mod history;
 pub mod migrate;

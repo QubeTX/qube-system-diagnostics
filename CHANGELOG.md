@@ -6,6 +6,10 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Add opt-in schema-2 JSON exports with nullable measurements, sample metadata and shared findings while freezing schema-1 keys. GUI exports use the richer report.
+- Preserve process creation identity and per-field availability in both frontends, label CPU normalization, and use the Windows batch sampler for the full TUI inventory. Revise the internal process ABI atomically with native layout assertions.
+- Distinguish resource pressure, reported storage faults and incomplete observations in shared findings; expose evidence and next steps in both interfaces (TUI: F).
+
 - Sample physical disk activity independently each second using identity-keyed counter deltas, documented Windows/Linux/macOS units, warmup/reset handling, and nullable latency. Keep SMART refreshes from overwriting activity charts.
 - Match Windows health rows by physical device number, remove partition-order health guesses, enumerate every structured macOS physical disk, and parse optional smartctl JSON/exit bitmasks while retaining partial telemetry.
 - Correct swapped medium/slow GUI topic metadata and keep one-shot exports within the cancellable worker boundary.

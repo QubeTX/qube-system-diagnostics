@@ -8,7 +8,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 ## Plan
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
-Current cycle: replace blocking TUI/engine probes with bounded independent collection, prove latest-only delivery and cancellation, and expose actual capture age. Local root/engine/native tests and real Windows PTY are the first oracle; the pushed revision then runs all native CI lanes. Next: platform storage activity and process/device identity.
+Current cycle: finish schema-2 availability, process identity and shared findings in both frontends; validate locally and push to the native matrix. Next: GPU, power, display and hardware inventory on macOS/Linux, preserving Windows providers.
 
 ## Impact
 Both frontends gain accurate, attributed readings and explicit incomplete states. Sampling and rendering changes can regress cadence, resource use, and terminal behavior, so qualify them against immutable pre-change bytes and contract fixtures.
@@ -32,6 +32,7 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations implemented; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+- 2026-09-23 � codex: bf93c8a passed hosted CI 35823140862 and release-plan run 35823140822. Schema/process/findings candidate passes 133 library + 7 CLI + 10 engine tests and clippy; native ABI and bindings are qualified together. Next oracle: hosted six-target builds and non-Windows process observations.
 - 2026-09-23 — codex: runtime correction 1c5d73c passed CI 35822025040 and release-plan run 35822025055 across all native lanes. Storage candidate passes 129 library + 7 CLI + 10 engine tests, clippy, and 38 native GUI tests (2 platform skips); live Windows physical-disk counters available without elevation. Primary-source unit contracts and macOS/Linux parser/layering fixtures added. Corrected staged model-contract readback; strict GUI check now validates current bindings. Next oracle: hosted storage-provider builds and fixtures on both Mac architectures and all Linux targets.
 - 2026-09-23 — codex: f594bd9 pushed the worker boundary. A subsequent startup placeholder assertion exposed overbroad masking of populated offline thermal data; restricted it to active-session warmup and reran all 121 library tests successfully. This correction is pushed immediately for the same native oracle.
 - 2026-09-23 — codex: a019682 passed every hosted CI lane, including six native GUI targets and Windows/Linux/macOS core tests. Bounded-worker candidate passes 121 library + 7 CLI + 10 engine tests, root clippy, and native GUI tests (37 passed, 2 platform skips). Live Windows slow probe returned disks, two GPUs, and sensors; real PTY opened progressively and exited with terminal restoration. Next oracle: hosted builds of this runtime revision; remaining v4 scope stays open.

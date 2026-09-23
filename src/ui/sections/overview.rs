@@ -479,12 +479,24 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
     for proc in app.snapshot.processes.list.iter().take(5) {
         proc_lines.push(Line::from(Span::styled(
             format!(
-                "  {:<28} {:>6} {:>7.1}% {:>7.1}% {:>10}",
+                "  {:<28} {:>6} {:>8} {:>8} {:>10}",
                 truncate_str(&proc.name, 28),
                 proc.pid,
-                proc.cpu_percent,
-                proc.memory_percent,
-                format_bytes(proc.memory_bytes)
+                if proc.cpu_observation.is_available() {
+                    format!("{:.1}%", proc.cpu_percent)
+                } else {
+                    "N/A".into()
+                },
+                if proc.memory_observation.is_available() {
+                    format!("{:.1}%", proc.memory_percent)
+                } else {
+                    "N/A".into()
+                },
+                if proc.memory_observation.is_available() {
+                    format_bytes(proc.memory_bytes)
+                } else {
+                    "N/A".into()
+                }
             ),
             Style::default().fg(COLOR_TEXT),
         )));

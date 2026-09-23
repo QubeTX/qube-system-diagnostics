@@ -32,8 +32,11 @@ pub async fn collect_snapshot() -> SystemSnapshot {
     }
     snapshot
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct DiagnosticReport {
+    pub samples: std::collections::BTreeMap<String, crate::collectors::sampling::SampleMeta>,
+    pub findings: Vec<crate::findings::Finding>,
+    pub disk_activity: crate::collectors::disk_activity::DiskActivity,
     pub schema_version: u32,
     pub product: &'static str,
     pub product_version: &'static str,
@@ -99,6 +102,9 @@ impl DiagnosticReport {
     pub fn from_snapshot(snapshot: &SystemSnapshot, include_sensitive: bool) -> Self {
         let capabilities = capabilities_for(snapshot);
         let mut report = Self {
+            samples: snapshot.samples.clone(),
+            findings: crate::findings::for_snapshot(snapshot),
+            disk_activity: snapshot.disk_activity.clone(),
             schema_version: 1,
             product: "SD-300",
             product_version: env!("CARGO_PKG_VERSION"),
@@ -140,6 +146,9 @@ impl DiagnosticReport {
     }
 
     fn redact(&mut self) {
+        for device in &mut self.disk_activity.devices {
+            device.identity = "[redacted]".into();
+        }
         self.system.hostname = "[redacted]".into();
         for drive in &mut self.disk_health.drives {
             drive.serial = drive.serial.as_ref().map(|_| "[redacted]".into());
@@ -167,6 +176,124 @@ impl DiagnosticReport {
             connection.remote_addr = "[redacted]".into();
         }
     }
+}
+
+impl Serialize for DiagnosticReport {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        self.as_schema(1).serialize(serializer)
+    }
+}
+
+impl DiagnosticReport {
+    pub fn as_schema(&self, version: u8) -> serde_json::Value {
+        use serde_json::json;
+        let mut value = json!({
+            "schema_version": version, "product": self.product, "product_version": self.product_version,
+            "target_os": self.target_os, "target_arch": self.target_arch, "privacy": self.privacy,
+            "system": self.system, "cpu": self.cpu, "memory": self.memory, "disk": self.disk,
+            "disk_health": self.disk_health, "displays": self.displays, "gpu": self.gpu,
+            "network": self.network, "network_diagnostics": self.network_diagnostics,
+            "processes": self.processes, "thermals": self.thermals, "drivers": self.drivers,
+            "capabilities": self.capabilities, "warnings": self.warnings,
+        });
+        if version == 1 {
+            return schema_one_projection(value);
+        }
+        value["samples"] = json!(self.samples);
+        value["findings"] = json!(self.findings);
+        value["disk_activity"] = json!(self.disk_activity);
+        value["companion_results"] = serde_json::Value::Null;
+        if !self.privacy.sensitive_values_included {
+            value["privacy"]["redacted_fields"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!("disk_activity.devices[].identity"));
+        }
+        value["processes"]["cpu_normalization"] =
+            json!("percent of one logical processor; 100% equals one fully used logical processor");
+        let valid = |topic: &str| {
+            self.samples
+                .get(topic)
+                .is_some_and(|s| s.observation.is_available() && !s.is_stale())
+        };
+        if !valid("fast") {
+            value["cpu"]["total_usage"] = serde_json::Value::Null;
+            value["cpu"]["per_core_usage"] = serde_json::Value::Null;
+        }
+        if self.memory.total_bytes == 0 || !valid("fast") {
+            for key in ["total_bytes", "used_bytes", "available_bytes"] {
+                value["memory"][key] = serde_json::Value::Null;
+            }
+        }
+        if !self.network.sample.observation.is_available() || !valid("fast") {
+            value["network"]["total_download_rate"] = serde_json::Value::Null;
+            value["network"]["total_upload_rate"] = serde_json::Value::Null;
+        }
+        if let Some(interfaces) = value["network"]["interfaces"].as_array_mut() {
+            for (interface, original) in interfaces.iter_mut().zip(&self.network.interfaces) {
+                if !original.rate_status.is_available() || !valid("fast") {
+                    interface["download_rate"] = serde_json::Value::Null;
+                    interface["upload_rate"] = serde_json::Value::Null;
+                }
+            }
+        }
+        let primary = self
+            .gpu
+            .adapters
+            .iter()
+            .find(|a| a.telemetry_available)
+            .or_else(|| self.gpu.adapters.first());
+        value["gpu"]["utilization_percent"] = json!(primary.and_then(|a| a.utilization_percent));
+        value["gpu"]["memory_used_mb"] = json!(primary.and_then(|a| a.memory_used_mb));
+        value["gpu"]["memory_total_mb"] = json!(primary.and_then(|a| a.dedicated_memory_mb));
+        if let Some(processes) = value["processes"]["list"].as_array_mut() {
+            for (process, original) in processes.iter_mut().zip(&self.processes.list) {
+                if !original.cpu_observation.is_available() || !valid("fast") {
+                    process["cpu_percent"] = serde_json::Value::Null;
+                }
+                if !original.memory_observation.is_available() {
+                    process["memory_bytes"] = serde_json::Value::Null;
+                    process["memory_percent"] = serde_json::Value::Null;
+                }
+            }
+        }
+        value
+    }
+}
+
+/// Frozen v2.0.6/schema-1 keys. Additive collector fields are deliberately
+/// excluded here, so internal evolution cannot silently change old exports.
+fn schema_one_projection(mut value: serde_json::Value) -> serde_json::Value {
+    static CONTRACT: std::sync::LazyLock<serde_json::Value> = std::sync::LazyLock::new(|| {
+        serde_json::from_str(include_str!("report_schema1.json"))
+            .expect("checked-in schema-1 contract")
+    });
+    let retain = |value: &mut serde_json::Value, keys: &serde_json::Value| {
+        if let Some(object) = value.as_object_mut() {
+            object.retain(|key, _| {
+                keys.as_array()
+                    .is_some_and(|keys| keys.iter().any(|k| k.as_str() == Some(key)))
+            });
+        }
+    };
+    for category in ["object_keys", "optional_object_keys"] {
+        for (pointer, keys) in CONTRACT[category].as_object().unwrap() {
+            if let Some(value) = value.pointer_mut(pointer) {
+                retain(value, keys);
+            }
+        }
+    }
+    for (pointer, keys) in CONTRACT["array_item_keys"].as_object().unwrap() {
+        if let Some(items) = value.pointer_mut(pointer).and_then(|v| v.as_array_mut()) {
+            for item in items {
+                retain(item, keys);
+            }
+        }
+    }
+    value
 }
 
 pub fn capabilities_for(snapshot: &SystemSnapshot) -> Vec<CapabilityRecord> {
@@ -325,13 +452,13 @@ fn capability(id: &'static str, observation: Observation) -> CapabilityRecord {
     CapabilityRecord { id, observation }
 }
 
-pub fn print_snapshot(report: &DiagnosticReport, json: bool) -> Result<()> {
+pub fn print_snapshot(report: &DiagnosticReport, json: bool, schema_version: u8) -> Result<()> {
     if json {
         println!(
             "{}",
-            serde_json::to_string_pretty(report).map_err(|error| AppError::platform(format!(
-                "JSON serialization failed: {error}"
-            )))?
+            serde_json::to_string_pretty(&report.as_schema(schema_version)).map_err(|error| {
+                AppError::platform(format!("JSON serialization failed: {error}"))
+            })?
         );
     } else {
         println!("SD-300 {} diagnostic snapshot", report.product_version);
@@ -359,11 +486,11 @@ pub fn print_snapshot(report: &DiagnosticReport, json: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn print_capabilities(report: &DiagnosticReport, json: bool) -> Result<()> {
+pub fn print_capabilities(report: &DiagnosticReport, json: bool, schema_version: u8) -> Result<()> {
     if json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&report.capabilities).map_err(|error| {
+            serde_json::to_string_pretty(&if schema_version == 1 { serde_json::json!(report.capabilities) } else { serde_json::json!({"schema_version":2,"product":report.product,"product_version":report.product_version,"capabilities":report.capabilities,"samples":report.samples,"findings":report.findings}) }).map_err(|error| {
                 AppError::platform(format!("JSON serialization failed: {error}"))
             })?
         );
@@ -389,6 +516,64 @@ pub fn print_capabilities(report: &DiagnosticReport, json: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn schema_two_preserves_missing_measurements_while_default_remains_schema_one() {
+        let mut snapshot = SystemSnapshot::default();
+        snapshot
+            .processes
+            .list
+            .push(crate::collectors::processes::ProcessInfo {
+                pid: 42,
+                start_time_unix_ms: Some(123),
+                ..Default::default()
+            });
+        let report = DiagnosticReport::from_snapshot(&snapshot, false);
+        let old = serde_json::to_value(&report).unwrap();
+        assert_eq!(old["schema_version"], 1);
+        assert_eq!(old["cpu"]["total_usage"], 0.0);
+        assert!(old.get("samples").is_none());
+        assert!(old["processes"]["list"][0]
+            .get("start_time_unix_ms")
+            .is_none());
+        assert!(old["network"].get("sample").is_none());
+        let new = report.as_schema(2);
+        assert_eq!(new["schema_version"], 2);
+        assert!(new["cpu"]["total_usage"].is_null());
+        assert!(new["network"]["total_download_rate"].is_null());
+        assert!(new["gpu"]["utilization_percent"].is_null());
+        assert!(new["processes"]["list"][0]["memory_bytes"].is_null());
+        assert!(new["processes"]["list"][0]["cpu_percent"].is_null());
+        assert_eq!(new["processes"]["list"][0]["start_time_unix_ms"], 123);
+    }
+
+    #[test]
+    fn schema_two_keeps_measured_zero_and_does_not_fill_missing_gpu_fields() {
+        let mut snapshot = SystemSnapshot::default();
+        let mut sample = crate::collectors::sampling::SampleMeta::default();
+        sample.record(
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(1),
+            Observation::available("fixture"),
+        );
+        snapshot.samples.insert("fast".into(), sample);
+        snapshot
+            .processes
+            .list
+            .push(crate::collectors::processes::ProcessInfo {
+                cpu_observation: Observation::available("fixture"),
+                memory_observation: Observation::permission_denied("fixture", "Access denied"),
+                ..Default::default()
+            });
+        let value = DiagnosticReport::from_snapshot(&snapshot, false).as_schema(2);
+        assert_eq!(value["cpu"]["total_usage"], 0.0);
+        assert_eq!(value["processes"]["list"][0]["cpu_percent"], 0.0);
+        assert!(value["processes"]["list"][0]["memory_bytes"].is_null());
+        assert_eq!(
+            value["processes"]["list"][0]["memory_observation"]["status"],
+            "permission_denied"
+        );
+    }
 
     #[tokio::test]
     async fn default_report_redacts_stable_identifiers() {

@@ -62,3 +62,9 @@ only an explicit health result or hardware-status bit can establish a fault.
 Historical log flags are warnings, not a prediction of imminent failure.
 
 Primary reference: [smartmontools exit-status definitions](https://github.com/smartmontools/smartmontools/blob/main/src/smartctl.h).
+
+## Reports and process interpretation
+
+`sd300 snapshot --json` and `sd300 capabilities --json` retain the frozen schema-1 projection. Add `--schema-version 2` for nullable unavailable measurements, sample capture/interval/sequence metadata and centrally derived findings. GUI exports use schema 2. A measured zero stays numeric; an inaccessible or unprimed process field is null. Process CPU is percent of one logical processor and can exceed 100%. PID plus creation time identifies an instance, including when a PID is reused.
+
+The internal GUI process ABI is version 2; CLI and engine ship together. Both sides assert the revised row and summary layouts. Resource pressure is a workload observation, not a hardware diagnosis. Storage fault findings require the health provider's report. Incomplete or stale collection is kept separate. TUI `F` and the GUI overview expose the same evidence and next steps.

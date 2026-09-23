@@ -53,7 +53,8 @@ pub fn render(frame: &mut Frame, area: Rect) {
         help_line("j / k", "Scroll connections"),
         Line::from(""),
         help_line("f", "Toggle \u{00B0}C / \u{00B0}F"),
-        help_line("r", "Refresh drivers (Section 9)"),
+        help_line("r", "Retry providers"),
+        help_line("F", "Findings, evidence and next steps"),
         Line::from(""),
         Line::from(Span::styled(
             "  Press ? or Esc to close",

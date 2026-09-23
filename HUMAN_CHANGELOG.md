@@ -10,6 +10,10 @@ The newest section is work in progress. It is deliberately candid about what has
 
 **Fixed**
 
+- Detailed reports distinguish missing readings from measured zero and explain when observations were captured. Existing report consumers keep their familiar format unless they choose the richer one.
+- Both interfaces preserve the identity of a running application and show when its processor or memory reading is unavailable. Windows can gather the complete application list more efficiently.
+- Findings explain their evidence and suggest a next step. Busy processors are described as heavy demand; they are not treated as proof of broken hardware.
+
 - Storage activity updates promptly, independently of slower health checks. Idle drives no longer show a made-up response time, and drive health is attached to the correct physical device.
 - Mac storage discovery includes additional drives. Optional storage-health tools preserve useful partial readings and distinguish an unreadable device from a failing one.
 - Exporting a diagnostic snapshot now has a finite collection wait, including when a hardware provider stops responding.

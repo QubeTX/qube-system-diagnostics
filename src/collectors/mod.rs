@@ -18,9 +18,9 @@ pub mod system_info;
 pub mod thermals;
 
 use serde::Serialize;
+use sysinfo::{Components, Disks, Networks, System};
 #[cfg(not(target_os = "windows"))]
-use sysinfo::ProcessRefreshKind;
-use sysinfo::{Components, Disks, Networks, ProcessesToUpdate, System};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate};
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct DiagnosticWarning {
@@ -168,6 +168,8 @@ pub struct SystemSnapshot {
     network_sampler: network::NetworkSampler,
     disks: Disks,
     components: Components,
+    #[cfg(not(windows))]
+    process_instances: std::collections::HashSet<(u32, u64)>,
     #[cfg(target_os = "windows")]
     gui_process_sampler: processes::GuiProcessSampler,
 }
@@ -195,6 +197,8 @@ impl Default for SystemSnapshot {
             network_sampler: network::NetworkSampler::default(),
             disks: Disks::new(),
             components: Components::new(),
+            #[cfg(not(windows))]
+            process_instances: Default::default(),
             #[cfg(target_os = "windows")]
             gui_process_sampler: processes::GuiProcessSampler::default(),
         }
@@ -216,6 +220,7 @@ impl SystemSnapshot {
     pub fn refresh_fast(&mut self) {
         self.sys.refresh_cpu_all();
         self.sys.refresh_memory();
+        #[cfg(not(windows))]
         self.sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
@@ -235,7 +240,19 @@ impl SystemSnapshot {
         self.network = self.network_sampler.collect(&mut self.networks);
         self.network.adapters = adapters;
         self.network.adapter_status = adapter_status;
-        self.processes = processes::collect(&self.sys);
+        #[cfg(windows)]
+        {
+            self.processes = self.gui_process_sampler.collect(
+                self.memory.total_bytes,
+                usize::MAX,
+                crate::types::ProcessSortKey::Cpu,
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            self.processes = processes::collect(&self.sys);
+            self.mark_process_baselines();
+        }
     }
 
     /// Refresh the same fast values consumed by the native GUI without asking
@@ -296,7 +313,26 @@ impl SystemSnapshot {
                 ProcessRefreshKind::nothing().with_cpu().with_memory(),
             );
             self.processes = processes::collect_limited(&self.sys, 16, sort);
+            self.mark_process_baselines();
         }
+    }
+
+    #[cfg(not(windows))]
+    fn mark_process_baselines(&mut self) {
+        let mut observed = std::collections::HashSet::new();
+        for process in &mut self.processes.list {
+            let identity = process.start_time_unix_ms.map(|start| (process.pid, start));
+            if !identity.is_some_and(|id| self.process_instances.contains(&id)) {
+                process.cpu_observation = crate::observation::Observation::unavailable(
+                    "sysinfo",
+                    "Waiting for a second readable sample from the same process instance",
+                );
+            }
+            if let Some(identity) = identity {
+                observed.insert(identity);
+            }
+        }
+        self.process_instances = observed;
     }
 
     /// Refresh only the CPU and memory values used by the native Overview.

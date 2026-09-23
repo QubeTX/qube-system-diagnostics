@@ -154,6 +154,11 @@ impl Monitor {
         }
     }
     pub fn retry(&self, lane: Lane) {
+        // CPU providers require a real sampling interval. Input repeats must
+        // never turn their cached values into additional counter samples.
+        if lane == Lane::Fast {
+            return;
+        }
         self.shared.retry[lane as usize].store(true, Ordering::Release);
         self.workers[lane as usize].thread().unpark();
     }

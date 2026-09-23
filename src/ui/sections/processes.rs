@@ -26,15 +26,18 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     let mut lines = vec![Line::from("")];
 
     for proc in app.snapshot.processes.list.iter().take(15) {
-        let (dot_color, descriptor) = if proc.cpu_percent > 20.0 {
-            (COLOR_CRIT, "Using a lot of processor")
-        } else if proc.memory_percent > 5.0 {
-            (COLOR_WARN, "Using a lot of memory")
-        } else if proc.cpu_percent > 5.0 {
-            (COLOR_WARN, "Using some processor")
-        } else {
-            (COLOR_GOOD, "Running quietly")
-        };
+        let (dot_color, descriptor) =
+            if !proc.cpu_observation.is_available() || !proc.memory_observation.is_available() {
+                (COLOR_DIM, "Some readings unavailable")
+            } else if proc.cpu_percent > 20.0 {
+                (COLOR_CRIT, "Using a lot of processor")
+            } else if proc.memory_percent > 5.0 {
+                (COLOR_WARN, "Using a lot of memory")
+            } else if proc.cpu_percent > 5.0 {
+                (COLOR_WARN, "Using some processor")
+            } else {
+                (COLOR_GOOD, "Running quietly")
+            };
 
         lines.push(Line::from(vec![
             Span::styled("  \u{2022} ", Style::default().fg(dot_color)),
@@ -83,7 +86,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(Span::styled(
             format!(
                 "  {:<28} {:>6} {:>8} {:>8} {:>10} {:>8}",
-                "NAME", "PID", "CPU%", "MEM%", "MEMORY", "STATUS"
+                "NAME", "PID", "CPU/core", "MEM%", "MEMORY", "STATUS"
             ),
             Style::default().fg(COLOR_DIM).add_modifier(Modifier::BOLD),
         )),
@@ -125,12 +128,24 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
         proc_lines.push(Line::from(Span::styled(
             format!(
-                "  {:<28} {:>6} {:>7.1}% {:>7.1}% {:>10} {:>8}",
+                "  {:<28} {:>6} {:>8} {:>8} {:>10} {:>8}",
                 truncate_str(&proc.name, 28),
                 proc.pid,
-                proc.cpu_percent,
-                proc.memory_percent,
-                format_bytes(proc.memory_bytes),
+                if proc.cpu_observation.is_available() {
+                    format!("{:.1}%", proc.cpu_percent)
+                } else {
+                    "N/A".into()
+                },
+                if proc.memory_observation.is_available() {
+                    format!("{:.1}%", proc.memory_percent)
+                } else {
+                    "N/A".into()
+                },
+                if proc.memory_observation.is_available() {
+                    format_bytes(proc.memory_bytes)
+                } else {
+                    "N/A".into()
+                },
                 truncate_str(&proc.status, 8)
             ),
             style,

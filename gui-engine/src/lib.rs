@@ -15,7 +15,7 @@ use sd_300::types::ProcessSortKey;
 use serde::Serialize;
 use serde_json::json;
 
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 pub const SCHEMA_VERSION: u32 = 1;
 
 pub const STATUS_OK: i32 = 0;
@@ -138,7 +138,8 @@ pub struct ProcessRowSummary {
     pub name_len: u32,
     pub friendly_name_len: u32,
     pub status_len: u32,
-    pub reserved: u32,
+    pub availability_flags: u32,
+    pub start_time_unix_ms: u64,
     pub name: [u8; PROCESS_NAME_BYTES],
     pub friendly_name: [u8; PROCESS_NAME_BYTES],
     pub status: [u8; PROCESS_STATUS_BYTES],
@@ -154,7 +155,8 @@ impl Default for ProcessRowSummary {
             name_len: 0,
             friendly_name_len: 0,
             status_len: 0,
-            reserved: 0,
+            availability_flags: 0,
+            start_time_unix_ms: 0,
             name: [0; PROCESS_NAME_BYTES],
             friendly_name: [0; PROCESS_NAME_BYTES],
             status: [0; PROCESS_STATUS_BYTES],
@@ -303,6 +305,7 @@ struct StaticProjection<'a> {
 
 #[derive(Serialize)]
 struct FastProjection<'a> {
+    findings: Vec<sd_300::findings::Finding>,
     disk_activity: &'a collectors::disk_activity::DiskActivity,
     activity_sample: Option<&'a collectors::sampling::SampleMeta>,
     cpu: &'a collectors::cpu::CpuData,
@@ -413,6 +416,7 @@ fn publish_fast(shared: &Shared, snapshot: &SystemSnapshot) {
         shared,
         Topic::Fast,
         &FastProjection {
+            findings: sd_300::findings::for_snapshot(snapshot),
             disk_activity: &snapshot.disk_activity,
             activity_sample: snapshot.samples.get("activity"),
             cpu: &snapshot.cpu,
@@ -468,10 +472,14 @@ fn update_process_summary(shared: &Shared, snapshot: &SystemSnapshot) {
     let Ok(mut summary) = shared.process_summary.lock() else {
         return;
     };
-    let sequence = summary.sequence.saturating_add(1);
+    let sample = snapshot.samples.get("fast");
+    let sequence = sample.map_or_else(
+        || summary.sequence.saturating_add(1),
+        |sample| sample.sequence,
+    );
     let mut next = ProcessSummary {
         sequence,
-        captured_unix_ms: unix_ms(),
+        captured_unix_ms: sample.map_or_else(unix_ms, |sample| sample.captured_unix_ms),
         total_count: snapshot
             .processes
             .total_count
@@ -493,6 +501,10 @@ fn update_process_summary(shared: &Shared, snapshot: &SystemSnapshot) {
     };
     for (destination, source) in next.rows.iter_mut().zip(&snapshot.processes.list) {
         destination.pid = source.pid;
+        destination.start_time_unix_ms = source.start_time_unix_ms.unwrap_or(0);
+        destination.availability_flags = u32::from(source.cpu_observation.is_available())
+            | (u32::from(source.memory_observation.is_available()) << 1)
+            | (u32::from(source.start_time_unix_ms.is_some()) << 2);
         destination.cpu_percent = source.cpu_percent;
         destination.memory_bytes = source.memory_bytes;
         destination.memory_percent = source.memory_percent;
@@ -592,7 +604,7 @@ fn collect_loop(shared: &Shared) {
         for lane in &changed {
             let sample = snapshot.samples.get(lane.name());
             match lane {
-                Lane::Activity => {}, // Carried by the next fast projection.
+                Lane::Activity => {} // Carried by the next fast projection.
                 Lane::Fast => {
                     publish_fast(shared, &snapshot);
                     if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {
@@ -719,10 +731,12 @@ fn write_export(snapshot: &SystemSnapshot, kind: u8) -> Result<PathBuf, String> 
     };
     let report = sd_300::report::DiagnosticReport::from_snapshot(snapshot, false);
     let bytes = if kind == EXPORT_SNAPSHOT {
-        serde_json::to_vec_pretty(&report)
+        serde_json::to_vec_pretty(&report.as_schema(2))
     } else {
         serde_json::to_vec_pretty(&json!({
-            "schema_version": report.schema_version,
+            "schema_version": 2,
+            "samples": report.samples,
+            "findings": report.findings,
             "product": report.product,
             "product_version": report.product_version,
             "target_os": report.target_os,
@@ -1380,9 +1394,9 @@ mod tests {
         assert_eq!(std::mem::align_of::<FastSummary>(), 8);
         assert_eq!(std::mem::size_of::<TraySummary>(), 32);
         assert_eq!(std::mem::align_of::<TraySummary>(), 8);
-        assert_eq!(std::mem::size_of::<ProcessRowSummary>(), 264);
+        assert_eq!(std::mem::size_of::<ProcessRowSummary>(), 272);
         assert_eq!(std::mem::align_of::<ProcessRowSummary>(), 8);
-        assert_eq!(std::mem::size_of::<ProcessSummary>(), 4256);
+        assert_eq!(std::mem::size_of::<ProcessSummary>(), 4384);
         assert_eq!(std::mem::align_of::<ProcessSummary>(), 8);
     }
 

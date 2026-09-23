@@ -246,6 +246,7 @@ fn v2_command_and_legacy_flag_parser_contract_is_unchanged() {
         Some(CliCommand::Snapshot(ReportArgs {
             json: true,
             include_sensitive: false,
+            schema_version: 1,
         }))
     );
 
@@ -256,6 +257,7 @@ fn v2_command_and_legacy_flag_parser_contract_is_unchanged() {
         Some(CliCommand::Capabilities(ReportArgs {
             json: true,
             include_sensitive: false,
+            schema_version: 1,
         }))
     );
 

@@ -50,13 +50,13 @@ async fn run(cli: Cli) -> Result<()> {
             Command::Snapshot(args) => {
                 let report =
                     sd_300::report::DiagnosticReport::collect(args.include_sensitive).await;
-                sd_300::report::print_snapshot(&report, args.json)?;
+                sd_300::report::print_snapshot(&report, args.json, args.schema_version)?;
                 return Ok(());
             }
             Command::Capabilities(args) => {
                 let report =
                     sd_300::report::DiagnosticReport::collect(args.include_sensitive).await;
-                sd_300::report::print_capabilities(&report, args.json)?;
+                sd_300::report::print_capabilities(&report, args.json, args.schema_version)?;
                 return Ok(());
             }
             Command::Gui => {

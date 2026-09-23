@@ -18,8 +18,14 @@ pub struct ProcessData {
     pub total_threads: usize,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct ProcessInfo {
+    #[serde(default)]
+    pub start_time_unix_ms: Option<u64>,
+    #[serde(default)]
+    pub cpu_observation: crate::observation::Observation,
+    #[serde(default)]
+    pub memory_observation: crate::observation::Observation,
     pub pid: u32,
     pub name: String,
     pub friendly_name: String,
@@ -115,6 +121,9 @@ pub fn collect(sys: &System) -> ProcessData {
             };
 
             ProcessInfo {
+                start_time_unix_ms: (p.start_time() > 0).then(|| p.start_time().saturating_mul(1000)),
+                cpu_observation: crate::observation::Observation::available("sysinfo; percent of one logical processor"),
+                memory_observation: if mem > 0 { crate::observation::Observation::available("sysinfo resident memory") } else { crate::observation::Observation::unavailable("sysinfo", "Zero resident memory cannot distinguish an empty/exited process from an inaccessible one") },
                 pid: p.pid().as_u32(),
                 name,
                 friendly_name: friendly,
@@ -149,8 +158,7 @@ fn is_ranked_consumer(pid: u32) -> bool {
     pid != 0
 }
 
-#[cfg(any(target_os = "windows", test))]
-pub(super) fn sort_process_info_rows(rows: &mut [ProcessInfo], sort: ProcessSortKey) {
+pub fn sort_process_info_rows(rows: &mut [ProcessInfo], sort: ProcessSortKey) {
     match sort {
         ProcessSortKey::Cpu => rows.sort_by(|a, b| {
             b.cpu_percent
@@ -175,7 +183,7 @@ pub(super) fn sort_process_info_rows(rows: &mut [ProcessInfo], sort: ProcessSort
 
 /// Build the GUI's bounded process projection without allocating names and
 /// status strings for every process on the machine. The TUI keeps using
-/// `collect` above and retains its top-100 contract.
+/// `collect` above and retains the complete inventory.
 pub fn collect_limited(sys: &System, limit: usize, sort: ProcessSortKey) -> ProcessData {
     let total_memory = sys.total_memory();
     let total_count = sys.processes().len();
@@ -216,6 +224,9 @@ pub fn collect_limited(sys: &System, limit: usize, sort: ProcessSortKey) -> Proc
             let name = process.name().to_string_lossy().to_string();
             let memory_bytes = process.memory();
             ProcessInfo {
+                start_time_unix_ms: (process.start_time() > 0).then(|| process.start_time().saturating_mul(1000)),
+                cpu_observation: crate::observation::Observation::available("sysinfo; percent of one logical processor"),
+                memory_observation: if memory_bytes > 0 { crate::observation::Observation::available("sysinfo resident memory") } else { crate::observation::Observation::unavailable("sysinfo", "Zero resident memory cannot distinguish an empty/exited process from an inaccessible one") },
                 pid: process.pid().as_u32(),
                 friendly_name: get_friendly_name(&name),
                 name,
@@ -251,6 +262,7 @@ mod gui_projection_tests {
             memory_bytes: memory,
             memory_percent: 0.0,
             status: "Run".into(),
+            ..Default::default()
         }
     }
 

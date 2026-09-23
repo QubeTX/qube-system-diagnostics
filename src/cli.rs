@@ -76,6 +76,9 @@ pub struct UpdateActionArgs {
 
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
 pub struct ReportArgs {
+    /// JSON representation: legacy schema 1 (default) or nullable, attributed schema 2.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=2), requires = "json")]
+    pub schema_version: u8,
     /// Emit machine-readable JSON instead of a compact text summary.
     #[arg(long)]
     pub json: bool,
@@ -335,6 +338,7 @@ mod tests {
             Some(Command::Snapshot(ReportArgs {
                 json: true,
                 include_sensitive: false,
+                schema_version: 1,
             }))
         );
 
@@ -495,6 +499,19 @@ mod tests {
         assert_eq!(
             error.kind(),
             clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn schema_selection_is_explicit_and_bounded_without_changing_text_exports() {
+        assert!(Cli::try_parse_from(["sd300", "snapshot"]).is_ok());
+        assert!(Cli::try_parse_from(["sd300", "capabilities"]).is_ok());
+        assert!(Cli::try_parse_from(["sd300", "snapshot", "--schema-version", "2"]).is_err());
+        assert!(
+            Cli::try_parse_from(["sd300", "snapshot", "--json", "--schema-version", "2"]).is_ok()
+        );
+        assert!(
+            Cli::try_parse_from(["sd300", "snapshot", "--json", "--schema-version", "3"]).is_err()
         );
     }
 }

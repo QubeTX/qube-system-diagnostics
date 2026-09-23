@@ -121,6 +121,20 @@ pub const WarningRow = struct {
     }
 };
 
+pub const FindingRow = struct {
+    id: u32 = 0,
+    kind_buffer: canvas.TextBuffer(32) = .init("incomplete_observation"),
+    title_buffer: canvas.TextBuffer(128) = .init(""),
+    evidence_buffer: canvas.TextBuffer(256) = .init(""),
+    next_buffer: canvas.TextBuffer(256) = .init(""),
+    source_buffer: canvas.TextBuffer(64) = .init(""),
+    pub fn kind(row: *const FindingRow) []const u8 { return row.kind_buffer.text(); }
+    pub fn title(row: *const FindingRow) []const u8 { return row.title_buffer.text(); }
+    pub fn evidence(row: *const FindingRow) []const u8 { return row.evidence_buffer.text(); }
+    pub fn nextStep(row: *const FindingRow) []const u8 { return row.next_buffer.text(); }
+    pub fn source(row: *const FindingRow) []const u8 { return row.source_buffer.text(); }
+};
+
 pub const CapabilityRow = struct {
     id: u32 = 0,
     capability_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("unknown"),
@@ -286,7 +300,10 @@ pub const InterfaceRow = struct {
 };
 
 pub const ProcessRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
+    start_time_unix_ms: u64 = 0,
+    cpu_available: bool = false,
+    memory_available: bool = false,
     pid: u32 = 0,
     cpu_percent: f64 = 0,
     memory_mib: f64 = 0,
@@ -589,6 +606,9 @@ pub const Projection = struct {
     warning_rows: [max_warnings]WarningRow = [_]WarningRow{.{}} ** max_warnings,
     warning_row_count: usize = 0,
     warning_total_count: u32 = 0,
+    finding_rows: [16]FindingRow = [_]FindingRow{.{}} ** 16,
+    finding_row_count: usize = 0,
+    finding_total_count: u32 = 0,
     capability_rows: [max_capabilities]CapabilityRow = [_]CapabilityRow{.{}} ** max_capabilities,
     capability_count: usize = 0,
     capability_total_count: u32 = 0,
@@ -780,6 +800,8 @@ pub const Projection = struct {
     pub fn warnings(self: *const Projection) []const WarningRow {
         return self.warning_rows[0..self.warning_row_count];
     }
+
+    pub fn findings(self: *const Projection) []const FindingRow { return self.finding_rows[0..self.finding_row_count]; }
     pub fn capabilities(self: *const Projection) []const CapabilityRow {
         return self.capability_rows[0..self.capability_count];
     }
@@ -910,6 +932,14 @@ pub const Projection = struct {
         const envelope = parsed.value;
         self.captureTopicMeta(1, envelope);
         const data = envelope.data;
+        self.finding_total_count = saturatedU32(data.findings.len);
+        self.finding_row_count = @min(data.findings.len, self.finding_rows.len);
+        for (data.findings[0..self.finding_row_count], 0..) |item, index| {
+            var row = FindingRow{ .id = @intCast(index) };
+            row.kind_buffer.set(item.kind); row.title_buffer.set(item.title);
+            row.evidence_buffer.set(item.evidence); row.next_buffer.set(item.next_step);
+            row.source_buffer.set(item.source); self.finding_rows[index] = row;
+        }
         self.fast_ready = true;
         if (data.activity_sample) |sample| {
             self.activity_captured_unix_ms = sample.captured_unix_ms;
@@ -1015,7 +1045,9 @@ pub const Projection = struct {
         const candidate_count = @min(@as(usize, @intCast(summary.row_count)), max_processes);
         var candidate_rows = [_]ProcessRow{.{}} ** max_processes;
         for (summary.rows[0..candidate_count], 0..) |item, index| {
-            var row = ProcessRow{ .id = item.pid, .pid = item.pid };
+            var row = ProcessRow{ .id = (@as(u64, item.pid) << 32) ^ item.start_time_unix_ms, .pid = item.pid,
+                .start_time_unix_ms = item.start_time_unix_ms, .cpu_available = item.availability_flags & 1 != 0,
+                .memory_available = item.availability_flags & 2 != 0 };
             row.name_buffer.set(summaryText(&item.name, item.name_len));
             row.friendly_buffer.set(summaryText(&item.friendly_name, item.friendly_name_len));
             row.status_buffer.set(summaryText(&item.status, item.status_len));
@@ -1068,7 +1100,7 @@ pub const Projection = struct {
 
             for (previous_rows[0..previous_count]) |previous| {
                 for (candidates, 0..) |item, candidate_index| {
-                    if (!used[candidate_index] and item.pid == previous.pid) {
+                    if (!used[candidate_index] and item.pid == previous.pid and item.start_time_unix_ms == previous.start_time_unix_ms) {
                         next_rows[next_count] = item;
                         used[candidate_index] = true;
                         next_count += 1;
@@ -1342,7 +1374,10 @@ pub const Projection = struct {
 };
 
 fn processRow(item: ProcessJson) ProcessRow {
-    var row = ProcessRow{ .id = item.pid, .pid = item.pid };
+    var row = ProcessRow{ .id = (@as(u64, item.pid) << 32) ^ (item.start_time_unix_ms orelse 0), .pid = item.pid,
+        .start_time_unix_ms = item.start_time_unix_ms orelse 0,
+        .cpu_available = std.mem.eql(u8, item.cpu_observation.status, "available"),
+        .memory_available = std.mem.eql(u8, item.memory_observation.status, "available") };
     row.name_buffer.set(item.name);
     row.friendly_buffer.set(item.friendly_name);
     row.status_buffer.set(item.status);
@@ -1476,6 +1511,9 @@ const NetworkJson = struct {
     adapter_status: ObservationJson = .{},
 };
 const ProcessJson = struct {
+    start_time_unix_ms: ?u64 = null,
+    cpu_observation: ObservationJson = .{},
+    memory_observation: ObservationJson = .{},
     pid: u32 = 0,
     name: []const u8 = "",
     friendly_name: []const u8 = "",
@@ -1490,6 +1528,7 @@ const ProcessesJson = struct {
     total_threads: usize = 0,
 };
 const FastDataJson = struct {
+    findings: []const struct { kind: []const u8, title: []const u8, evidence: []const u8, next_step: []const u8, source: []const u8 } = &.{},
     disk_activity: struct { devices: []const struct {
         read_bytes_per_sec: ?f64 = null, write_bytes_per_sec: ?f64 = null,
         read_latency_ms: ?f64 = null, write_latency_ms: ?f64 = null, queue_depth: ?u64 = null,
@@ -1885,4 +1924,17 @@ test "fast disk counters survive slower SMART updates and preserve absent latenc
     try std.testing.expect(value.disk_io_available);
     try std.testing.expectEqual(@as(f64, 1), value.disk_read_mib_s);
     try std.testing.expectEqual(@as(u64, 2), value.activity_sequence);
+}
+
+test "process identity and field availability survive PID reuse" {
+    const first = processRow(.{ .pid = 42, .start_time_unix_ms = 1000, .cpu_observation = .{ .status = "available" } });
+    const reused = processRow(.{ .pid = 42, .start_time_unix_ms = 2000, .memory_observation = .{ .status = "available" } });
+    try std.testing.expect(first.id != reused.id);
+    try std.testing.expect(first.cpu_available and !first.memory_available);
+    try std.testing.expect(!reused.cpu_available and reused.memory_available);
+    var value = Projection{};
+    value.applyProcessRows(1, 1, 1, &.{first});
+    value.applyProcessRows(2, 1, 1, &.{reused});
+    try std.testing.expectEqual(reused.id, value.process_rows[0].id);
+    try std.testing.expect(!value.process_rows[0].cpu_available);
 }

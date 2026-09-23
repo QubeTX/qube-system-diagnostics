@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 
 const windows = std.os.windows;
 
-pub const expected_abi_version: u32 = 1;
+pub const expected_abi_version: u32 = 2;
 pub const expected_schema_version: u32 = 1;
 pub const expected_product_version = "3.1.3";
 
@@ -70,7 +70,8 @@ pub const ProcessRowSummary = extern struct {
     name_len: u32 = 0,
     friendly_name_len: u32 = 0,
     status_len: u32 = 0,
-    reserved: u32 = 0,
+    availability_flags: u32 = 0,
+    start_time_unix_ms: u64 = 0,
     name: [process_name_bytes]u8 = [_]u8{0} ** process_name_bytes,
     friendly_name: [process_name_bytes]u8 = [_]u8{0} ** process_name_bytes,
     status: [process_status_bytes]u8 = [_]u8{0} ** process_status_bytes,
@@ -93,10 +94,10 @@ comptime {
     if (@sizeOf(TraySummary) != 32 or @alignOf(TraySummary) != 8) {
         @compileError("TraySummary no longer matches the SD-300 Rust ABI");
     }
-    if (@sizeOf(ProcessRowSummary) != 264 or @alignOf(ProcessRowSummary) != 8) {
+    if (@sizeOf(ProcessRowSummary) != 272 or @alignOf(ProcessRowSummary) != 8) {
         @compileError("ProcessRowSummary no longer matches the SD-300 Rust ABI");
     }
-    if (@sizeOf(ProcessSummary) != 4256 or @alignOf(ProcessSummary) != 8) {
+    if (@sizeOf(ProcessSummary) != 4384 or @alignOf(ProcessSummary) != 8) {
         @compileError("ProcessSummary no longer matches the SD-300 Rust ABI");
     }
 }
@@ -503,8 +504,8 @@ extern "kernel32" fn FreeLibrary(module: windows.HMODULE) callconv(.winapi) wind
 test "fast summary ABI is stable" {
     try std.testing.expectEqual(@as(usize, 48), @sizeOf(FastSummary));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(FastSummary));
-    try std.testing.expectEqual(@as(usize, 264), @sizeOf(ProcessRowSummary));
+    try std.testing.expectEqual(@as(usize, 272), @sizeOf(ProcessRowSummary));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(ProcessRowSummary));
-    try std.testing.expectEqual(@as(usize, 4256), @sizeOf(ProcessSummary));
+    try std.testing.expectEqual(@as(usize, 4384), @sizeOf(ProcessSummary));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(ProcessSummary));
 }

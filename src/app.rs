@@ -23,12 +23,14 @@ pub struct App {
     pub should_quit: bool,
     /// Whether to show the help overlay
     pub show_help: bool,
+    pub show_findings: bool,
     /// Exceptional Cargo v2-to-v3 state: the second update still needs to
     /// install the managed CLI+GUI product. This never affects normal TUI
     /// startup or session behavior.
     pub cargo_gui_completion_notice: bool,
     /// System data snapshot
     pub snapshot: SystemSnapshot,
+    pub findings: Vec<crate::findings::Finding>,
     /// CPU usage history (60 samples)
     pub cpu_history: HistoryBuffer,
     /// Memory usage history
@@ -82,8 +84,10 @@ impl App {
             current_section: Section::Overview,
             should_quit: false,
             show_help: false,
+            show_findings: false,
             cargo_gui_completion_notice: false,
             snapshot: SystemSnapshot::default(),
+            findings: Vec::new(),
             cpu_history: HistoryBuffer::new(HISTORY_SAMPLES),
             mem_history: HistoryBuffer::new(HISTORY_SAMPLES),
             net_down_history: HistoryBuffer::new(HISTORY_SAMPLES),
@@ -130,6 +134,7 @@ impl App {
                     if changed.contains(&Lane::Fast) { self.update_fast_history(); }
                     if changed.contains(&Lane::Slow) { self.update_slow_history(); }
                     if changed.contains(&Lane::Activity) { self.update_activity_history(); }
+                    if !changed.is_empty() { self.findings = crate::findings::for_snapshot(&self.snapshot); }
                     dirty |= !changed.is_empty();
                 }
                 event = events.next() => {
@@ -248,6 +253,12 @@ impl App {
             }
 
             // Help overlay takes priority
+            if self.show_findings {
+                if matches!(key.code, KeyCode::Char('F') | KeyCode::Esc) {
+                    self.show_findings = false;
+                }
+                return;
+            }
             if self.show_help {
                 match key.code {
                     KeyCode::Char('?') | KeyCode::Esc => self.show_help = false,
@@ -272,6 +283,7 @@ impl App {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 KeyCode::Char('m') => self.mode = None,
                 KeyCode::Char('?') => self.show_help = true,
+                KeyCode::Char('F') => self.show_findings = true,
                 KeyCode::Char(c @ '1'..='9') => {
                     if let Some(section) = Section::from_number(c as u8 - b'0') {
                         self.current_section = section;
@@ -353,20 +365,12 @@ impl App {
 
     /// Get overall system health status
     pub fn overall_health(&self) -> HealthStatus {
-        let cpu_status = HealthStatus::from_percent(self.snapshot.cpu.total_usage as f64);
-        let mem_pct = if self.snapshot.memory.total_bytes > 0 {
-            (self.snapshot.memory.used_bytes as f64 / self.snapshot.memory.total_bytes as f64)
-                * 100.0
-        } else {
-            0.0
-        };
-        let mem_status = HealthStatus::from_percent(mem_pct);
-
-        // Worst of all statuses
-        if cpu_status == HealthStatus::Critical || mem_status == HealthStatus::Critical {
+        if self.findings.iter().any(|f| f.severity == "critical") {
             HealthStatus::Critical
-        } else if cpu_status == HealthStatus::Warning || mem_status == HealthStatus::Warning {
+        } else if self.findings.iter().any(|f| f.severity == "warning") {
             HealthStatus::Warning
+        } else if !self.findings.is_empty() || self.snapshot.samples.is_empty() {
+            HealthStatus::Unknown
         } else {
             HealthStatus::Good
         }
@@ -398,6 +402,7 @@ mod compatibility_tests {
             memory_bytes: 0,
             memory_percent: 0.0,
             status: "Run".into(),
+            ..Default::default()
         }
     }
 

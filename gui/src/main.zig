@@ -321,6 +321,7 @@ pub const Model = struct {
         _ = model;
         return "v" ++ engine.expected_product_version;
     }
+    pub fn findings(model: *const Model) []const projection.FindingRow { return model.detail.findings(); }
     fn activeCollector(model: *const Model) *const projection.TopicMeta {
         return switch (model.active_section) {
             0, 1, 2, 6 => &model.overview_topic_meta,

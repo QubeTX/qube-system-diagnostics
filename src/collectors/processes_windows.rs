@@ -9,7 +9,7 @@ use winapi::{
     shared::minwindef::FILETIME,
     um::{
         handleapi::{CloseHandle, INVALID_HANDLE_VALUE},
-        processthreadsapi::{GetProcessTimes, GetSystemTimes, OpenProcess},
+        processthreadsapi::{GetExitCodeProcess, GetProcessTimes, GetSystemTimes, OpenProcess},
         psapi::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
         tlhelp32::{
             CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
@@ -142,6 +142,14 @@ impl GuiProcessSampler {
                 creation: row.creation,
                 total: row.total_time,
             };
+            let cpu_available = self
+                .previous_process_times
+                .get(&row.pid)
+                .is_some_and(|old| {
+                    old.creation == current.creation
+                        && old.total <= current.total
+                        && global_delta > 0
+                });
             let cpu_percent = self
                 .previous_process_times
                 .get(&row.pid)
@@ -160,6 +168,7 @@ impl GuiProcessSampler {
                 self.ranked_rows.push(RankedBatchedRow {
                     row,
                     cpu_percent,
+                    cpu_available,
                     name: None,
                     friendly_name: None,
                 });
@@ -187,6 +196,11 @@ impl GuiProcessSampler {
                     .friendly_name
                     .unwrap_or_else(|| get_friendly_name(&name));
                 ProcessInfo {
+                    start_time_unix_ms: windows_creation_ms(candidate.row.creation),
+                    cpu_observation: cpu_observation(candidate.cpu_available),
+                    memory_observation: crate::observation::Observation::available(
+                        "Windows kernel working set",
+                    ),
                     pid: candidate.row.pid,
                     friendly_name,
                     name,
@@ -244,11 +258,26 @@ impl GuiProcessSampler {
             total_threads = total_threads.saturating_add(entry.cntThreads as usize);
             if is_ranked_consumer(pid) {
                 let name = process_name(&entry);
+                // A handle keeps the old process object alive after termination.
+                // Reopen it before sampling a reused PID, even if no poll saw its absence.
+                if self.handles.get(&pid).is_some_and(|handle| {
+                    let mut code = 0;
+                    unsafe { GetExitCodeProcess(handle.raw(), &mut code) == 0 || code != 259 }
+                }) {
+                    self.handles.remove(&pid);
+                }
                 let handle = self
                     .handles
                     .entry(pid)
                     .or_insert_with(|| ProcessHandle::open(pid).unwrap_or(ProcessHandle(0)));
                 let current = process_times(handle);
+                let cpu_available = current.is_some_and(|current| {
+                    self.previous_process_times.get(&pid).is_some_and(|old| {
+                        old.creation == current.creation
+                            && old.total <= current.total
+                            && global_delta > 0
+                    })
+                });
                 let cpu_percent = current
                     .and_then(|current| {
                         self.previous_process_times.get(&pid).map(|previous| {
@@ -266,6 +295,12 @@ impl GuiProcessSampler {
                     self.previous_process_times.insert(pid, current);
                 }
                 rows.push(ProcessInfo {
+                    start_time_unix_ms: current.and_then(|t| windows_creation_ms(t.creation)),
+                    cpu_observation: cpu_observation(cpu_available),
+                    memory_observation: crate::observation::Observation::unavailable(
+                        "Windows process memory",
+                        "Not sampled",
+                    ),
                     pid,
                     friendly_name: get_friendly_name(&name),
                     name,
@@ -394,6 +429,7 @@ struct BatchedProcessRow {
 
 #[derive(Debug)]
 struct RankedBatchedRow {
+    cpu_available: bool,
     row: BatchedProcessRow,
     cpu_percent: f32,
     // Names stay lazy for CPU, memory, and PID ranking so only the bounded
@@ -671,9 +707,9 @@ fn process_times(handle: &ProcessHandle) -> Option<ProcessTimes> {
         })
 }
 
-fn process_memory(handle: &ProcessHandle) -> u64 {
+fn process_memory(handle: &ProcessHandle) -> Option<u64> {
     if handle.0 == 0 {
-        return 0;
+        return None;
     }
     let mut counters: PROCESS_MEMORY_COUNTERS = unsafe { zeroed() };
     let ok = unsafe {
@@ -684,9 +720,9 @@ fn process_memory(handle: &ProcessHandle) -> u64 {
         )
     };
     if ok == 0 {
-        0
+        None
     } else {
-        counters.WorkingSetSize as u64
+        Some(counters.WorkingSetSize as u64)
     }
 }
 
@@ -696,7 +732,16 @@ fn populate_memory(
     total_memory: u64,
 ) {
     for row in rows {
-        let memory_bytes = handles.get(&row.pid).map(process_memory).unwrap_or(0);
+        let measured = handles.get(&row.pid).and_then(process_memory);
+        let memory_bytes = measured.unwrap_or(0);
+        row.memory_observation = if measured.is_some() {
+            crate::observation::Observation::available("GetProcessMemoryInfo")
+        } else {
+            crate::observation::Observation::unavailable(
+                "GetProcessMemoryInfo",
+                "Process exited or memory access was unavailable",
+            )
+        };
         row.memory_bytes = memory_bytes;
         row.memory_percent = if total_memory > 0 {
             memory_bytes as f64 / total_memory as f64 * 100.0
@@ -723,6 +768,25 @@ fn process_name(entry: &PROCESSENTRY32W) -> String {
     }
 }
 
+fn windows_creation_ms(value: u64) -> Option<u64> {
+    value
+        .checked_sub(116_444_736_000_000_000)
+        .map(|ticks| ticks / 10_000)
+}
+
+fn cpu_observation(available: bool) -> crate::observation::Observation {
+    if available {
+        crate::observation::Observation::available(
+            "Windows kernel CPU times; percent of one logical processor",
+        )
+    } else {
+        crate::observation::Observation::unavailable(
+            "Windows process CPU times",
+            "Waiting for two readable samples from the same process instance",
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -735,6 +799,7 @@ mod tests {
         working_set_bytes: u64,
     ) -> RankedBatchedRow {
         RankedBatchedRow {
+            cpu_available: true,
             row: BatchedProcessRow {
                 pid,
                 name_offset: None,
