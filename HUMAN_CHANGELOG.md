@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: noisy background-check tests now recognize either safety limit stopping the check, while still requiring prompt cleanup. This avoids treating a correctly enforced timeout as a product failure on Mac.
+
 - Windows connection checks use the operating system's actual route and ping reply, with fewer background program launches. Readings below the provider's timing precision remain unavailable, and blocked pings still do not prove the internet is down.
 
 - Device checks report what the operating system actually detected. A missing keyboard query, unplugged cable or optional service no longer becomes an invented healthy or failed device. Both views explain limited access and distinguish services that are running, idle, absent or unreadable.

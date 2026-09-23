@@ -881,8 +881,15 @@ mod tests {
                     "{topic}: {error:?}; elapsed {:?}",
                     start.elapsed()
                 ),
-                "oversized" | "noisy" => assert!(
+                "oversized" => assert!(
                     matches!(error, CommandError::OutputLimit),
+                    "{topic}: {error:?}; elapsed {:?}",
+                    start.elapsed()
+                ),
+                // Small native pipes can hit the absolute deadline before all
+                // nine MiB arrive. Either limit must stop and reap the producer.
+                "noisy" => assert!(
+                    matches!(error, CommandError::OutputLimit | CommandError::Timeout),
                     "{topic}: {error:?}; elapsed {:?}",
                     start.elapsed()
                 ),
@@ -902,7 +909,10 @@ mod tests {
                 worker.child.try_wait().unwrap().is_some(),
                 "failed requests must reap their owner"
             );
-            assert!(start.elapsed() < Duration::from_secs(5), "{topic}: {error}");
+            assert!(
+                start.elapsed() < timeout + Duration::from_secs(1),
+                "{topic}: {error}"
+            );
         }
     }
     #[cfg(windows)]

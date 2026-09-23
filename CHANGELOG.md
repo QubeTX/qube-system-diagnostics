@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Qualify noisy worker termination by either the output limit or its earlier absolute deadline, with a fixed cleanup allowance and owner-reaping assertion. Native Apple Silicon evidence identified deadline-first behavior; production limits and collection behavior are unchanged.
+
 - Use native Windows ICMP reply status and millisecond RTT inside the bounded diagnostic worker, with below-resolution RTT left unavailable. Resolve the OS-selected IPv4 route instead of the first printed default route. Remove periodic ping/route subprocesses and show provider provenance in both frontends; retain ICMP-independent TCP reachability fallback.
 
 - Replace invented macOS input devices with structured IOHIDDevice inventory; stop treating device presence or Linux link-down as driver-health evidence. Preserve per-provider discovery failures, service-manager scope and actual runtime states across Windows, macOS and Linux. Project bounded observations and service details into both frontends, shared findings and nullable schema-2 exports while retaining schema-1 keys.
