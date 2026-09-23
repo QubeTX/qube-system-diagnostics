@@ -40,7 +40,17 @@ def linux_mapping_report(pid):
             contents = stream.read(8 * 1024 * 1024 + 1)
         if len(contents) > 8 * 1024 * 1024:
             return {"available": False, "reason": "mapping inventory exceeds bound"}
-        return {"available": True, "rss_mib_by_backing": linux_mapping_totals(contents),
+        libraries = {}
+        current = None
+        for line in contents.splitlines():
+            fields = line.split()
+            if fields and "-" in fields[0]:
+                name = os.path.basename(fields[-1]) if len(fields) >= 6 else ""
+                current = name if name.startswith("lib") and ".so" in name and len(name) <= 128 else None
+            elif current and len(fields) == 3 and fields[0] == "Rss:":
+                libraries[current] = libraries.get(current, 0) + int(fields[1]) / 1024
+        libraries = dict(sorted(libraries.items(), key=lambda item: -item[1])[:20])
+        return {"available": True, "diagnostic_library_rss_mib": libraries, "rss_mib_by_backing": linux_mapping_totals(contents),
                 "note": "Read after the resource window; anonymous includes runtime allocations and graphics heaps"}
     except (OSError, ValueError):
         return {"available": False, "reason": "mapping inventory unavailable"}

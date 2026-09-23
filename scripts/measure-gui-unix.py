@@ -142,6 +142,7 @@ def main():
     process, result, known = None, None, {}
     stderr_tail = [b""]
     frame_paths = {}
+    unsupported_flags = set()
     frame_tail = [b""]
     reader = None
     debugger = None
@@ -173,6 +174,9 @@ def main():
                     lines = frame_tail[0].split(b"\n")
                     frame_tail[0] = lines.pop()
                     for line in lines:
+                        for flag in (b"gl-disable", b"vulkan-disable"):
+                            if flag in line and b"only available when building GTK with G_ENABLE_DEBUG" in line:
+                                unsupported_flags.add(flag.decode("ascii"))
                         for path in (b"present", b"occluded", b"nil-drawable"):
                             if line.startswith(b"native-sdk: gpu frame-trace path=" + path + b" "):
                                 name = path.decode("ascii")
@@ -220,6 +224,7 @@ def main():
             elapsed = time.monotonic() - begin
             record_window(report, samples, elapsed, known, attribution)
             report["diagnostic_frame_paths"] = dict(frame_paths)
+            report["unsupported_gtk_flags"] = sorted(unsupported_flags)
             report["diagnostic_only"] = True
             if sys.platform == "linux":
                 report["root_mappings_after_window"] = linux_mapping_report(process.pid)
