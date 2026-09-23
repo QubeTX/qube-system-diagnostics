@@ -67,6 +67,15 @@ pub struct App {
 }
 
 impl App {
+    pub fn awaiting_initial_sample(&self) -> bool {
+        self.monitor.is_some()
+            && self
+                .snapshot
+                .samples
+                .get("fast")
+                .is_none_or(|s| s.sequence <= 1 && !s.observation.is_available())
+    }
+
     pub fn new(initial_mode: Option<DiagnosticMode>) -> Self {
         Self {
             mode: initial_mode,

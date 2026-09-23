@@ -6,6 +6,7 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Scope the initial measurement placeholder to a running monitor session so populated offline/fixture views remain visible.
 - Move TUI and engine collection into independent bounded latest-result lanes; isolate native/helper probes in cancellable version-checked subprocesses, skip overdue work, and back off failed providers.
 - Render startup progressively, attach actual capture metadata to engine topics, and append timestamped TUI histories only on fresh samples without combining CPU and GPU temperature series.
 - Normalize network counters by monotonic elapsed time and invalidate first/reset/resume samples; retain the full process inventory before frontend ranking.

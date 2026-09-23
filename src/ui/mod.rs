@@ -38,13 +38,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     header_bar::render(frame, app, chunks[0]);
 
     // Render active section
-    if app.snapshot.system.os_name.is_empty() && app.snapshot.samples.is_empty()
-        || app
-            .snapshot
-            .samples
-            .get("fast")
-            .is_some_and(|s| s.sequence == 1 && !s.observation.is_available())
-    {
+    if app.awaiting_initial_sample() {
         frame.render_widget(
             ratatui::widgets::Paragraph::new(
                 "Collecting the first measurements… Navigation is ready.",

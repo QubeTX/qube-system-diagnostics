@@ -10,6 +10,7 @@ The newest section is work in progress. It is deliberately candid about what has
 
 **Fixed**
 
+- The startup message appears only while a live monitor is warming up; it does not cover already available diagnostic information.
 - The monitor opens before hardware discovery finishes and remains usable while slow checks run. Failed checks show their status and can recover without restarting the app.
 - Charts no longer repeat an old temperature or graphics reading as if it were new. Both interfaces show when their readings were captured.
 - Network traffic readings account for the time between measurements, and connection checks report the reply time rather than the time taken to start a helper.
