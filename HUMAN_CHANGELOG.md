@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Background inventory and storage-health checks release their helper processes between readings, reducing idle memory without slowing updates.
+
 - Windows background checks spend less time starting helper programs. Behind the scenes, performance measurements now include the whole monitoring process family, including helpers that have already exited.
 
 - Desktop searches now reach every collected connection and device, with pages for longer lists and clear empty results. Missing process identities stay visibly unavailable. Searching older readings does not make them appear freshly measured.

@@ -159,7 +159,17 @@ impl Session {
             .request(reset, Duration::from_secs(25), cancelled)
             .map_err(|e| format!("{name}: {e}"))
             .and_then(|bytes| decode(topic, &bytes));
-        if result.is_err() {
+        // Only sub-minute lanes benefit from retaining a native process. The
+        // parent already keeps inventory/health results through their cadence;
+        // leave no idle address space or OS helper handles behind between them.
+        if result.is_err()
+            || matches!(
+                topic,
+                crate::cli::CollectorTopic::Static
+                    | crate::cli::CollectorTopic::Health
+                    | crate::cli::CollectorTopic::Drivers
+            )
+        {
             self.worker.take();
         }
         result

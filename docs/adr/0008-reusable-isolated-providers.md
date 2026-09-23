@@ -34,3 +34,11 @@ assigned before resuming; capture failure falls back to the prior Toolhelp path.
 Snapshot and walk-marker descriptors are always released in the calling process,
 following [PssFreeSnapshot](https://learn.microsoft.com/en-us/windows/win32/api/processsnapshot/nf-processsnapshot-pssfreesnapshot).
 A native fixture exercises the PSS path directly so fallback cannot conceal a regression.
+
+## Idle memory, 2026-09-23
+
+Retain workers for sub-minute activity, slow telemetry, sockets and diagnostics.
+Retire static inventory, drivers and SMART/reliability workers after each response;
+the parent retains their samples for the unchanged five-minute/one-minute cadence.
+These topics do not need a child-local numeric baseline between requests. Native
+checks remain isolated and cancellation still joins owned workers before unloading.
