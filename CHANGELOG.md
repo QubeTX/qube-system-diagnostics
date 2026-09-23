@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Extend opt-in native before/after resource qualification to both GUI visibility profiles. Verify immutable public GUI baseline hashes, archive bounds and source equivalence; distinguish the legacy in-process collector topology and retain complete-bundle candidate gates.
+
 - Scope Git checkout trust to the mounted source for Alpine qualification commands, preserving global configuration while allowing exact candidate/baseline identity checks across container UID boundaries.
 
 - Preserve explicit unavailable descriptor coverage in Unix performance reports when a protected helper denies fd enumeration. Continue independent CPU/RSS accounting, retain nullable maxima and add denied-versus-zero fixtures.

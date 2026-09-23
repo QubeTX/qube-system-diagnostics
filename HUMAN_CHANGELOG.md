@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: before-and-after comparisons cover the app as well as the terminal, including background operation. Baseline downloads are verified and every result identifies the exact files measured.
+
 - Behind the scenes: isolated Linux checks can verify the mounted source safely without changing the machine's global trust settings.
 
 - Behind the scenes: performance reports explain when a protected helper limits inspection, while preserving the resource measurements that remain readable.

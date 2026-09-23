@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: extend manual native resource comparison to TUI plus foreground/hidden GUI, using hash-verified immutable v3.1.3 GUI payloads and a source-equivalence assertion against f83ae42. Baseline topology is explicitly legacy in-process; candidate worker checks remain mandatory. Archive checksum/path fixtures and local syntax/workflow checks precede hosted execution. Next oracle: complete native GUI smoke, then all-six before/after resource reports with no overlapping builds or visual observers.
+
 - 2026-09-23 — codex: musl run 35865259681 job 107195130681 completes native build/packaging but resource setup stops on Git's host/container UID ownership check before measurements. Scope safe.directory to the resolved mounted source on each qualification Git command; do not alter global configuration. Python syntax/workflow checks pass. Next oracle: the same native Alpine candidate/baseline setup, separate from the GNU descriptor-access correction.
 
 - 2026-09-23 — codex: manual native resource run 35865259681 fails both GNU baseline windows on psutil AccessDenied for a helper's /proc/PID/fd, after collector/build/PTY gates passed. Separate nullable descriptor coverage from readable RSS and final wait4 CPU; keep denied memory fatal and retain failed baseline artifacts. Denied-versus-zero fixtures validate the change. Next oracle: repeat native resource windows; this is harness correction, not a relaxed CPU/RSS gate.

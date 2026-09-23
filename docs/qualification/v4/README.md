@@ -7,11 +7,16 @@ remain open. Do not infer hardware accuracy from parser fixtures or builds.
 ## Windows TUI process-tree measurements
 
 The CI workflow accepts an explicit `resource_seconds` dispatch input for
-before/after native TUI measurements on all six targets. It builds the immutable
+before/after native TUI and foreground/hidden GUI measurements on all six targets. It builds the immutable
 f83ae429490aecb165921037b2f9ed994327634f baseline and finishes all compilation and
 visual interaction checks before sequential measurement. Ordinary pull-request
 runs do not launch the long resource windows. Candidate gate failures retain
-both reports and fail the lane; baseline failures remain comparison evidence.
+all reports and fail the lane; baseline gate failures remain comparison evidence.
+The GUI baseline uses checksum-verified public v3.1.3 payloads. Its immutable tag
+must resolve to d4896546f190c0e5afe176f36544dca7aa806227 and product source must
+match f83ae42 before use; their observed differences are task records. Each
+comparison records both source identities and every measured executable hash.
+Archive checks reject checksum mismatches, escaping paths and oversized payloads.
 
 `measure-tui-unix.py` uses completed [wait4 resource accounting](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/wait4.2.html).
 On Linux, descendant totals require each intervening parent to reap its children;

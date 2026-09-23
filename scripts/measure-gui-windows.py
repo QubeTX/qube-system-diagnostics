@@ -174,6 +174,7 @@ def main():
     parser.add_argument("--warmup", type=int, default=15)
     parser.add_argument("--section", choices=SECTIONS, default="Overview")
     parser.add_argument("--hidden", action="store_true")
+    parser.add_argument("--legacy-in-process", action="store_true", help="Qualify the pre-v4 in-process collector topology")
     parser.add_argument("--enforce-gates", action="store_true")
     args = parser.parse_args()
     if not 5 <= args.seconds <= 7200 or not 0 <= args.warmup <= 300:
@@ -190,6 +191,7 @@ def main():
         "engine_sha256":hashlib.sha256(engine.read_bytes()).hexdigest(), "revision":args.revision,
         "collector_sha256":hashlib.sha256(cli.read_bytes()).hexdigest(),
         "build":"release", "mode":"hidden" if args.hidden else "foreground", "section":args.section,
+        "legacy_in_process":args.legacy_in_process,
         "warmup_seconds":args.warmup, "method":"Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
         "memory_method":"250 ms sum of live job processes; RSS conservatively counts shared mappings per process"}
     job = Job()
@@ -209,7 +211,7 @@ def main():
             if (args.hidden and windows != 0) or (not args.hidden and windows == 0):
                 raise RuntimeError("The measured GUI did not enter its requested visibility state")
             topics = collector_topics(job, cli)
-            required = required_topics(args.section, args.hidden)
+            required = set() if args.legacy_in_process else required_topics(args.section, args.hidden)
             if not required <= topics:
                 raise RuntimeError(f"Required collector workers are absent after warmup: {sorted(required-topics)}")
             report["collector_topics_at_start"] = sorted(topics)

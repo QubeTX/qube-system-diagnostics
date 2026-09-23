@@ -75,6 +75,7 @@ if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
   /tmp/sd300-qualification-python/bin/python scripts/qualify-tui-native.py "$output_dir/terminal-qualification"
   /tmp/sd300-qualification-python/bin/python scripts/test-measure-tui-unix.py
   /tmp/sd300-qualification-python/bin/python scripts/test-resource-metrics.py
+  /tmp/sd300-qualification-python/bin/python scripts/test-resource-baseline.py
 fi
 npm_cache=${RUNNER_TEMP:-/tmp}/sd300-native-npm-cache
 rm -rf "$repo_root/gui/node_modules" "$npm_cache"
@@ -101,5 +102,5 @@ bash "$script_root/package-native-gui-linux.sh" \
   linux-musl-x86_64 "$output_dir" "$version"
 if [[ ${SD300_RESOURCE_SECONDS:-0} != 0 ]]; then
   /tmp/sd300-qualification-python/bin/python scripts/qualify-native-resources.py \
-    "$output_dir/resource-qualification" --seconds "$SD300_RESOURCE_SECONDS"
+    "$output_dir/resource-qualification" --seconds "$SD300_RESOURCE_SECONDS" --target linux-musl-x86_64
 fi
