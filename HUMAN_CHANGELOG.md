@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: Mac performance diagnosis now separates threads doing work from threads waiting, so optimizations can target measured costs without confusing a profiler trace with a performance pass.
+
 - Behind the scenes: performance comparisons keep useful measurements when an older app crashes while closing, then continue testing its replacement. A failed older version remains clearly marked as failed and cannot make the new version pass.
 
 - The desktop app now pairs Makira's headings and large readings with Gail Rock for navigation, controls and explanations. The fonts travel with the app, keeping the same appearance on every supported system, while dense technical values remain easy to scan.

@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import psutil
 from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_totals, remaining_family
+from sample_macos import thread_counters, thread_delta
 
 
 class Process:
@@ -27,6 +28,27 @@ class Process:
 
 
 class Metrics(unittest.TestCase):
+    def test_thread_cpu_attributes_work_without_counting_waiting_stack_frequency(self):
+        result = thread_delta({1: 8, 2: 1, 3: 9, 4: 1}, {1: 8, 2: 1.1, 3: 0, 5: .5}, 5)
+        self.assertTrue(result["available"])
+        self.assertEqual([row["thread_id"] for row in result["threads"]], [2, 1])
+        self.assertAlmostEqual(result["threads"][0]["cpu_percent_one_core"], 2)
+        self.assertEqual(result["threads"][1]["cpu_seconds"], 0)
+        self.assertEqual((result["new_threads"], result["ended_threads"], result["reset_counters"]), (1, 1, 1))
+        self.assertFalse(thread_delta(None, {}, 5)["available"])
+        self.assertFalse(thread_delta({}, {}, 0)["available"])
+        bounded = thread_delta({i: 0 for i in range(40)}, {i: 1 for i in range(40)}, 5)
+        self.assertEqual(len(bounded["threads"]), 32)
+        self.assertTrue(bounded["truncated"])
+
+    def test_thread_counter_denial_and_invalid_values_remain_unavailable(self):
+        def denied():
+            raise psutil.AccessDenied(42)
+        self.assertIsNone(thread_counters(SimpleNamespace(threads=denied)))
+        self.assertIsNone(thread_counters(SimpleNamespace(threads=lambda: [SimpleNamespace(id=1, user_time=float("nan"), system_time=0)])))
+        counters = thread_counters(SimpleNamespace(threads=lambda: [SimpleNamespace(id=9, user_time=.25, system_time=.5)]))
+        self.assertEqual(counters, {9: .75})
+
     def test_completed_window_metrics_survive_a_later_shutdown_failure(self):
         record = runpy.run_path(str(Path(__file__).with_name("measure-gui-unix.py")))["record_window"]
         report = {}
