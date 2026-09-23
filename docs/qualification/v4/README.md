@@ -54,6 +54,11 @@ process enumeration (5.57 ms mean) and network collection (4.41 ms mean) as the
 largest fast-lane costs; physical topology, preparation and TestBackend drawing
 each average under 0.3 ms. Stage wall time is diagnostic, not process CPU.
 
+The bounded-pipe candidate bc13468, measured with the same 330-second method,
+reduces average process-family CPU to 2.09 percent and peaks at 133.5 MiB RSS.
+`candidate-pipes-tui-cadence.json` identifies its exact release bytes. CPU still
+exceeds the two-percent gate; this improvement is not full performance acceptance.
+
 ## Native terminal interaction
 
 `scripts/qualify-tui-native.py` runs `qualify-tui-pty.py` sequentially in Unicode

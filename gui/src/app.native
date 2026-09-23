@@ -109,7 +109,7 @@
               <series kind="bar" values="{cpu_history}" color="accent" label="CPU load" />
             </chart>
             <row cross="center">
-              <text grow="1" foreground="text_muted"><span mono="true">ABI 1 · Schema 1 · Dynamic bundle-relative engine</span></text>
+              <text grow="1" foreground="text_muted">Provider failures and older readings remain visible in findings.</text>
               <spacer width="10" height="10" background="warning" />
             </row>
           </column>

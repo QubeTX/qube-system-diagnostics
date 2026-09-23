@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Attach the successful capture time, age and latest provider state to retained storage-fault and incomplete-observation findings. Keep hardware fault evidence after refresh failure, explicitly mark stale or clock-discontinuous ages, and replace obsolete GUI ABI copy with useful findings guidance.
+
 - Retain bounded structural diagnostics on native terminal qualification failures: completed steps, fixed-label positions, cursor and process state, without arbitrary screen contents. Distinguish platform interaction failures from emulator assumptions before selecting a product fix.
 
 - Deliver isolated collector responses through bounded in-memory frames instead of per-sample temporary files. Validate lengths before allocation, bound pipe draining and stderr, and reap owned processes immediately after malformed, partial, cancelled or timed-out responses. Add native fragmented/large/inherited-pipe fixtures.

@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: retained-health evidence now names its capture time, stale/clock-change age and latest provider failure in shared findings. Two targeted finding tests, root clippy, 50 GUI tests (two platform skips) and strict bindings pass. bc13468's 330-second owned-process benchmark improves to 2.09 percent CPU and 133.5 MiB RSS; CPU remains above gate. Next: direct Windows interface counters with explicit failures, and native terminal diagnostics from 9dbdec6.
+
 - 2026-09-23 — codex: c87578a native Apple Silicon PTY step fails at Overview in job 107155428182 (CI 35853181674), with no retained screen structure; root and engine checks passed. Added bounded failure artifacts containing fixed-label row positions, cursor/geometry, process state and completed steps, never arbitrary screen content. Next oracle: the same native runtime, to distinguish lost input, layout/emulator assumptions and early exits. Worker pipe candidate bc13468 is independently measuring Windows resource use.
 
 - 2026-09-23 — codex: bounded in-memory worker responses pass 199 library tests (six child fixtures), eight CLI contracts, two native worker tests, all 15 engine tests, clippy and release build. Repeated large frames, partial headers, excessive output, inherited pipes, cancellation and timeout are exercised. Next oracle: all-six native transport fixtures and unchanged 330-second Windows resource method. Separately, c87578a PTY qualification passes both GNU Linux architectures but Apple Silicon times out at Overview; add structural terminal diagnostics before guessing a fix.

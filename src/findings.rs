@@ -24,6 +24,7 @@ pub struct Finding {
 
 pub fn for_snapshot(snapshot: &SystemSnapshot) -> Vec<Finding> {
     let mut findings = Vec::new();
+    let now = crate::collectors::sampling::unix_ms();
     let fast_valid = snapshot
         .samples
         .get("fast")
@@ -56,7 +57,8 @@ pub fn for_snapshot(snapshot: &SystemSnapshot) -> Vec<Finding> {
             findings.push(Finding { id: format!("disk-health:{}", drive.device_id), kind: FindingKind::HardwareFault,
                 severity: if drive.health_status == DiskHealthStatus::Critical { "critical" } else { "warning" }.into(),
                 title: format!("Storage provider reports {}", drive.health_status.user_label()),
-                evidence: format!("{}: {:?} from {}", drive.device_id, drive.health_status, drive.health_source),
+                evidence: format!("{}: {:?} from {}; {}", drive.device_id, drive.health_status, drive.health_source,
+                    capture_context(snapshot.samples.get("health"), now)),
                 next_step: "Verify backups and inspect the drive's detailed health report; no repair has been attempted".into(), source: "health".into() });
         }
     }
@@ -67,9 +69,14 @@ pub fn for_snapshot(snapshot: &SystemSnapshot) -> Vec<Finding> {
                 kind: FindingKind::IncompleteObservation,
                 severity: "info".into(),
                 title: format!("{source} observation is incomplete"),
-                evidence: meta.observation.detail.clone().unwrap_or_else(|| {
-                    format!("Last capture is {} ms old", meta.age_ms().unwrap_or(0))
-                }),
+                evidence: format!(
+                    "{}; {}",
+                    meta.observation
+                        .detail
+                        .as_deref()
+                        .unwrap_or("The latest check is incomplete"),
+                    capture_context(Some(meta), now)
+                ),
                 next_step:
                     "Inspect the provider state and retry; other monitoring remains available"
                         .into(),
@@ -122,9 +129,73 @@ pub fn for_snapshot(snapshot: &SystemSnapshot) -> Vec<Finding> {
     findings
 }
 
+fn capture_context(meta: Option<&crate::collectors::sampling::SampleMeta>, now: u64) -> String {
+    let Some(meta) = meta.filter(|meta| meta.sequence > 0 && meta.captured_unix_ms > 0) else {
+        return "No successful capture timestamp is available".into();
+    };
+    let age = now.checked_sub(meta.captured_unix_ms);
+    let age_label = match age {
+        Some(age) if age > meta.expected_interval_ms.saturating_mul(3).max(3_000) => {
+            format!("{} ms old, stale", age)
+        }
+        Some(age) => format!("{} ms old", age),
+        None => "age unavailable after a clock change".into(),
+    };
+    format!(
+        "Last capture {} ms UTC ({age_label}); latest provider state {:?}",
+        meta.captured_unix_ms, meta.observation.status
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_health_refresh_keeps_fault_evidence_and_identifies_its_capture() {
+        let mut snapshot = SystemSnapshot::default();
+        snapshot
+            .disk_health
+            .drives
+            .push(crate::collectors::disk_health::DriveHealth {
+                device_id: "fixture-drive".into(),
+                model: "fixture".into(),
+                serial: None,
+                firmware: None,
+                media_type: Default::default(),
+                health_status: DiskHealthStatus::Critical,
+                temperature_celsius: None,
+                power_on_hours: None,
+                wear_percent: None,
+                read_errors_total: None,
+                write_errors_total: None,
+                io_stats: None,
+                health_source: "fixture SMART".into(),
+            });
+        let meta = crate::collectors::sampling::SampleMeta {
+            sequence: 3,
+            captured_unix_ms: 1000,
+            interval_ms: 60_000,
+            expected_interval_ms: 60_000,
+            observation: crate::observation::Observation::error("health", "Read timed out"),
+        };
+        assert!(capture_context(Some(&meta), 182_000).contains("181000 ms old, stale"));
+        assert!(capture_context(Some(&meta), 500).contains("age unavailable after a clock change"));
+        assert!(capture_context(None, 1000).starts_with("No successful capture"));
+        snapshot.samples.insert("health".into(), meta);
+        let findings = for_snapshot(&snapshot);
+        let fault = findings
+            .iter()
+            .find(|f| f.kind == FindingKind::HardwareFault)
+            .unwrap();
+        assert!(fault.evidence.contains("Last capture 1000 ms UTC"));
+        assert!(fault.evidence.contains("latest provider state Error"));
+        let incomplete = findings
+            .iter()
+            .find(|f| f.kind == FindingKind::IncompleteObservation)
+            .unwrap();
+        assert!(incomplete.evidence.contains("Read timed out"));
+        assert!(incomplete.evidence.contains("Last capture 1000 ms UTC"));
+    }
     #[test]
     fn high_cpu_is_resource_pressure_not_a_hardware_diagnosis() {
         let mut snapshot = SystemSnapshot::default();
