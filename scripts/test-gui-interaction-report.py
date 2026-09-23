@@ -34,5 +34,22 @@ frame_profile input_latency_n=2 frame_work_n=4 present_n=3
         self.assertEqual(interaction.numeric_observation(""), {"focus": []})
 
 
+class SnapshotReadTests(unittest.TestCase):
+    valid = b"ready=true protocol=7 publisher_pid=27 runtime_uptime_ns=8000 dispatch_errors=0\n"
+
+    def test_partial_snapshot_is_retried_within_the_existing_deadline(self):
+        for data in (b"", b"ready=true", self.valid[:-1], b"ready=true\n", self.valid + b"\xc3"):
+            self.assertEqual(interaction.decode_snapshot(data, 27), "")
+        self.assertEqual(interaction.decode_snapshot(self.valid, 27), self.valid.decode())
+
+    def test_complete_wrong_identity_and_dispatch_errors_still_fail(self):
+        with self.assertRaisesRegex(RuntimeError, "identity changed"):
+            interaction.decode_snapshot(self.valid, 99)
+        with self.assertRaisesRegex(RuntimeError, "dispatch reported"):
+            interaction.decode_snapshot(self.valid.replace(b"dispatch_errors=0", b"dispatch_errors=1"), 27)
+        with self.assertRaisesRegex(RuntimeError, "exceeds its bound"):
+            interaction.decode_snapshot(b"x" * (1024 * 1024 + 1), 27)
+
+
 if __name__ == "__main__":
     unittest.main()

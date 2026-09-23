@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Retry transient partial automation snapshot reads within the existing bounded deadline. Preserve fatal identity, dispatch-error and output-limit checks after Intel Mac qualification exposed the SDK's non-atomic snapshot replacement; add regression fixtures without changing product binaries or performance thresholds.
+
 - Retain bounded per-input frame/timestamp counters and focused control IDs in native interaction qualification reports. Exclude widget labels and arbitrary role strings, with privacy fixtures, so native input delays and duplicate completion counts can be diagnosed without exporting process or device names.
 
 - Quote staged and installed binary self-test paths in the managed shell installer. Exercise Linux composite lifecycle with a spaced application-data directory and retain a direct installed-version verification fixture.

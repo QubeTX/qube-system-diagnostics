@@ -44,6 +44,28 @@ def numeric_observation(snapshot):
     return result
 
 
+def decode_snapshot(data, publisher):
+    if len(data) > 1024 * 1024:
+        raise RuntimeError("Automation snapshot exceeds its bound")
+    try:
+        value = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return ""  # The SDK may be replacing a snapshot during this read.
+    if not value.endswith("\n") or not re.search(r"\bruntime_uptime_ns=\d+\b", value):
+        return ""
+    if "ready=true" not in value:
+        return ""
+    identity = re.search(r"\bpublisher_pid=(\d+)\b", value)
+    errors = re.search(r"\bdispatch_errors=(\d+)\b", value)
+    if not identity or not errors:
+        return ""
+    if int(identity[1]) != publisher:
+        raise RuntimeError("Automation publisher identity changed")
+    if int(errors[1]) != 0 or "error event=" in value:
+        raise RuntimeError("Native input dispatch reported an error")
+    return value
+
+
 def windows_helper():
     spec = importlib.util.spec_from_file_location("gui_measure", Path(__file__).with_name("measure-gui-windows.py"))
     module = importlib.util.module_from_spec(spec)
@@ -100,19 +122,14 @@ class Session:
         path = self.ipc / "snapshot.txt"
         try:
             with path.open("rb") as stream:
+                before = os.fstat(stream.fileno())
                 data = stream.read(1024 * 1024 + 1)
+                after = os.fstat(stream.fileno())
         except FileNotFoundError:
             return ""
-        if len(data) > 1024 * 1024:
-            raise RuntimeError("Automation snapshot exceeds its bound")
-        value = data.decode("utf-8")
-        if "ready=true" in value:
-            if not re.search(rf"\bpublisher_pid={self.process.pid}\b", value):
-                raise RuntimeError("Automation publisher identity changed")
-            if not re.search(r"\bdispatch_errors=0\b", value) or "error event=" in value:
-                # Do not copy arbitrary potentially identifying trace strings.
-                raise RuntimeError("Native input dispatch reported an error")
-        return value
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            return ""
+        return decode_snapshot(data, self.process.pid)
 
     def wait(self, predicate, seconds=10):
         deadline = time.monotonic() + seconds
@@ -128,7 +145,7 @@ class Session:
     def command(self, command):
         if "\n" in command or len(command) > 1024:
             raise ValueError("Invalid qualification command")
-        prior = self.snapshot()
+        prior = self.wait(lambda s: bool(re.search(r"\bruntime_uptime_ns=\d+\b", s)))
         count = int(re.search(r"\bruntime_uptime_ns=(\d+)", prior)[1])
         self.sequence += 1
         target = self.ipc / f"command-{self.sequence}.txt"
@@ -143,7 +160,8 @@ class Session:
     def control(self, name):
         role = "listitem" if name in ("Overview", "CPU", "Memory", "Disk", "GPU", "Network", "Processes", "Thermals", "Drivers", "Settings") else "button"
         pattern = r'widget @w1/main-canvas#(\d+) role=(' + role + r') name="' + re.escape(name) + r'"[^\n]*enabled=true[^\n]*actions=\[[^\]\n]*press'
-        matches = re.findall(pattern, self.snapshot())
+        state = self.wait(lambda s: bool(re.findall(pattern, s)))
+        matches = re.findall(pattern, state)
         if len(matches) != 1:
             raise RuntimeError(f"Expected one enabled press control: {name}; found {len(matches)}")
         return matches[0][0]

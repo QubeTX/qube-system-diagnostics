@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: prevent the interaction test from stopping when it reads a status file midway through an update. Real app errors and timeouts still fail the test.
+
 - Behind the scenes: responsiveness tests now explain which interaction was delayed without retaining private device or process names. This helps distinguish a slow response from a problem in the test's timing records.
 
 - Installer checks also accept application folders containing spaces, so verifying the installed app does not undo an otherwise valid installation.
