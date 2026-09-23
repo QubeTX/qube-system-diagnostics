@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Report the native pipe fixture's actual failure category and elapsed time before asserting its expected outcome, so hosted failures distinguish output limits from deadlines and I/O errors.
+
 - Attach the successful capture time, age and latest provider state to retained storage-fault and incomplete-observation findings. Keep hardware fault evidence after refresh failure, explicitly mark stale or clock-discontinuous ages, and replace obsolete GUI ABI copy with useful findings guidance.
 
 - Retain bounded structural diagnostics on native terminal qualification failures: completed steps, fixed-label positions, cursor and process state, without arbitrary screen contents. Distinguish platform interaction failures from emulator assumptions before selecting a product fix.

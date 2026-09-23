@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: background-check tests explain the failure they encountered, making platform-specific fixes easier to verify.
+
 - A failed refresh keeps a previously reported drive warning visible and explains how old its evidence is. Missing timestamps and clock changes remain explicit, so older results do not appear freshly measured.
 
 - Behind the scenes: a failed terminal check now keeps enough context to investigate without saving private readings from the screen.

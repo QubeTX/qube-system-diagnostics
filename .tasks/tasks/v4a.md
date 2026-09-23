@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: 9dbdec6 Apple Silicon job 107159226591 fails before PTY qualification in the new noisy/oversized pipe fixture. The assertion omitted the actual error and topic, so this cycle adds those plus elapsed time without changing product behavior or deadlines. Next oracle: distinguish an early output-limit error, native I/O failure and a finite deadline on the same Mac runtime.
+
 - 2026-09-23 — codex: retained-health evidence now names its capture time, stale/clock-change age and latest provider failure in shared findings. Two targeted finding tests, root clippy, 50 GUI tests (two platform skips) and strict bindings pass. bc13468's 330-second owned-process benchmark improves to 2.09 percent CPU and 133.5 MiB RSS; CPU remains above gate. Next: direct Windows interface counters with explicit failures, and native terminal diagnostics from 9dbdec6.
 
 - 2026-09-23 — codex: c87578a native Apple Silicon PTY step fails at Overview in job 107155428182 (CI 35853181674), with no retained screen structure; root and engine checks passed. Added bounded failure artifacts containing fixed-label row positions, cursor/geometry, process state and completed steps, never arbitrary screen content. Next oracle: the same native runtime, to distinguish lost input, layout/emulator assumptions and early exits. Worker pipe candidate bc13468 is independently measuring Windows resource use.

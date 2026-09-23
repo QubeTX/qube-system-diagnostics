@@ -812,10 +812,26 @@ mod tests {
                 .request(false, timeout, &AtomicBool::new(false))
                 .unwrap_err();
             match topic {
-                "invalid" => assert!(matches!(error, CommandError::Protocol)),
-                "oversized" | "noisy" => assert!(matches!(error, CommandError::OutputLimit)),
-                "inherited" => assert!(matches!(error, CommandError::Io(_))),
-                "timeout" => assert!(matches!(error, CommandError::Timeout)),
+                "invalid" => assert!(
+                    matches!(error, CommandError::Protocol),
+                    "{topic}: {error:?}; elapsed {:?}",
+                    start.elapsed()
+                ),
+                "oversized" | "noisy" => assert!(
+                    matches!(error, CommandError::OutputLimit),
+                    "{topic}: {error:?}; elapsed {:?}",
+                    start.elapsed()
+                ),
+                "inherited" => assert!(
+                    matches!(error, CommandError::Io(_)),
+                    "{topic}: {error:?}; elapsed {:?}",
+                    start.elapsed()
+                ),
+                "timeout" => assert!(
+                    matches!(error, CommandError::Timeout),
+                    "{topic}: {error:?}; elapsed {:?}",
+                    start.elapsed()
+                ),
                 _ => unreachable!(),
             }
             assert!(
