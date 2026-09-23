@@ -3,6 +3,48 @@ use std::{
     sync::atomic::AtomicBool,
     time::{Duration, Instant},
 };
+#[cfg(windows)]
+#[test]
+fn native_gpu_counter_worker_warms_and_resets_without_inventing_utilization() {
+    let mut worker =
+        WorkerProcess::spawn(std::ffi::OsStr::new(env!("CARGO_BIN_EXE_sd300")), "slow").unwrap();
+    let mut native_available = 0;
+    for (index, reset) in [false, false, true].into_iter().enumerate() {
+        if index == 1 {
+            std::thread::sleep(Duration::from_millis(1200));
+        }
+        let bytes = worker
+            .request(reset, Duration::from_secs(25), &AtomicBool::new(false))
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        for adapter in result["data"]["data"]["gpu"]["adapters"]
+            .as_array()
+            .unwrap()
+        {
+            let observation = &adapter["fields"]["utilization_percent"];
+            if observation["source"]
+                .as_str()
+                .is_some_and(|s| s.starts_with("WDDM native PDH"))
+            {
+                if index == 0 || reset {
+                    assert!(
+                        adapter["utilization_percent"].is_null(),
+                        "An unprimed native counter reported utilization"
+                    );
+                    assert_eq!(observation["status"], "unavailable");
+                } else if observation["status"] == "available" {
+                    let value = adapter["utilization_percent"].as_f64().unwrap();
+                    assert!((0.0..=100.0).contains(&value));
+                    assert!(observation["source"].as_str().unwrap().contains("interval"));
+                    native_available += 1;
+                } else {
+                    assert_ne!(observation["status"], "error", "{}", observation);
+                }
+            }
+        }
+    }
+    eprintln!("Native GPU counter fixture: {native_available} adapters supplied a valid second sample; absent hardware retains provider fixtures/fallback");
+}
 #[test]
 fn collector_session_reuses_one_process_then_cancels_cleanly() {
     let mut worker = WorkerProcess::spawn(

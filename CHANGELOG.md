@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Prefer a persistent native PDH query for Windows GPU engine utilization, retaining fractional values, adapter identity, measured intervals and explicit warmup after reset/resume. Bound native array parsing and retry, preserve incomplete fields and the existing WMI/NVIDIA fallbacks, and test real worker warmup/reset against available adapters.
+
 - Add whole-process Windows GUI measurement with suspended-before-job ownership, isolated settings, bundle hashes, required worker checks, visibility validation and clean-shutdown assertions. Extend stage profiling with slow providers and quantized process CPU, retaining the still-failing long TUI resource result.
 
 - Qualify noisy worker termination by either the output limit or its earlier absolute deadline, with a fixed cleanup allowance and owner-reaping assertion. Native Apple Silicon evidence identified deadline-first behavior; production limits and collection behavior are unchanged.

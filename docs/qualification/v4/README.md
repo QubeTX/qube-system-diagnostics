@@ -191,6 +191,40 @@ and partial failure; GUI fixtures preserve the same observation beside rows.
 
 ## NVIDIA telemetry
 
+### Windows GPU engine utilization
+
+The Windows worker retains one language-neutral query using
+[PdhAddEnglishCounterW](https://learn.microsoft.com/en-us/windows/win32/api/pdh/nf-pdh-pdhaddenglishcounterw)
+and reads matching wildcard instances through
+[PdhGetFormattedCounterArrayW](https://learn.microsoft.com/en-us/windows/win32/api/pdh/nf-pdh-pdhgetformattedcounterarrayw).
+The query uses two completed captures, with at least one second between them as
+required by [PDH rate collection](https://learn.microsoft.com/en-us/windows/win32/perfctrs/collecting-performance-data).
+Fractions are retained. Process contributions sum within one physical engine;
+the busiest engine represents adapter utilization, consistent with
+[Microsoft's GPU utilization explanation](https://devblogs.microsoft.com/directx/gpus-in-the-task-manager/).
+Different engines and adapters are never summed into that percentage.
+
+The provider records its actual interval, resets on changed adapter identities,
+explicit retry or clock discontinuities, and backs off native failures. Array
+sizes, item counts and string pointers are checked within an aligned bounded
+buffer. Invalid instance values make an adapter incomplete rather than adding
+zero; departed instances are excluded. WMI remains available when PDH fails,
+and existing NVIDIA fields survive missing native values. Both frontends receive
+the same per-field observation and source through existing projections.
+
+Native Windows worker qualification exercises first sample, valid second sample
+and explicit reset under the owned process deadline. Both local adapters supplied
+valid second samples. This verifies the native API path and units, not physical
+GPU accuracy; CI without a suitable GPU retains deterministic aggregation,
+malformed-buffer, unavailable-field and clock/reset fixtures.
+
+The same eight-sample release-stage diagnostic records GPU collection falling
+from 340.4 to 2.9 ms mean wall time. `profile-slow-native-pdh.json` retains the
+result. This does not establish the whole-product CPU gate; that requires the
+unchanged process-family measurement method on the committed candidate.
+
+### NVIDIA provider
+
 Bindings follow the [NVIDIA NVML API](https://docs.nvidia.com/deploy/nvml-api/nvml-api-reference.html)
 and [published header](https://github.com/NVIDIA/go-nvml/blob/main/pkg/nvml/nvml.h).
 The driver session stays in the isolated worker. Windows loads only from System32;

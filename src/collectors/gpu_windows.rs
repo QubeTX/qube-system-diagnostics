@@ -11,6 +11,8 @@ use windows::{
     },
 };
 use windows_sys::Wdk::Graphics::Direct3D::*;
+#[path = "gpu_pdh.rs"]
+mod pdh;
 
 fn luid_key(high: u32, low: u32) -> String {
     format!("luid:{high:08x}:{low:08x}")
@@ -115,14 +117,15 @@ pub fn inventory() -> Result<Vec<GpuAdapter>, String> {
 #[serde(rename_all = "PascalCase")]
 struct EngineRow {
     name: String,
-    utilization_percentage: u64,
+    utilization_percentage: f64,
 }
 
 fn aggregate_engines(rows: &[EngineRow]) -> HashMap<String, f32> {
-    let mut engines = HashMap::<(String, String, String), u64>::new();
+    let mut engines = HashMap::<(String, String, String), f64>::new();
     let mut seen = HashSet::new();
+    let mut incomplete = HashSet::new();
     for row in rows {
-        if row.utilization_percentage > 100 || !seen.insert(&row.name) {
+        if !seen.insert(&row.name) {
             continue;
         }
         let parts = row.name.split('_').collect::<Vec<_>>();
@@ -145,6 +148,12 @@ fn aggregate_engines(rows: &[EngineRow]) -> HashMap<String, f32> {
         ) else {
             continue;
         };
+        if !row.utilization_percentage.is_finite()
+            || !(0.0..=100.0).contains(&row.utilization_percentage)
+        {
+            incomplete.insert(luid_key(high, low));
+            continue;
+        }
         let value = engines
             .entry((
                 luid_key(high, low),
@@ -152,12 +161,15 @@ fn aggregate_engines(rows: &[EngineRow]) -> HashMap<String, f32> {
                 engine.to_string(),
             ))
             .or_default();
-        *value = value.saturating_add(row.utilization_percentage);
+        *value += row.utilization_percentage;
     }
     let mut result = HashMap::<String, f32>::new();
     for ((luid, _, _), value) in engines {
+        if incomplete.contains(&luid) {
+            continue;
+        }
         let current = result.entry(luid).or_default();
-        *current = current.max(value.min(100) as f32);
+        *current = current.max(value.min(100.0) as f32);
     }
     result
 }
@@ -208,29 +220,55 @@ pub fn pnp_pci_address(id: &str) -> Option<String> {
 }
 
 pub fn add_engine_utilization(adapters: &mut [GpuAdapter]) {
-    let result = wmi::COMLibrary::new().and_then(wmi::WMIConnection::new).and_then(|c| c.raw_query::<EngineRow>("SELECT Name, UtilizationPercentage FROM Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine"));
-    match result {
-        Ok(rows) => {
-            let values = aggregate_engines(&rows);
+    let mut identity = adapters
+        .iter()
+        .map(|a| a.device_id.as_str())
+        .collect::<Vec<_>>();
+    identity.sort_unstable();
+    let native_failure = match pdh::sample(&identity.join("|")) {
+        Ok((rows, interval)) => {
+            let source = format!("WDDM native PDH; {:.3}s interval; sum processes per physical engine, then busiest engine", interval.as_secs_f64());
+            apply_engine_rows(adapters, &rows, &source);
+            return;
+        }
+        Err(error @ pdh::Error::WarmingUp) => {
             for adapter in adapters {
-                if let Some(value) = values.get(&adapter.device_id) {
-                    adapter.utilization_percent = Some(*value);
-                    adapter.fields.insert("utilization_percent".into(), Observation::available("WDDM GPU engine counters: sum processes per physical engine, then busiest engine; rounded percent capped at 100"));
+                if adapter.utilization_percent.is_none() {
+                    adapter
+                        .fields
+                        .insert("utilization_percent".into(), error.observation());
                 }
             }
+            return;
         }
+        Err(error) => error.observation(), // Older/restricted providers retain the working WMI path.
+    };
+    let result = wmi::COMLibrary::new().and_then(wmi::WMIConnection::new).and_then(|c| c.raw_query::<EngineRow>("SELECT Name, UtilizationPercentage FROM Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine"));
+    match result {
+        Ok(rows) => apply_engine_rows(adapters, &rows, "WDDM WMI fallback: sum processes per physical engine, then busiest engine; rounded percent capped at 100"),
         Err(error) => {
             for adapter in adapters {
                 if adapter.utilization_percent.is_none() {
                     adapter.fields.insert(
                         "utilization_percent".into(),
-                        Observation::unavailable(
-                            "WDDM GPU engine counters",
-                            format!("Driver/provider did not expose utilization: {error}"),
-                        ),
+                        Observation { detail: Some(format!("{}; WMI fallback failed: {error}", native_failure.detail.as_deref().unwrap_or("Native query failed"))), ..native_failure.clone() },
                     );
                 }
             }
+        }
+    }
+}
+
+fn apply_engine_rows(adapters: &mut [GpuAdapter], rows: &[EngineRow], source: &str) {
+    let values = aggregate_engines(rows);
+    for adapter in adapters {
+        if let Some(value) = values.get(&adapter.device_id) {
+            adapter.utilization_percent = Some(*value);
+            adapter
+                .fields
+                .insert("utilization_percent".into(), Observation::available(source));
+        } else if adapter.utilization_percent.is_none() {
+            adapter.fields.insert("utilization_percent".into(), Observation::unavailable(source, "No complete valid engine sample for this adapter; newly created instances need a second sample"));
         }
     }
 }
@@ -245,12 +283,34 @@ mod tests {
             utilization_percentage: value,
         };
         let values = aggregate_engines(&[
-            row(1, 10, 0, 30),
-            row(2, 10, 0, 40),
-            row(3, 10, 1, 60),
-            row(1, 20, 0, 12),
+            row(1, 10, 0, 30.0),
+            row(2, 10, 0, 40.0),
+            row(3, 10, 1, 60.0),
+            row(1, 20, 0, 12.0),
         ]);
         assert_eq!(values[&luid_key(0, 10)], 70.0);
         assert_eq!(values[&luid_key(0, 20)], 12.0);
+    }
+    #[test]
+    fn utilization_keeps_fractions_and_does_not_hide_incomplete_engines() {
+        let row = |pid, value| EngineRow {
+            name: format!("pid_{pid}_luid_0x00000000_0x0000000a_phys_0_eng_0_engtype_3D"),
+            utilization_percentage: value,
+        };
+        assert_eq!(
+            aggregate_engines(&[row(1, 12.25), row(2, 0.5)])[&luid_key(0, 10)],
+            12.75
+        );
+        assert!(aggregate_engines(&[row(1, 12.25), row(2, f64::NAN)]).is_empty());
+        assert!(aggregate_engines(&[row(1, -1.0)]).is_empty());
+        assert_eq!(aggregate_engines(&[row(1, 0.0)])[&luid_key(0, 10)], 0.0);
+        assert_eq!(
+            aggregate_engines(&[row(1, 80.0), row(2, 80.0)])[&luid_key(0, 10)],
+            100.0
+        );
+        assert_eq!(
+            aggregate_engines(&[row(1, 12.25), row(1, 12.25)])[&luid_key(0, 10)],
+            12.25
+        );
     }
 }

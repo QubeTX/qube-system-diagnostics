@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Windows graphics readings can use a lighter native counter query and retain small changes that rounded readings missed. Newly detected or reset counters warm up before displaying a value; older provider routes remain available when needed.
+
 - Behind the scenes: performance checks count background collectors as well as the app window, verify that the requested checks are running, and keep failed measurements visible. More detailed profiling helps target costly work without reducing monitoring frequency.
 
 - Behind the scenes: noisy background-check tests now recognize either safety limit stopping the check, while still requiring prompt cleanup. This avoids treating a correctly enforced timeout as a product failure on Mac.

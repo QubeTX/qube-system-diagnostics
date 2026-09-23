@@ -1,0 +1,30 @@
+{
+  "arch": "x86_64",
+  "build": "release",
+  "limitations": "Sequential diagnostic workload; TestBackend excludes terminal transport. Windows stage CPU is quantized process time and excludes external services/children. Not whole-product CPU or real input latency.",
+  "os": "windows",
+  "schema": 1,
+  "stages": {
+    "disk.collect": {
+      "count": 8,
+      "max_ms": 2.2587,
+      "mean_ms": 1.4943499999999998,
+      "p95_ms": 2.2587,
+      "process_cpu_total_ms": 0.0
+    },
+    "gpu.collect": {
+      "count": 8,
+      "max_ms": 4.1149000000000004,
+      "mean_ms": 2.9189750000000005,
+      "p95_ms": 4.1149000000000004,
+      "process_cpu_total_ms": 0.0
+    },
+    "thermals.collect": {
+      "count": 8,
+      "max_ms": 42.8694,
+      "mean_ms": 30.180187499999995,
+      "p95_ms": 42.8694,
+      "process_cpu_total_ms": 15.625
+    }
+  }
+}
