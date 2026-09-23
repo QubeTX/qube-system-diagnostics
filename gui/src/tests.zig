@@ -1486,3 +1486,26 @@ test "engine process pages retain global match counts with fixed display storage
     main.update(&model, .process_next_page, &fx);
     try testing.expectEqual(@as(u32, 240), model.process_page_offset);
 }
+
+
+test "bandwidth actions require a distinct confirmation and reset M-Lab consent" {
+    var model = main.initialModel();
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    main.update(&model, .companion_speed_quick, &fx);
+    try testing.expect(model.companionConfirming());
+    try testing.expect(!model.companion_mlab_consent);
+    main.update(&model, .companion_toggle_mlab, &fx);
+    try testing.expect(model.companion_mlab_consent);
+    main.update(&model, .companion_dismiss_speed, &fx);
+    try testing.expect(!model.companionConfirming());
+    try testing.expect(!model.companion_mlab_consent);
+    main.update(&model, .companion_speed_deep, &fx);
+    try testing.expect(std.mem.indexOf(u8, model.companionBudget(), "20 GB") != null);
+    model.active_section = 5;
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const tree = try buildTree(arena_state.allocator(), &model);
+    _ = try expectByText(tree.root, .button, "Start bandwidth test");
+}

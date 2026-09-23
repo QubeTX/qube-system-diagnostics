@@ -24,6 +24,10 @@ pub struct App {
     /// Whether to show the help overlay
     pub show_help: bool,
     pub show_findings: bool,
+    pub show_companion: bool,
+    pub companion: crate::companion::Controller,
+    pub speed_confirmation: Option<crate::companion::Action>,
+    pub mlab_consent: bool,
     /// Exceptional Cargo v2-to-v3 state: the second update still needs to
     /// install the managed CLI+GUI product. This never affects normal TUI
     /// startup or session behavior.
@@ -98,6 +102,10 @@ impl App {
             should_quit: false,
             show_help: false,
             show_findings: false,
+            show_companion: false,
+            companion: Default::default(),
+            speed_confirmation: None,
+            mlab_consent: false,
             cargo_gui_completion_notice: false,
             snapshot: SystemSnapshot::default(),
             findings: Vec::new(),
@@ -164,6 +172,10 @@ impl App {
             }
             tokio::select! {
                 _ = poll.tick() => {
+                    if self.companion.poll() {
+                        self.live_while_paused.as_mut().unwrap_or(&mut self.snapshot).companion = self.companion.state.clone();
+                        dirty = true;
+                    }
                     let target = self.live_while_paused.as_mut().unwrap_or(&mut self.snapshot);
                     let changed = self.monitor.as_ref().map(|m| m.drain(target)).unwrap_or_default();
                     if self.paused_at.is_none() {
@@ -360,6 +372,51 @@ impl App {
             self.should_quit = true;
             return;
         }
+        if self.show_companion {
+            if key.kind == KeyEventKind::Repeat {
+                return;
+            }
+            use crate::companion::Action;
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('N') => {
+                    self.show_companion = false;
+                    self.speed_confirmation = None;
+                    self.mlab_consent = false;
+                }
+                KeyCode::Char('x' | 'X') => self.companion.cancel(),
+                KeyCode::Char('s') if self.speed_confirmation.is_none() => {
+                    self.companion.start(Action::Standard, false);
+                }
+                KeyCode::Char('d') if self.speed_confirmation.is_none() => {
+                    self.companion.start(Action::Deep, false);
+                }
+                KeyCode::Char('b') => {
+                    self.speed_confirmation = Some(Action::SpeedQuick);
+                    self.mlab_consent = false;
+                }
+                KeyCode::Char('B') => {
+                    self.speed_confirmation = Some(Action::SpeedDeep);
+                    self.mlab_consent = false;
+                }
+                KeyCode::Char('m') if self.speed_confirmation.is_some() => {
+                    self.mlab_consent = !self.mlab_consent
+                }
+                KeyCode::Char('y' | 'Y') => {
+                    if let Some(action) = self.speed_confirmation.take() {
+                        self.companion.start(action, self.mlab_consent);
+                        self.mlab_consent = false;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.inspector_scroll = self.inspector_scroll.saturating_add(1)
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.inspector_scroll = self.inspector_scroll.saturating_sub(1)
+                }
+                _ => {}
+            }
+            return;
+        }
         if self.editing_filter {
             self.view.selected_id = None;
             self.view.selected = 0;
@@ -440,6 +497,10 @@ impl App {
             KeyCode::Esc => self.should_quit = true,
             KeyCode::Char('m') => self.mode = None,
             KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('N') => {
+                self.show_companion = true;
+                self.inspector_scroll = 0;
+            }
             KeyCode::Char('F') => {
                 self.show_findings = true;
                 self.inspector_scroll = 0;
@@ -586,6 +647,27 @@ mod compatibility_tests {
             pid: None,
             process_name: None,
         }
+    }
+
+    #[test]
+    fn opening_companion_or_speed_confirmation_never_launches_a_probe() {
+        let mut app = App::new(Some(DiagnosticMode::User));
+        press(&mut app, KeyCode::Char('N'));
+        assert!(app.show_companion);
+        assert!(!app.companion.state.running);
+        press(&mut app, KeyCode::Char('b'));
+        assert_eq!(
+            app.speed_confirmation,
+            Some(crate::companion::Action::SpeedQuick)
+        );
+        assert!(!app.mlab_consent);
+        assert!(!app.companion.state.running);
+        press(&mut app, KeyCode::Char('m'));
+        assert!(app.mlab_consent);
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.show_companion);
+        assert!(!app.mlab_consent);
+        assert!(!app.companion.state.running);
     }
 
     #[test]

@@ -7,7 +7,7 @@ use ratatui::Frame;
 use crate::ui::common::*;
 
 pub fn render(frame: &mut Frame, area: Rect) {
-    let [center_y] = Layout::vertical([Constraint::Length(23)])
+    let [center_y] = Layout::vertical([Constraint::Length(24)])
         .flex(Flex::Center)
         .areas(area);
     let [center] = Layout::horizontal([Constraint::Length(64)])
@@ -41,6 +41,7 @@ pub fn render(frame: &mut Frame, area: Rect) {
         help_line("/", "Filter the complete inventory"),
         help_line("Enter", "Open / close row inspector"),
         help_line("Space", "Freeze view / resume latest"),
+        help_line("N", "Optional ND-300 diagnostics and SpeedQX"),
         help_line("F", "Findings and evidence"),
         help_line("c / M", "Process sort: CPU / memory"),
         help_line("n / p / s", "Name / PID / reverse sort"),

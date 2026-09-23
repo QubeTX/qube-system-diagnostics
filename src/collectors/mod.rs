@@ -46,6 +46,9 @@ mod command_tests {
 
     #[test]
     fn command_helper_returns_successful_output() {
+        let _guard = super::command::TEST_PROCESS_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         #[cfg(unix)]
         let output = run_output("sh", ["-c", "printf ok"], CommandTimeout::Normal)
             .expect("command should produce output");
@@ -60,56 +63,40 @@ mod command_tests {
 
     #[test]
     fn command_helper_times_out_and_kills_child() {
+        let _guard = super::command::TEST_PROCESS_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let started = Instant::now();
 
-        #[cfg(unix)]
+        let (program, args) = super::command::test_fixture("fixture_hung");
         let output = run_output(
-            "sh",
-            ["-c", "sleep 2; printf late"],
+            program,
+            args,
             CommandTimeout::Custom(Duration::from_millis(75)),
         );
-
-        #[cfg(windows)]
-        let output = run_output(
-            "powershell",
-            [
-                "-NoProfile",
-                "-Command",
-                "Start-Sleep -Seconds 2; Write-Output late",
-            ],
-            CommandTimeout::Custom(Duration::from_millis(75)),
-        );
-
         assert!(output.is_none());
-        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "owned timeout cleanup took {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
     fn command_helper_drains_output_larger_than_a_pipe_buffer() {
+        let _guard = super::command::TEST_PROCESS_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         const OUTPUT_SIZE: usize = 1024 * 1024;
 
-        #[cfg(unix)]
-        let output = run_output(
-            "sh",
-            ["-c", "head -c 1048576 /dev/zero"],
-            CommandTimeout::Slow,
-        )
-        .expect("large-output command should complete");
-
-        #[cfg(windows)]
-        let output = run_output(
-            "powershell",
-            [
-                "-NoProfile",
-                "-Command",
-                "[Console]::OpenStandardOutput().Write((New-Object byte[] 1048576), 0, 1048576)",
-            ],
-            CommandTimeout::Slow,
-        )
-        .expect("large-output command should complete");
-
+        let (program, args) = super::command::test_fixture("fixture_one_mebibyte");
+        let output = run_output(program, args, CommandTimeout::Slow)
+            .expect("native output fixture should complete");
         assert!(output.status.success());
-        assert_eq!(output.stdout.len(), OUTPUT_SIZE);
+        assert_eq!(
+            output.stdout.iter().filter(|&&byte| byte == 0).count(),
+            OUTPUT_SIZE
+        );
     }
 
     #[cfg(windows)]
@@ -125,6 +112,9 @@ mod command_tests {
     #[cfg(windows)]
     #[test]
     fn command_helper_does_not_create_a_windows_console() {
+        let _guard = super::command::TEST_PROCESS_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let executable = std::env::current_exe().expect("test executable path");
         let output = run_output(
             executable.as_os_str(),
@@ -166,6 +156,7 @@ pub struct SystemSnapshot {
     pub gpu: gpu::GpuData,
     pub network: network::NetworkData,
     pub network_diag: network_diag::NetworkDiagData,
+    pub companion: crate::companion::State,
     pub processes: processes::ProcessData,
     pub thermals: thermals::ThermalData,
     pub drivers: drivers::DriverData,
@@ -196,6 +187,7 @@ impl Default for SystemSnapshot {
             gpu: gpu::GpuData::default(),
             network: network::NetworkData::default(),
             network_diag: network_diag::NetworkDiagData::default(),
+            companion: Default::default(),
             processes: processes::ProcessData::default(),
             thermals: thermals::ThermalData::default(),
             drivers: drivers::DriverData::default(),
@@ -240,6 +232,7 @@ impl SystemSnapshot {
             gpu: self.gpu.clone(),
             network: self.network.clone(),
             network_diag: self.network_diag.clone(),
+            companion: self.companion.clone(),
             processes: self.processes.clone(),
             thermals: self.thermals.clone(),
             drivers: self.drivers.clone(),

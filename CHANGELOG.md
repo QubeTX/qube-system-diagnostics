@@ -4,6 +4,9 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Add explicit ND-300 4.0.1 and separately confirmed SpeedQX actions to both frontends. Bound in-memory process output and cancellation; retain diagnostic exit outcomes, partial checks, nullable throughput and provenance. Export only validated fields in redacted companion reports.
+- Replace shell-dependent resource-test producers with native fixtures, serialize timing-sensitive subprocess tests, and use populated deterministic redaction fixtures instead of concurrent live inventories.
+
 - Search and page the complete GUI process inventory before selecting bounded rows. Query changes reuse the actual capture timestamp; ABI-2 page counts and offsets match Rust/Zig layout assertions.
 
 ### Fixed

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum FindingKind {
     ResourcePressure,
+    ConnectivityObservation,
     HardwareFault,
     IncompleteObservation,
 }
@@ -76,9 +77,29 @@ pub fn for_snapshot(snapshot: &SystemSnapshot) -> Vec<Finding> {
             });
         }
     }
+    if let Some(result) = &snapshot.companion.result {
+        for check in &result.checks {
+            use crate::companion::CheckState;
+            if !matches!(
+                check.state,
+                CheckState::Warning | CheckState::Fault | CheckState::Incomplete
+            ) {
+                continue;
+            }
+            findings.push(Finding {
+                id: format!("companion:{}", check.category),
+                kind: if check.state == CheckState::Incomplete { FindingKind::IncompleteObservation } else { FindingKind::ConnectivityObservation },
+                severity: if check.state == CheckState::Fault { "warning" } else { "info" }.into(),
+                title: format!("ND-300 {}: {}", check.category, check.state.explanation()),
+                evidence: format!("Explicit {:?} action captured at {} ms UTC; check state {:?}", result.action, result.captured_unix_ms, check.state),
+                next_step: "Inspect Network companion for the measured evidence; no repair has been attempted".into(),
+                source: "companion".into(),
+            });
+        }
+    }
     findings.sort_by_key(|finding| match finding.kind {
         FindingKind::HardwareFault => 0,
-        FindingKind::ResourcePressure => 1,
+        FindingKind::ResourcePressure | FindingKind::ConnectivityObservation => 1,
         FindingKind::IncompleteObservation => 2,
     });
     findings

@@ -261,6 +261,7 @@ KEYBINDINGS:
   Tab          Next section (Shift+Tab goes back)
   s            Reverse process sort direction
   F            Findings, evidence and next steps
+  N            Optional network diagnostics and SpeedQX
 
 SECTIONS:
   1 Overview    System health dashboard / identity and gauges

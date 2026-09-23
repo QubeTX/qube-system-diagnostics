@@ -134,6 +134,180 @@ where
     result
 }
 
+/// Private in-memory capture for user-requested diagnostics. No result payload is
+/// written to disk; there are no reader threads or waits for inherited-pipe EOF.
+#[derive(Debug)]
+pub struct MemoryCapture {
+    pub status: Option<std::process::ExitStatus>,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub failure: Option<CommandError>,
+}
+
+#[cfg(unix)]
+fn ready_bytes<T: std::os::fd::AsRawFd>(pipe: &T) -> std::io::Result<usize> {
+    let mut available: libc::c_int = 0;
+    // This handle has exactly one reader, so available bytes cannot be consumed
+    // between this query and read. Never issue a read when no bytes are ready.
+    if unsafe { libc::ioctl(pipe.as_raw_fd(), libc::FIONREAD, &mut available) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(available.max(0) as usize)
+}
+#[cfg(windows)]
+fn ready_bytes<T: std::os::windows::io::AsRawHandle>(pipe: &T) -> std::io::Result<usize> {
+    use std::ptr::null_mut;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn PeekNamedPipe(
+            handle: *mut std::ffi::c_void,
+            buffer: *mut std::ffi::c_void,
+            size: u32,
+            read: *mut u32,
+            available: *mut u32,
+            left: *mut u32,
+        ) -> i32;
+    }
+    let mut available = 0;
+    // Sole owner: no concurrent synchronous operation can hold this pipe handle.
+    if unsafe {
+        PeekNamedPipe(
+            pipe.as_raw_handle(),
+            null_mut(),
+            0,
+            null_mut(),
+            &mut available,
+            null_mut(),
+        )
+    } == 0
+    {
+        let error = std::io::Error::last_os_error();
+        if matches!(error.raw_os_error(), Some(109 | 232)) {
+            return Ok(0);
+        }
+        return Err(error);
+    }
+    Ok(available as usize)
+}
+
+pub fn run_memory<P, I, S>(
+    program: P,
+    args: I,
+    timeout: CommandTimeout,
+    cancelled: &AtomicBool,
+) -> Result<MemoryCapture, CommandError>
+where
+    P: AsRef<OsStr>,
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    if cancelled.load(Ordering::Acquire) {
+        return Err(CommandError::Cancelled);
+    }
+    let mut command = Command::new(program);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0).env("LC_ALL", "C").env("LANG", "C");
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000 | 0x0000_0004);
+    }
+    let mut child = command.spawn().map_err(classify)?;
+    let owned = match OwnedProcess::new(&child) {
+        Ok(owned) => owned,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error.into());
+        }
+    };
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let mut stderr = child.stderr.take().expect("piped stderr");
+    let mut capture = MemoryCapture {
+        status: None,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        failure: None,
+    };
+    let deadline = Instant::now() + timeout.duration();
+    let mut buffer = [0u8; 16 * 1024];
+    let mut drain = || -> Result<(), CommandError> {
+        loop {
+            // Bound work per cycle so a noisy producer cannot starve cancellation.
+            for _ in 0..4 {
+                let out = ready_bytes(&stdout)?.min(buffer.len());
+                let err = ready_bytes(&stderr)?.min(buffer.len());
+                if out == 0 && err == 0 {
+                    break;
+                }
+                if capture
+                    .stdout
+                    .len()
+                    .saturating_add(capture.stderr.len())
+                    .saturating_add(out)
+                    .saturating_add(err)
+                    > MAX_OUTPUT_BYTES as usize
+                {
+                    return Err(CommandError::OutputLimit);
+                }
+                if out > 0 {
+                    let n = stdout.read(&mut buffer[..out])?;
+                    capture.stdout.extend_from_slice(&buffer[..n]);
+                }
+                if err > 0 {
+                    let n = stderr.read(&mut buffer[..err])?;
+                    capture.stderr.extend_from_slice(&buffer[..n]);
+                }
+            }
+            if cancelled.load(Ordering::Acquire) {
+                return Err(CommandError::Cancelled);
+            }
+            if Instant::now() >= deadline {
+                return Err(CommandError::Timeout);
+            }
+            if let Some(status) = child.try_wait()? {
+                capture.status = Some(status);
+                owned.terminate();
+                // Collect the finite bytes already queued, never wait for EOF.
+                for _ in 0..(MAX_OUTPUT_BYTES as usize / buffer.len() + 1) {
+                    let out = ready_bytes(&stdout)?.min(buffer.len());
+                    let err = ready_bytes(&stderr)?.min(buffer.len());
+                    if out == 0 && err == 0 {
+                        return Ok(());
+                    }
+                    if capture.stdout.len() + capture.stderr.len() + out + err
+                        > MAX_OUTPUT_BYTES as usize
+                    {
+                        return Err(CommandError::OutputLimit);
+                    }
+                    if out > 0 {
+                        let n = stdout.read(&mut buffer[..out])?;
+                        capture.stdout.extend_from_slice(&buffer[..n]);
+                    }
+                    if err > 0 {
+                        let n = stderr.read(&mut buffer[..err])?;
+                        capture.stderr.extend_from_slice(&buffer[..n]);
+                    }
+                }
+                return Err(CommandError::OutputLimit);
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    capture.failure = drain().err();
+    owned.terminate();
+    let _ = child.wait();
+    Ok(capture)
+}
+
 /// One reusable owned process, with one bounded request outstanding. Requests are
 /// smaller than a pipe's minimum capacity; responses use atomic files, never a
 /// draining thread or an inherited stdout pipe.
@@ -395,10 +569,88 @@ impl Drop for OwnedProcess {
 }
 
 #[cfg(test)]
+pub(crate) static TEST_PROCESS_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+pub(crate) fn test_fixture(name: &str) -> (std::path::PathBuf, Vec<String>) {
+    (
+        std::env::current_exe().expect("test executable"),
+        vec![
+            "--exact".into(),
+            format!("collectors::command::tests::{name}"),
+            "--ignored".into(),
+            "--nocapture".into(),
+        ],
+    )
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]
+    #[ignore = "child-only deterministic producer"]
+    fn fixture_one_mebibyte() {
+        std::io::stdout().write_all(&vec![0; 1024 * 1024]).unwrap();
+    }
+    #[test]
+    #[ignore = "child-only deterministic producer"]
+    fn fixture_excess_output() {
+        std::io::stdout().write_all(&vec![0; 10_000_000]).unwrap();
+    }
+    #[test]
+    #[ignore = "child-only deterministic hung probe"]
+    fn fixture_hung() {
+        std::thread::sleep(Duration::from_secs(30));
+    }
+    #[test]
+    #[ignore = "child-only partial output probe"]
+    fn fixture_partial_hung() {
+        std::io::stdout().write_all(br#"{"ok":true}"#).unwrap();
+        std::io::stdout().flush().unwrap();
+        std::thread::sleep(Duration::from_secs(30));
+    }
+    #[test]
+    fn memory_capture_bounds_output_and_retains_completed_output() {
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
+        let (program, args) = test_fixture("fixture_partial_hung");
+        let result = run_memory(
+            program,
+            args,
+            CommandTimeout::Custom(Duration::from_secs(2)),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(matches!(result.failure, Some(CommandError::Timeout)));
+        assert!(String::from_utf8_lossy(&result.stdout).contains(r#"{"ok":true}"#));
+        let (program, args) = test_fixture("fixture_excess_output");
+        let result =
+            run_memory(program, args, CommandTimeout::Slow, &AtomicBool::new(false)).unwrap();
+        assert!(
+            matches!(result.failure, Some(CommandError::OutputLimit)),
+            "{:?}",
+            result.failure
+        );
+        assert!(result.stdout.len() + result.stderr.len() <= MAX_OUTPUT_BYTES as usize);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn memory_capture_never_waits_for_descendant_eof() {
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
+        let start = Instant::now();
+        let result = run_memory(
+            "sh",
+            ["-c", "sleep 30 & printf ok"],
+            CommandTimeout::Normal,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(result.failure.is_none());
+        assert_eq!(result.stdout, b"ok");
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
+    #[test]
     fn missing_provider_and_cancellation_are_distinct() {
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
         assert!(matches!(
             run_checked(
                 "sd300-provider-does-not-exist-9471",
@@ -420,24 +672,9 @@ mod tests {
     }
     #[test]
     fn output_is_bounded() {
-        #[cfg(unix)]
-        let result = run_checked(
-            "sh",
-            ["-c", "head -c 10000000 /dev/zero"],
-            CommandTimeout::Slow,
-            &AtomicBool::new(false),
-        );
-        #[cfg(windows)]
-        let result = run_checked(
-            "powershell",
-            [
-                "-NoProfile",
-                "-Command",
-                "[Console]::OpenStandardOutput().Write((New-Object byte[] 10000000),0,10000000)",
-            ],
-            CommandTimeout::Slow,
-            &AtomicBool::new(false),
-        );
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
+        let (program, args) = test_fixture("fixture_excess_output");
+        let result = run_checked(program, args, CommandTimeout::Slow, &AtomicBool::new(false));
         assert!(
             matches!(result, Err(CommandError::OutputLimit)),
             "{result:?}"
@@ -446,6 +683,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn inherited_output_does_not_wait_for_descendant_eof() {
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
         let start = Instant::now();
         let result = run_checked(
             "sh",
@@ -459,6 +697,7 @@ mod tests {
     }
     #[test]
     fn persistent_worker_timeout_and_cancellation_do_not_wait_for_stdin_or_native_return() {
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
         #[cfg(windows)]
         let program = OsStr::new("powershell");
         #[cfg(unix)]

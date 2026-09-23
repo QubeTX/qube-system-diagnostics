@@ -8,6 +8,9 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Run optional network checks from either interface while monitoring continues. Bandwidth tests show their budget and ask separately about publishing measurements through M-Lab. Cancelled or unfinished checks do not become confirmed network faults, and private report details stay out of redacted exports.
+- Behind the scenes: failure tests now create predictable workloads so slow test-machine startup cannot be mistaken for broken monitoring.
+
 - Find any running process from the app, including quieter processes beyond the first page, and browse the results without losing the live view.
 
 **Fixed**

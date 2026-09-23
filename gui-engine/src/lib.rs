@@ -215,6 +215,9 @@ struct Shared {
     process_sort: AtomicU8,
     process_query: Mutex<ProcessQuery>,
     process_query_dirty: AtomicBool,
+    companion_request: AtomicU8,
+    companion_busy: AtomicBool,
+    companion_cancel: AtomicBool,
     wake_lock: Mutex<()>,
     wake: Condvar,
     topics: Mutex<[LatestTopic; TOPIC_COUNT]>,
@@ -236,6 +239,9 @@ impl Default for Shared {
             process_sort: AtomicU8::new(PROCESS_SORT_CPU),
             process_query: Mutex::new(ProcessQuery::default()),
             process_query_dirty: AtomicBool::new(false),
+            companion_request: AtomicU8::new(0),
+            companion_busy: AtomicBool::new(false),
+            companion_cancel: AtomicBool::new(false),
             wake_lock: Mutex::new(()),
             wake: Condvar::new(),
             topics: Mutex::new(std::array::from_fn(|_| LatestTopic::default())),
@@ -346,6 +352,27 @@ struct SlowProjection<'a> {
 struct MediumProjection<'a> {
     active_connections: &'a [collectors::network_diag::ConnectionInfo],
     listening_ports: &'a [collectors::network_diag::ConnectionInfo],
+}
+
+#[derive(Serialize)]
+struct DiagnosticsProjection<'a> {
+    #[serde(flatten)]
+    network: &'a collectors::network_diag::NetworkDiagData,
+    companion: &'a sd_300::companion::State,
+    companion_lines: Vec<String>,
+}
+fn publish_diagnostics(shared: &Shared, snapshot: &SystemSnapshot) {
+    publish_sample(
+        shared,
+        Topic::Diagnostics,
+        &DiagnosticsProjection {
+            network: &snapshot.network_diag,
+            companion: &snapshot.companion,
+            companion_lines: snapshot.companion.lines(),
+        },
+        &snapshot.warnings,
+        snapshot.samples.get("diagnostics"),
+    );
 }
 
 #[derive(Serialize)]
@@ -666,8 +693,31 @@ fn collect_loop(shared: &Shared) {
         _ => Profile::Summary,
     };
     let monitor = Monitor::start(profile());
+    let mut companion = sd_300::companion::Controller::default();
     let mut snapshot = SystemSnapshot::default();
     while !shared.stop.load(Ordering::Acquire) {
+        let request = shared.companion_request.swap(0, Ordering::AcqRel);
+        let consent = request & 16 != 0;
+        use sd_300::companion::Action;
+        let action = match request & 15 {
+            1 => Some(Action::Standard),
+            2 => Some(Action::Deep),
+            3 => Some(Action::SpeedQuick),
+            4 => Some(Action::SpeedDeep),
+            _ => None,
+        };
+        let started = action.is_some_and(|action| companion.start(action, consent));
+        if shared.companion_cancel.swap(false, Ordering::AcqRel) {
+            companion.cancel();
+        }
+        let changed_companion = companion.poll();
+        if started || changed_companion {
+            snapshot.companion = companion.state.clone();
+            if !companion.state.running {
+                shared.companion_busy.store(false, Ordering::Release);
+            }
+            publish_diagnostics(shared, &snapshot);
+        }
         monitor.set_profile(profile());
         monitor.set_sort(selected_process_sort(shared));
         if shared.driver_request.swap(false, Ordering::AcqRel) {
@@ -724,13 +774,7 @@ fn collect_loop(shared: &Shared) {
                     &snapshot.warnings,
                     sample,
                 ),
-                Lane::Diagnostics => publish_sample(
-                    shared,
-                    Topic::Diagnostics,
-                    &snapshot.network_diag,
-                    &snapshot.warnings,
-                    sample,
-                ),
+                Lane::Diagnostics => publish_diagnostics(shared, &snapshot),
                 Lane::Health => publish_sample(
                     shared,
                     Topic::Health,
@@ -765,6 +809,10 @@ fn collect_loop(shared: &Shared) {
         service_export_request(shared, &snapshot);
         wait_for_wake(shared, Duration::from_millis(50));
     }
+    drop(companion);
+    shared.companion_busy.store(false, Ordering::Release);
+    shared.companion_request.store(0, Ordering::Release);
+    shared.companion_cancel.store(false, Ordering::Release);
     // Monitor Drop cancels process groups and joins every worker before the
     // engine can unload. No uninterruptible native probe runs in this DLL.
 }
@@ -1187,6 +1235,41 @@ pub extern "C" fn sd300_engine_set_process_query(
             .shared
             .process_query_dirty
             .store(true, Ordering::Release);
+        engine.shared.wake.notify_all();
+        STATUS_OK
+    }))
+    .unwrap_or(STATUS_PANIC)
+}
+
+/// 0 cancels; 1/2 diagnostics; 3/4 explicitly confirmed bandwidth tests.
+/// M-Lab consent is session-only and never inferred from another action.
+#[no_mangle]
+pub extern "C" fn sd300_engine_request_companion(
+    handle: *mut c_void,
+    action: u32,
+    mlab_consent: u32,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        let Some(engine) = engine_from_handle(handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if action > 4 || mlab_consent > 1 || (action < 3 && mlab_consent != 0) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        if action == 0 {
+            engine
+                .shared
+                .companion_cancel
+                .store(true, Ordering::Release);
+        } else {
+            if engine.shared.companion_busy.swap(true, Ordering::AcqRel) {
+                return STATUS_ALREADY_RUNNING;
+            }
+            engine.shared.companion_request.store(
+                action as u8 | ((mlab_consent as u8) << 4),
+                Ordering::Release,
+            );
+        }
         engine.shared.wake.notify_all();
         STATUS_OK
     }))
@@ -1665,6 +1748,29 @@ mod tests {
             sd300_engine_set_process_sort(ptr::null_mut(), 0),
             STATUS_INVALID_ARGUMENT
         );
+    }
+
+    #[test]
+    fn companion_requests_are_explicit_bounded_and_never_infer_consent() {
+        let engine = Engine::new();
+        let handle = (&engine as *const Engine).cast_mut().cast::<c_void>();
+        assert_eq!(engine.shared.companion_request.load(Ordering::Acquire), 0);
+        assert_eq!(
+            sd300_engine_request_companion(handle, 1, 1),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_companion(handle, 99, 0),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(sd300_engine_request_companion(handle, 3, 0), STATUS_OK);
+        assert_eq!(engine.shared.companion_request.load(Ordering::Acquire), 3);
+        assert_eq!(
+            sd300_engine_request_companion(handle, 4, 1),
+            STATUS_ALREADY_RUNNING
+        );
+        assert_eq!(sd300_engine_request_companion(handle, 0, 0), STATUS_OK);
+        assert!(engine.shared.companion_cancel.load(Ordering::Acquire));
     }
 
     #[test]

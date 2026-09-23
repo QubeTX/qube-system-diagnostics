@@ -76,6 +76,45 @@ fn render_content(frame: &mut Frame, app: &App) {
     // Render bottom navigation bar
     bottom_bar::render(frame, app, chunks[2]);
 
+    if app.show_companion {
+        let mut lines = vec![
+            "s standard scan · d deep scan · b SpeedQX Quick · B Deep · x cancel · Esc close"
+                .into(),
+        ];
+        if let Some(action) = app.speed_confirmation {
+            lines.push(format!(
+                "Confirm {:?}: up to {} seconds / {} GB payload",
+                action,
+                action.budget_seconds(),
+                action.budget_bytes().unwrap_or(0) / 1_000_000_000
+            ));
+            lines.push(crate::companion::SPEED_NOTICE.into());
+            lines.push(crate::companion::MLAB_NOTICE.into());
+            lines.push(format!(
+                "M toggles M-Lab consent: {} · Y starts this bandwidth-consuming action",
+                if app.mlab_consent { "ENABLED" } else { "OFF" }
+            ));
+        } else {
+            lines.extend(app.companion.state.lines());
+            if app.mode == Some(crate::types::DiagnosticMode::Technician) {
+                if let Some(result) = &app.companion.state.result {
+                    lines.extend(result.detail_lines.iter().cloned());
+                }
+            }
+        }
+        frame.render_widget(ratatui::widgets::Clear, chunks[1]);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(lines.join("\n\n"))
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .scroll((app.inspector_scroll, 0))
+                .block(common::content_block(
+                    "Network companion · monitoring continues",
+                )),
+            chunks[1],
+        );
+        return;
+    }
+
     // Help overlay (on top of everything)
     if app.show_findings {
         let lines = app

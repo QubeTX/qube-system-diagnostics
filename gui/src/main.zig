@@ -1,3 +1,4 @@
+const companion_model = @import("companion.zig");
 const std = @import("std");
 const builtin = @import("builtin");
 const runner = @import("runner");
@@ -60,6 +61,14 @@ pub const Msg = union(enum) {
     select_processes,
     show_cpu_processes,
     show_memory_processes,
+    companion_standard,
+    companion_deep,
+    companion_speed_quick,
+    companion_speed_deep,
+    companion_toggle_mlab,
+    companion_confirm_speed,
+    companion_dismiss_speed,
+    companion_cancel,
     process_filter_edit: canvas.TextInputEvent,
     process_previous_page,
     process_next_page,
@@ -127,6 +136,9 @@ pub const Model = struct {
     process_page_offset: u32 = 0,
     process_matches: u32 = 0,
     process_query_active: bool = false,
+    companion_ui: companion_model.Projection = .{},
+    companion_confirmation: u32 = 0,
+    companion_mlab_consent: bool = false,
     process_filter_buffer: canvas.TextBuffer(64) = .{},
     filtered_process_rows: [projection.max_processes]projection.ProcessRow = [_]projection.ProcessRow{.{}} ** projection.max_processes,
     filtered_process_count: usize = 0,
@@ -185,6 +197,9 @@ pub const Model = struct {
         "process_page_offset",
         "process_matches",
         "process_query_active",
+        "companion_ui",
+        "companion_confirmation",
+        "companion_mlab_consent",
         "processHasPrevious",
         "processHasNext",
         "process_filter_buffer",
@@ -330,6 +345,12 @@ pub const Model = struct {
     }
     pub fn processPreviousDisabled(model: *const Model) bool { return !model.processHasPrevious(); }
     pub fn processNextDisabled(model: *const Model) bool { return !model.processHasNext(); }
+    pub fn companionLines(model: *const Model) []const companion_model.Line { return model.companion_ui.lines(); }
+    pub fn companionDetails(model: *const Model) []const companion_model.DetailLine { return model.companion_ui.details(); }
+    pub fn companionRunning(model: *const Model) bool { return model.companion_ui.running; }
+    pub fn companionConfirming(model: *const Model) bool { return model.companion_confirmation != 0; }
+    pub fn companionBudget(model: *const Model) []const u8 { return if (model.companion_confirmation == 4) "Deep: up to 300 seconds / 20 GB synthetic payload" else "Quick: up to 90 seconds / 5 GB synthetic payload"; }
+    pub fn companionMlabLabel(model: *const Model) []const u8 { return if(model.companion_mlab_consent) "M-Lab consent: enabled" else "M-Lab consent: off"; }
     pub fn processPageNumber(model: *const Model) u32 { return model.process_page_offset / 16 + 1; }
     pub fn processPageCount(model: *const Model) u32 { return @max(1, (model.process_matches +| 15) / 16); }
     pub fn processHasPrevious(model: *const Model) bool { return model.process_page_offset > 0; }
@@ -513,6 +534,18 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .show_memory_processes => {
             selectSection(model, 6);
             setProcessSort(model, .memory);
+        },
+        .companion_standard => requestCompanion(model, 1, false),
+        .companion_deep => requestCompanion(model, 2, false),
+        .companion_cancel => requestCompanion(model, 0, false),
+        .companion_speed_quick => { model.companion_confirmation = 3; model.companion_mlab_consent = false; },
+        .companion_speed_deep => { model.companion_confirmation = 4; model.companion_mlab_consent = false; },
+        .companion_toggle_mlab => { if (model.companion_confirmation != 0) model.companion_mlab_consent = !model.companion_mlab_consent; },
+        .companion_dismiss_speed => { model.companion_confirmation = 0; model.companion_mlab_consent = false; },
+        .companion_confirm_speed => {
+            if (model.companion_confirmation >= 3 and model.companion_confirmation <= 4) requestCompanion(model, model.companion_confirmation, model.companion_mlab_consent);
+            model.companion_confirmation = 0;
+            model.companion_mlab_consent = false;
         },
         .process_filter_edit => |edit| {
             model.process_filter_buffer.apply(edit);
@@ -759,6 +792,15 @@ fn setProcessSort(model: *Model, process_sort: ProcessSort) void {
         return;
     };
     model.status_buffer.set("Process ranking changed · full inventory refresh requested");
+}
+
+fn requestCompanion(model: *Model, action: u32, consent: bool) void {
+    const runtime = active_engine orelse { model.status_buffer.set("The diagnostic engine is unavailable. Monitoring will reconnect independently."); return; };
+    runtime.requestCompanion(action, consent) catch {
+        model.status_buffer.set("The companion is already running or could not accept this request. Cancel or wait for the current action.");
+        return;
+    };
+    model.status_buffer.set(if (action == 0) "Cancelling the companion diagnostic…" else "Starting the requested companion diagnostic…");
 }
 
 fn requestProcessQuery(model: *Model) void {
@@ -1090,6 +1132,7 @@ fn sampleTopic(runtime: *engine.Runtime, model: *Model, allocator: std.mem.Alloc
             model.histories[6].observe(meta.captured_unix_ms,temperature);
             model.histories[7].observe(meta.captured_unix_ms,if(temperature) |t| (t * 9 / 5) + 32 else null);
         },
+        .diagnostics => model.companion_ui.apply(allocator, payload.bytes) catch { model.status_buffer.set("The companion result could not be decoded."); },
         .medium => rebuildConnectionFilter(model),
         .drivers => rebuildDriverFilter(model),
         else => {},

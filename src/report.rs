@@ -52,6 +52,7 @@ pub struct DiagnosticReport {
     pub gpu: crate::collectors::gpu::GpuData,
     pub network: crate::collectors::network::NetworkData,
     pub network_diagnostics: NetworkDiagData,
+    pub companion: crate::companion::State,
     pub processes: crate::collectors::processes::ProcessData,
     pub thermals: crate::collectors::thermals::ThermalData,
     pub drivers: DriverData,
@@ -133,6 +134,7 @@ impl DiagnosticReport {
             gpu: snapshot.gpu.clone(),
             network: snapshot.network.clone(),
             network_diagnostics: snapshot.network_diag.clone(),
+            companion: snapshot.companion.clone(),
             processes: snapshot.processes.clone(),
             thermals: snapshot.thermals.clone(),
             drivers: snapshot.drivers.clone(),
@@ -214,7 +216,9 @@ impl DiagnosticReport {
         value["samples"] = json!(self.samples);
         value["findings"] = json!(self.findings);
         value["disk_activity"] = json!(self.disk_activity);
-        value["companion_results"] = serde_json::Value::Null;
+        value["companion_results"] = self
+            .companion
+            .export(self.privacy.sensitive_values_included);
         if !self.privacy.sensitive_values_included {
             value["privacy"]["redacted_fields"]
                 .as_array_mut()
@@ -587,9 +591,46 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn default_report_redacts_stable_identifiers() {
-        let report = DiagnosticReport::collect(false).await;
+    #[test]
+    fn default_report_redacts_stable_identifiers() {
+        let mut snapshot = SystemSnapshot::default();
+        snapshot.system.hostname = "private-fixture-host".into();
+        snapshot
+            .network
+            .interfaces
+            .push(crate::collectors::network::InterfaceInfo {
+                name: "fixture".into(),
+                ip_addresses: vec!["192.0.2.1".into()],
+                mac_address: "00:11:22:33:44:55".into(),
+                received_bytes: 0,
+                transmitted_bytes: 0,
+                download_rate: 0,
+                upload_rate: 0,
+                is_up: true,
+                operational_state: "up".into(),
+                rate_status: Observation::available("fixture"),
+            });
+        snapshot
+            .disk_health
+            .drives
+            .push(crate::collectors::disk_health::DriveHealth {
+                device_id: "fixture".into(),
+                model: "fixture".into(),
+                serial: Some("private-serial".into()),
+                firmware: None,
+                media_type: Default::default(),
+                health_status: Default::default(),
+                temperature_celsius: None,
+                power_on_hours: None,
+                wear_percent: None,
+                read_errors_total: None,
+                write_errors_total: None,
+                io_stats: None,
+                health_source: "fixture".into(),
+            });
+        let report = DiagnosticReport::from_snapshot(&snapshot, false);
+        assert_eq!(report.network.interfaces.len(), 1);
+        assert_eq!(report.disk_health.drives.len(), 1);
         assert_eq!(report.system.hostname, "[redacted]");
         assert!(report
             .network

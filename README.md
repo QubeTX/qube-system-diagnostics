@@ -350,3 +350,14 @@ telemetry as unsupported.
 PolyForm Noncommercial 1.0.0 - see [LICENSE.md](LICENSE.md).
 
 Built by [QubeTX](https://github.com/QubeTX).
+
+
+### Optional network companion in the unpublished v4 candidate
+
+The terminal's **N** panel and the app's **Network** section can run the installed
+public ND-300 4.0.1 companion. Standard and deep scans explicitly skip speed
+tests. SpeedQX is a separate bandwidth-consuming action with a displayed budget
+and a fresh, optional M-Lab consent choice. Monitoring continues during scans;
+cancellation never invokes network repairs. Unknown companion versions are
+reported separately. Results stay in memory until exported, and redacted exports
+omit imported free-form details. Optional installation is still being qualified.

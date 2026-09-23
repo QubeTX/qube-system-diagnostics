@@ -30,6 +30,8 @@ Rules:
 
 | [0008](0008-reusable-isolated-providers.md) | Reusable isolated providers and session-local caches | Accepted |
 
+| [0009](0009-optional-network-companion.md) | Optional network companion and result privacy | Accepted |
+
 ## Dual-frontend contract pointer
 
 The rules for changing SD-300 across its two frontends — what the TUI and native

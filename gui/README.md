@@ -249,3 +249,14 @@ Histories use bounded timestamped samples. Missing captures produce empty time b
 bar traces avoid connecting across gaps. CPU temperature remains its own series. The TUI
 preference namespace is preserved when the GUI saves its own preferences. These changes
 are in the unpublished v4 implementation and still require final performance qualification.
+
+
+### Optional network companion in the unpublished v4 candidate
+
+The terminal's **N** panel and the app's **Network** section can run the installed
+public ND-300 4.0.1 companion. Standard and deep scans explicitly skip speed
+tests. SpeedQX is a separate bandwidth-consuming action with a displayed budget
+and a fresh, optional M-Lab consent choice. Monitoring continues during scans;
+cancellation never invokes network repairs. Unknown companion versions are
+reported separately. Results stay in memory until exported, and redacted exports
+omit imported free-form details. Optional installation is still being qualified.

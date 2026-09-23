@@ -69,6 +69,7 @@ fn strip_additive_gui_help(text: &str) -> String {
                     "Tab          Next section (Shift+Tab goes back)",
                     "s            Reverse process sort direction",
                     "F            Findings, evidence and next steps",
+                    "N            Optional network diagnostics and SpeedQX",
                 ]
                 .contains(&trimmed)
         })

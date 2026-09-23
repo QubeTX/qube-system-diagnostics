@@ -15,3 +15,5 @@ pub mod ui;
 pub mod update;
 
 pub mod presentation;
+
+pub mod companion;
