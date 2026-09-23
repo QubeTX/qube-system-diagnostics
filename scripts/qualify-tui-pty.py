@@ -42,6 +42,9 @@ class Terminal:
         self.closed = False
         self.job = None
         self.reaped = False
+        self.characters_received = 0
+        self.last_output_at = None
+        self.actions = []
         if os.name == "nt":
             from winpty import Backend, PtyProcess
             spec = importlib.util.spec_from_file_location("sd300_measure", Path(__file__).with_name("measure-tui-windows.py"))
@@ -78,6 +81,8 @@ class Terminal:
                 if not chunk:
                     break
                 with self.lock:
+                    self.characters_received += len(chunk)
+                    self.last_output_at = time.monotonic()
                     self.tail = (self.tail + chunk)[-16384:]
                     self.stream.feed(chunk)
         except (EOFError, OSError):
@@ -106,8 +111,35 @@ class Terminal:
             time.sleep(.002)
         raise AssertionError("Timed out: " + description)
 
+    def diagnostics(self):
+        # Only fixed application labels and structural state may leave this
+        # observer. Never publish arbitrary process/host/connection text.
+        labels = ["Select a diagnostic mode", "User Mode", "Tech Mode", "Overview",
+            "CPU", "Mem", "Disk", "GPU", "Net", "Procs", "Thermals", "Drivers",
+            "Inspector", "Keybindings", "filter", "PAUSED at", "too small",
+            "Network companion", "Export this session", "Sort: Memory descending"]
+        with self.lock:
+            lines = list(self.screen.display)
+            state = {"dimensions":[self.screen.columns,self.screen.lines],
+                "cursor":[self.screen.cursor.x,self.screen.cursor.y],
+                "received_characters":self.characters_received,
+                "last_output_age_ms":None if self.last_output_at is None else (time.monotonic()-self.last_output_at)*1000,
+                "label_rows":{label:[row for row,line in enumerate(lines) if label in line] for label in labels},
+                "restoration_in_tail":"\x1b[?1049l" in self.tail,
+                "reader_error":self.reader_error,"reader_alive":self.reader.is_alive(),
+                "recent_actions":self.actions[-8:]}
+        try:
+            process = psutil.Process(self.pid)
+            state["process_status"] = process.status()
+            state["descendant_count"] = len(process.children(recursive=True))
+        except psutil.Error as error:
+            state["process_query_error"] = type(error).__name__
+        return state
+
     def action(self, keys, predicate, description, timeout=5):
         start = time.perf_counter()
+        self.actions.append(description)
+        self.actions = self.actions[-8:]
         self.write(keys)
         self.wait(predicate, description, timeout)
         return (time.perf_counter() - start) * 1000
@@ -190,7 +222,7 @@ def main():
                     terminal.resize(columns,rows)
                     terminal.wait(lambda lines: len(lines)==rows and len(lines[0])==columns, "resize")
                     for number, label in enumerate(["Overview","CPU","Mem","Disk","GPU","Net","Procs","Thermals","Drivers"],1):
-                        latency = terminal.action(str(number), lambda lines: label in lines[2], "section " + label)
+                        latency = terminal.action(str(number), lambda lines: label in lines[2], f"{mode} {columns}x{rows} section {label}")
                         if columns == 80:
                             terminal.action("\r", contains("Inspector"), "inspect " + label)
                             terminal.action("\r", lambda lines: "Inspector" not in "\n".join(lines), "close inspector")
@@ -255,6 +287,15 @@ def main():
             args.output.parent.mkdir(parents=True,exist_ok=True)
             args.output.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
             print(json.dumps(report,indent=2))
+        except Exception as error:
+            failure = {"schema":1,"passed":False,"platform":os.sys.platform,"ascii":args.ascii,
+                "sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
+                "failure_type":type(error).__name__,"failure":str(error),
+                "completed_sections":results,"terminal":terminal.diagnostics()}
+            args.output.parent.mkdir(parents=True,exist_ok=True)
+            args.output.write_text(json.dumps(failure,indent=2)+"\n",encoding="utf-8")
+            print(json.dumps(failure),file=os.sys.stderr)
+            raise
         finally:
             terminal.close()
 
