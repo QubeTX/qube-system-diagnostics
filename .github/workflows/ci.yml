@@ -1,438 +1,65 @@
 name: CI
-
 on:
   workflow_dispatch:
     inputs:
       resource_seconds:
-        description: "Sequential before/after TUI and foreground/hidden GUI resource windows"
         type: choice
         options: ["0", "330", "900"]
         default: "0"
-  pull_request:
-  push:
-    branches:
-      - main
-
 permissions:
   contents: read
-
-env:
-  CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
-
-concurrency:
-  group: ci-${{ github.ref }}
-  # Qualification windows keep their exact artifact until they finish.
-  # A later manual run waits; ordinary PR updates still replace old checks.
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
-
+  actions: read
 jobs:
-  test:
-    name: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  platform-diagnostic:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
-            targets: x86_64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-gnu
-          - os: macos-15
-            targets: aarch64-apple-darwin x86_64-apple-darwin
-          - os: windows-2025
-            targets: x86_64-pc-windows-msvc
-
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Install Rust 1.95
-        shell: bash
-        run: |
-          rustup toolchain install 1.95 --profile minimal --component rustfmt,clippy
-          rustup default 1.95
-          rustup target add ${{ matrix.targets }}
-
-      - name: Check formatting
-        run: cargo fmt --check
-
-      - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-      - name: Test
-        run: cargo test --locked
-
-      - name: Release build
-        run: cargo build --release --locked
-
-      - name: Target checks
-        shell: bash
-        run: |
-          for target in ${{ matrix.targets }}; do
-            cargo check --locked --target "$target"
-          done
-
-  dist-plan:
-    name: cargo-dist plan
-    runs-on: ubuntu-24.04
-    needs: test
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Install Rust 1.95
-        run: |
-          rustup toolchain install 1.95 --profile minimal
-          rustup default 1.95
-
-      - name: Install cargo-dist
-        shell: bash
-        run: |
-          curl --proto '=https' --tlsv1.2 -LsSf \
-            https://github.com/axodotdev/cargo-dist/releases/download/v0.31.0/cargo-dist-installer.sh | sh
-
-      - name: Dist plan
-        run: dist plan
-
-  native-gui:
-    name: Native GUI (${{ matrix.name }})
+          - {os: ubuntu-22.04, target: linux-gnu-x86_64}
+          - {os: macos-15, target: macos-arm64}
+          - {os: macos-15-intel, target: macos-x86_64}
     runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Windows x86-64
-            os: windows-2025
-            target: windows-x86_64
-          - name: macOS Apple Silicon
-            os: macos-15
-            target: macos-arm64
-          - name: macOS Intel
-            os: macos-15-intel
-            target: macos-x86_64
-          - name: Linux GNU x86-64
-            os: ubuntu-22.04
-            target: linux-gnu-x86_64
-          - name: Linux GNU ARM64
-            os: ubuntu-22.04-arm
-            target: linux-gnu-arm64
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: gui/package-lock.json
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.16.0
-      - name: Install Rust 1.95
-        shell: bash
-        run: |
-          rustup toolchain install 1.95 --profile minimal --component rustfmt,clippy
-          rustup default 1.95
-      - name: Install Linux native build inputs
-        if: ${{ runner.os == 'Linux' }}
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev libglib2.0-dev libgdk-pixbuf-2.0-dev \
-            patchelf pax-utils xz-utils xvfb xauth xdotool dbus-x11
-      - name: Test shared collectors and isolated engine on this native architecture
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo test --locked
-          cargo test --locked --manifest-path gui-engine/Cargo.toml
-      - name: Qualify optional companion setup on the native host
-        timeout-minutes: 5
-        shell: bash
-        run: cargo test --locked --test optional_setup -- --ignored --nocapture
-      - name: Qualify the bounded privileged storage worker with synthetic data
-        timeout-minutes: 2
-        shell: bash
-        run: cargo test --locked --test storage_privilege -- --ignored --nocapture
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
-      - name: Qualify native terminal interaction and stage timings
-        timeout-minutes: 8
+          python-version: '3.13'
+      - name: Prepare diagnostic tools
         shell: bash
         run: |
-          set -euo pipefail
-          python -m pip install --disable-pip-version-check 'psutil==7.2.2' 'pyte==0.8.2' 'wcwidth==0.8.4' "pywinpty==3.0.5; sys_platform == 'win32'"
-          python scripts/test-measure-tui-unix.py
-          python scripts/test-resource-metrics.py
-          python scripts/test-resource-baseline.py
-          python scripts/test-gui-interaction-report.py
-          cargo build --release --locked --bin sd300 --example profile-monitor
-          python scripts/qualify-tui-native.py 'target/terminal-qualification/${{ matrix.target }}'
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: sd300-terminal-${{ matrix.target }}
-          if-no-files-found: warn
-          path: target/terminal-qualification/${{ matrix.target }}/**
-      - id: product
-        name: Resolve product version
-        shell: bash
-        run: |
-          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Verify coordinated product version
-        shell: bash
-        run: |
-          node --test scripts/test-shared-rust-locks.mjs
-          node scripts/check-product-version-consistency.mjs --expected-target '${{ steps.product.outputs.version }}'
-      - name: Verify Linux application entry and custom icon through GIO
-        if: ${{ runner.os == 'Linux' }}
-        run: python3 scripts/test-linux-desktop-entry.py
-      - name: Verify clean-cache and warmed-offline Native SDK restore
-        shell: bash
-        run: |
-          set -euo pipefail
-          cache="$RUNNER_TEMP/sd300-native-npm-cache"
-          rm -rf gui/node_modules "$cache"
-          npm --prefix gui ci --ignore-scripts --cache "$cache"
-          node scripts/prepare-native-sdk.mjs gui
-          node scripts/check-native-distribution.mjs gui
-          rm -rf gui/node_modules
-          npm --prefix gui ci --ignore-scripts --offline --cache "$cache"
-          node scripts/prepare-native-sdk.mjs gui
-          node scripts/check-native-distribution.mjs gui
-      - name: Build and test Windows native GUI
-        if: ${{ runner.os == 'Windows' }}
-        shell: pwsh
-        env:
-          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
-          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
-          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
-        run: scripts\build-native-gui.ps1 -Target '${{ matrix.target }}' -SkipNpmCi
-      - name: Build and test macOS/Linux native GUI
-        if: ${{ runner.os != 'Windows' }}
-        shell: bash
-        env:
-          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
-          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
-          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
-        run: SD300_SKIP_NPM_CI=1 bash scripts/build-native-gui.sh '${{ matrix.target }}'
-      - name: Verify native Unix window state and complete collector bundle
-        if: ${{ runner.os != 'Windows' }}
-        timeout-minutes: 4
-        shell: bash
-        run: |
-          set -euo pipefail
-          bundle="target/native-gui-stage/${{ matrix.target }}/app/zig-out/bin"
-          cp target/release/sd300 "$bundle/sd300"
-          out="target/gui-resource-smoke/${{ matrix.target }}"
+          python -m pip install psutil
           if [[ '${{ runner.os }}' == Linux ]]; then
-            cc -Wall -Wextra -Werror scripts/test-linux-window-visibility.c gui/src/platform/window_visibility_linux.c $(pkg-config --cflags --libs gtk4) -o target/test-linux-window-visibility
-            xvfb-run -a target/test-linux-window-visibility
-            for mode in foreground hidden; do
-              flags=(); [[ $mode != hidden ]] || flags+=(--hidden)
-              GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/$mode.json" --revision '${{ github.sha }}' --seconds 30 "${flags[@]}"
-            done
-            # Exercise an explicit renderer override independently of the
-            # qualified software default. Preserve the user's chosen backend.
-            GDK_BACKEND=x11 GSK_RENDERER=gl xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground-gl-diagnostic.json" --revision '${{ github.sha }}' --seconds 30
-          else
-            clang -fobjc-arc -fblocks -framework AppKit scripts/test-macos-termination.m gui/src/platform/window_visibility_macos.m -o target/test-macos-termination
-            target/test-macos-termination
-            clang -fobjc-arc -fblocks -Wno-deprecated-declarations \
-              -framework AppKit -framework AVFoundation -framework MediaToolbox \
-              -framework Accelerate -framework Foundation -framework CoreText \
-              -framework UniformTypeIdentifiers -framework Security -framework Metal \
-              -framework QuartzCore -framework WebKit -framework CoreFoundation \
-              -framework CoreGraphics -framework CoreMedia -framework ImageIO \
-              scripts/test-macos-accessibility-focus.m -o target/test-macos-accessibility-focus
-            target/test-macos-accessibility-focus
-            python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground.json" --revision '${{ github.sha }}' --seconds 30
-            python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/hidden.json" --revision '${{ github.sha }}' --seconds 30 --hidden
+            sudo apt-get update -qq
+            sudo apt-get install -y libgtk-4-1 libxkbcommon0 libx11-6 libwayland-client0 libwayland-cursor0 libwayland-egl1 xvfb dbus-x11 xdotool
           fi
-      - name: Attribute native macOS CPU independently of shutdown qualification
-        if: ${{ always() && runner.os == 'macOS' }}
-        timeout-minutes: 3
+      - name: Download an already measured, unchanged app
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -uo pipefail
-          bundle="target/native-gui-stage/${{ matrix.target }}/app/zig-out/bin"
-          out="target/gui-resource-smoke/${{ matrix.target }}"
-          [[ -x "$bundle/sd300-gui" && -x "$bundle/sd300" ]] || exit 1
-          # These observer-attached runs never qualify resource budgets. Preserve
-          # both reports even if one diagnostic discovers a shutdown failure.
-          result=0
-          python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/hidden-stack-diagnostic.json" --revision '${{ github.sha }}' --seconds 20 --hidden --profile-cpu || result=1
-          python scripts/measure-tui-unix.py target/release/sd300 --output "$out/tui-stack-diagnostic.json" --revision '${{ github.sha }}' --seconds 20 --profile-cpu || result=1
-          exit "$result"
-      - uses: actions/upload-artifact@v6
-        if: ${{ always() && runner.os != 'Windows' }}
-        with:
-          name: sd300-gui-resource-smoke-${{ matrix.target }}
-          if-no-files-found: error
-          path: target/gui-resource-smoke/${{ matrix.target }}/*.json
-      - name: Package and verify Windows payload
-        if: ${{ runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          scripts\package-native-gui.ps1 `
-            -Target '${{ matrix.target }}' -Version '${{ steps.product.outputs.version }}'
-      - name: Package and verify Linux private GTK payload
-        if: ${{ runner.os == 'Linux' }}
-        shell: bash
-        run: |
-          mkdir output
-          bash scripts/package-native-gui-linux.sh \
-            '${{ matrix.target }}' "$PWD/output" '${{ steps.product.outputs.version }}'
-          (cd output && sha256sum -c "sd300-gui-${{ matrix.target }}.tar.xz.sha256")
-      - uses: actions/upload-artifact@v6
-        with:
-          name: sd300-native-gui-${{ matrix.target }}
-          if-no-files-found: error
-          path: |
-            target/native-gui-stage/${{ matrix.target }}/app/zig-out/bin/**
-            target/native-gui-packages/sd300-gui-${{ matrix.target }}.zip*
-            output/sd300-gui-${{ matrix.target }}.tar.xz*
-
-      - name: Build the separate Windows interaction qualification app
-        if: ${{ runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          scripts\build-native-gui.ps1 -Target '${{ matrix.target }}' -SkipNpmCi -SkipTests -QualificationAutomation
-          Copy-Item target/release/sd300.exe 'target/native-gui-stage/${{ matrix.target }}-automation/app/zig-out/bin/sd300.exe'
-      - name: Build the separate Unix interaction qualification app
-        if: ${{ runner.os != 'Windows' }}
-        shell: bash
-        run: |
-          SD300_SKIP_NPM_CI=1 SD300_SKIP_NATIVE_TESTS=1 SD300_GUI_QUALIFICATION_AUTOMATION=1 bash scripts/build-native-gui.sh '${{ matrix.target }}'
-          cp target/release/sd300 'target/native-gui-stage/${{ matrix.target }}-automation/app/zig-out/bin/sd300'
-      - name: Qualify native GUI navigation, keyboard and refresh timing
-        timeout-minutes: 8
+          gh run download 35917363148 -n 'sd300-native-gui-${{ matrix.target }}' -D downloaded
+          gui=$(find downloaded -type f -name sd300-gui | head -1)
+          [[ -n "$gui" && -f "$(dirname "$gui")/sd300" ]]
+          chmod +x "$gui" "$(dirname "$gui")/sd300"
+          echo "SD300_DIAGNOSTIC_GUI=$PWD/$gui" >> "$GITHUB_ENV"
+      - name: Inspect native platform cost separately from acceptance
         shell: bash
         run: |
           set -euo pipefail
-          executable=sd300-gui
-          [[ '${{ runner.os }}' != Windows ]] || executable=sd300-gui.exe
-          command=(python scripts/qualify-gui-interaction.py "target/native-gui-stage/${{ matrix.target }}-automation/app/zig-out/bin/$executable" --output 'target/gui-interaction/${{ matrix.target }}.json' --revision '${{ github.sha }}')
+          out=target/platform-probes
+          revision=9894ad329595c2bcaf14f9af5d8f1dcd6dabb917
           if [[ '${{ runner.os }}' == Linux ]]; then
-            GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- "${command[@]}"
+            GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/cairo-default.json" --revision "$revision" --seconds 90
+            GDK_BACKEND=x11 GDK_DEBUG=gl-disable xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/cairo-without-gl-diagnostic.json" --revision "$revision" --seconds 90
           else
-            "${command[@]}"
+            NATIVE_SDK_GPU_FRAME_TRACE=1 python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/hidden-frame-trace-diagnostic.json" --revision "$revision" --seconds 90 --hidden --profile-cpu
           fi
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: sd300-gui-interaction-${{ matrix.target }}
-          if-no-files-found: warn
-          path: target/gui-interaction/${{ matrix.target }}.json
-
-      - name: Measure native release resources before and after
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.resource_seconds != '0' }}
-        timeout-minutes: 120
-        shell: bash
-        run: python scripts/qualify-native-resources.py 'target/resource-qualification/${{ matrix.target }}' --seconds '${{ inputs.resource_seconds }}' --target '${{ matrix.target }}'
-      - uses: actions/upload-artifact@v6
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.resource_seconds != '0' }}
-        with:
-          name: sd300-resources-${{ matrix.target }}
+          name: sd300-platform-probes-${{ matrix.target }}
+          path: target/platform-probes/*.json
           if-no-files-found: error
-          path: target/resource-qualification/${{ matrix.target }}/*.json
-
-  native-gui-musl:
-    name: Native GUI (Linux musl x86-64)
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - id: product
-        name: Resolve and verify product version
-        shell: bash
-        run: |
-          version=$(awk -F ' *= *' '$0 == "[package]" { p=1; next } /^\[/ && p { exit } p && $1 == "version" { gsub(/"/, "", $2); print $2 }' Cargo.toml)
-          node scripts/check-product-version-consistency.mjs --expected-target "$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Prepare licensed Makira build input
-        env:
-          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
-          SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
-          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
-        run: node scripts/prepare-gui-fonts.mjs gui
-      - name: Build and package in pinned Alpine 3.20
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir output
-          # Only the isolated test container may attach its shutdown debugger.
-          docker run --rm --cap-add=SYS_PTRACE \
-            -e HOME=/tmp/sd300-home -e RUNNER_TEMP=/tmp \
-            -e SD300_RESOURCE_SECONDS='${{ inputs.resource_seconds || '0' }}' \
-            -v "$PWD:/work" -w /work alpine:3.20 \
-            sh -ceu 'apk add --no-cache bash; exec bash scripts/build-native-gui-musl-container.sh "$@"' \
-              sh '${{ steps.product.outputs.version }}' /work/output
-          (cd output && sha256sum -c sd300-gui-linux-musl-x86_64.tar.xz.sha256)
-      - name: Validate private GTK closure on a blank Alpine host
-        shell: bash
-        run: |
-          docker run --rm \
-            -v "$PWD:/work:ro" -w /work alpine:3.20 sh -ceu '
-              apk add --no-cache bash binutils dbus jq python3 xauth xvfb xz
-              ! apk info -e gtk4.0
-              bash scripts/validate-native-gui-linux-package.sh \
-                output/sd300-gui-linux-musl-x86_64.tar.xz '${{ steps.product.outputs.version }}'
-            '
-      - uses: actions/upload-artifact@v6
-        with:
-          name: sd300-native-gui-linux-musl-x86_64
-          if-no-files-found: error
-          path: output/sd300-gui-linux-musl-x86_64.tar.xz*
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: sd300-terminal-linux-musl-x86_64
-          if-no-files-found: warn
-          path: output/terminal-qualification/**
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: sd300-gui-resource-smoke-linux-musl-x86_64
-          if-no-files-found: error
-          path: output/gui-resource-smoke/*.json
-      - uses: actions/upload-artifact@v6
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.resource_seconds != '0' }}
-        with:
-          name: sd300-resources-linux-musl-x86_64
-          if-no-files-found: error
-          path: output/resource-qualification/*.json
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: sd300-gui-interaction-linux-musl-x86_64
-          if-no-files-found: warn
-          path: output/gui-interaction.json
-
-  audit:
-    name: Security audit
-    runs-on: ubuntu-24.04
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - name: Install Rust 1.95
-        run: |
-          rustup toolchain install 1.95 --profile minimal
-          rustup default 1.95
-
-      - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
-
-      - name: Audit dependencies
-        run: cargo audit

@@ -93,7 +93,9 @@ def topics(root, cli):
     return values
 
 
-def record_window(report, samples, elapsed, known, attribution):
+def record_window(report, samples, elapsed, known, attribution)
+            report["diagnostic_frame_paths"] = dict(frame_paths)
+            report["diagnostic_only"] = True:
     """Retain completed-window observations even when orderly shutdown fails."""
     peak = max(row[0] for row in samples)
     window = max(1, len(samples)//10)
@@ -141,6 +143,8 @@ def main():
               "memory_method": "250 ms summed live descendant RSS; shared mappings count per process"}
     process, result, known = None, None, {}
     stderr_tail = [b""]
+    frame_paths = {}
+    frame_tail = [b""]
     reader = None
     debugger = None
     try:
@@ -167,6 +171,14 @@ def main():
             def drain():
                 while chunk := process.stderr.read(4096):
                     stderr_tail[0] = (stderr_tail[0] + chunk)[-8192:]
+                    frame_tail[0] = (frame_tail[0] + chunk)[-16384:]
+                    lines = frame_tail[0].split(b"\n")
+                    frame_tail[0] = lines.pop()
+                    for line in lines:
+                        for path in (b"present", b"occluded", b"nil-drawable"):
+                            if line.startswith(b"native-sdk: gpu frame-trace path=" + path + b" "):
+                                name = path.decode("ascii")
+                                frame_paths[name] = min(frame_paths.get(name, 0) + 1, 1000000)
             reader = threading.Thread(target=drain, daemon=True)
             reader.start()
             root = psutil.Process(process.pid)
