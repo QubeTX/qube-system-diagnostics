@@ -2,6 +2,12 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [Unreleased]
+
+### Development
+
+- Track the accepted v4 monitoring and qualification plan; refresh the task board bundle while preserving project identity and existing acceptance items.
+
 ## [3.1.3] - 2026-07-25
 
 ### Changed

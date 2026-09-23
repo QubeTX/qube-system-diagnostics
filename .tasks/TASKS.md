@@ -12,6 +12,15 @@
 ## To-Do
 
 ## Active
+- [ ] **Implement and qualify SD-300 v4 monitoring** - accepted operator plan; one public release after local and six-target hosted qualification (ms #v4m) (owner codex) #v4a
+  - [ ] Correct measurement semantics, sampling metadata, and histories
+  - [ ] Isolate slow probes and bound cancellation, output, and shutdown
+  - [ ] Expand Windows, Linux, and macOS providers with deterministic fixtures
+  - [ ] Redesign the adaptive TUI and add guided inspection and filtering
+  - [ ] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup
+  - [ ] Wire GUI parity, versioned exports, settings, and documentation
+  - [ ] Qualify performance, six native targets, and composite lifecycle
+  - [ ] Publish once and verify exact public artifacts and installation
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k
   - [x] Reconstruct the current artwork and Windows icon-delivery failure
     > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.

@@ -8,1528 +8,57 @@
   <link rel="icon" type="image/svg+xml" href="https://cdn.shaughv.com/brand/shaughv/favicons/SHAUGHV-Favicon-Dark.svg" media="(prefers-color-scheme: light)">
   <link rel="icon" type="image/svg+xml" href="https://cdn.shaughv.com/brand/shaughv/favicons/SHAUGHV-Favicon-Light.svg" media="(prefers-color-scheme: dark)">
   <link rel="preconnect" href="https://cdn.shaughv.com" crossorigin>
-  <!-- SHAUGHV fonts: Makira (display/body), IBM Plex Mono (labels/metadata), Unbounded (headlines) -->
-  <link rel="stylesheet" href="https://cdn.shaughv.com/fonts/makira/makira.css">
-  <link rel="stylesheet" href="https://cdn.shaughv.com/fonts/ibm-plex-mono/ibm-plex-mono.css">
-  <link rel="stylesheet" href="https://cdn.shaughv.com/fonts/unbounded/unbounded.css">
-  <!-- SHAUGHV animated brand mark + canonical loader (vanilla drop-ins, inherit currentColor) -->
-  <script defer src="https://cdn.shaughv.com/js/animated-brand-mark.js"></script>
-  <script defer src="https://cdn.shaughv.com/js/shaughv-loader.js"></script>
-  <!-- Theme bootstrap: set surface before first paint to avoid a flash of the wrong theme -->
+  <!-- SHAUGHV fonts: bundled Makira (reading/action) + Gail Rock (state/metadata). -->
+  <link rel="stylesheet" href="./vendor/fonts.css">
+  <script defer src="./vendor/animated-brand-mark.js"></script>
+  <script defer src="./vendor/shaughv-loader.js"></script>
+  <script defer src="./vendor/anime.min.js"></script>
   <script>
     (function () {
-      try {
-        var saved = localStorage.getItem('shaughv-tasks-theme');
-        var dark = saved ? saved === "dark"
-          : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.documentElement.setAttribute('data-theme', 'dark');
-      } catch (e) {}
+      var preference = 'system';
+      try { preference = localStorage.getItem('shaughv-tasks-theme') || 'system'; } catch (_) {}
+      if (!['light', 'dark', 'system'].includes(preference)) preference = 'system';
+      var media = window.matchMedia('(prefers-color-scheme: dark)');
+      window.boardAppearance = { preference: preference, media: media, apply: function () {
+        document.documentElement.dataset.theme = this.preference === 'system'
+          ? (media.matches ? 'dark' : 'light') : this.preference;
+      }};
+      window.boardAppearance.apply();
     })();
   </script>
-  <!-- Tiered asset loader (progressive enhancement; see references/board-server.md "Tiered dependencies").
-       The static CDN stylesheet + script tags above are the file:// + online path. When the board is served
-       over http (SERVER_MODE), this prefers the locally-provisioned /vendor/* copies first so the board
-       renders fully offline, self-healing to the CDN, and finally to system fonts / the built-in motion
-       engine. Behaviour is IDENTICAL at every tier — only the byte source changes. -->
-  <script>
-    (function () {
-      try {
-        var SERVER = location.protocol === 'http:' || location.protocol === 'https:';
-        var head = document.head || document.getElementsByTagName('head')[0];
-        function css(href) { var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; head.appendChild(l); }
-        function js(src, onerror) { var s = document.createElement('script'); s.src = src; if (onerror) s.onerror = onerror; head.appendChild(s); }
-
-        // Fonts — inject the locally-vendored stylesheet AFTER the CDN <link>s already in <head>.
-        // fonts.css is itself local-first → CDN-fallback per @font-face, so the vendored weights win
-        // when present and self-heal to the CDN otherwise; Makira (never bundled) + the system stack
-        // still cover the rest. file:// keeps the CDN links only.
-        if (SERVER) css('/vendor/fonts.css');
-
-        // anime.js — optional alternate driver for the Slot Roll. Local → CDN → leave window.anime
-        // undefined (the built-in CSS driver then runs, with identical motion). Loaded async; the
-        // Slot Roll checks window.anime per-call, so whenever it lands it's picked up — no race.
-        var ANIME_CDN = 'https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.min.js';
-        if (SERVER) js('/vendor/anime.min.js', function () { js(ANIME_CDN); });
-        else js(ANIME_CDN);
-
-        // Brand mark — prefer the vendored drop-in in SERVER_MODE. The CDN <script defer> in <head>
-        // remains for file:// / online; animated-brand-mark.js self-guards customElements.define, so
-        // loading both is safe (first wins). If <shaughv-mark> is still undefined a moment after load
-        // (the true offline floor), register a tiny dependency-free text fallback so the mark/header
-        // still read "SHAUGHV" instead of rendering empty.
-        if (SERVER) js('/vendor/animated-brand-mark.js');
-        setTimeout(function () {
-          if (typeof customElements === 'undefined' || customElements.get('shaughv-mark')) return;
-          try {
-            customElements.define('shaughv-mark', class extends HTMLElement {
-              connectedCallback() {
-                var icon = this.hasAttribute('data-icon-only');
-                this.style.display = 'inline-flex';
-                this.style.alignItems = 'center';
-                this.style.justifyContent = 'center';
-                this.style.fontFamily = 'var(--font-display)';
-                this.style.fontWeight = '700';
-                this.style.lineHeight = '1';
-                this.style.fontSize = icon ? '0.82em' : '0.5em';
-                this.style.letterSpacing = icon ? '0' : '0.04em';
-                if (!this.textContent.trim()) this.textContent = icon ? 'S' : 'SHAUGHV';
-              }
-            });
-          } catch (e) {}
-        }, 1500);
-      } catch (e) {}
-    })();
-  </script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      color-scheme: light;
-      /* SHAUGHV - Vintage edition (cream + sage + olive) */
-      --bg-primary: #F5F5F0;       /* cream-200 - page */
-      --bg-secondary: #EAEAE1;     /* recessed wells / columns */
-      --bg-card: #FAFAF8;          /* cream-100 - cards */
-      --text-primary: #4C4436;     /* olive-dark */
-      --text-secondary: #6C6456;   /* olive-light */
-      --text-muted: rgba(92, 84, 70, 0.58);
-      --accent: #5B8A5B;           /* sage - the action color */
-      --accent-hover: #4A7A4A;     /* sage-dark */
-      --accent-contrast: #FAFAF8;  /* text/icon on accent fills */
-      --accent-tint: rgba(91, 138, 91, 0.10);
-      --border: rgba(92, 84, 70, 0.20);
-      --border-light: rgba(92, 84, 70, 0.10);
-      --shadow: rgba(92, 84, 70, 0.06);
-      --shadow-hover: rgba(92, 84, 70, 0.12);
-      --overlay: rgba(76, 68, 54, 0.42);
-      --font-display: "Unbounded", "Makira", system-ui, sans-serif;
-      --font-body: "Makira", "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-      --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
-      /* SHAUGHV design tokens (brand: square-first, hairline borders, no springs) */
-      --hairline: rgba(92, 84, 70, 0.18);
-      --radius-none: 0;
-      --radius-chip: 9999px;
-      --ease-brutalist: cubic-bezier(0.16, 1, 0.3, 1);
-      --ease-out-cubic: cubic-bezier(0.33, 1, 0.68, 1);
-      --dur-1: 180ms;
-      --dur-2: 300ms;
-      --dur-3: 500ms;
-    }
-
-    [data-theme="dark"] {
-      color-scheme: dark;
-      /* SHAUGHV - Brutalist edition (near-black + brand orange) */
-      --bg-primary: #0B0B0B;
-      --bg-secondary: #161615;
-      --bg-card: #1C1C1A;
-      --text-primary: #FAFAF8;
-      --text-secondary: rgba(250, 250, 248, 0.68);
-      --text-muted: rgba(250, 250, 248, 0.42);
-      --accent: #FF5E1A;           /* brand orange - the live brutalist signal color */
-      --accent-hover: #E54E10;
-      --accent-contrast: #0B0B0B;
-      --accent-tint: rgba(255, 94, 26, 0.12);
-      --border: rgba(250, 250, 248, 0.16);
-      --border-light: rgba(250, 250, 248, 0.08);
-      --shadow: rgba(0, 0, 0, 0.45);
-      --shadow-hover: rgba(0, 0, 0, 0.60);
-      --overlay: rgba(0, 0, 0, 0.62);
-      --hairline: rgba(250, 250, 248, 0.16);
-    }
-
-    body {
-      font-family: var(--font-body);
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      height: 100vh;
-      padding: 20px 24px;
-      line-height: 1.5;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-
-    h1 {
-      font-size: 1.5rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-    }
-
-    h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 12px; color: var(--text-secondary); }
-
-    .header-left {
-      display: flex;
-      align-items: flex-start;
-      gap: 0;
-    }
-
-    .view-toggle {
-      display: flex;
-      gap: 4px;
-      background: var(--bg-secondary);
-      padding: 4px;
-      border-radius: 8px;
-      margin-left: 16px;
-    }
-
-    .view-toggle button {
-      background: transparent;
-      border: none;
-      padding: 6px 14px;
-      font-size: 13px;
-      color: var(--text-muted);
-      border-radius: 6px;
-    }
-
-    .view-toggle button:hover {
-      color: var(--text-primary);
-      background: transparent;
-    }
-
-    .view-toggle button.active {
-      background: var(--bg-card);
-      color: var(--text-primary);
-      box-shadow: 0 1px 3px var(--shadow);
-    }
-
-    .buttons { display: flex; gap: 12px; }
-
-    button {
-      background: var(--bg-card);
-      color: var(--text-primary);
-      border: 1px solid var(--border);
-      padding: 10px 18px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      font-family: inherit;
-      transition: all 0.15s ease;
-    }
-
-    button:hover {
-      background: var(--bg-secondary);
-      border-color: var(--text-muted);
-    }
-
-    button.primary {
-      background: var(--accent);
-      color: var(--accent-contrast);
-      border-color: var(--accent);
-    }
-
-    button.primary:hover {
-      background: var(--accent-hover);
-      border-color: var(--accent-hover);
-    }
-
-    button:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-
-    /* ===== TASKS STYLES ===== */
-
-    .board {
-      display: flex;
-      gap: 24px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      padding-bottom: 24px;
-      flex: 1;
-      min-height: 0;
-      position: relative;
-    }
-
-    .column {
-      background: var(--bg-secondary);
-      border-radius: 12px;
-      min-width: 340px;
-      max-width: 340px;
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      max-height: 100%;
-    }
-
-    .column-header {
-      padding: 16px 18px;
-      font-weight: 600;
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-secondary);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      cursor: grab;
-    }
-
-    .column-header:active {
-      cursor: grabbing;
-    }
-
-    .column.dragging-column {
-      opacity: 0.5;
-    }
-
-    .column-drop-indicator {
-      position: absolute;
-      top: 0;
-      bottom: 24px;
-      width: 4px;
-      background: var(--accent);
-      border-radius: 999px;
-      box-shadow: 0 0 0 1px var(--bg-primary), 0 0 14px var(--accent);
-      pointer-events: none;
-      transform: translateX(-50%);
-      z-index: 20;
-    }
-
-    .column-drop-indicator::before,
-    .column-drop-indicator::after,
-    .drop-indicator::before,
-    .drop-indicator::after {
-      content: '';
-      position: absolute;
-      width: 8px;
-      height: 8px;
-      background: var(--accent);
-      border: 2px solid var(--bg-primary);
-      border-radius: 50%;
-      box-sizing: border-box;
-    }
-
-    .column-drop-indicator::before {
-      top: 0;
-      left: 50%;
-      transform: translate(-50%, -25%);
-    }
-
-    .column-drop-indicator::after {
-      bottom: 0;
-      left: 50%;
-      transform: translate(-50%, 25%);
-    }
-
-    .column-header .count {
-      background: var(--bg-card);
-      padding: 3px 10px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-muted);
-    }
-
-    .cards {
-      flex: 1;
-      overflow-y: auto;
-      padding: 0 12px 12px;
-      min-height: 100px;
-      position: relative;
-    }
-
-    .cards.drag-over {
-      background: var(--accent-tint);
-      border-radius: 8px;
-    }
-
-    .drop-indicator {
-      position: absolute;
-      left: 12px;
-      right: 12px;
-      height: 4px;
-      background: var(--accent);
-      border-radius: 999px;
-      box-shadow: 0 0 0 1px var(--bg-primary), 0 0 10px var(--accent);
-      pointer-events: none;
-      transform: translateY(-50%);
-      z-index: 20;
-    }
-
-    .drop-indicator::before {
-      left: 0;
-      top: 50%;
-      transform: translate(-25%, -50%);
-    }
-
-    .drop-indicator::after {
-      right: 0;
-      top: 50%;
-      transform: translate(25%, -50%);
-    }
-
-    .task-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-light);
-      border-radius: 10px;
-      padding: 14px 16px;
-      margin-bottom: 10px;
-      cursor: grab;
-      transition: all 0.15s ease;
-      box-shadow: 0 1px 3px var(--shadow);
-      position: relative;
-    }
-
-    .task-card:hover {
-      box-shadow: 0 4px 12px var(--shadow-hover);
-      border-color: var(--border);
-    }
-
-    .task-card .add-on-hover {
-      display: none;
-    }
-
-    .task-card:hover .add-on-hover {
-      display: block;
-    }
-
-    .task-card .delete-btn {
-      display: none;
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      padding: 4px 6px;
-      font-size: 14px;
-      line-height: 1;
-      border-radius: 4px;
-    }
-
-    .task-card:hover .delete-btn {
-      display: block;
-    }
-
-    .task-card .delete-btn:hover {
-      background: var(--bg-secondary);
-      color: var(--accent);
-    }
-
-    .task-card.dragging {
-      opacity: 0.5;
-      transform: rotate(2deg);
-    }
-
-    .card-title {
-      font-size: 14px;
-      font-weight: 500;
-      line-height: 1.5;
-      color: var(--text-primary);
-    }
-
-    .card-note {
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-top: 6px;
-      line-height: 1.4;
-      overflow-wrap: break-word;
-      word-break: break-word;
-    }
-
-    .card-subtasks {
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid var(--border-light);
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    .subtask {
-      padding: 3px 0;
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-    }
-
-    .checkbox {
-      width: 18px;
-      height: 18px;
-      min-width: 18px;
-      min-height: 18px;
-      flex-shrink: 0;
-      border: 2px solid var(--border);
-      border-radius: 5px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      vertical-align: middle;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      background: var(--bg-card);
-    }
-
-    .checkbox:hover {
-      border-color: var(--accent);
-    }
-
-    .checkbox.checked {
-      background: var(--accent);
-      border-color: var(--accent);
-    }
-
-    .checkbox.checked::after {
-      content: '';
-      width: 5px;
-      height: 9px;
-      border: solid white;
-      border-width: 0 2px 2px 0;
-      transform: rotate(45deg);
-      margin-bottom: 2px;
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 80px 40px;
-      color: var(--text-muted);
-    }
-
-    .empty-state button {
-      font-size: 16px;
-      padding: 14px 28px;
-      background: var(--accent);
-      border: none;
-      color: var(--accent-contrast);
-    }
-
-    .empty-state button:hover {
-      background: var(--accent-hover);
-    }
-
-    .status-bar {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--text-primary);
-      color: var(--bg-primary);
-      padding: 12px 24px;
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 500;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-      box-shadow: 0 4px 20px rgba(20, 20, 19, 0.15);
-      z-index: 200;
-    }
-
-    .status-bar.visible { opacity: 1; }
-
-    .add-card {
-      padding: 12px;
-    }
-
-    .add-card button {
-      width: 100%;
-      background: transparent;
-      border: 2px dashed var(--border);
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    .add-card button:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-      background: transparent;
-    }
-
-    .new-task-input {
-      width: 100%;
-      background: var(--bg-card);
-      border: 2px solid var(--accent);
-      border-radius: 8px;
-      padding: 12px;
-      color: var(--text-primary);
-      font-size: 14px;
-      font-family: inherit;
-      resize: none;
-    }
-
-    .new-task-input:focus {
-      outline: none;
-    }
-
-    .new-task-input::placeholder {
-      color: var(--text-muted);
-    }
-
-    /* Scrollbar styling */
-    .cards::-webkit-scrollbar,
-    .list-view::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    .cards::-webkit-scrollbar-track,
-    .list-view::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .cards::-webkit-scrollbar-thumb,
-    .list-view::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 3px;
-    }
-
-    .cards::-webkit-scrollbar-thumb:hover,
-    .list-view::-webkit-scrollbar-thumb:hover {
-      background: var(--text-muted);
-    }
-
-    /* List View Styles */
-    .list-view {
-      max-width: 800px;
-      margin: 0 auto;
-      flex: 1;
-      overflow-y: auto;
-      overflow-x: hidden;
-      min-height: 0;
-    }
-
-    .list-section {
-      margin-bottom: 28px;
-    }
-
-    .list-section.drag-over {
-      background: var(--accent-tint);
-      border-radius: 8px;
-      margin: 0 -12px 32px;
-      padding: 0 12px;
-    }
-
-    .list-section-header {
-      font-size: 13px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-secondary);
-      padding: 4px 0;
-      margin-bottom: 6px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .list-section-header .section-title {
-      cursor: pointer;
-    }
-
-    .list-section-header .section-title:hover {
-      color: var(--text-primary);
-    }
-
-    .list-section-header .count {
-      font-size: 12px;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    .list-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      padding: 12px 14px;
-      margin-bottom: 6px;
-      background: var(--bg-card);
-      border: 1px solid var(--border-light);
-      cursor: grab;
-      position: relative;
-      border-radius: 10px;
-      transition: all 0.15s ease;
-      box-shadow: 0 1px 3px var(--shadow);
-    }
-
-    .list-item:active {
-      cursor: grabbing;
-    }
-
-    .list-item:hover {
-      box-shadow: 0 4px 12px var(--shadow-hover);
-      border-color: var(--border);
-    }
-
-    .list-item.dragging {
-      opacity: 0.5;
-      background: var(--bg-secondary);
-    }
-
-    .list-item .checkbox {
-      margin-top: 2px;
-      flex-shrink: 0;
-    }
-
-    .list-item-content {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .list-item-title {
-      font-size: 15px;
-      color: var(--text-primary);
-      line-height: 1.4;
-    }
-
-    .list-item-title.checked {
-      color: var(--text-muted);
-      text-decoration: line-through;
-    }
-
-    .list-item-note {
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-top: 4px;
-      cursor: pointer;
-    }
-
-    .list-item-note:hover {
-      color: var(--text-secondary);
-    }
-
-    .list-item-note.add-note {
-      font-style: italic;
-      display: none;
-    }
-
-    .list-item:hover .list-item-note.add-note {
-      display: block;
-    }
-
-    .list-item-subtasks {
-      margin-top: 8px;
-      padding-left: 2px;
-    }
-
-    .list-item-subtask {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      padding: 3px 0;
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    .list-item-subtask .checkbox {
-      width: 16px;
-      height: 16px;
-      min-width: 16px;
-      min-height: 16px;
-      margin-top: 1px;
-    }
-
-    .list-item-subtask span {
-      cursor: pointer;
-    }
-
-    .list-item-subtask span:hover {
-      color: var(--text-primary);
-    }
-
-    .list-item-add-subtask {
-      font-size: 13px;
-      color: var(--text-muted);
-      font-style: italic;
-      cursor: pointer;
-      padding: 3px 0;
-      padding-left: 24px;
-      display: none;
-    }
-
-    .list-item:hover .list-item-add-subtask {
-      display: block;
-    }
-
-    .list-item-add-subtask:hover {
-      color: var(--accent);
-    }
-
-    .list-item-section {
-      font-size: 11px;
-      color: var(--text-muted);
-      background: var(--bg-secondary);
-      padding: 2px 8px;
-      border-radius: 4px;
-      white-space: nowrap;
-    }
-
-    .list-item-actions {
-      display: none;
-      position: absolute;
-      top: 8px;
-      right: 8px;
-    }
-
-    .list-item:hover .list-item-actions {
-      display: flex;
-      gap: 4px;
-    }
-
-    .list-item-actions button {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      padding: 4px 6px;
-      font-size: 14px;
-      line-height: 1;
-      border-radius: 4px;
-    }
-
-    .list-item-actions button:hover {
-      background: var(--bg-card);
-      color: var(--accent);
-    }
-
-    .list-drop-indicator {
-      height: 3px;
-      background: var(--accent);
-      border-radius: 2px;
-      margin: 2px -12px;
-    }
-
-    .list-add-section {
-      margin-top: 16px;
-      padding: 16px;
-      border: 2px dashed var(--border);
-      border-radius: 8px;
-      text-align: center;
-      cursor: pointer;
-      color: var(--text-muted);
-      font-size: 14px;
-      font-weight: 500;
-      transition: all 0.15s ease;
-    }
-
-    .list-add-section:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .quick-add {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 0;
-    }
-
-    .quick-add-input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      font-size: 15px;
-      color: var(--text-primary);
-      font-family: inherit;
-      outline: none;
-    }
-
-    .quick-add-input::placeholder {
-      color: var(--text-muted);
-    }
-
-    .quick-add-section {
-      font-size: 12px;
-      color: var(--text-muted);
-      background: var(--bg-secondary);
-      padding: 4px 10px;
-      border-radius: 6px;
-      cursor: pointer;
-      border: 1px solid var(--border);
-    }
-
-    .quick-add-section:hover {
-      border-color: var(--accent);
-    }
-
-    .section-picker {
-      position: absolute;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      box-shadow: 0 4px 20px var(--shadow-hover);
-      padding: 4px;
-      z-index: 100;
-    }
-
-    .section-picker button {
-      display: block;
-      width: 100%;
-      text-align: left;
-      padding: 8px 12px;
-      font-size: 13px;
-      background: transparent;
-      border: none;
-      border-radius: 6px;
-    }
-
-    .section-picker button:hover {
-      background: var(--bg-secondary);
-    }
-
-    /* ===== MEMORY STYLES ===== */
-
-    .memory-tabs {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
-      background: var(--bg-secondary);
-      padding: 4px;
-      border-radius: 8px;
-      flex-shrink: 0;
-    }
-
-    .memory-tab {
-      background: transparent;
-      color: var(--text-muted);
-      padding: 8px 16px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      transition: all 0.15s ease;
-      text-transform: capitalize;
-    }
-
-    .memory-tab:hover { color: var(--text-primary); }
-
-    .memory-tab.active {
-      color: var(--text-primary);
-      background: var(--bg-card);
-      box-shadow: 0 1px 3px var(--shadow);
-    }
-
-    .memory-tab .count {
-      background: var(--bg-secondary);
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 11px;
-      margin-left: 6px;
-      color: var(--text-muted);
-    }
-
-    .memory-tab.active .count {
-      background: var(--border-light);
-    }
-
-    .memory-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 16px;
-    }
-
-    .memory-flat-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
-    .memory-flat-table th {
-      text-align: left;
-      padding: 10px 16px;
-      font-weight: 500;
-      color: var(--text-muted);
-      border-bottom: 1px solid var(--border);
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-    }
-
-    .memory-flat-table td {
-      padding: 9px 16px;
-      border-bottom: 1px solid var(--border-light);
-      color: var(--text-primary);
-      line-height: 1.4;
-    }
-
-    .memory-flat-table td:first-child {
-      color: var(--text-muted);
-      font-weight: 500;
-      white-space: nowrap;
-      width: 120px;
-    }
-
-    .memory-flat-table tr:last-child td {
-      border-bottom: none;
-    }
-
-    .memory-flat-table tr:hover td {
-      background: var(--bg-secondary);
-    }
-
-    .memory-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-light);
-      border-radius: 10px;
-      padding: 16px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      box-shadow: 0 1px 3px var(--shadow);
-    }
-
-    .memory-card:hover {
-      border-color: var(--accent);
-      box-shadow: 0 4px 12px var(--shadow-hover);
-    }
-
-    .memory-card-title {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: var(--text-primary);
-    }
-
-    .memory-card-meta {
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-bottom: 8px;
-    }
-
-    .memory-card-preview {
-      font-size: 13px;
-      color: var(--text-secondary);
-      line-height: 1.5;
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-line-clamp: 4;
-      -webkit-box-orient: vertical;
-    }
-
-    .memory-card-fields {
-      margin-top: 10px;
-      font-size: 12px;
-    }
-
-    .memory-card-field {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-
-    .memory-card-field-label {
-      color: var(--text-muted);
-      min-width: 80px;
-    }
-
-    .memory-card-field-value {
-      color: var(--text-secondary);
-    }
-
-    .file-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-light);
-      border-radius: 10px;
-      margin-bottom: 16px;
-      box-shadow: 0 1px 3px var(--shadow);
-    }
-
-    .file-card-header {
-      padding: 16px;
-      border-bottom: 1px solid var(--border-light);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      cursor: pointer;
-    }
-
-    .file-card-header:hover {
-      background: var(--bg-secondary);
-    }
-
-    .file-card-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .file-card-content {
-      padding: 16px;
-      font-size: 13px;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      overflow-y: auto;
-      display: none;
-      color: var(--text-secondary);
-    }
-
-    .file-card-content.expanded {
-      display: block;
-    }
-
-    .stats {
-      display: flex;
-      gap: 16px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
-    }
-
-    .stat {
-      background: var(--bg-card);
-      border: 1px solid var(--border-light);
-      border-radius: 10px;
-      padding: 16px 24px;
-      min-width: 100px;
-      box-shadow: 0 1px 3px var(--shadow);
-    }
-
-    .stat-value {
-      font-size: 28px;
-      font-weight: 600;
-      color: var(--accent);
-    }
-
-    .stat-label {
-      font-size: 12px;
-      color: var(--text-muted);
-      text-transform: capitalize;
-      margin-top: 4px;
-    }
-
-    .search-box {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 16px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-
-    .search-box input {
-      flex: 1;
-      background: transparent;
-      border: none;
-      color: var(--text-primary);
-      font-size: 14px;
-      font-family: inherit;
-      outline: none;
-    }
-
-    .search-box input::placeholder {
-      color: var(--text-muted);
-    }
-
-    .add-btn {
-      background: transparent;
-      border: 2px dashed var(--border);
-      color: var(--text-muted);
-      padding: 40px;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 500;
-    }
-
-    .add-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .markdown-content {
-      line-height: 1.6;
-      color: var(--text-secondary);
-    }
-
-    .markdown-content h1 { font-size: 1.4em; margin: 16px 0 8px; color: var(--text-primary); }
-    .markdown-content h2 { font-size: 1.2em; margin: 14px 0 6px; color: var(--text-primary); }
-    .markdown-content h3 { font-size: 1.1em; margin: 12px 0 4px; color: var(--text-secondary); }
-    .markdown-content p { margin: 8px 0; }
-    .markdown-content ul, .markdown-content ol { margin: 8px 0 8px 20px; }
-    .markdown-content li { margin: 4px 0; }
-    .markdown-content code {
-      background: var(--bg-secondary);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      color: var(--text-primary);
-    }
-    .markdown-content pre {
-      background: var(--bg-secondary);
-      padding: 12px;
-      border-radius: 8px;
-      overflow-x: auto;
-      margin: 8px 0;
-      border: 1px solid var(--border-light);
-    }
-    .markdown-content table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 8px 0;
-      font-size: 13px;
-    }
-    .markdown-content th, .markdown-content td {
-      padding: 12px 16px;
-      text-align: left;
-      border-bottom: 1px solid var(--border-light);
-    }
-    .markdown-content th {
-      background: var(--bg-secondary);
-      font-weight: 600;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-secondary);
-    }
-
-    /* Modal */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: var(--overlay);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .modal-overlay.visible {
-      display: flex;
-    }
-
-    .modal {
-      background: var(--bg-card);
-      border-radius: 12px;
-      width: 90%;
-      max-width: 800px;
-      max-height: 85vh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 20px 60px rgba(20, 20, 19, 0.2);
-    }
-
-    .modal-header {
-      padding: 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .modal-header h3 {
-      font-size: 18px;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .modal-close {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-size: 24px;
-      cursor: pointer;
-      padding: 0;
-      line-height: 1;
-    }
-
-    .modal-close:hover { color: var(--text-primary); }
-
-    .modal-body {
-      padding: 20px;
-      overflow-y: auto;
-      flex: 1;
-    }
-
-    .modal-footer {
-      padding: 16px 20px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-    }
-
-    /* ===== Task modal (rich view + edit) ===== */
-    .modal.task-modal { max-width: 960px; max-height: 88vh; width: 92%; }
-    @media (max-width: 640px) { .modal.task-modal { width: 96%; max-height: 94vh; } }
-    .tm-id { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; color: var(--text-muted); }
-    .tm-title-input { width: 100%; font-size: 19px; font-weight: 600; font-family: var(--font-display, inherit); background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-primary); outline: none; padding: 2px 0; }
-    .tm-title-input:focus { border-bottom-color: var(--accent); }
-    .tm-section-label { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 18px 0 6px; }
-    .tm-section-label:first-child { margin-top: 0; }
-    .tm-note-input { width: 100%; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text-primary); font-family: inherit; font-size: 14px; outline: none; }
-    .tm-note-input:focus { border-color: var(--accent); }
-    .tm-row-between { display: flex; align-items: center; justify-content: space-between; }
-    .tm-btn { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 12px; padding: 4px 12px; cursor: pointer; font-family: inherit; }
-    .tm-btn:hover { border-color: var(--accent); }
-    .tm-desc-rendered { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; font-size: 14px; }
-    /* Read-only description: collapse when tall (Show more/less), expand into a capped, scrollable region. */
-    .tm-desc-rendered.collapsed { position: relative; max-height: 200px; overflow: hidden; }
-    .tm-desc-rendered.expanded { max-height: 50vh; overflow-y: auto; }
-    .tm-desc-rendered.collapsed::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: linear-gradient(to bottom, transparent, var(--bg-primary)); pointer-events: none; border-radius: 0 0 8px 8px; }
-    .tm-desc-more { display: block; width: 100%; margin-top: 8px; text-align: center; }
-    .tm-desc-rendered h2 { font-size: 17px; margin: 12px 0 6px; }
-    .tm-desc-rendered h3 { font-size: 15px; margin: 10px 0 4px; }
-    .tm-desc-rendered h4 { font-size: 13px; margin: 8px 0 4px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-    .tm-desc-rendered p { margin: 6px 0; line-height: 1.55; }
-    .tm-desc-rendered ul, .tm-desc-rendered ol { margin: 6px 0 6px 22px; }
-    .tm-desc-rendered li { margin: 3px 0; line-height: 1.5; }
-    .tm-desc-rendered code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--bg-card); padding: 1px 5px; border-radius: 4px; }
-    .tm-desc-rendered pre { background: var(--bg-card); padding: 10px 12px; border-radius: 6px; overflow-x: auto; }
-    .tm-desc-rendered pre code { background: none; padding: 0; }
-    .tm-desc-rendered a { color: var(--accent); }
-    .tm-ttdr { border-left: 3px solid var(--accent); background: var(--bg-card); padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 0 0 10px; line-height: 1.5; }
-    .tm-desc-edit { width: 100%; min-height: 260px; resize: vertical; background: var(--bg-card); border: 1px solid var(--accent); border-radius: 8px; padding: 12px; color: var(--text-primary); font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.55; outline: none; box-sizing: border-box; }
-    .tm-sub { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 10px; row-gap: 6px; align-items: start; padding: 8px 0; }
-    .tm-sub .tm-sub-text { flex: 1; background: transparent; border: none; border-bottom: 1px solid transparent; color: var(--text-primary); font-family: inherit; font-size: 14px; outline: none; padding: 2px 0; }
-    .tm-sub .tm-sub-text:focus { border-bottom-color: var(--accent); }
-    .tm-sub .tm-sub-text.checked { text-decoration: line-through; color: var(--text-muted); }
-    .tm-sub-desc { grid-column: 2 / 4; width: 100%; min-height: 42px; resize: vertical; box-sizing: border-box; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; color: var(--text-secondary); font-family: inherit; font-size: 12.5px; line-height: 1.45; outline: none; }
-    .tm-sub-desc:focus { border-color: var(--accent); color: var(--text-primary); }
-    .tm-sub-del { color: var(--text-muted); cursor: pointer; background: none; border: none; font-size: 16px; line-height: 1; }
-    .tm-sub-del:hover { color: var(--accent); }
-    .tm-add { color: var(--text-muted); cursor: pointer; font-style: italic; font-size: 13px; padding: 6px 0; }
-    .tm-add:hover { color: var(--accent); }
-    .tm-activity { list-style: none; padding: 0; margin: 0; }
-    .tm-activity li { font-size: 12.5px; color: var(--text-muted); padding: 5px 0; border-bottom: 1px dashed var(--border); font-family: ui-monospace, monospace; }
-    .tm-activity li:last-child { border-bottom: none; }
-    .tm-activity .tm-empty { font-style: italic; }
-    .tm-blocked { color: var(--accent); font-size: 13px; margin-top: 6px; font-family: ui-monospace, monospace; }
-    .task-card { cursor: pointer; }
-
-    /* ===== MILESTONE RAIL (new components follow the brand primitives: square,
-       hairline borders, mono uppercase labels, sage as the single signal color) ===== */
-    .milestone-rail { flex-shrink: 0; margin-bottom: 14px; border: 1px solid var(--hairline); border-radius: var(--radius-none); background: var(--bg-secondary); }
-    .ms-rail-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; }
-    .ms-rail-toggle { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: none; padding: 4px 6px; font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-none); }
-    .ms-rail-toggle:hover { color: var(--text-primary); background: transparent; border: none; }
-    .ms-rail-toggle svg { transition: transform var(--dur-1) var(--ease-out-cubic); }
-    .ms-rail-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
-    .ms-rail-count { color: var(--accent); }
-    .ms-new-btn { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--hairline); border-radius: var(--radius-none); padding: 4px 12px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-secondary); transition: border-color var(--dur-1) var(--ease-out-cubic), color var(--dur-1) var(--ease-out-cubic); }
-    .ms-new-btn:hover { border-color: var(--text-primary); color: var(--text-primary); background: transparent; }
-    .ms-rail-body { display: flex; gap: 10px; overflow-x: auto; padding: 0 10px 10px; }
-    .ms-rail-body.collapsed { display: none; }
-    .ms-card { min-width: 230px; max-width: 260px; flex-shrink: 0; background: var(--bg-card); border: 1px solid var(--hairline); border-radius: var(--radius-none); padding: 10px 12px; cursor: pointer; transition: border-color var(--dur-1) var(--ease-out-cubic); position: relative; }
-    .ms-card:hover { border-color: var(--text-secondary); }
-    .ms-card.filtering { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-    .ms-card.complete .ms-title { text-decoration: line-through; opacity: 0.6; }
-    .ms-card-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-right: 20px; }
-    .ms-index { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); letter-spacing: 0.1em; }
-    .ms-title { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-    .ms-meta { display: flex; justify-content: space-between; align-items: center; margin: 6px 0; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-    .ms-count { color: var(--text-secondary); display: inline-flex; }
-    .ms-progress { height: 4px; background: var(--bg-secondary); border: 1px solid var(--hairline); border-radius: var(--radius-none); overflow: hidden; }
-    .ms-progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width var(--dur-2) var(--ease-out-cubic); }
-    .ms-filter-btn { position: absolute; top: 8px; right: 8px; background: transparent; border: none; padding: 2px; color: var(--text-muted); cursor: pointer; line-height: 0; border-radius: var(--radius-none); }
-    .ms-filter-btn:hover { color: var(--accent); background: transparent; }
-    .ms-card.filtering .ms-filter-btn { color: var(--accent); }
-    .ms-new-card { min-width: 200px; flex-shrink: 0; border: 1px dashed var(--hairline); border-radius: var(--radius-none); background: transparent; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; cursor: pointer; padding: 10px 12px; transition: border-color var(--dur-1) var(--ease-out-cubic), color var(--dur-1) var(--ease-out-cubic); }
-    .ms-new-card:hover { border-color: var(--accent); color: var(--accent); background: transparent; }
-    .ms-new-input { background: var(--bg-card); border: 1px solid var(--accent); border-radius: var(--radius-none); padding: 8px 10px; color: var(--text-primary); font-family: inherit; font-size: 13px; outline: none; min-width: 200px; }
-
-    /* Chips on cards / list rows (pill radius is the brand's chip exception) */
-    .chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--hairline); border-radius: var(--radius-chip); padding: 1px 8px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); max-width: 170px; white-space: nowrap; }
-    .chip .chip-label { overflow: hidden; text-overflow: ellipsis; }
-    .chip.warn { border-color: var(--text-secondary); color: var(--text-secondary); }
-
-    /* Verification checklist rows (task modal) */
-    .tm-verify-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; column-gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px dashed var(--border-light); }
-    .tm-verify-row:last-of-type { border-bottom: none; }
-    .tm-verify-text { background: transparent; border: none; border-bottom: 1px solid transparent; color: var(--text-primary); font-family: inherit; font-size: 14px; outline: none; padding: 2px 0; }
-    .tm-verify-text:focus { border-bottom-color: var(--accent); }
-    .tm-verify-row.passed .tm-verify-text { text-decoration: line-through; color: var(--text-muted); }
-    .tm-verify-row.waived .tm-verify-text { text-decoration: line-through; color: var(--text-muted); font-style: italic; }
-    .tm-waive-btn { background: transparent; border: 1px solid var(--hairline); border-radius: var(--radius-none); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 3px 8px; color: var(--text-muted); cursor: pointer; transition: border-color var(--dur-1) var(--ease-out-cubic), color var(--dur-1) var(--ease-out-cubic); }
-    .tm-waive-btn:hover { border-color: var(--accent); color: var(--accent); background: transparent; }
-    .tm-verify-row.waived .tm-waive-btn { border-color: var(--accent); color: var(--accent); }
-    .tm-waive-stamp { grid-column: 2 / 5; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.02em; padding-bottom: 2px; }
-    .tm-verify-gate { outline: 1px solid var(--accent); outline-offset: 6px; transition: outline-color var(--dur-2) var(--ease-out-cubic); }
-    .tm-count-badge { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; color: var(--text-muted); text-transform: none; }
-    .tm-count-badge .done { color: var(--accent); }
-    .tm-ms-child { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--border-light); font-size: 14px; }
-    .tm-ms-child:last-of-type { border-bottom: none; }
-    .tm-ms-child .sect { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-left: auto; }
-    .tm-ms-child.done .t { text-decoration: line-through; color: var(--text-muted); }
-    .tm-ms-child .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tm-ms-archived { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted); padding: 4px 0; }
-
-    /* Blocked-action shake — short and honest (180ms, no spring) */
-    @keyframes deny-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 65% { transform: translateX(3px); } }
-    .deny-shake { animation: deny-shake var(--dur-1) var(--ease-out-cubic); }
-    @media (prefers-reduced-motion: reduce) { .deny-shake { animation: none; } .ms-progress-fill { transition: none; } }
-
-    /* ===== Freshness / staleness indicator ===== */
-    #freshness { font-family: ui-monospace, monospace; font-size: 11px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; letter-spacing: 0.02em; }
-    #freshness.fresh { color: #fff; background: var(--accent); }
-    #freshness.aging { color: var(--text-muted); background: var(--bg-primary); border: 1px solid var(--border); }
-    #freshness.stale { color: #fff; background: #b3261e; }
-
-    /* Card "just changed" pulse + the FLIP ghost that glides between columns.
-       Outline (border-based depth) + brand easing — no shadow ring, no spring. */
-    @keyframes task-pulse {
-      0%   { outline: 2px solid var(--accent); outline-offset: 0px; }
-      60%  { outline: 2px solid var(--accent); outline-offset: 3px; }
-      100% { outline: 2px solid rgba(0, 0, 0, 0); outline-offset: 5px; }
-    }
-    .task-card.just-changed { animation: task-pulse 0.9s var(--ease-out-cubic); }
-    .task-card.flip-ghost { box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.45); }
-    @media (prefers-reduced-motion: reduce) {
-      .task-card.just-changed { animation: none; }
-    }
-
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .form-group label {
-      display: block;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 6px;
-    }
-
-    .form-group textarea {
-      width: 100%;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
-      color: var(--text-primary);
-      font-size: 13px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      line-height: 1.5;
-      min-height: 300px;
-      resize: vertical;
-    }
-
-    .form-group textarea:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
-
-    /* Tab panel containers */
-    .tab-panel {
-      display: none;
-      flex: 1;
-      min-height: 0;
-      flex-direction: column;
-    }
-
-    .tab-panel.active {
-      display: flex;
-    }
-
-    /* Memory panel scrollable area */
-    .memory-content-area {
-      flex: 1;
-      overflow-y: auto;
-      min-height: 0;
-    }
-
-    .memory-content-area::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    .memory-content-area::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .memory-content-area::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 3px;
-    }
-
-    .memory-content-area::-webkit-scrollbar-thumb:hover {
-      background: var(--text-muted);
-    }
-
-    .file-card-content::-webkit-scrollbar,
-    .modal-body::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    .file-card-content::-webkit-scrollbar-track,
-    .modal-body::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .file-card-content::-webkit-scrollbar-thumb,
-    .modal-body::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 3px;
-    }
-
-    .file-card-content::-webkit-scrollbar-thumb:hover,
-    .modal-body::-webkit-scrollbar-thumb:hover {
-      background: var(--text-muted);
-    }
-
-    /* File path display */
-    .file-path {
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-top: 2px;
-      max-width: min(68vw, 820px);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .file-path.source-mismatch { color: var(--accent); font-weight: 600; }
-    /* ===== SHAUGHV TYPOGRAPHY LAYER ===== */
-    h1, .app-title { font-family: var(--font-display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.005em; }
-    .app-title { font-size: 1.35rem; }
-    .stat-value { font-family: var(--font-display); font-weight: 700; }
-    .column-header, .list-section-header, .memory-tab, .view-toggle button,
-    .memory-flat-table th, .form-group label, .stat-label, .file-path,
-    .quick-add-section, .list-item-section, .count, .markdown-content th {
-      font-family: var(--font-mono);
-    }
-    button { letter-spacing: 0.01em; }
-    ::selection { background: var(--accent); color: var(--accent-contrast); }
-  </style>
+  <link rel="stylesheet" href="./dashboard.css">
 </head>
 <body>
+  <a class="skip-link" href="#tasksPanel">Skip to workspace</a>
   <header>
     <div class="header-left">
-      <shaughv-mark class="brand-mark" data-icon-only aria-label="SHAUGHV" style="height: 44px; width: 44px; margin-right: 16px; flex-shrink: 0; color: var(--accent);"></shaughv-mark>
-      <div>
+      <shaughv-mark class="brand-mark" data-icon-only data-static aria-label="SHAUGHV"></shaughv-mark>
+      <div class="project-heading">
+        <div class="eyebrow">SHAUGHV / workspace</div>
         <h1 id="appTitle" class="app-title">Tasks</h1>
-        <div id="filePath" class="file-path"></div>
-      </div>
-      <div class="view-toggle" id="mainTabToggle">
-        <button id="tasksTabBtn" class="active">Tasks</button>
-        <button id="memoryTabBtn">Memory</button>
-      </div>
-      <div class="view-toggle" id="taskViewToggle">
-        <button id="boardViewBtn" class="active">Board</button>
-        <button id="listViewBtn">List</button>
       </div>
     </div>
-    <div class="buttons">
-      <button id="themeToggle" title="Toggle light / dark" aria-label="Toggle theme">Dark</button>
-      <button id="openTaskBtn">Select File</button>
-      <button id="openMemoryBtn" style="display: none;">Open Folder</button>
-      <button id="saveBtn" class="primary" disabled style="display: none;">Save</button>
-    </div>
+    <label class="theme-control"><span>Appearance</span>
+      <select id="themeToggle" aria-label="Appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+    </label>
   </header>
+  <nav class="workspace-toolbar" aria-label="Workspace">
+    <div class="toolbar-start">
+      <div class="view-toggle" id="mainTabToggle">
+        <button id="tasksTabBtn" class="active">Tasks</button><button id="memoryTabBtn">Memory</button>
+      </div>
+      <div class="view-toggle" id="taskViewToggle" aria-label="Task layout">
+        <button id="boardViewBtn" class="active">Board</button><button id="listViewBtn">List</button>
+      </div>
+    </div>
+    <div class="toolbar-end buttons">
+      <button id="openTaskBtn">Select File</button><button id="openMemoryBtn" style="display:none">Open Folder</button>
+      <button id="saveBtn" class="primary" disabled style="display:none">Save</button>
+    </div>
+  </nav>
 
   <!-- TASKS TAB PANEL -->
-  <div class="tab-panel active" id="tasksPanel">
+  <main class="tab-panel active" id="tasksPanel" tabindex="-1">
     <div class="milestone-rail" id="milestoneRail" style="display: none;"></div>
     <div class="list-view" id="listView" style="display: none;"></div>
     <div class="board" id="board">
@@ -1540,7 +69,7 @@
         <button id="openBtnLarge">Select TASKS.md</button>
       </div>
     </div>
-  </div>
+  </main>
 
   <!-- MEMORY TAB PANEL -->
   <div class="tab-panel" id="memoryPanel">
@@ -1575,20 +104,20 @@
 
   <!-- TASK MODAL (rich view + edit for a single task: description, notes, subtasks, activity) -->
   <div class="modal-overlay" id="taskModalOverlay">
-    <div class="modal task-modal">
+    <div class="modal task-modal" role="dialog" aria-label="Task details">
       <div class="modal-header">
         <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0;">
-          <span class="checkbox" id="tmCheckbox" title="Toggle done" style="flex-shrink:0;"></span>
-          <input type="text" class="tm-title-input" id="tmTitle" placeholder="Task title">
+          <button type="button" aria-label="Toggle task completion" class="checkbox" id="tmCheckbox" title="Toggle done" style="flex-shrink:0;"></button>
+          <textarea rows="1" class="tm-title-input" id="tmTitle" aria-label="Task title" placeholder="Task title"></textarea>
         </div>
         <div style="display:flex; align-items:center; gap:14px; flex-shrink:0;">
           <span class="tm-id" id="tmId"></span>
-          <button class="modal-close" id="tmClose">&times;</button>
+          <button class="modal-close" id="tmClose" aria-label="Close task details">&times;</button>
         </div>
       </div>
       <div class="modal-body" id="tmBody"></div>
       <div class="modal-footer">
-        <button class="tm-btn" id="tmDelete" style="margin-right:auto; color:#b3261e; border-color:#b3261e;">Delete task</button>
+        <button class="tm-btn" id="tmDelete" style="margin-right:auto; color:var(--danger); border-color:var(--danger);">Delete task</button>
         <button id="tmDoneBtn" class="primary">Close</button>
       </div>
     </div>
@@ -1599,8 +128,8 @@
     <div class="modal task-modal">
       <div class="modal-header">
         <div style="display:flex; align-items:center; gap:12px; flex:1; min-width:0;">
-          <span class="checkbox" id="msCheckbox" title="Toggle done" style="flex-shrink:0;"></span>
-          <input type="text" class="tm-title-input" id="msTitle" placeholder="Milestone title">
+          <button type="button" aria-label="Toggle milestone completion" class="checkbox" id="msCheckbox" title="Toggle done" style="flex-shrink:0;"></button>
+          <textarea rows="1" class="tm-title-input" id="msTitle" aria-label="Milestone title" placeholder="Milestone title"></textarea>
         </div>
         <div style="display:flex; align-items:center; gap:14px; flex-shrink:0;">
           <span class="tm-id" id="msId"></span>
@@ -1609,30 +138,32 @@
       </div>
       <div class="modal-body" id="msBody"></div>
       <div class="modal-footer">
-        <button class="tm-btn" id="msDelete" style="margin-right:auto; color:#b3261e; border-color:#b3261e;">Delete milestone</button>
+        <button class="tm-btn" id="msDelete" style="margin-right:auto; color:var(--danger); border-color:var(--danger);">Delete milestone</button>
         <button id="msDoneBtn" class="primary">Close</button>
       </div>
     </div>
   </div>
 
-  <div class="status-bar" id="status"></div>
+  <footer class="workspace-footer"><div id="filePath" class="file-path"></div><span class="footer-label">Tasks / SHAUGHV</span></footer>
+  <div class="status-bar" id="status" role="status" aria-live="polite"></div>
 
   <script>
-    // ===== SHAUGHV THEME TOGGLE =====
+    // Persist explicit choices; System follows the OS while the board is open.
     (function () {
-      var KEY = 'shaughv-tasks-theme';
-      var root = document.documentElement;
-      var btn = document.getElementById('themeToggle');
-      function syncLabel() {
-        if (btn) btn.textContent = root.getAttribute('data-theme') === 'dark' ? 'Light' : 'Dark';
-      }
-      syncLabel();
-      if (btn) btn.addEventListener('click', function () {
-        var isDark = root.getAttribute('data-theme') === 'dark';
-        if (isDark) root.removeAttribute('data-theme');
-        else root.setAttribute('data-theme', 'dark');
-        try { localStorage.setItem(KEY, isDark ? 'light' : 'dark'); } catch (e) {}
-        syncLabel();
+      const control = document.getElementById('themeToggle');
+      const appearance = window.boardAppearance;
+      control.value = appearance.preference;
+      control.addEventListener('change', () => {
+        appearance.preference = control.value;
+        try { localStorage.setItem('shaughv-tasks-theme', control.value); } catch (_) {}
+        appearance.apply();
+      });
+      appearance.media.addEventListener('change', () => appearance.apply());
+      window.addEventListener('storage', event => {
+        if (event.key !== 'shaughv-tasks-theme') return;
+        appearance.preference = ['light','dark'].includes(event.newValue) ? event.newValue : 'system';
+        control.value = appearance.preference;
+        appearance.apply();
       });
     })();
 
@@ -1716,6 +247,7 @@
 
     // ===== INLINE LUCIDE ICONS (ISC) — the brand allows Lucide only, never emoji =====
     const ICON_PATHS = {
+      'search': '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
       'check': '<path d="M20 6 9 17l-5-5"/>',
       'check-square': '<path d="M21 10.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.5"/><path d="m9 11 3 3L22 4"/>',
       'lock': '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
@@ -1741,7 +273,8 @@
     const openMemoryBtn = document.getElementById('openMemoryBtn');
     const saveBtn = document.getElementById('saveBtn');
 
-    function switchMainTab(tab) {
+    async function switchMainTab(tab) {
+      if (tab !== 'tasks' && tmTask) { await closeTaskModal(); if (tmTask) return; }
       activeMainTab = tab;
 
       tasksTabBtn.classList.toggle('active', tab === 'tasks');
@@ -2211,8 +744,12 @@
         } catch (_) { msDetails[m.id] = parseDetail(''); }
       }));
     }
+    let msChangesWaiting = false;
     async function saveMilestonesToServer() {
-      if (!SERVER_MODE || msSaving) return;
+      if (!SERVER_MODE) return;
+      if (msSaving) { msChangesWaiting = true; return; }
+      msChangesWaiting = false;
+      let saved = false;
       msSaving = true;
       try {
         const res = await fetch('/api/milestones', {
@@ -2231,9 +768,11 @@
           showStatus('Milestones changed on disk — reloaded. Re-apply your edit.');
           return;
         }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         lastMilestonesModified = Number(res.headers.get('X-Board-Mtime')) || lastMilestonesModified;
+        saved = true;
       } catch (e) { showStatus('Milestones save failed: ' + e.message); }
-      finally { msSaving = false; }
+      finally { msSaving = false; if (saved && msChangesWaiting) saveMilestonesToServer(); }
     }
     async function saveMilestoneDetail(id, activityNote) {
       if (!SERVER_MODE) return;
@@ -2246,8 +785,10 @@
           body: serializeDetail(d),
         });
         verifyServerResponse(res);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         markBoardUpdated();
-      } catch (e) { showStatus('Milestone detail save failed: ' + e.message); }
+        return true;
+      } catch (e) { showStatus('Milestone detail save failed: ' + e.message); return false; }
     }
     // A milestone mutation: persist MILESTONES.md + refresh the surfaces it shows on.
     function commitMilestones() {
@@ -2265,6 +806,13 @@
       card.className = 'task-card';
       card.draggable = true;
       card.dataset.id = task.id;
+      card.dataset.taskId = task.id;
+      card.tabIndex = 0;
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', task.title);
+      card.addEventListener('keydown', event => {
+        if (event.target === card && ['Enter', ' '].includes(event.key)) { event.preventDefault(); openTaskModal(task); }
+      });
 
       const unmet = unmetNeeds(task);
       const blocked = unmet.length > 0;
@@ -2277,7 +825,7 @@
         <div style="display: flex; align-items: flex-start; gap: 10px;">
           <span class="checkbox ${task.checked ? 'checked' : ''}" style="pointer-events: none; flex-shrink: 0; margin-top: 1px;"></span>
           <div class="card-title" style="flex: 1; min-width: 0; ${task.checked ? 'text-decoration: line-through; opacity: 0.55;' : ''}">${escapeHtml(task.title)}</div>
-          <span title="task id" style="font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-muted); opacity: 0.75; white-space: nowrap;">#${task.id}</span>
+          <span title="task id" style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); opacity: 0.75; white-space: nowrap;">#${task.id}</span>
         </div>
       `;
 
@@ -2472,11 +1020,11 @@
 
     function createColumn(id, title, items) {
       const col = document.createElement('div');
-      col.className = 'column';
+      col.className = 'column'; col.dataset.state = id;
       col.dataset.sectionId = id;
       col.innerHTML = `
         <div class="column-header">
-          <span class="column-title" data-section-id="${id}" style="cursor: pointer;">${title}</span>
+          <span class="column-title" data-section-id="${id}" style="cursor: pointer;">${escapeHtml(title)}</span>
           <span class="count" data-count-for="${id}">${items.length}</span>
         </div>
         <div class="cards" data-column="${id}"></div>
@@ -3008,7 +1556,8 @@
               }
             }
           } else if (kind === 'milestones') {
-            if (!msSaving) loadMilestonesFromServer().then(() => renderTasks());
+            if (msTask || msSaving) { msReloadDeferred = true; showStatus('Milestones changed outside this tab — close the milestone to refresh'); }
+            else loadMilestonesFromServer().then(() => renderTasks());
           } else if (kind === 'detail') {
             // A generic detail event does not identify which task changed. Never replace an
             // open modal: Note/Owner/prerequisite fields can hold unblurred browser drafts
@@ -3065,6 +1614,10 @@
       }
       // Milestone progress derives from task state — keep the rail in step with the board.
       if (SERVER_MODE) renderMilestoneRail();
+      document.querySelectorAll('[data-task-id]').forEach(el => {
+        if (tmTask && el.dataset.taskId === tmTask.id) el.setAttribute('aria-current', 'true');
+        else el.removeAttribute('aria-current');
+      });
     }
 
     function renderBoard() {
@@ -3073,10 +1626,10 @@
         board.appendChild(createColumn(section.id, section.name, visibleTasks(section.id)));
       });
 
-      const addSectionBtn = document.createElement('div');
-      addSectionBtn.className = 'column';
+      const addSectionBtn = document.createElement('button');
+      addSectionBtn.className = 'board-add-section';
       addSectionBtn.dataset.addSection = 'true';
-      addSectionBtn.style.cssText = 'background: transparent; border: 2px dashed var(--border); display: flex; align-items: center; justify-content: center; cursor: pointer; min-height: 120px;';
+      addSectionBtn.type = 'button';
       addSectionBtn.innerHTML = '<span style="color: var(--text-muted); font-size: 14px; font-weight: 500;">+ Add Section</span>';
       addSectionBtn.addEventListener('click', () => startAddingSection(addSectionBtn));
       board.appendChild(addSectionBtn);
@@ -3098,7 +1651,7 @@
       quickAdd.innerHTML = `
         <span class="checkbox" style="opacity: 0.3;"></span>
         <input type="text" class="quick-add-input" placeholder="Add a task..." id="quickAddInput">
-        <span class="quick-add-section" id="quickAddSectionBtn">${sectionName}</span>
+        <button class="quick-add-section" id="quickAddSectionBtn" aria-label="Choose column">${escapeHtml(sectionName)}</button>
       `;
       listView.appendChild(quickAdd);
 
@@ -3139,7 +1692,7 @@
         const header = document.createElement('div');
         header.className = 'list-section-header';
         header.innerHTML = `
-          <span class="section-title" data-section-id="${section.id}">${section.name}</span>
+          <span class="section-title" data-section-id="${section.id}">${escapeHtml(section.name)}</span>
           <span class="count" data-count-for="${section.id}">${sectionTasks.length}</span>
         `;
 
@@ -3217,7 +1770,7 @@
       });
 
       // Add Section button
-      const addSectionBtn = document.createElement('div');
+      const addSectionBtn = document.createElement('button');
       addSectionBtn.className = 'list-add-section';
       addSectionBtn.textContent = '+ Add Section';
       addSectionBtn.addEventListener('click', () => { startAddingListSection(addSectionBtn); });
@@ -3303,6 +1856,12 @@
       item.className = 'list-item';
       item.draggable = true;
       item.dataset.taskId = task.id;
+      item.tabIndex = 0;
+      item.setAttribute('role', 'button');
+      item.setAttribute('aria-label', task.title);
+      item.addEventListener('keydown', event => {
+        if (event.target === item && ['Enter', ' '].includes(event.key)) { event.preventDefault(); openTaskModal(task); }
+      });
 
       let dragged = false;
       item.addEventListener('dragstart', (e) => {
@@ -3532,9 +2091,9 @@
       input.placeholder = 'Section name...';
       input.style.cssText = 'width: 220px; background: var(--bg-card); border: 2px solid var(--accent); border-radius: 8px; padding: 10px 14px; color: var(--text-primary); font-size: 14px; font-family: inherit; outline: none;';
 
-      btn.innerHTML = '';
-      btn.style.cssText = 'background: var(--bg-secondary); border: 2px dashed var(--accent); display: flex; align-items: center; justify-content: center; cursor: default; min-height: 120px; min-width: 340px; border-radius: 12px;';
-      btn.appendChild(input);
+      input.style.flex = '0 0 220px';
+      input.style.alignSelf = 'flex-start';
+      btn.replaceWith(input);
       input.focus();
 
       let saved = false;
@@ -3645,7 +2204,7 @@
     function escapeHtml(text) {
       const div = document.createElement('div');
       div.textContent = text || '';
-      return div.innerHTML;
+      return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function parseMemoryMarkdown(content) {
@@ -3757,6 +2316,7 @@
         method: 'POST', headers: serverWriteHeaders('text/markdown'), body: content,
       });
       verifyServerResponse(res);
+      if (!res.ok) throw new Error('Memory save returned HTTP ' + res.status);
     }
 
     async function loadMemoryDirectory() {
@@ -3856,7 +2416,7 @@
         } else {
           count = files.length;
         }
-        html += `<button class="memory-tab" data-tab="dir-${dirName}">${dirName} <span class="count">${count}</span></button>`;
+        html += `<button class="memory-tab" data-tab="dir-${escapeHtml(dirName)}">${escapeHtml(dirName)} <span class="count">${count}</span></button>`;
       }
 
       memoryTabsContainer.innerHTML = html;
@@ -3869,6 +2429,23 @@
         });
       });
     }
+
+    memoryContentContainer.addEventListener('click', event => {
+      const control = event.target.closest('[data-memory-action]');
+      if (!control) return;
+      const data = control.dataset;
+      if (data.memoryAction === 'edit') openEditModal(data.file, data.type);
+      else if (data.memoryAction === 'open') openFileModal(data.dir, data.file);
+      else if (data.memoryAction === 'new') openNewFileModal(data.dir);
+    });
+    memoryContentContainer.addEventListener('input', event => {
+      if (event.target.hasAttribute('data-memory-search')) filterMemoryDirectory(event.target.dataset.memorySearch, event.target.value);
+    });
+    memoryContentContainer.addEventListener('keydown', event => {
+      if (event.target.matches('.memory-card[role="button"]') && ['Enter', ' '].includes(event.key)) {
+        event.preventDefault(); event.target.click();
+      }
+    });
 
     function renderMemoryContent() {
       const activeTab = memoryTabsContainer.querySelector('.memory-tab.active');
@@ -3907,10 +2484,11 @@
         } else {
           count = files.length;
         }
+        if (!count) continue;
         statsHtml += `
           <div class="stat">
             <div class="stat-value">${count}</div>
-            <div class="stat-label">${dirName}</div>
+            <div class="stat-label">${escapeHtml(dirName)}</div>
           </div>
         `;
       }
@@ -3922,12 +2500,12 @@
         ${statsHtml}
         <div class="file-card">
           <div class="file-card-header" onclick="this.nextElementSibling.classList.toggle('expanded'); this.querySelector('.toggle').textContent = this.nextElementSibling.classList.contains('expanded') ? '\u2212' : '+'">
-            <span class="file-card-title">CLAUDE.md</span>
+            <span class="file-card-title">Working memory</span>
             <span class="toggle" style="color: var(--text-muted);">&minus;</span>
           </div>
           <div class="file-card-content expanded markdown-content">${claudeContent}</div>
         </div>
-        <button onclick="openEditModal('CLAUDE.md', 'claudeMd')" style="margin-top: 10px;">Edit CLAUDE.md</button>
+        <button data-memory-action="edit" data-file="CLAUDE.md" data-type="claudeMd" style="margin-top: 10px;">Edit working memory</button>
       `;
     }
 
@@ -3940,11 +2518,11 @@
       memoryContentContainer.innerHTML = `
         <div class="file-card">
           <div class="file-card-header">
-            <span class="file-card-title">${fileName}</span>
+            <span class="file-card-title">${escapeHtml(fileName)}</span>
           </div>
           <div class="file-card-content expanded markdown-content">${content}</div>
         </div>
-        <button onclick="openEditModal('${fileName}', 'memoryFile')" style="margin-top: 10px;">Edit ${fileName}</button>
+        <button data-memory-action="edit" data-file="${escapeHtml(fileName)}" data-type="memoryFile" style="margin-top: 10px;">Edit ${escapeHtml(fileName)}</button>
       `;
     }
 
@@ -3960,8 +2538,8 @@
       // All other directories use card grid view
       let html = `
         <div class="search-box">
-          <span style="color: var(--text-muted);">&#128269;</span>
-          <input type="text" placeholder="Search ${dirName}..." id="dirSearch" oninput="filterMemoryDirectory('${dirName}', this.value)">
+          ${icon("search", 16)}
+          <input type="text" placeholder="Search ${escapeHtml(dirName)}..." aria-label="Search memory" id="dirSearch" data-memory-search="${escapeHtml(dirName)}">
         </div>
         <div class="memory-grid" id="dirGrid">
       `;
@@ -3995,7 +2573,7 @@
         if (!preview) preview = getPreview(p.rawContent, 100);
 
         html += `
-          <div class="memory-card" onclick="openFileModal('${dirName}', '${file.name}')" data-search="${escapeHtml((title + ' ' + JSON.stringify(p.fields) + ' ' + p.rawContent).toLowerCase())}">
+          <div class="memory-card" role="button" tabindex="0" data-memory-action="open" data-dir="${escapeHtml(dirName)}" data-file="${escapeHtml(file.name)}" data-search="${escapeHtml((title + ' ' + JSON.stringify(p.fields) + ' ' + p.rawContent).toLowerCase())}">
             <div class="memory-card-title">${escapeHtml(title)}</div>
             ${fieldsHtml}
             <div class="memory-card-preview">${escapeHtml(preview)}</div>
@@ -4004,9 +2582,9 @@
       }
 
       html += `
-        <div class="add-btn" onclick="openNewFileModal('${dirName}')">
-          + Add to ${dirName}
-        </div>
+        <button class="add-btn" data-memory-action="new" data-dir="${escapeHtml(dirName)}">
+          + Add to ${escapeHtml(dirName)}
+        </button>
       </div>`;
 
       memoryContentContainer.innerHTML = html;
@@ -4015,8 +2593,8 @@
     function renderMemoryDirectoryFlat(dirName, files) {
       let html = `
         <div class="search-box">
-          <span style="color: var(--text-muted);">&#128269;</span>
-          <input type="text" placeholder="Search ${dirName}..." id="dirSearch" oninput="filterMemoryDirectory('${dirName}', this.value)">
+          ${icon("search", 16)}
+          <input type="text" placeholder="Search ${escapeHtml(dirName)}..." aria-label="Search memory" id="dirSearch" data-memory-search="${escapeHtml(dirName)}">
         </div>
         <div id="dirGrid">
       `;
@@ -4081,42 +2659,7 @@
       });
     }
 
-    function renderMarkdownToHtml(md) {
-      let html = escapeHtml(md);
-
-      html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-      html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-      html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-      html = html.replace(/```[\s\S]*?```/g, match => {
-        const code = match.replace(/```\w*\n?/g, '');
-        return '<pre><code>' + code + '</code></pre>';
-      });
-      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-      html = html.replace(/(\|.+\|\n\|[-| ]+\|\n(?:\|.+\|\n?)+)/g, match => {
-        const lines = match.trim().split('\n');
-        const headers = lines[0].split('|').filter(c => c.trim());
-        const rows = lines.slice(2).map(row => row.split('|').filter(c => c.trim()));
-        let table = '<table><thead><tr>';
-        headers.forEach(h => table += `<th>${h.trim()}</th>`);
-        table += '</tr></thead><tbody>';
-        rows.forEach(row => {
-          table += '<tr>';
-          row.forEach(cell => table += `<td>${cell.trim()}</td>`);
-          table += '</tr>';
-        });
-        table += '</tbody></table>';
-        return table;
-      });
-      html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-      html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-      html = html.replace(/^(?!<[hupol]|<li|<table|<pre)(.+)$/gm, '<p>$1</p>');
-      html = html.replace(/<p><\/p>/g, '');
-      html = html.replace(/<p>\s*<\/p>/g, '');
-
-      return html;
-    }
+    function renderMarkdownToHtml(md) { return md?.trim() ? renderTaskMarkdown(md) : ""; }
 
     // Modal functions
     function openFileModal(dirName, fileName) {
@@ -4197,17 +2740,24 @@
       modalOverlay.dataset.fileName = fileName;
     }
 
-    function closeModal() {
+    let memorySaving = false;
+    async function closeModal() {
+      if (memorySaving || operatorDialogPending) return;
+      const draft = document.getElementById('editContent');
+      if (draft && (draft.value !== draft.defaultValue || document.getElementById('newFileName')?.value)
+          && !(await boardDialog('Discard unsaved memory edits?'))) return;
       modalOverlay.classList.remove('visible');
     }
 
     async function saveModal() {
+      if (memorySaving) return;
       const type = modalOverlay.dataset.type;
       const content = document.getElementById('editContent').value;
-
+      memorySaving = true;
+      document.getElementById('modalSave').disabled = true;
+      document.getElementById('modalBody').inert = true;
       try {
         if (type === 'claudeMd') {
-          memoryData.claudeMd.content = content;
           if (SERVER_MODE) {
             await saveMemoryToServer(memoryData.claudeMd.serverPath, content);
           } else {
@@ -4215,13 +2765,13 @@
             await writable.write(content);
             await writable.close();
           }
-          showStatus('Saved CLAUDE.md');
+          memoryData.claudeMd.content = content;
+          showStatus('Working memory saved');
 
         } else if (type === 'memoryFile') {
           const fileName = modalOverlay.dataset.fileName;
           const file = memoryData.memoryFiles.find(f => f.name === fileName);
           if (file) {
-            file.content = content;
             if (SERVER_MODE) {
               await saveMemoryToServer(file.serverPath, content);
             } else {
@@ -4229,6 +2779,7 @@
               await writable.write(content);
               await writable.close();
             }
+            file.content = content;
             showStatus('Saved ' + fileName);
           }
 
@@ -4238,8 +2789,6 @@
           const files = memoryData.memoryDirs[dirName];
           const file = files.find(f => f.name === fileName);
           if (file) {
-            file.content = content;
-            file.parsed = parseMemoryMarkdown(content);
             if (SERVER_MODE) {
               await saveMemoryToServer(file.serverPath, content);
             } else {
@@ -4247,6 +2796,8 @@
               await writable.write(content);
               await writable.close();
             }
+            file.content = content;
+            file.parsed = parseMemoryMarkdown(content);
             showStatus('Saved ' + fileName);
           }
 
@@ -4286,11 +2837,15 @@
           showStatus('Created ' + fileName);
         }
 
-        closeModal();
+        modalOverlay.classList.remove('visible');
         renderMemory();
 
       } catch (e) {
         showStatus('Error saving: ' + e.message);
+      } finally {
+        memorySaving = false;
+        document.getElementById('modalSave').disabled = false;
+        document.getElementById('modalBody').inert = false;
       }
     }
 
@@ -4307,7 +2862,9 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        if (operatorDialogPending) return;
         if (taskModalOverlay.classList.contains('visible')) closeTaskModal();
+        else if (msModalOverlay.classList.contains('visible')) closeMilestoneModal();
         else closeModal();
       }
     });
@@ -4348,26 +2905,59 @@
 
     // The operator's display name — stamped on contract changes and (optionally) activity, so a
     // shared board's record shows who did what. Asked once, kept in localStorage.
-    function operatorName() {
+    let operatorDialogPending = false;
+    function boardDialog(message, input = false) {
+      if (operatorDialogPending) return Promise.resolve(input ? null : false);
+      operatorDialogPending = true;
+      return new Promise(resolve => {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'app-dialog';
+        dialog.setAttribute('aria-label', input ? 'Record decision' : 'Confirm action');
+        const heading = document.createElement('h2');
+        heading.textContent = input ? 'Record decision' : 'Confirm action';
+        const text = document.createElement('p'); text.textContent = message;
+        const field = document.createElement('input'); field.setAttribute('aria-label', 'Your response');
+        const actions = document.createElement('div'); actions.className = 'app-dialog-actions';
+        const cancel = document.createElement('button'); cancel.textContent = 'Cancel';
+        const accept = document.createElement('button'); accept.textContent = 'Continue'; accept.className = 'primary';
+        actions.append(cancel, accept); dialog.append(heading, text);
+        if (input) dialog.append(field);
+        dialog.append(actions); document.body.append(dialog);
+        let finished = false;
+        function finish(accepted) {
+          if (finished) return; finished = true;
+          const value = accepted ? (input ? field.value : true) : (input ? null : false);
+          dialog.close(); dialog.remove(); operatorDialogPending = false; resolve(value);
+        }
+        cancel.onclick = () => finish(false); accept.onclick = () => finish(true);
+        dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
+        dialog.addEventListener('keydown', event => {
+          event.stopPropagation();
+          if (input && event.key === 'Enter') { event.preventDefault(); finish(true); }
+        });
+        dialog.showModal(); (input ? field : cancel).focus();
+      });
+    }
+    async function operatorName() {
       let n = null;
       try { n = localStorage.getItem('shaughv-tasks-operator'); } catch (_) {}
       if (!n) {
-        n = (prompt('Your name (stamped on waivers so the record shows who made the call):') || 'operator').trim() || 'operator';
+        n = (await boardDialog('Your name (stamped on waivers so the record shows who made the call):', true) || 'operator').trim() || 'operator';
         try { localStorage.setItem('shaughv-tasks-operator', n); } catch (_) {}
       }
       return n;
     }
 
-    function verificationContractChange(action, itemText) {
+    async function verificationContractChange(action, itemText) {
       const label = (itemText || 'this verification check').replace(/\s+/g, ' ').trim();
-      const authorized = confirm(
+      const authorized = await boardDialog(
         `${action} changes the task's acceptance contract.\n\n` +
         `Continue only if you are authorized to make this decision.`
       );
       if (!authorized) return null;
-      const rawReason = prompt(
+      const rawReason = await boardDialog(
         `${action}: "${label}"\n\n` +
-        'Record why this criterion is being removed, deferred, or made not applicable:'
+        'Record why this criterion is being removed, deferred, or made not applicable:', true
       );
       if (rawReason === null) return null;
       const reason = rawReason.replace(/[\r\n()]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -4375,7 +2965,7 @@
         denyNudge('A recorded reason is required for a verification contract change');
         return null;
       }
-      const who = operatorName().replace(/[\r\n()]+/g, ' ').replace(/\s+/g, ' ').trim() || 'operator';
+      const who = (await operatorName()).replace(/[\r\n()]+/g, ' ').replace(/\s+/g, ' ').trim() || 'operator';
       return { who, reason };
     }
 
@@ -4392,21 +2982,28 @@
     // OTHER section is preserved verbatim in its original position, so a round-trip can
     // never drop content the board doesn't understand (## Why, ## Plan, ## Status, …).
     function parseDetail(text) {
-      const lines = (text || '').replace(/\r\n/g, '\n').split('\n');
+      const lines = (text || '').match(/[^\r\n]*(?:\r\n|\n|$)/g)?.filter(Boolean) || [];
       const blocks = [];
       const desc = [];
       let cur = null;
-      for (const line of lines) {
-        const h = line.match(/^##\s+(.+?)\s*$/);
+      let fence = null;
+      for (const rawLine of lines) {
+        const line = rawLine.replace(/\r?\n$/, '');
+        const delimiter = line.match(/^\s*(`{3,}|~{3,})/);
+        const h = !fence && !delimiter ? line.match(/^##\s+(.+?)\s*$/) : null;
+        if (delimiter) {
+          if (!fence) fence = delimiter[1];
+          else if (delimiter[1][0] === fence[0] && delimiter[1].length >= fence.length) fence = null;
+        }
         if (h) {
           const name = h[1];
           const lower = name.toLowerCase();
           const kind = lower === 'verification' ? 'verification'
             : lower === 'activity' ? 'activity'
             : lower === 'completed' ? 'completed' : 'other';
-          cur = { kind, name, lines: [] };
+          cur = { kind, name, lines: [], raw: rawLine };
           blocks.push(cur);
-        } else if (cur) cur.lines.push(line);
+        } else if (cur) { cur.lines.push(line); cur.raw += rawLine; }
         else desc.push(line);
       }
       const verification = [];
@@ -4443,7 +3040,7 @@
       // Start from the original block order; swap in the edited special sections, drop the
       // special sections that emptied, keep everything else verbatim. A file that never had
       // a ## Verification never GAINS an empty one — old files stay byte-stable.
-      const blocks = (d.blocks || []).map(b => ({ kind: b.kind, name: b.name, lines: [...b.lines] }))
+      const blocks = (d.blocks || []).map(b => ({ kind: b.kind, name: b.name, lines: [...b.lines], raw: b.raw }))
         .filter(b => !(b.kind === 'verification' && !vLines.length))
         .filter(b => !(b.kind === 'activity' && !aLines.length))
         .filter(b => !(b.kind === 'completed' && !cLines.length));
@@ -4466,12 +3063,18 @@
       const descText = (d.description || '').trim();
       if (descText) parts.push(descText);
       for (const b of blocks) {
+        if (b.kind === 'other' && typeof b.raw === 'string') { parts.push(b.raw); continue; }
         const body = [...b.lines];
         while (body.length && !body[body.length - 1].trim()) body.pop();
         while (body.length && !body[0].trim()) body.shift();
         parts.push('## ' + b.name + (body.length ? '\n' + body.join('\n') : ''));
       }
-      return (parts.join('\n\n').trim() || '') + '\n';
+      let output = '';
+      for (const part of parts) {
+        if (output && !/(?:\r?\n){2}$/.test(output)) output += /\r?\n$/.test(output) ? '\n' : '\n\n';
+        output += part;
+      }
+      return output.endsWith('\n') ? output : output + '\n';
     }
 
     // Minimal, dependency-free markdown → HTML for the description pane: TT;DR callout,
@@ -4481,17 +3084,41 @@
       if (!md || !md.trim()) {
         return '<p style="color: var(--text-muted); font-style: italic;">No description yet. Click <strong>Edit</strong> to add a plan — lead with a one-glance <code>TT;DR:</code> summary.</p>';
       }
-      const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const inline = (s) => esc(s)
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
-        .replace(/(^|[^_\w])_([^_\n]+)_/g, '$1<em>$2</em>')
-        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      const esc = escapeHtml;
+      const inline = (text) => {
+        const pattern = /`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*\n]+)\*|_([^_\n]+)_/g;
+        let html = '', last = 0;
+        for (const match of text.matchAll(pattern)) {
+          html += esc(text.slice(last, match.index));
+          if (match[1]) html += '<code>' + esc(match[1]) + '</code>';
+          else if (match[2]) {
+            const url = match[3];
+            const safe = /^(https?:|mailto:)/i.test(url) && !/[\x00-\x20\x7f]/.test(url);
+            html += safe ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(match[2]) + '</a>' : esc(match[0]);
+          } else if (match[4]) html += '<strong>' + esc(match[4]) + '</strong>';
+          else html += '<em>' + esc(match[5] || match[6]) + '</em>';
+          last = match.index + match[0].length;
+        }
+        return html + esc(text.slice(last));
+      };
       const lines = md.replace(/\r\n/g, '\n').split('\n');
       let html = '', inList = false, listTag = 'ul', inCode = false, code = '';
       const closeList = () => { if (inList) { html += `</${listTag}>`; inList = false; } };
-      for (const raw of lines) {
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const raw = lines[lineIndex];
+        if (!inCode && raw.trim().startsWith('|') && /^\s*\|?\s*:?-{3,}/.test(lines[lineIndex + 1] || '')) {
+          closeList();
+          const cells = row => row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
+          html += '<div class="table-scroll"><table><thead><tr>' + cells(raw).map(cell => '<th>' + inline(cell) + '</th>').join('') + '</tr></thead><tbody>';
+          lineIndex += 2;
+          while (lineIndex < lines.length && lines[lineIndex].trim().startsWith('|')) {
+            html += '<tr>' + cells(lines[lineIndex]).map(cell => '<td>' + inline(cell) + '</td>').join('') + '</tr>';
+            lineIndex++;
+          }
+          lineIndex--;
+          html += '</tbody></table></div>';
+          continue;
+        }
         if (/^\s*```/.test(raw)) {
           if (inCode) { html += `<pre><code>${esc(code)}</code></pre>`; inCode = false; code = ''; }
           else { closeList(); inCode = true; code = ''; }
@@ -4562,7 +3189,7 @@
         tmDetailMutationEpoch += 1;
         tmDetailLoadEpoch += 1;
         tmCompletionEpoch += 1;
-        taskModalOverlay.classList.remove('visible');
+        hideTaskPanel();
         tmTask = null;
         tmDescEditing = false;
         tmDescDirty = false;
@@ -4666,7 +3293,35 @@
       }
     }
 
+    let taskPanelReturnFocus = null;
+    const taskPanelBreakpoint = window.matchMedia('(max-width: 1199px)');
+    function syncPanelModality() {
+      const modal = taskPanelBreakpoint.matches && taskModalOverlay.classList.contains('visible');
+      const anyModal = modal || [...document.querySelectorAll('.modal-overlay.visible')].some(el => el !== taskModalOverlay);
+      taskModalOverlay.querySelector('[role="dialog"]').setAttribute('aria-modal', String(modal));
+      document.querySelectorAll('body > header, body > nav, body > .tab-panel, body > main, body > footer').forEach(el => { el.inert = anyModal; });
+    }
+    taskPanelBreakpoint.addEventListener('change', syncPanelModality);
+    function hideTaskPanel() {
+      taskModalOverlay.classList.remove('visible');
+      document.body.classList.remove('task-panel-open');
+      document.querySelectorAll('[data-task-id][aria-current]').forEach(el => el.removeAttribute('aria-current'));
+      syncPanelModality();
+      if (taskPanelReturnFocus?.isConnected) taskPanelReturnFocus.focus();
+    }
+    taskModalOverlay.addEventListener('keydown', event => {
+      if (event.key !== 'Tab' || !taskPanelBreakpoint.matches) return;
+      const controls = [...taskModalOverlay.querySelectorAll('button, input, select, textarea, a[href], summary, [tabindex="0"]')]
+        .filter(el => !el.disabled && !el.closest('[inert]') && el.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    });
     async function openTaskModal(task) {
+      if (operatorDialogPending) return;
+      if (tmTask === task) return;
+      if (tmTask) { await closeTaskModal(); if (tmTask) return; }
+      taskPanelReturnFocus = document.activeElement;
       tmDetailMutationEpoch += 1;
       tmDetailLoadEpoch += 1;
       tmCompletionEpoch += 1;
@@ -4683,11 +3338,17 @@
       tmIdEl.textContent = '#' + task.id;
       tmCheckboxEl.className = 'checkbox ' + (task.checked ? 'checked' : '');
       taskModalOverlay.classList.add('visible');
+      document.body.classList.add('task-panel-open');
+      syncPanelModality();
+      document.querySelectorAll('[data-task-id]').forEach(el => el.setAttribute('aria-current', String(el.dataset.taskId === task.id)));
+      sizeTitle(tmTitleEl);
+      document.getElementById('tmClose').focus();
       renderTaskModalBody();
       if (SERVER_MODE || staticTasksFolderVerified) await loadTaskDetailForModal(task);
     }
 
-    function closeTaskModal() {
+    async function closeTaskModal() {
+      if (operatorDialogPending) return;
       if (tmDetailMutationPending || tmCompletionPending || tmDeletionPending) {
         denyNudge(tmDeletionPending
           ? 'Deletion is committing durable state — keep this task open until it finishes'
@@ -4696,14 +3357,14 @@
             : 'A task-detail change is still saving — keep this task open until it finishes');
         return;
       }
-      if (tmDescEditing && tmDescDirty && !confirm('Discard unsaved description edits?')) return;
+      if (tmDescEditing && tmDescDirty && !(await boardDialog('Discard unsaved description edits?'))) return;
       tmDetailMutationEpoch += 1;
       tmDetailLoadEpoch += 1;
       tmCompletionEpoch += 1;
       tmDetailMutationPending = false;
       tmCompletionPending = false;
       tmDeletionPending = false;
-      taskModalOverlay.classList.remove('visible');
+      hideTaskPanel();
       tmTask = null;
       tmDescEditing = false;
       tmDescDirty = false;
@@ -4856,26 +3517,21 @@
       const msOptions = ['<option value="">None</option>'].concat(milestones.map(m =>
         `<option value="${m.id}"${m.id === task.milestoneId ? ' selected' : ''}>${escapeHtml(m.title)}</option>`)).join('');
 
+      const descriptionDraft = tmDescEditing ? document.querySelector('#tmDescArea textarea')?.value : undefined;
       tmBodyEl.innerHTML = `
         ${task.checked ? `<div class="tm-blocked">${icon('lock', 13)} Reopen this task before changing its contract, subtasks, or durable detail.</div>` : ''}
-        <div class="tm-section-label">Column</div>
-        <select id="tmSection" class="tm-note-input">${sectionOptions}</select>
-
-        <div class="tm-section-label">Note <span style="text-transform:none; letter-spacing:0; color:var(--text-muted); font-weight:normal;">— one-line context</span></div>
-        <input type="text" id="tmNote" class="tm-note-input" placeholder="Short context (one line)" value="${escapeHtml(task.note || '')}">
-
-        <div class="tm-section-label">Prerequisites <span style="text-transform:none; letter-spacing:0; color:var(--text-muted); font-weight:normal;">— task ids, comma-separated</span></div>
-        <input type="text" id="tmNeeds" class="tm-note-input" placeholder="#a3f, #k2p" value="${escapeHtml(needsStr)}">
+        <div class="tm-properties">
+          <div class="tm-property"><label for="tmSection">Status</label><select id="tmSection" class="tm-note-input">${sectionOptions}</select></div>
+          <div class="tm-property"><label for="tmOwner">Owner</label><input id="tmOwner" class="tm-note-input" placeholder="Unassigned" value="${escapeHtml(task.owner || '')}"></div>
+          <div class="tm-property wide"><label for="tmNote">Context</label><input id="tmNote" class="tm-note-input" placeholder="One-line context" value="${escapeHtml(task.note || '')}"></div>
+          <div class="tm-property"><label for="tmNeeds">Prerequisites</label><input id="tmNeeds" class="tm-note-input" placeholder="#a3f, #k2p" value="${escapeHtml(needsStr)}"></div>
+          ${SERVER_MODE ? `<div class="tm-property"><label for="tmMilestone">Milestone</label><select id="tmMilestone" class="tm-note-input">${msOptions}</select></div>` : ''}
+        </div>
         ${blockedLine}
-
-        ${SERVER_MODE ? `<div class="tm-section-label">${icon('target', 12)} Milestone</div>
-        <select id="tmMilestone" class="tm-note-input">${msOptions}</select>` : ''}
-
-        <div class="tm-section-label">Owner <span style="text-transform:none; letter-spacing:0; color:var(--text-muted); font-weight:normal;">— who's driving this (shared boards)</span></div>
-        <input type="text" id="tmOwner" class="tm-note-input" placeholder="name" value="${escapeHtml(task.owner || '')}">
 
         <div class="tm-section-label tm-row-between"><span>Description${detailsAvailable ? (detailsReady ? '' : detailsLoading) : detailsUnavailable}</span>${detailsReady ? `<button class="tm-btn" id="tmDescToggle">${tmDescEditing ? 'Preview' : 'Edit'}</button>` : ''}</div>
         <div id="tmDescArea"></div>
+        <div id="tmRecordSections"></div>
 
         <div class="tm-section-label">${icon('check-square', 12)} Subtasks <span class="tm-count-badge" id="tmSubCount"></span></div>
         <div id="tmSubtasks"></div>
@@ -4888,6 +3544,15 @@
       `;
 
       renderTmDesc();
+      if (descriptionDraft !== undefined) { const draft = document.querySelector('#tmDescArea textarea'); if (draft) draft.value = descriptionDraft; }
+      const records = document.getElementById('tmRecordSections');
+      if (detailsReady) for (const block of tmDetail.blocks.filter(block => block.kind === 'other')) {
+        const section = document.createElement('details'); section.className = 'task-record-section'; section.open = true;
+        const heading = document.createElement('summary'); heading.textContent = block.name;
+        const content = document.createElement('div'); content.className = 'tm-desc-rendered';
+        content.innerHTML = renderMarkdownToHtml(block.lines.join('\n'));
+        section.append(heading, content); records.append(section);
+      }
       renderTmSubtasks();
       renderTmVerification();
       renderTmActivity();
@@ -5065,7 +3730,8 @@
       (tmTask.subtasks || []).forEach((st, idx) => {
         const row = document.createElement('div');
         row.className = 'tm-sub';
-        const cb = document.createElement('span');
+        const cb = document.createElement('button');
+        cb.type = 'button'; cb.setAttribute('aria-label', 'Toggle check');
         cb.className = 'checkbox ' + (st.checked ? 'checked' : '');
         cb.style.flexShrink = '0';
         cb.addEventListener('click', () => { st.checked = !st.checked; commitBoard(); renderTmSubtasks(); refreshTmCounts(); });
@@ -5094,7 +3760,7 @@
         row.appendChild(cb); row.appendChild(txt); row.appendChild(del); row.appendChild(desc);
         wrap.appendChild(row);
       });
-      const add = document.createElement('div');
+      const add = document.createElement('button');
       add.className = 'tm-add';
       add.textContent = '+ Add subtask';
       add.addEventListener('click', () => {
@@ -5145,7 +3811,8 @@
       list.forEach((v, idx) => {
         const row = document.createElement('div');
         row.className = 'tm-verify-row' + (v.state === 'passed' ? ' passed' : v.state === 'waived' ? ' waived' : '');
-        const cb = document.createElement('span');
+        const cb = document.createElement('button');
+        cb.type = 'button'; cb.setAttribute('aria-label', 'Toggle check');
         cb.className = 'checkbox ' + (v.state === 'passed' ? 'checked' : '');
         cb.style.flexShrink = '0';
         if (v.state === 'waived') cb.style.opacity = '0.35';
@@ -5188,7 +3855,7 @@
           const before = verificationSnapshot(detail);
           let activityNote = '';
           if (!nv) {
-            const decision = verificationContractChange('Remove verification criterion', v.text);
+            const decision = await verificationContractChange('Remove verification criterion', v.text);
             if (!decision) {
               txt.value = v.text;
               return;
@@ -5197,7 +3864,7 @@
             activityNote = `removed verification criterion "${v.text}" (${decision.who}: ${decision.reason})`;
           } else {
             const oldText = v.text;
-            const decision = verificationContractChange(
+            const decision = await verificationContractChange(
               v.state !== 'open'
                 ? 'Change settled verification criterion'
                 : 'Change verification criterion',
@@ -5238,7 +3905,7 @@
             v.waived = null;
             activityNote = `un-waived "${v.text}"`;
           } else {
-            const decision = verificationContractChange('Waive verification criterion', v.text);
+            const decision = await verificationContractChange('Waive verification criterion', v.text);
             if (!decision) return;
             v.state = 'waived';
             v.waived = `${dateStamp()} — ${decision.who}: ${decision.reason}`;
@@ -5257,7 +3924,7 @@
               : 'A verification change is still saving');
             return;
           }
-          const decision = verificationContractChange('Remove verification criterion', v.text);
+          const decision = await verificationContractChange('Remove verification criterion', v.text);
           if (!decision) return;
           const taskId = tmTask.id;
           const detail = tmDetail;
@@ -5287,7 +3954,7 @@
           : 'Loading checks…';
         wrap.appendChild(hint);
       }
-      const add = document.createElement('div');
+      const add = document.createElement('button');
       add.className = 'tm-add';
       add.textContent = '+ Add criterion';
       add.addEventListener('click', () => {
@@ -5491,7 +4158,7 @@
     });
     tmTitleEl.addEventListener('change', () => {
       if (!tmTask) return;
-      const v = tmTitleEl.value.trim();
+      const v = tmTitleEl.value.replace(/\s+/g, ' ').trim();
       if (v && v !== tmTask.title) { tmTask.title = v; commitBoard(); }
       else tmTitleEl.value = tmTask.title;
     });
@@ -5516,7 +4183,7 @@
         return;
       }
       const t = tmTask;
-      if (!confirm(`Delete "${t.title}"?`)) return;
+      if (!(await boardDialog(`Delete "${t.title}"?`))) return;
       tmDeletionPending = true;
       renderTaskModalBody();
       const deleted = await deleteTask(t);
@@ -5526,7 +4193,7 @@
         tmDetailMutationEpoch += 1;
         tmDetailLoadEpoch += 1;
         tmCompletionEpoch += 1;
-        taskModalOverlay.classList.remove('visible');
+        hideTaskPanel();
         tmTask = null;
         tmDescEditing = false;
         tmDescDirty = false;
@@ -5548,6 +4215,8 @@
 
     let msTask = null;                    // the open milestone (live ref into `milestones`)
     let msDescEditing = false;
+    let msDescSaving = false;
+    let msReloadDeferred = false;
     let msDescExpanded = false;           // read-only description: Show more/less state, survives re-renders
     let railCollapsed = false;
     try { railCollapsed = localStorage.getItem('shaughv-tasks-rail') === 'collapsed'; } catch (_) {}
@@ -5637,6 +4306,7 @@
       newCard.id = 'msNewCard';
       newCard.innerHTML = `${icon('plus', 12)} New milestone`;
       newCard.addEventListener('click', startAddingMilestone);
+      if (!milestones.length) newCard.style.display = 'none';
       bodyEl.appendChild(newCard);
       milestoneRail.appendChild(bodyEl);
 
@@ -5701,7 +4371,10 @@
       input.addEventListener('blur', commit);
     }
 
-    function openMilestoneModal(m) {
+    async function openMilestoneModal(m) {
+      if (operatorDialogPending) return;
+      if (tmTask) { await closeTaskModal(); if (tmTask) return; }
+      if (msTask && msTask !== m) { await closeMilestoneModal(); if (msTask) return; }
       msTask = m;
       msDescEditing = false;
       msDescExpanded = false;
@@ -5709,11 +4382,18 @@
       msIdEl.textContent = '#' + m.id;
       msCheckboxEl.className = 'checkbox ' + (m.checked ? 'checked' : '');
       msModalOverlay.classList.add('visible');
+      sizeTitle(msTitleEl);
       renderMsModalBody();
     }
-    function closeMilestoneModal() {
+    async function closeMilestoneModal() {
+      if (operatorDialogPending) return;
+      if (msDescSaving) { showStatus('The milestone description is still saving'); return; }
+      const draft = document.querySelector('#msDescArea textarea');
+      if (msDescEditing && draft && draft.value !== (msDetails[msTask?.id]?.description || '')
+          && !(await boardDialog('Discard unsaved milestone description edits?'))) return;
       msModalOverlay.classList.remove('visible');
       msTask = null;
+      if (msReloadDeferred) { msReloadDeferred = false; loadMilestonesFromServer().then(renderTasks); }
       msDescEditing = false;
     }
 
@@ -5725,6 +4405,7 @@
       const pct = prog.total ? Math.round((prog.done / prog.total) * 100) : 0;
       const kids = milestoneChildren(m);
 
+      const milestoneDraft = msDescEditing ? document.querySelector('#msDescArea textarea')?.value : undefined;
       msBodyEl.innerHTML = `
         <div class="tm-section-label">Target date</div>
         <input type="date" id="msTarget" class="tm-note-input" value="${m.target || ''}">
@@ -5765,7 +4446,8 @@
         descToggle.style.display = 'none';
         const ta = document.createElement('textarea');
         ta.className = 'tm-desc-edit';
-        ta.value = d.description || '';
+        ta.value = milestoneDraft !== undefined ? milestoneDraft : d.description || '';
+        ta.setAttribute('aria-label', 'Milestone description');
         ta.placeholder = 'TT;DR: the outcome this milestone represents and where it stands.\n\nThen: why these tasks are grouped, what is in and out of scope…';
         descArea.appendChild(ta);
         const actions = document.createElement('div');
@@ -5774,12 +4456,26 @@
         descArea.appendChild(actions);
         ta.focus();
         document.getElementById('msDescCancel').addEventListener('click', () => { msDescEditing = false; renderMsModalBody(); });
-        document.getElementById('msDescSave').addEventListener('click', async () => {
+        document.getElementById('msDescSave').addEventListener('click', async event => {
+          if (msDescSaving) return;
+          msDescSaving = true;
+          event.currentTarget.disabled = true;
+          document.getElementById('msDescCancel').disabled = true;
+          msBodyEl.inert = true;
+          const prior = d.description, priorActivity = [...d.activity];
           d.description = ta.value;
+          const saved = await saveMilestoneDetail(m.id, 'description edited (operator)');
+          msDescSaving = false;
+          msBodyEl.inert = false;
+          if (!saved) {
+            d.description = prior; d.activity = priorActivity;
+            document.getElementById('msDescSave').disabled = false;
+            document.getElementById('msDescCancel').disabled = false;
+            showStatus('Milestone save failed — the draft remains open');
+            return;
+          }
           msDescEditing = false;
-          await saveMilestoneDetail(m.id, 'description edited (operator)');
-          renderMsModalBody();
-          showStatus('Description saved');
+          renderMsModalBody(); showStatus('Description saved');
         });
       } else {
         mountCollapsibleDesc(descArea, d.description, {
@@ -5797,8 +4493,10 @@
         kids.forEach(t => {
           const row = document.createElement('div');
           row.className = 'tm-ms-child' + (t.checked ? ' done' : '');
-          const cb = document.createElement('span');
+          const cb = document.createElement('button');
+        cb.type = 'button'; cb.setAttribute('aria-label', 'Toggle check');
           cb.className = 'checkbox ' + (t.checked ? 'checked' : '');
+          cb.disabled = true; cb.setAttribute('aria-label', t.checked ? 'Task complete' : 'Task open');
           cb.style.cssText = 'pointer-events: none; width: 15px; height: 15px; min-width: 15px; min-height: 15px;';
           const title = document.createElement('span');
           title.className = 't';
@@ -5810,7 +4508,7 @@
           jump.className = 'tm-btn';
           jump.textContent = 'open';
           jump.setAttribute('aria-label', 'Open task ' + t.title);
-          jump.addEventListener('click', (e) => { e.stopPropagation(); closeMilestoneModal(); openTaskModal(t); });
+          jump.addEventListener('click', async (e) => { e.stopPropagation(); await closeMilestoneModal(); if (!msTask) openTaskModal(t); });
           row.appendChild(cb); row.appendChild(title); row.appendChild(sect); row.appendChild(jump);
           childrenEl.appendChild(row);
         });
@@ -5840,7 +4538,8 @@
     }
 
     // Milestone completion is a HARD gate: it cannot close while any child task is open.
-    msCheckboxEl.addEventListener('click', () => {
+    msCheckboxEl.addEventListener('click', async () => {
+      if (msDescSaving) return;
       if (!msTask) return;
       if (!msTask.checked) {
         const open = milestoneOpenChildren(msTask);
@@ -5850,7 +4549,7 @@
         }
         msTask.checked = true;
         msTask.doneDate = dateStamp();
-        saveMilestoneDetail(msTask.id, `milestone completed (${operatorName()})`);
+        saveMilestoneDetail(msTask.id, `milestone completed (${await operatorName()})`);
       } else {
         msTask.checked = false;
         msTask.doneDate = null;
@@ -5861,17 +4560,19 @@
     });
     msTitleEl.addEventListener('change', () => {
       if (!msTask) return;
-      const v = msTitleEl.value.trim();
+      const v = msTitleEl.value.replace(/\s+/g, ' ').trim();
       if (v && v !== msTask.title) { msTask.title = v; commitMilestones(); renderTasks(); }
       else msTitleEl.value = msTask.title;
     });
     document.getElementById('msClose').addEventListener('click', closeMilestoneModal);
     document.getElementById('msDoneBtn').addEventListener('click', closeMilestoneModal);
-    document.getElementById('msDelete').addEventListener('click', () => {
+    document.getElementById('msDelete').addEventListener('click', async () => {
       if (!msTask) return;
+      if (msDescSaving) { showStatus('The milestone description is still saving'); return; }
       const m = msTask;
       const kids = milestoneChildren(m);
-      if (!confirm(`Delete milestone "${m.title}"?${kids.length ? ` Its (ms #${m.id}) tag will be removed from ${kids.length} task${kids.length > 1 ? 's' : ''}.` : ''}`)) return;
+      if (!(await boardDialog(`Delete milestone "${m.title}"?${kids.length ? ` Its (ms #${m.id}) tag will be removed from ${kids.length} task${kids.length > 1 ? 's' : ''}.` : ''}`))) return;
+      msDescEditing = false;
       // Deleting a milestone must not leave dangling (ms #id) tags — untag the children,
       // remove the line, and drop the detail file, all together.
       kids.forEach(t => { t.milestoneId = null; });
@@ -6202,7 +4903,12 @@
     // runtime dep; WAAPI gives the same board-quality motion while keeping this a single
     // self-contained file. A card that changes column glides via a position:fixed ghost
     // clone on a top-level overlay, so it isn't clipped by the column's own scroll box.
-    const prefersReducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let prefersReducedMotion = motionPreference.matches;
+    motionPreference.addEventListener('change', event => {
+      prefersReducedMotion = event.matches;
+      if (event.matches) document.getAnimations().forEach(animation => { try { animation.finish(); } catch (_) { animation.cancel(); } });
+    });
     let lastCardSignatures = new Map();
 
     function taskSignature(t) {
@@ -6282,10 +4988,46 @@
     // board-config.js is a tiny per-board identity companion generated from config.json.
     // Unlike the versioned dashboard bundle it survives app upgrades, and because it is a
     // normal script it works in both localhost and file:// mode.
+    function sizeTitle(input) {
+      input.style.height = 'auto';
+      const height = input.scrollHeight + 2;
+      input.style.height = Math.min(height, 132) + 'px';
+      input.style.overflowY = height > 132 ? 'auto' : 'hidden';
+    }
+    for (const input of [tmTitleEl, msTitleEl]) {
+      input.addEventListener('input', () => sizeTitle(input));
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') { event.preventDefault(); input.blur(); }
+      });
+    }
+    window.addEventListener('resize', () => { if (tmTask) sizeTitle(tmTitleEl); if (msTask) sizeTitle(msTitleEl); });
+
+    for (const overlay of [modalOverlay, msModalOverlay]) {
+      const dialog = overlay.querySelector('.modal');
+      dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true');
+      dialog.setAttribute('aria-label', overlay === modalOverlay ? 'Edit memory' : 'Milestone details');
+      let wasOpen = false, returnFocus = null;
+      const focusable = () => [...dialog.querySelectorAll('button,input,textarea,select,a[href],summary')].filter(el => !el.disabled && el.getClientRects().length);
+      new MutationObserver(() => {
+        const open = overlay.classList.contains('visible');
+        if (open === wasOpen) return;
+        wasOpen = open; syncPanelModality();
+        if (open) { returnFocus = document.activeElement; focusable()[0]?.focus(); }
+        else if (returnFocus?.isConnected) returnFocus.focus();
+      }).observe(overlay, { attributes: true, attributeFilter: ['class'] });
+      overlay.addEventListener('keydown', event => {
+        if (event.key !== 'Tab') return;
+        const controls = focusable(), first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      });
+    }
+
     applyBoardIdentity(window.SHAUGHV_TASKS_BOARD?.boardTitle, '');
     startFreshnessClock();              // live/seconds/stale badge (both modes)
 
     if (SERVER_MODE) {
+      document.getElementById('boardEmptyState').innerHTML = '<div class="brand-loading"><shaughv-loader aria-hidden="true"></shaughv-loader><span>Loading your workspace…</span></div>';
       openTaskBtn.textContent = 'Reload';
       openMemoryBtn.textContent = 'Reload';
       (async () => {

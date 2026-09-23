@@ -6,6 +6,14 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ---
 
+## In progress — more trustworthy monitoring
+
+**Behind the scenes**
+
+- Set up tracked work and verification for the monitoring improvements. The complete update will ship together after testing.
+
+---
+
 ## July 25, 2026 — a lighter, platform-aware app icon
 
 **Improved**
