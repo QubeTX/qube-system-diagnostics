@@ -81,6 +81,25 @@ def descriptor_summary(samples):
             "fd_unavailable_samples": missing}
 
 
+def remaining_family(known, attribution):
+    """Explain shutdown failures without recording executable paths or arguments."""
+    rows = []
+    for identity, child in known.items():
+        try:
+            if not child.is_running():
+                continue
+            row = {"pid": child.pid, "role": attribution.identities.get(identity, {}).get("role", "unknown")}
+            for field, read in (("state", child.status), ("parent_pid", child.ppid)):
+                try:
+                    row[field] = read()
+                except psutil.AccessDenied:
+                    row[field] = None
+            rows.append(row)
+        except psutil.NoSuchProcess:
+            continue
+    return {"count": len(rows), "processes": rows[:32], "truncated": len(rows) > 32}
+
+
 class FamilyAttribution:
     """Bounded role evidence; total wait4 CPU remains the qualification oracle."""
     def __init__(self, root_pid):

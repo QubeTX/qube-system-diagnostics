@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Retain bounded process-role, state and parent evidence when native GUI shutdown leaves a helper, without logging executable paths or arguments. Run macOS CPU attribution independently after failed shutdown qualification so both failures remain diagnosable; profiling never substitutes for resource acceptance.
+
 - Select Cairo before GTK initialization for the Linux CPU-rendered GUI, preserving explicit renderer overrides. Route external quit through close-request so SDK widget cleanup precedes destruction; add native backend, override and lifecycle fixtures. Keep GNU GL smoke coverage and musl repeated shutdown diagnostics. Add separately bounded Apple `sample` runs for native TUI/hidden-GUI CPU attribution; debugger/profile reports cannot qualify performance gates.
 
 - Add an opt-in bounded native backtrace after Alpine GUI shutdown fails with SIGSEGV. Repeat unchanged artifacts only for diagnosis, attach after the sampling window, retain the original failure, and prohibit treating debugger runs as resource qualification. After an unchanged rerun passes, exercise three foreground/hidden shutdown pairs with traces to investigate the intermittent fault.

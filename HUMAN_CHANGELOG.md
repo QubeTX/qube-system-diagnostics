@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: Mac testing now explains which background work remains after the app closes and preserves performance traces even when another check fails, without recording private command lines.
+
 - Linux uses a lighter drawing path by default and closes through the same cleanup as its window button. Explicit rendering choices remain respected. Behind the scenes, native Linux lifecycle checks and separate Mac performance traces investigate the remaining release blockers.
 
 - Behind the scenes: minimal Linux testing now captures where the app fails during shutdown, without mixing debugger results into performance acceptance. Repeated close checks investigate failures that disappear on a single retry.

@@ -6,13 +6,13 @@ Operator accepted the full v4 plan on 2026-09-22. Source audit found unnormalize
 
 ## Scope
 
-All six existing product targets, shared collectors, TUI redesign, GUI data/action parity, schema-2 exports with schema-1 compatibility, optional companion installation, and one public release. Preserve existing lifecycle ownership, credentials, exports, GUI settings, ND-300's independent lifecycle, and open historical operator-visual acceptance. No automatic network repair, helper install, elevation, or throughput tests.
+All six existing product targets, shared collectors, TUI redesign, GUI data/action parity, schema-2 exports with schema-1 compatibility, optional companion installation, and one public release. On 2026-09-23 the operator expanded scope to a similar GUI design/UI/UX review and resulting improvements. Preserve the warm visual identity, existing lifecycle ownership, credentials, exports, GUI settings, ND-300's independent lifecycle, and open historical operator-visual acceptance. No automatic network repair, helper install, elevation, or throughput tests.
 
 ## Plan
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: native Windows TUI resource gates pass; both Mac architectures exceed the CPU gate. Attribute their provider costs and correct hidden GUI startup/visibility before repeat measurement. Serialized inventory reduces Windows GUI peak RSS but its completed 15-minute run still exceeds the limit. Linux role attribution identifies GUI address space as its separate memory cost. Full foreground/hidden/soak and unpublished composite lifecycle qualification remain required.
+Current cycle: native Windows and GNU TUI resource gates pass; both Mac architectures exceed the CPU gate. Capture native Mac stack profiles to locate the remaining work. Windows hosted GUI resource gates pass, while the physical-host foreground run needs the tested renderer allocation change. Native Linux is qualifying the software presentation default and corrected window cleanup. Full foreground/hidden/soak and unpublished composite lifecycle qualification remain required.
 
 ## Impact
 
@@ -32,11 +32,11 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 
 - [x] Clean starting checkout at f83ae42; preceding audit passed 114 Windows library tests
 
-- [ ] Measurement and failure regression fixtures pass
+- [x] Measurement and failure regression fixtures pass
 
 - [ ] Native Windows/macOS/Linux and musl qualification pass
 
-- [ ] TUI and GUI behavior and parity pass
+- [ ] TUI and GUI behavior and parity pass, including the newly requested GUI visual and interaction review
 
 - [ ] Performance and soak acceptance pass
 
@@ -46,9 +46,13 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 
 ## Status
 
-ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations implemented; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
+ACTIVE on codex/sd300-v4-monitoring. Measurement, bounded workers, provider fixtures, adaptive TUI, optional companion/actions and GUI parity are implemented. Remaining work is the expanded GUI design/interaction review, native performance/shutdown qualification, composite lifecycle and final release preparation. Product remains 3.1.3 until the coordinated version update. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: 7d70e77 native GNU and musl GUI checks pass, including repeated Alpine shutdown; both Mac architectures now fail on an unidentified remaining helper after clean root exit (run 35881990821). Retain process role/state/parent evidence and run bounded Mac stack attribution even after the smoke fails. Six resource-harness fixtures and actionlint pass. Next oracle: both Mac shutdown reports and native stacks; no resource gate is relaxed.
+
+- 2026-09-23 — codex: operator explicitly adds GUI design/UI/UX review. Review all sections, both audience modes, navigation/focus, loading and unavailable states, resizing and optional diagnostic consent. Source inspection identifies implementation-facing copy, optional setup ahead of live network data, and stale About metadata; visual findings require fresh captures after the isolated foreground resource window. Reconcile architecture docs and board completion markers with the implemented v4 foundation while retaining open release gates.
 
 - 2026-09-23 — codex: 40ef1d5 Alpine reproduces SIGSEGV without a debugger; its traced repeat exits normally. Source audit establishes that direct GTK destruction skips SDK close-request cleanup and leaves borrowed widgets for later teardown. Route owned quit through normal close and add the callback regression fixture. GNU native reports attribute large RSS to the GUI; use the documented Cairo default for its CPU-pixel path, preserve overrides and require native renderer verification. Apple Silicon remains above CPU/RSS in long windows, so add bounded native stack attribution instead of another speculative collector change. Next oracle: all native GUI lanes, Mac diagnostic stacks and unchanged Windows renderer foreground window.
 

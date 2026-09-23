@@ -19,7 +19,7 @@ import threading
 import time
 
 import psutil
-from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_report
+from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_report, remaining_family
 from shutdown_trace import ShutdownTrace
 from sample_macos import sample_owned_process
 
@@ -227,7 +227,8 @@ def main():
                 report["shutdown_trace"] = debugger.finish()
             if result is None or process.returncode != 0:
                 raise RuntimeError(f"GUI did not shut down cleanly: {process.returncode}")
-            if any(p.is_running() for p in known.values()):
+            report["remaining_processes"] = remaining_family(known, attribution)
+            if report["remaining_processes"]["count"]:
                 raise RuntimeError("Owned helper remains after GUI shutdown")
             cpu = (result.ru_utime + result.ru_stime) / elapsed * 100
             peak = max(row[0] for row in samples)

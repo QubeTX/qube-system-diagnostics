@@ -3,7 +3,7 @@ import runpy
 from pathlib import Path
 from types import SimpleNamespace
 import psutil
-from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_totals
+from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_totals, remaining_family
 
 
 class Process:
@@ -27,6 +27,20 @@ class Process:
 
 
 class Metrics(unittest.TestCase):
+    def test_shutdown_evidence_distinguishes_zombies_without_private_paths(self):
+        child = Process()
+        child.is_running = lambda: True
+        child.status = lambda: psutil.STATUS_ZOMBIE
+        child.ppid = lambda: 1
+        attribution = FamilyAttribution(1)
+        known = {}
+        sample_family(child, known, attribution)
+        report = remaining_family(known, attribution)
+        self.assertEqual(report["count"], 1)
+        self.assertEqual(report["processes"][0]["state"], "zombie")
+        self.assertEqual(report["processes"][0]["role"], "collector:slow")
+        self.assertNotIn("private", str(report))
+
     def test_collector_presence_does_not_inspect_protected_helper_executables(self):
         topics = runpy.run_path(str(Path(__file__).with_name("measure-gui-unix.py")))["topics"]
         def denied():
