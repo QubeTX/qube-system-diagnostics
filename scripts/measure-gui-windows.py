@@ -220,6 +220,7 @@ def main():
             begin = time.monotonic()
             previous_cpu, previous_time = (before.user + before.kernel) / 1e7, begin
             samples, names = [], set()
+            role_cache, peak_roles, peak_bytes = {}, {}, -1
             while time.monotonic() - begin < args.seconds:
                 time.sleep(.25)
                 if not process.is_running():
@@ -228,6 +229,7 @@ def main():
                 cpu = (account.user + account.kernel) / 1e7
                 live = job.pids()
                 rss = private = handles = 0
+                roles = {}
                 for pid in live:
                     try:
                         child = psutil.Process(pid)
@@ -236,9 +238,26 @@ def main():
                         private += memory.private
                         handles += child.num_handles()
                         names.add(child.name())
+                        identity = (pid, child.create_time())
+                        role = role_cache.get(identity)
+                        if role is None:
+                            role = "gui" if pid == process.pid else "helper"
+                            arguments = child.cmdline()
+                            if len(arguments) == 3 and arguments[1] == "collect-server" and arguments[2] in {"slow", "activity", "connections", "diagnostics", "static", "health", "drivers"}:
+                                role = "collector:" + arguments[2]
+                            if len(role_cache) >= 4096:
+                                raise RuntimeError("Observed process identities exceed their bound")
+                            role_cache[identity] = role
+                        row = roles.setdefault(role, {"rss_mib":0, "private_mib":0, "processes":0})
+                        row["rss_mib"] += memory.rss/2**20
+                        row["private_mib"] += memory.private/2**20
+                        row["processes"] += 1
                     except psutil.NoSuchProcess:
                         pass
                 samples.append(((cpu-previous_cpu)/(now-previous_time)*100, rss/2**20, private/2**20, handles, len(live)))
+                if rss > peak_bytes:
+                    peak_bytes, peak_roles = rss, roles
+                    report["rss_peak_elapsed_seconds"] = now-begin
                 previous_cpu, previous_time = cpu, now
             after = job.accounting()
             elapsed = time.monotonic() - begin
@@ -249,6 +268,7 @@ def main():
             report.update(measured_seconds=elapsed, samples=len(samples), cpu_percent_one_core=cpu,
                 cpu_interval_p95=sorted(row[0] for row in samples)[int(.95*(len(samples)-1))],
                 rss_mib_max=peak_rss, private_mib_max=peak_private,
+                rss_peak_roles=peak_roles,
                 rss_last_window_delta=mean(samples[-window:],1)-mean(samples[:window],1),
                 private_last_window_delta=mean(samples[-window:],2)-mean(samples[:window],2),
                 handles_max=max(row[3] for row in samples), process_count_max=max(row[4] for row in samples),

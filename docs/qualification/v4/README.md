@@ -97,6 +97,13 @@ and owned-process accounting are in `candidate-native-pdh-tui-cadence.json`.
 
 ## Windows GUI process-family measurements
 
+The first full 15-minute foreground Thermals run of aligned 866bebb bytes passes
+CPU at 1.17 percent and private memory at 257.7 MiB, but fails summed RSS at
+178.7 MiB with eight live processes. It shuts down normally with no owned
+children. `candidate-aligned-gui-foreground-15m.json` retains the failure; hidden
+and soak windows were not started after the failed gate. The next unchanged
+measurement adds peak-role attribution before selecting a product fix.
+
 The native Unix GUI smoke harness verifies complete bundle identity, expected
 workers, boundary window visibility and socket-driven normal shutdown. macOS
 counts on-screen layer-zero windows through CoreGraphics without capturing their

@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Attribute Windows GUI peak working set to bounded process roles after the first full foreground run passes CPU/private memory but exceeds the RSS gate. Retain the failed result and repeat unchanged artifacts before choosing a product optimization.
+
 - Extend opt-in native before/after resource qualification to both GUI visibility profiles. Verify immutable public GUI baseline hashes, archive bounds and source equivalence; distinguish the legacy in-process collector topology and retain complete-bundle candidate gates.
 
 - Scope Git checkout trust to the mounted source for Alpine qualification commands, preserving global configuration while allowing exact candidate/baseline identity checks across container UID boundaries.
