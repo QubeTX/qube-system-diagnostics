@@ -17,7 +17,7 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "346b26bb366718740b929b3a758ab653f5f53904fd70e6c3a8b270958aa28ced",
+  patchHash: "90059fd2ec71b69cb37aab16cadcd266d4916dd4c9031062450d5962483fee60",
 };
 
 const files = new Map([
@@ -32,7 +32,7 @@ const files = new Map([
   ["src/platform/windows/root.zig", ["76b0c53e8f217ce177d1b4c4c5c7c3029deb26e3984706b1087785b1be404e30", "09b1119e6212d12ba366292d05fca8586c9a0ee9f6c3c1a906f3395526160721"]],
   ["src/platform/windows/webview2_host.cpp", ["93d9843a411de4364310bbd4f87be19381c085828152b1c975249064d0c6e8a3", "acb9d381ed51d307dff9aa1430e8e0e0a07f4e6c93f088185afdbce901a2ddc7"]],
   ["src/primitives/canvas/reference_memo.zig", ["ebb7d49035d993b11b30c784e362f9cb12ed625a5e6ce19a44059bb20b34d592", "ea69ec3d6f4024062f4ac8aad88b4482258c8c0f4328dae7dcc33b89621b8196"]],
-  ["src/primitives/canvas/reference.zig", ["56ef9cec4f76ee6cbff8a56dc5f579d3b9ee2daa79ad4cdb1f40073c3a053ecb", "cf6068c5e7d2b9ffc4c8d28940be822348bf441646739e5b74238d433936fa8b"]],
+  ["src/primitives/canvas/reference.zig", ["56ef9cec4f76ee6cbff8a56dc5f579d3b9ee2daa79ad4cdb1f40073c3a053ecb", "0d913c9a0bfb1d2ead4ce07db2e93dd9089faf06443b7e1a2223f6c6551d8abd"]],
   ["src/primitives/canvas/reference_tests.zig", ["3accd42966c9465b28859cd73a33684619926d18082a32f7c6faac8b0f3b326a", "55a3e981de470b10ff67821e978e476eecab6fd6f607cc3945b30a81a6014f60"]],
   ["src/runtime/bridge_permission_tests.zig", ["d048b23298d75c225476e2708c695c4bb4feca26c09131648d13112067cce9c1", "e083b02a70108f669077306efcd564bd6b3de37c1f2d76feb4da01015275d9c4"]],
   ["src/runtime/canvas_frame.zig", ["d2eb5ff8c63a391a695a2a47bfef6c315ddafa98e7b35cd91253437eb066a0ce", "2678ff7cfb3d47c765d517d5b9c8eb1746985cb6b610e75da3bfd02c24eb0639"]],

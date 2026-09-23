@@ -32,6 +32,9 @@ Rules:
 
 | [0009](0009-optional-network-companion.md) | Optional network companion and result privacy | Accepted |
 
+| [0010](0010-bounded-privileged-storage-reads.md) | Bounded, explicitly authorized storage reads | Accepted |
+| [0011](0011-solid-panel-rendering.md) | Draw opaque panels without retaining duplicate pixels | Accepted |
+
 ## Dual-frontend contract pointer
 
 The rules for changing SD-300 across its two frontends — what the TUI and native

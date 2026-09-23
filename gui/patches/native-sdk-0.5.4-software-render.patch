@@ -919,7 +919,7 @@ index 5ad2932..9e84877 100644
      if (!host || !host->tray_active) return 0;
      host->tray_items.clear();
 diff --git a/src/primitives/canvas/reference.zig b/src/primitives/canvas/reference.zig
-index bbf819b..981199f 100644
+index bbf819b..ef33da3 100644
 --- a/src/primitives/canvas/reference.zig
 +++ b/src/primitives/canvas/reference.zig
 @@ -84,6 +84,56 @@ const referenceDistanceToSegment = reference_paths.referenceDistanceToSegment;
@@ -1324,21 +1324,46 @@ index bbf819b..981199f 100644
      pub fn pixelRgba8(self: ReferenceRenderSurface, x: usize, y: usize) [4]u8 {
          if (x >= self.width or y >= self.height) return .{ 0, 0, 0, 0 };
          const index = (y * self.width + x) * 4;
-@@ -342,6 +716,13 @@ pub const ReferenceRenderSurface = struct {
-         // test (bit-identical on integer bounds); rounded fills take
-         // the anti-aliased signed-distance coverage.
-         const binary = referenceRadiusIsZero(radius);
+@@ -313,6 +687,12 @@ pub const ReferenceRenderSurface = struct {
+ 
+     fn fillRect(self: ReferenceRenderSurface, command: RenderCommand, value: FillRect, draw_bounds: geometry.RectF) Error!void {
+         const pixel_rect = referencePixelRect(draw_bounds, self.width, self.height) orelse return;
++        // Opaque flat fills overwrite their background. Drawing the bytes
++        // directly is cheaper than hashing and retaining a second full panel.
++        if (referenceOpaqueSolidColor(value.fill, command.opacity)) |color| {
++            self.clearRect(draw_bounds, color);
++            return;
++        }
+         // Render memo: a large translucent fill (the modal scrim's wash
+         // covers the whole viewport) blends every pixel; it reads only
+         // the pixel it writes, so no apron rows join the key.
+@@ -333,15 +713,18 @@ pub const ReferenceRenderSurface = struct {
+         const rect = command.transform.transformRect(value.rect).normalized();
+         const pixel_rect = referencePixelRect(draw_bounds, self.width, self.height) orelse return;
+         const radius = referenceScaleRadius(value.radius, command.transform);
+-        // Render memo: a large rounded fill (a dialog surface) tests the
+-        // corner mask per pixel; it reads only the pixel it blends into,
+-        // so no apron rows join the key.
++        // Preserve the binary pixel-center rule for square corners and the
++        // existing coverage calculation for rounded edges. Opaque interiors
++        // need no background-dependent command memo or copied panel storage.
++        const binary = referenceRadiusIsZero(radius);
 +        if (!binary) {
 +            if (referenceOpaqueSolidColor(value.fill, command.opacity)) |color| {
 +                self.fillRoundedOpaqueSolid(pixel_rect, rect, radius, color);
-+                self.memoStore(probe, pixel_rect);
 +                return;
 +            }
 +        }
+         const probe = self.memoProbe(pixel_rect, 0, referenceMemoParamsHash(2, command, value));
+         if (self.memoReplay(probe, pixel_rect)) return;
+-        // Square-cornered fills keep the legacy binary pixel-center
+-        // test (bit-identical on integer bounds); rounded fills take
+-        // the anti-aliased signed-distance coverage.
+-        const binary = referenceRadiusIsZero(radius);
          var y = pixel_rect.y;
          while (y < pixel_rect.y + pixel_rect.height) : (y += 1) {
              var x = pixel_rect.x;
-@@ -358,6 +739,46 @@ pub const ReferenceRenderSurface = struct {
+@@ -358,6 +741,46 @@ pub const ReferenceRenderSurface = struct {
          self.memoStore(probe, pixel_rect);
      }
  
@@ -1385,7 +1410,7 @@ index bbf819b..981199f 100644
      fn strokeRect(self: ReferenceRenderSurface, command: RenderCommand, value: StrokeRect, draw_bounds: geometry.RectF) Error!void {
          const stroke_width = nonNegative(value.stroke.width) * referenceTransformScale(command.transform);
          if (stroke_width <= 0) return;
-@@ -368,6 +789,7 @@ pub const ReferenceRenderSurface = struct {
+@@ -368,12 +791,14 @@ pub const ReferenceRenderSurface = struct {
          const radius = referenceScaleRadius(value.radius, command.transform);
          const outer_radius = referenceOutsetRadius(radius, half_width);
          const inner_radius = referenceInsetRadius(radius, half_width);
@@ -1393,17 +1418,34 @@ index bbf819b..981199f 100644
          const pixel_rect = referencePixelRect(draw_bounds, self.width, self.height) orelse return;
          // Render memo: a rounded border's pixel rect spans the WHOLE
          // stroked rect (a dialog outline covers the dialog), and every
-@@ -388,6 +810,9 @@ pub const ReferenceRenderSurface = struct {
+         // pixel tests two corner masks. It reads only the pixel it
+         // blends into, so no apron rows join the key.
+-        const probe = self.memoProbe(pixel_rect, 0, referenceMemoParamsHash(5, command, value));
++        const direct = referenceOpaqueSolidColor(value.stroke.fill, command.opacity) != null;
++        const probe = if (direct) null else self.memoProbe(pixel_rect, 0, referenceMemoParamsHash(5, command, value));
+         if (self.memoReplay(probe, pixel_rect)) return;
+         // Square-cornered borders keep the legacy binary ring test
+         // (bit-identical on integer bounds). Rounded borders derive
+@@ -388,6 +813,18 @@ pub const ReferenceRenderSurface = struct {
              var x = pixel_rect.x;
              while (x < pixel_rect.x + pixel_rect.width) : (x += 1) {
                  const point = referencePixelCenter(x, y);
 +                if (inner_core) |core| {
-+                    if (core.containsPoint(point)) continue;
++                    if (core.containsPoint(point)) {
++                        if (direct) {
++                            // This interior is provably untouched. Jump to the
++                            // first pixel center outside it, preserving the
++                            // same half-open containment rule at fractional x.
++                            const end: usize = @intFromFloat(@min(@ceil(core.maxX() - 0.5), @as(f32, @floatFromInt(pixel_rect.x + pixel_rect.width))));
++                            if (end > x) x = end - 1;
++                        }
++                        continue;
++                    }
 +                }
                  if (binary) {
                      if (referencePointInRoundedRect(point, outer, outer_radius) and !referencePointInRoundedRect(point, inner, inner_radius)) {
                          self.blendPixel(@intCast(x), @intCast(y), referenceSampleFill(value.stroke.fill, command.transform, point), command.opacity);
-@@ -865,12 +1290,50 @@ pub const ReferenceRenderSurface = struct {
+@@ -865,12 +1302,50 @@ pub const ReferenceRenderSurface = struct {
          // placement, then apply the command transform on top.
          const local = Affine{ .a = scale, .b = 0, .c = 0, .d = -scale, .tx = pen_x + cell_inset, .ty = baseline };
          const total = command.transform.multiply(local);
@@ -1455,7 +1497,7 @@ index bbf819b..981199f 100644
          // Glyph coverage blends in sRGB, not linear light (see
          // `CoverageBlend`): apparent text weight is set by how edge
          // pixels darken, and re-blending them in linear light thins
-@@ -881,6 +1344,7 @@ pub const ReferenceRenderSurface = struct {
+@@ -881,6 +1356,7 @@ pub const ReferenceRenderSurface = struct {
              .transform = command.transform,
              .opacity = command.opacity,
              .coverage_blend = .srgb,
@@ -1463,7 +1505,7 @@ index bbf819b..981199f 100644
          };
          // The outline is already in device space; TrueType interiorness
          // is the nonzero rule. The glyph raster budgets are derived from
-@@ -898,6 +1362,8 @@ pub const ReferenceRenderSurface = struct {
+@@ -898,6 +1374,8 @@ pub const ReferenceRenderSurface = struct {
              referenceVectorClip(pixel_rect),
              &sink,
          ) catch return false;
@@ -1472,7 +1514,7 @@ index bbf819b..981199f 100644
          return true;
      }
  
-@@ -915,6 +1381,14 @@ pub const ReferenceRenderSurface = struct {
+@@ -915,6 +1393,14 @@ pub const ReferenceRenderSurface = struct {
  
      fn blendPixel(self: ReferenceRenderSurface, x: usize, y: usize, color: Color, opacity: f32) void {
          const index = (y * self.width + x) * 4;
@@ -1487,7 +1529,7 @@ index bbf819b..981199f 100644
          const dst = [4]u8{
              self.pixels[index + 0],
              self.pixels[index + 1],
-@@ -934,6 +1408,14 @@ pub const ReferenceRenderSurface = struct {
+@@ -934,6 +1420,14 @@ pub const ReferenceRenderSurface = struct {
      /// `CoverageBlend`).
      fn blendPixelCoverage(self: ReferenceRenderSurface, x: usize, y: usize, color: Color, coverage: f32, opacity: f32, blend: CoverageBlend) void {
          const index = (y * self.width + x) * 4;
@@ -1502,7 +1544,7 @@ index bbf819b..981199f 100644
          const dst = [4]u8{
              self.pixels[index + 0],
              self.pixels[index + 1],
-@@ -988,8 +1470,10 @@ const ReferenceCoverageSink = struct {
+@@ -988,8 +1482,10 @@ const ReferenceCoverageSink = struct {
      transform: Affine,
      opacity: f32,
      coverage_blend: CoverageBlend,
@@ -1513,7 +1555,7 @@ index bbf819b..981199f 100644
          if (x < 0 or y < 0) return;
          const px: usize = @intCast(x);
          const py: usize = @intCast(y);
-@@ -1000,6 +1484,22 @@ const ReferenceCoverageSink = struct {
+@@ -1000,6 +1496,22 @@ const ReferenceCoverageSink = struct {
      }
  };
  
@@ -1536,7 +1578,7 @@ index bbf819b..981199f 100644
  fn referenceVectorClip(pixel_rect: ReferencePixelRect) vector.ClipRect {
      return .{
          .x0 = @intCast(pixel_rect.x),
-@@ -1047,6 +1547,80 @@ fn referenceMemoParamsHash(kind: u8, command: RenderCommand, value: anytype) u64
+@@ -1047,6 +1559,88 @@ fn referenceMemoParamsHash(kind: u8, command: RenderCommand, value: anytype) u64
      return hasher.final();
  }
  
@@ -1563,7 +1605,7 @@ index bbf819b..981199f 100644
 +}
 +
 +fn referenceOpaqueSolidColor(fill: Fill, opacity: f32) ?Color {
-+    if (opacity < 1) return null;
++    if (!(opacity >= 1)) return null;
 +    return switch (fill) {
 +        .color => |color| if (color.a >= 1) color else null,
 +        else => null,
@@ -1599,7 +1641,15 @@ index bbf819b..981199f 100644
 +    const rounded_core = referenceRoundedCore(rect, radius, 0.5) orelse return null;
 +    const command_core = command.bounds.normalized().deflate(geometry.InsetsF.all(0.5));
 +    const interior = geometry.RectF.intersection(rounded_core, command_core);
-+    return if (interior.isEmpty()) null else interior;
++    // Scissors round outward to pixel bounds. Fractional split boundaries
++    // would therefore paint the same shadow pixel in adjacent fragments.
++    // Only skip whole pixels strictly inside the guaranteed opaque core.
++    const x0 = @ceil(interior.minX());
++    const y0 = @ceil(interior.minY());
++    const x1 = @floor(interior.maxX());
++    const y1 = @floor(interior.maxY());
++    if (x1 <= x0 or y1 <= y0) return null;
++    return geometry.RectF.init(x0, y0, x1 - x0, y1 - y0);
 +}
 +
 +fn referenceGlyphMemoParamsHash(value: DrawText, command: RenderCommand, glyph: u16, total: Affine) u64 {
@@ -1617,7 +1667,7 @@ index bbf819b..981199f 100644
  /// Recursively hash a plain value BIT-EXACTLY: floats hash their bit
  /// patterns (so -0.0 and 0.0, or two NaNs, are distinct keys — stricter
  /// than `==`, which can only cause a spurious miss, never a wrong hit).
-@@ -1124,6 +1698,93 @@ fn referenceScaleRect(rect: geometry.RectF, scale: f32) geometry.RectF {
+@@ -1124,6 +1718,93 @@ fn referenceScaleRect(rect: geometry.RectF, scale: f32) geometry.RectF {
      return geometry.RectF.init(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale);
  }
  

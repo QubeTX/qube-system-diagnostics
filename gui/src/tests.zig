@@ -108,6 +108,7 @@ fn buildRenderBenchDisplayList(
     model: *const main.Model,
     builder: *canvas.Builder,
     nodes: []canvas.WidgetLayoutNode,
+    prefix_count: ?*usize,
 ) !canvas.DisplayList {
     const size = native_sdk.geometry.SizeF.init(1180, 760);
     const tokens = main.qubeTokens(model);
@@ -119,6 +120,7 @@ fn buildRenderBenchDisplayList(
         nodes,
     );
     try main.warmCarbonChrome(model, builder, size, tokens);
+    if (prefix_count) |count| count.* = builder.displayList().commands.len;
     try layout.emitDisplayList(builder, tokens);
     return builder.displayList();
 }
@@ -827,6 +829,107 @@ test "the overview lays out at the production window size" {
     _ = try expectByText(tree.root, .button, "Refresh");
 }
 
+test "solid panels and borders match per-pixel drawing across clipping scale and opacity" {
+    const geometry = native_sdk.geometry;
+    const Scene = struct {
+        const Shape = enum { rect, rounded, border, square_border };
+        fn render(pixels: []u8, memo: ?*canvas.ReferenceRenderMemo, fill: canvas.Fill, shape: Shape, width: f32, scale: f32, opacity: f32, offset: f32, background: canvas.Color) !void {
+            const rect = geometry.RectF.init(-2.25 + offset, 3.5, 25.75, 24.25);
+            const commands = [_]canvas.CanvasCommand{
+                .{ .push_clip = .{ .rect = geometry.RectF.init(2.5, 1.25, 28.5, 31.5) } },
+                .{ .push_opacity = opacity },
+                .{ .transform = canvas.Affine.translate(1.25, -0.5) },
+                switch (shape) {
+                    .rect => .{ .fill_rect = .{ .id = 1, .rect = rect, .fill = fill } },
+                    .rounded => .{ .fill_rounded_rect = .{ .id = 1, .rect = rect, .radius = canvas.Radius.all(5.25), .fill = fill } },
+                    .border, .square_border => .{ .stroke_rect = .{ .id = 1, .rect = rect, .radius = canvas.Radius.all(if (shape == .border) 5.25 else 0), .stroke = .{ .fill = fill, .width = width } } },
+                },
+                .pop_opacity,
+                .pop_clip,
+            };
+            var render_commands: [8]canvas.RenderCommand = undefined;
+            const plan = try (canvas.DisplayList{ .commands = &commands }).renderPlan(&render_commands);
+            const surface = (try canvas.ReferenceRenderSurface.init(96, 80, pixels)).withRenderMemo(memo);
+            try surface.renderPass(.{
+                .surface_size = geometry.SizeF.init(48, 40),
+                .scale = scale,
+                .full_repaint = true,
+                .commands = plan.commands,
+            }, background);
+        }
+    };
+    var actual: [96 * 80 * 4]u8 = undefined;
+    var expected: [96 * 80 * 4]u8 = undefined;
+    for ([_]Scene.Shape{ .rect, .rounded, .border, .square_border }) |shape| {
+        const widths: []const f32 = if (shape == .border or shape == .square_border) &.{ 0.75, 3, 40 } else &.{1};
+        for (widths) |width| {
+            for ([_]f32{ 1, 1.25, 2 }) |scale| {
+                for ([_]f32{ 1, 0.65 }) |opacity| {
+                    for ([_]u8{ 255, 192 }) |alpha| {
+                        var memo = canvas.ReferenceRenderMemo.init(testing.allocator);
+                        defer memo.deinit();
+                        memo.min_pixels = 0;
+                        const color = canvas.Color.rgba8(237, 91, 32, alpha);
+                        // A constant gradient deliberately exercises the unchanged
+                        // per-pixel fill path instead of the solid-panel shortcut.
+                        const stops = [_]canvas.GradientStop{
+                            .{ .offset = 0, .color = color },
+                        };
+                        const reference_fill = canvas.Fill{ .linear_gradient = .{
+                            .start = geometry.PointF.init(0, 0),
+                            .end = geometry.PointF.init(48, 40),
+                            .stops = &stops,
+                        } };
+                        for (0..3) |frame| {
+                            const background = if (frame == 0) canvas.Color.rgb8(13, 32, 79) else canvas.Color.rgb8(194, 138, 41);
+                            const offset: f32 = if (frame < 2) 0 else 3.25;
+                            try Scene.render(&expected, null, reference_fill, shape, width, scale, opacity, offset, background);
+                            try Scene.render(&actual, &memo, .{ .color = color }, shape, width, scale, opacity, offset, background);
+                            try testing.expectEqualSlices(u8, &expected, &actual);
+                        }
+                        if (opacity == 1 and alpha == 255) {
+                            try testing.expectEqual(@as(usize, 0), memo.entry_total_bytes);
+                        } else {
+                            try testing.expect(memo.entry_total_bytes > 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "retained chrome shadow regions never overlap fractional panel edges" {
+    const geometry = native_sdk.geometry;
+    var expected: [96 * 80 * 4]u8 = undefined;
+    var actual: [96 * 80 * 4]u8 = undefined;
+    for ([_]f32{ 1, 1.25, 2 }) |scale| {
+        for ([_]f32{ 0, 0.25, 0.5, 0.75 }) |offset| {
+            for ([_]u8{ 255, 180 }) |alpha| {
+                var memo = canvas.ReferenceRenderMemo.init(testing.allocator);
+                defer memo.deinit();
+                const rect = geometry.RectF.init(5 + offset, 6.25, 30.5, 24.75);
+                const commands = [_]canvas.CanvasCommand{
+                    .{ .fill_rect = .{ .rect = geometry.RectF.init(0, 0, 48, 40), .fill = .{ .color = canvas.Color.rgb8(130, 140, 150) } } },
+                    .{ .push_clip = .{ .rect = geometry.RectF.init(2.5, 2.25, 41.25, 34.5) } },
+                    .{ .shadow = .{ .rect = rect, .radius = canvas.Radius.all(5.25), .blur = 4, .color = canvas.Color.rgba8(0, 0, 0, 180) } },
+                    .{ .fill_rounded_rect = .{ .rect = rect, .radius = canvas.Radius.all(5.25), .fill = .{ .color = canvas.Color.rgba8(240, 240, 240, alpha) } } },
+                    .pop_clip,
+                };
+                var rendered: [8]canvas.RenderCommand = undefined;
+                const plan = try (canvas.DisplayList{ .commands = &commands }).renderPlan(&rendered);
+                const pass = canvas.CanvasRenderPass{ .surface_size = geometry.SizeF.init(48, 40), .scale = scale, .full_repaint = true, .commands = plan.commands };
+                const clear = canvas.Color.rgb8(40, 50, 60);
+                const reference = try canvas.ReferenceRenderSurface.init(96, 80, &expected);
+                const retained = (try canvas.ReferenceRenderSurface.init(96, 80, &actual)).withRenderMemo(&memo);
+                try reference.renderPass(pass, clear);
+                _ = try retained.renderPassDamageWithStaticPrefix(pass, clear, &.{}, 1);
+                try testing.expectEqualSlices(u8, &expected, &actual);
+            }
+        }
+    }
+}
+
 test "headless SD-300 1 Hz renderer benchmark" {
     if (comptime !@import("builtin").link_libc) return error.SkipZigTest;
     if (std.c.getenv("SD300_RENDER_BENCH") == null) return error.SkipZigTest;
@@ -878,8 +981,8 @@ test "headless SD-300 1 Hz renderer benchmark" {
     defer allocator.free(nodes_b);
 
     const build_start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
-    const list_a = try buildRenderBenchDisplayList(arena_a.allocator(), &model_a, builder_a, nodes_a);
-    const list_b = try buildRenderBenchDisplayList(arena_b.allocator(), &model_b, builder_b, nodes_b);
+    const list_a = try buildRenderBenchDisplayList(arena_a.allocator(), &model_a, builder_a, nodes_a, null);
+    const list_b = try buildRenderBenchDisplayList(arena_b.allocator(), &model_b, builder_b, nodes_b, null);
     const build_ns = std.Io.Timestamp.now(testing.io, .real).nanoseconds - build_start;
 
     const initial_scratch = try allocator.create(RenderBenchFrameScratch);
@@ -1036,6 +1139,8 @@ const WarmPool = struct {
     builder0: *canvas.Builder,
     builder1: *canvas.Builder,
     diff: []canvas.DiffChange,
+    static_prefix_count: usize = 0,
+    generic_diagnostic: bool = false,
 
     fn build(pool: *WarmPool, slot: u1, model: *const main.Model) !canvas.DisplayList {
         const arena = if (slot == 0) pool.arena0 else pool.arena1;
@@ -1044,7 +1149,17 @@ const WarmPool = struct {
         const builder = if (slot == 0) pool.builder0 else pool.builder1;
         _ = arena.reset(.retain_capacity);
         builder.* = canvas.Builder.init(cmds);
-        return buildRenderBenchDisplayList(arena.allocator(), model, builder, nodes);
+        return buildRenderBenchDisplayList(arena.allocator(), model, builder, nodes, &pool.static_prefix_count);
+    }
+
+    fn render(pool: *WarmPool, surface: canvas.ReferenceRenderSurface, frame: canvas.CanvasFrame, damage: []const native_sdk.geometry.RectF) !bool {
+        // Match runtime/canvas_frame.zig. The generic path is retained only
+        // as an explicitly labelled diagnostic, never the shipping-path gate.
+        const mode = if (pool.generic_diagnostic)
+            try surface.renderPassDamage(frame.renderPass(), pool.clear, damage)
+        else
+            try surface.renderPassDamageWithStaticPrefix(frame.renderPass(), pool.clear, frame.dirtyRects(), pool.static_prefix_count);
+        return mode == .fallback;
     }
 };
 
@@ -1219,9 +1334,9 @@ fn warmApply(
     const frame = try cur.framePlan(prev, pool.frame_options, scratch.storage());
     const damage = renderBenchDamage(try canvas.DisplayList.diff(prev, cur, pool.diff));
     const start = warmClock();
-    const mode = try surface.renderPassDamage(frame.renderPass(), pool.clear, damage.slice());
+    const mode = try pool.render(surface, frame, damage.slice());
     const ns: u64 = @intCast(warmClock() - start);
-    return .{ .ns = ns, .fallback = mode == .fallback, .rects = damage.count, .ratio = frame.profile().dirty_ratio };
+    return .{ .ns = ns, .fallback = mode, .rects = if (pool.generic_diagnostic) damage.count else frame.dirtyRects().len, .ratio = frame.profile().dirty_ratio };
 }
 
 fn warmSummarize(
@@ -1232,7 +1347,7 @@ fn warmSummarize(
     dmaskhit: u64,
     dmaskmiss: u64,
 ) void {
-    var times: [64]u64 = undefined;
+    var times: [128]u64 = undefined;
     var total: u64 = 0;
     var damage_n: usize = 0;
     var fallback_n: usize = 0;
@@ -1297,14 +1412,14 @@ fn warmRunTick(
 
     // Seed the retained surface with frame A.
     const seed_frame = try list_a.framePlan(null, pool.frame_options, s0.storage());
-    try surface.renderPass(seed_frame.renderPass(), pool.clear);
+    _ = try pool.render(surface, seed_frame, &.{});
 
     // Correctness gate: applying the A->B damage to the retained surface must
     // reproduce a full render of B byte-for-byte. Guards against synthesizing
     // an incomplete damage set that would make the timings meaningless.
     const frame_ab = try list_b.framePlan(list_a, pool.frame_options, s1.storage());
     const damage_ab = renderBenchDamage(try canvas.DisplayList.diff(list_a, list_b, pool.diff));
-    _ = try surface.renderPassDamage(frame_ab.renderPass(), pool.clear, damage_ab.slice());
+    _ = try pool.render(surface, frame_ab, damage_ab.slice());
     const full_b = try list_b.framePlan(null, pool.frame_options, s2.storage());
     const verify_surface = (try canvas.ReferenceRenderSurface.init(pool.width, pool.height, pool.verify)).withFonts(pool.fonts);
     try verify_surface.renderPass(full_b.renderPass(), pool.clear);
@@ -1312,16 +1427,16 @@ fn warmRunTick(
 
     // Re-seed to A, then precompute both directions with distinct scratch so
     // the alternating steady-state loop can reuse them.
-    try surface.renderPass(seed_frame.renderPass(), pool.clear);
+    _ = try pool.render(surface, seed_frame, &.{});
     const frame_ba = try list_a.framePlan(list_b, pool.frame_options, s2.storage());
     const damage_ba = renderBenchDamage(try canvas.DisplayList.diff(list_b, list_a, pool.diff));
 
     // Warm the memo/caches (even count returns the surface to A).
     for (0..4) |i| {
         if (i % 2 == 0) {
-            _ = try surface.renderPassDamage(frame_ab.renderPass(), pool.clear, damage_ab.slice());
+            _ = try pool.render(surface, frame_ab, damage_ab.slice());
         } else {
-            _ = try surface.renderPassDamage(frame_ba.renderPass(), pool.clear, damage_ba.slice());
+            _ = try pool.render(surface, frame_ba, damage_ba.slice());
         }
     }
 
@@ -1337,9 +1452,9 @@ fn warmRunTick(
         const frame = if (use_ab) frame_ab else frame_ba;
         const damage = if (use_ab) &damage_ab else &damage_ba;
         const start = warmClock();
-        const mode = try surface.renderPassDamage(frame.renderPass(), pool.clear, damage.slice());
+        const mode = try pool.render(surface, frame, damage.slice());
         const ns: u64 = @intCast(warmClock() - start);
-        samples[i] = .{ .ns = ns, .fallback = mode == .fallback, .rects = damage.count, .ratio = frame.profile().dirty_ratio };
+        samples[i] = .{ .ns = ns, .fallback = mode, .rects = if (pool.generic_diagnostic) damage.count else frame.dirtyRects().len, .ratio = frame.profile().dirty_ratio };
     }
 
     const dhits: u64 = @intCast(memo.hits - base_hits);
@@ -1365,20 +1480,19 @@ fn warmRunBurst(
     defer memo.deinit();
     const surface = (try canvas.ReferenceRenderSurface.init(pool.width, pool.height, pool.pixels)).withFonts(pool.fonts).withRenderMemo(&memo);
 
-    const step: usize = 20;
     const preroll: usize = 4;
-    const measured: usize = 16;
+    const measured: usize = 128;
 
     base_model.scroll_top = 0;
     var prev = try pool.build(0, base_model);
     const seed_frame = try prev.framePlan(null, pool.frame_options, scratch.storage());
-    try surface.renderPass(seed_frame.renderPass(), pool.clear);
+    _ = try pool.render(surface, seed_frame, &.{});
 
     var slot: u1 = 1;
     var frame_index: usize = 1;
 
     for (0..preroll) |_| {
-        base_model.scroll_top = @floatFromInt(frame_index * step);
+        base_model.scroll_top = warmScrollOffset(frame_index);
         const cur = try pool.build(slot, base_model);
         _ = try warmApply(pool, surface, prev, cur, scratch);
         prev = cur;
@@ -1391,9 +1505,9 @@ fn warmRunBurst(
     const base_mask_hits = memo.glyph_mask_hits;
     const base_mask_misses = memo.glyph_mask_misses;
 
-    var samples: [64]WarmSample = undefined;
+    var samples: [measured]WarmSample = undefined;
     for (0..measured) |i| {
-        base_model.scroll_top = @floatFromInt(frame_index * step);
+        base_model.scroll_top = warmScrollOffset(frame_index);
         const cur = try pool.build(slot, base_model);
         samples[i] = try warmApply(pool, surface, prev, cur, scratch);
         prev = cur;
@@ -1406,6 +1520,16 @@ fn warmRunBurst(
     const dmaskhit: u64 = @intCast(memo.glyph_mask_hits - base_mask_hits);
     const dmaskmiss: u64 = @intCast(memo.glyph_mask_misses - base_mask_misses);
     warmSummarize(name, samples[0..measured], dhits, dmiss, dmaskhit, dmaskmiss);
+    // Reversing direction must preserve exact pixels after the entire burst.
+    const full = try prev.framePlan(null, pool.frame_options, scratch.storage());
+    const reference = (try canvas.ReferenceRenderSurface.init(pool.width, pool.height, pool.verify)).withFonts(pool.fonts);
+    try reference.renderPass(full.renderPass(), pool.clear);
+    try testing.expectEqualSlices(u8, pool.verify, pool.pixels);
+}
+
+fn warmScrollOffset(frame_index: usize) f64 {
+    const phase = frame_index % 40;
+    return @floatFromInt(20 * (if (phase <= 20) phase else 40 - phase));
 }
 
 test "headless SD-300 warmed-state scroll damage attribution benchmark" {
@@ -1473,6 +1597,7 @@ test "headless SD-300 warmed-state scroll damage attribution benchmark" {
         .builder0 = builder0,
         .builder1 = builder1,
         .diff = diff,
+        .generic_diagnostic = std.c.getenv("SD300_GENERIC_RENDER_DIAGNOSTIC") != null,
     };
 
     const s0 = try allocator.create(WarmRenderBenchFrameScratch);
@@ -1487,7 +1612,7 @@ test "headless SD-300 warmed-state scroll damage attribution benchmark" {
     const model_b = try allocator.create(main.Model);
     defer allocator.destroy(model_b);
 
-    std.debug.print("\nSD300_WARM_BENCH surface={d}x{d} sections=5,6,8 (Network/Processes/Drivers)\n", .{ width, height });
+    std.debug.print("\nSD300_WARM_BENCH surface={d}x{d} sections=5,6,8 path={s}\n", .{ width, height, if (pool.generic_diagnostic) "generic-diagnostic" else "production-static-prefix" });
 
     const sections = [_]u8{ 5, 6, 8 };
     const scrolls = [_]f64{ 0, 420 };
@@ -1513,7 +1638,6 @@ test "headless SD-300 warmed-state scroll damage attribution benchmark" {
     }
 }
 
-
 test "engine process pages retain global match counts with fixed display storage" {
     var model = main.initialModel();
     model.process_query_active = true;
@@ -1535,7 +1659,6 @@ test "engine process pages retain global match counts with fixed display storage
     main.update(&model, .process_next_page, &fx);
     try testing.expectEqual(@as(u32, 240), model.process_page_offset);
 }
-
 
 test "bandwidth actions require a distinct confirmation and reset M-Lab consent" {
     var model = main.initialModel();
@@ -1559,7 +1682,6 @@ test "bandwidth actions require a distinct confirmation and reset M-Lab consent"
     _ = try expectByText(tree.root, .button, "Start bandwidth test");
 }
 
-
 test "optional setup requires a distinct confirmation and dismissal preserves monitoring" {
     var model = main.Model{};
     var fx = main.Effects.init(testing.allocator);
@@ -1577,7 +1699,6 @@ test "optional setup requires a distinct confirmation and dismissal preserves mo
     try testing.expect(!model.companionRunning());
 }
 
-
 test "SMART setup uses the shared operation notice and never implies probe consent" {
     var model = main.initialModel();
     var fx = main.Effects.init(testing.allocator);
@@ -1592,7 +1713,6 @@ test "SMART setup uses the shared operation notice and never implies probe conse
     main.update(&model, .companion_dismiss_setup, &fx);
     try testing.expect(!model.companionSetupConfirming());
 }
-
 
 test "storage selection retains device identity and consent comes from prepared core state" {
     var model = main.initialModel();

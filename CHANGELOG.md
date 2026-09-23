@@ -6,6 +6,8 @@ All notable changes to SD-300 will be documented in this file.
 
 - Add an opt-in bounded native backtrace after Alpine GUI shutdown fails with SIGSEGV. Repeat unchanged artifacts only for diagnosis, attach after the sampling window, retain the original failure, and prohibit treating debugger runs as resource qualification. After an unchanged rerun passes, exercise three foreground/hidden shutdown pairs with traces to investigate the intermittent fault.
 
+- Draw opaque solid panels and borders directly through the reviewed SDK patch instead of retaining duplicate panel pixels. Correct fractional shadow-occlusion boundaries that blended pixels twice. Preserve rounded-edge coverage and translucent/gradient memoization; add byte-exact scale, clipping, translation, opacity and border fixtures. Match the warmed benchmark to the actual static-prefix runtime path, retain the generic diagnostic and exercise bounded bidirectional scrolling. Coordinate both preparers and patch/file hashes while retaining official upstream archive pins.
+
 - Preserve in-progress manually dispatched qualification windows, record first/last Windows GUI memory by role, and report retained raster-cache bytes outside render timings. Correct the render fixture's process field availability so process ticks exercise visible numeric changes.
 
 - Restrict GUI collector-presence inspection to collector-shaped processes and retain required-worker verification when protected helpers deny executable lookup. Native GNU long runs exposed a harness AccessDenied on a ping helper after the TUI resource gate passed.

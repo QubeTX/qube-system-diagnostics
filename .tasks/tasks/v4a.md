@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: production-path renderer audit finds the old benchmark bypassed static chrome and reveals fractional shadow scissors blending boundary pixels twice. Direct solid panels/borders plus inward whole-pixel shadow cores pass the full-view comparisons, 58 ordinary native tests, strict bindings and release distribution checks. Identical release-target standalone comparisons reduce scroll raster p95 from 13.44/10.19/9.26 ms to 9.74/7.38/6.11 ms; legacy pixels remain explicitly flagged as incorrect. Completed 09b46a3 Windows foreground is 153.44 MiB/1.14 percent, so start the same full-bundle window on the renderer candidate before claiming resource acceptance.
+
 - 2026-09-23 — codex: ec50cb2 native Alpine job 107237699372 passes both GUI smoke shutdowns with unchanged product code; this does not resolve the earlier SIGSEGV. Add three traced foreground/hidden shutdown pairs, bounded to twenty-second observation windows, so the next intermittent fault retains native evidence. Debugger results remain excluded from resource gates. Next oracle: native Alpine lifecycle stress on the branch.
 
 - 2026-09-23 — codex: run 35874747086 reaches native Alpine GUI monitoring, then the owned quit request exits with SIGSEGV (job 107227650151). Missing graphics drivers explain fallback messages but do not identify the crash. Add an opt-in bounded GDB backtrace only after a failed smoke, repeat unchanged bytes, and retain the failure. Debugger runs cannot qualify resources. Shared opaque-panel allocation candidate remains separate and awaits pixel/performance tests after the local measurement window.

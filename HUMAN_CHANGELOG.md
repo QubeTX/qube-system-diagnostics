@@ -10,6 +10,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 - Behind the scenes: minimal Linux testing now captures where the app fails during shutdown, without mixing debugger results into performance acceptance. Repeated close checks investigate failures that disappear on a single retry.
 
+- The app avoids keeping duplicate pictures of simple solid panels and borders, and fixes uneven shadows at some scaled edges. Behind the scenes, rendering checks now follow the app's actual drawing path and compare every pixel across scaling, scrolling and translucent overlays.
+
 - Behind the scenes: long test runs keep their original app build until they finish. Memory reports now identify growth by component, and rendering tests exercise changing process readings as well as scrolling.
 
 - Behind the scenes: a protected network helper no longer interrupts Linux app testing when the monitor's own collectors can still be verified.
