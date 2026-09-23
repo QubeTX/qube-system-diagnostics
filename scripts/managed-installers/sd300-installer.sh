@@ -747,7 +747,7 @@ sd300_verify_receipt() {
 sd300_verify_binary() {
     binary=$sd300_intended_binary
     [ -x "$binary" ] || sd300_fail "managed SD-300 binary is missing: $binary"
-    reported=$($binary --version 2>/dev/null) || sd300_fail 'managed SD-300 binary did not run'
+    reported=$("$binary" --version 2>/dev/null) || sd300_fail 'managed SD-300 binary did not run'
     [ "$reported" = "sd300 ${sd300_version}" ] \
         || sd300_fail "managed SD-300 binary did not report ${sd300_version}"
     printf '%s\n' "$binary"
@@ -958,7 +958,7 @@ sd300_stage_gui_payload() {
             ;;
     esac
     [ -x "$gui_binary" ] || sd300_fail 'GUI archive entrypoint is missing or not executable'
-    gui_result=$($gui_binary --self-test --json 2>/dev/null) || sd300_fail 'staged GUI self-test failed'
+    gui_result=$("$gui_binary" --self-test --json 2>/dev/null) || sd300_fail 'staged GUI self-test failed'
     printf '%s\n' "$gui_result" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true' || sd300_fail 'staged GUI did not report success'
     printf '%s\n' "$gui_result" | grep -Eq "\"product_version\"[[:space:]]*:[[:space:]]*\"${sd300_version}\"" || sd300_fail 'staged GUI version is incompatible'
     printf '%s\n' "$gui_result" | grep -Eq '"abi_version"[[:space:]]*:[[:space:]]*2([[:space:],}]|$)' || sd300_fail 'staged GUI ABI is incompatible'
@@ -1036,7 +1036,7 @@ sd300_install_gui_payload() {
     mkdir -p "$(dirname "$marker")" || sd300_fail 'could not create the GUI ownership directory'
     printf '%s\n' "{\"schema\":1,\"product\":\"SD-300\",\"version\":\"${sd300_version}\",\"owner\":\"shell-installer\"}" > "$marker" || sd300_fail 'could not write the GUI ownership marker'
     chmod 600 "$marker" || sd300_fail 'could not protect the GUI ownership marker'
-    result=$($gui_binary --self-test --json 2>/dev/null) || sd300_fail 'installed GUI self-test failed'
+    result=$("$gui_binary" --self-test --json 2>/dev/null) || sd300_fail 'installed GUI self-test failed'
     printf '%s\n' "$result" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true' || sd300_fail 'installed GUI did not report success'
 }
 

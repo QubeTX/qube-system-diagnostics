@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Quote staged and installed binary self-test paths in the managed shell installer. Exercise Linux composite lifecycle with a spaced application-data directory and retain a direct installed-version verification fixture.
+
 - Handle GIO's executable-existence check before desktop field-code expansion for literal percent paths by invoking the system env executable without a shell. Retain per-character native launcher cases and diagnostic fixture output.
 
 - Resolve the Linux application-menu icon through an absolute path inside the owned bundle, and quote desktop launch paths using the freedesktop escaping rules. Validate the real GIO parser and launch with literal special-character paths, alongside installed-entry assertions. Windows Start-menu shortcuts and macOS application bundles retain their existing custom icon delivery.

@@ -112,6 +112,18 @@ class DesktopEntry(unittest.TestCase):
                 result, _, _ = self.configure(name)
                 self.assertNotEqual(result.returncode, 0)
 
+    def test_installed_binary_verification_quotes_its_path(self):
+        directory = self.root / "Installed application"
+        directory.mkdir()
+        executable = directory / "sd300"
+        executable.write_text("#!/bin/sh\nprintf '%s\\n' 'sd300 @SD300_VERSION@'\n", encoding="utf-8", newline="\n")
+        executable.chmod(0o755)
+        result = subprocess.run([SHELL, "-c", '. "$1"; sd300_intended_binary=$2; sd300_verify_binary',
+            "sh", shell_path(ROOT / "scripts/managed-installers/sd300-installer.sh"), shell_path(executable)],
+            env=dict(os.environ, SD300_MANAGED_INSTALLER_TEST_ONLY="1"), capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.decode().strip(), shell_path(executable))
+
 
 if __name__ == "__main__":
     unittest.main()

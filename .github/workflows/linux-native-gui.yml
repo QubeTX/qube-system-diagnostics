@@ -219,7 +219,7 @@ jobs:
           export HOME="$lifecycle_home"
           export CARGO_HOME="$lifecycle_home/.cargo"
           export XDG_CONFIG_HOME="$lifecycle_home/.config"
-          export XDG_DATA_HOME="$lifecycle_home/.local/share"
+          export XDG_DATA_HOME="$lifecycle_home/.local/app data"
           export XDG_CACHE_HOME="$lifecycle_home/.cache"
           export XDG_RUNTIME_DIR="$lifecycle_home/.runtime"
           export SD300_CI_RELEASE_TAG='${{ needs.draft-check.outputs.tag }}'
@@ -375,7 +375,7 @@ jobs:
               export HOME=/tmp/sd300-lifecycle
               export CARGO_HOME="$HOME/.cargo"
               export XDG_CONFIG_HOME="$HOME/.config"
-              export XDG_DATA_HOME="$HOME/.local/share"
+              export XDG_DATA_HOME="$HOME/.local/app data"
               export XDG_CACHE_HOME="$HOME/.cache"
               export XDG_RUNTIME_DIR="$HOME/.runtime"
               mkdir -p "$XDG_RUNTIME_DIR"
