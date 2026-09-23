@@ -1,9 +1,9 @@
 pub mod bottom_bar;
 pub mod common;
+pub mod dashboard;
 pub mod header_bar;
 pub mod help_overlay;
 pub mod mode_select;
-pub mod sections;
 
 use ratatui::Frame;
 
@@ -11,6 +11,29 @@ use crate::app::App;
 
 /// Root render dispatcher
 pub fn render(frame: &mut Frame, app: &App) {
+    render_content(frame, app);
+    if app.preferences.no_color || app.preferences.ascii {
+        for cell in frame.buffer_mut().content.iter_mut() {
+            if app.preferences.no_color {
+                cell.set_style(ratatui::style::Style::reset());
+            }
+            if app.preferences.ascii && !cell.symbol().is_ascii() {
+                let symbol = match cell.symbol() {
+                    "│" | "┃" => "|",
+                    "─" | "━" => "-",
+                    "╭" | "╮" | "╰" | "╯" | "┌" | "┐" | "└" | "┘" => "+",
+                    "·" | "•" => ".",
+                    "↑" => "^",
+                    "↓" => "v",
+                    "█" | "▇" | "▆" | "▅" | "▄" | "▃" | "▂" | "▁" => "#",
+                    _ => "?",
+                };
+                cell.set_symbol(symbol);
+            }
+        }
+    }
+}
+fn render_content(frame: &mut Frame, app: &App) {
     // Terminal too small
     if app.too_small {
         render_too_small(frame);
@@ -38,12 +61,151 @@ pub fn render(frame: &mut Frame, app: &App) {
     header_bar::render(frame, app, chunks[0]);
 
     // Render active section
-    sections::render(frame, app, chunks[1]);
+    if app.awaiting_initial_sample() {
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(
+                "Collecting the first measurements… Navigation is ready.",
+            )
+            .block(common::content_block("Starting monitoring")),
+            chunks[1],
+        );
+    } else {
+        dashboard::render(frame, app, chunks[1]);
+    }
 
     // Render bottom navigation bar
     bottom_bar::render(frame, app, chunks[2]);
 
+    if app.show_export {
+        let state = if app.paused_at.is_some() {
+            "the frozen view"
+        } else {
+            "the latest displayed samples"
+        };
+        let text = format!("E save redacted snapshot · C save capabilities · Esc close\n\nReports describe {state}, with capture times, availability, findings and completed session diagnostics. Arbitrary imported detail strings are omitted. Existing reports are preserved.\n\n{}", app.exporter.message());
+        frame.render_widget(ratatui::widgets::Clear, chunks[1]);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(text)
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .block(common::content_block("Export this session")),
+            chunks[1],
+        );
+        return;
+    }
+    if app.show_storage_probe {
+        let mut lines =
+            vec!["x cancel · Esc cancel and close · ordinary monitoring continues".into()];
+        if app.storage_probe.state.awaiting_consent {
+            lines.push(app.storage_probe.state.notice.clone());
+            lines.push("Y explicitly allows this one privileged read · Esc declines".into());
+        }
+        lines.extend(app.storage_probe.state.lines());
+        frame.render_widget(ratatui::widgets::Clear, chunks[1]);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(lines.join("\n\n"))
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .scroll((app.inspector_scroll, 0))
+                .block(common::content_block("Optional storage read")),
+            chunks[1],
+        );
+        return;
+    }
+    if app.show_companion {
+        let mut lines = vec![
+            "s standard scan · d deep scan · b SpeedQX Quick · B Deep · i install ND-300 · h SMART helper · x cancel · Esc close"
+                .into(),
+        ];
+        if app.setup_confirmation {
+            lines.push(
+                if app.setup_smart {
+                    crate::smart_setup::notice()
+                } else {
+                    crate::optional_tools::NETWORK_NOTICE
+                }
+                .into(),
+            );
+            lines.push(format!(
+                "Standalone directory (Homebrew uses its existing prefix): {}",
+                (if app.setup_smart {
+                    crate::smart_setup::directory()
+                } else {
+                    crate::optional_tools::network_directory()
+                })
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|e| e)
+            ));
+            lines.push("Y consents to this installation · Esc declines and closes".into());
+        } else if let Some(action) = app.speed_confirmation {
+            lines.push(format!(
+                "Confirm {}: up to {} seconds / {} GB payload",
+                action.label(),
+                action.budget_seconds(),
+                action.budget_bytes().unwrap_or(0) / 1_000_000_000
+            ));
+            lines.push(crate::companion::SPEED_NOTICE.into());
+            lines.push(crate::companion::MLAB_NOTICE.into());
+            lines.push(format!(
+                "M toggles M-Lab consent: {} · Y starts this bandwidth-consuming action",
+                if app.mlab_consent { "ENABLED" } else { "OFF" }
+            ));
+        } else {
+            if !app.optional_setup.state.message.is_empty() {
+                lines.push(app.optional_setup.state.message.clone());
+            }
+            lines.extend(app.companion.state.lines());
+            if app.mode == Some(crate::types::DiagnosticMode::Technician) {
+                if let Some(result) = &app.companion.state.result {
+                    lines.extend(result.detail_lines.iter().cloned());
+                }
+            }
+        }
+        frame.render_widget(ratatui::widgets::Clear, chunks[1]);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(lines.join("\n\n"))
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .scroll((app.inspector_scroll, 0))
+                .block(common::content_block(
+                    "Network companion · monitoring continues",
+                )),
+            chunks[1],
+        );
+        return;
+    }
+
     // Help overlay (on top of everything)
+    if app.show_findings {
+        let lines = app
+            .findings
+            .iter()
+            .flat_map(|finding| {
+                [
+                    ratatui::text::Line::from(format!("{}: {}", finding.severity, finding.title)),
+                    ratatui::text::Line::from(format!(
+                        "Evidence ({}): {}",
+                        finding.source, finding.evidence
+                    )),
+                    ratatui::text::Line::from(format!("Next: {}", finding.next_step)),
+                    ratatui::text::Line::from(""),
+                ]
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(ratatui::widgets::Clear, chunks[1]);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(if lines.is_empty() {
+                vec![ratatui::text::Line::from(
+                    "No current findings. This does not certify hardware health.",
+                )]
+            } else {
+                lines
+            })
+            .wrap(ratatui::widgets::Wrap { trim: true })
+            .scroll((app.inspector_scroll, 0))
+            .block(common::content_block(
+                "Findings · Evidence and next steps · F/Esc to close",
+            )),
+            chunks[1],
+        );
+    }
     if app.show_help {
         help_overlay::render(frame, area);
     }
@@ -91,15 +253,17 @@ mod tests {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = App::new(Some(DiagnosticMode::User));
-        app.snapshot.refresh_static();
-        app.snapshot.refresh_fast();
-        app.snapshot.refresh_slow();
-        app.snapshot.refresh_connections();
+        app.snapshot.cpu.cpu_model = "Fixture processor".into();
+        app.snapshot.cpu.per_core_usage = vec![10.0, 20.0];
+        app.snapshot.cpu.per_core_frequency = vec![2000, 2400];
+        app.snapshot.memory.total_bytes = 8 * 1024 * 1024 * 1024;
+        app.snapshot.memory.used_bytes = 4 * 1024 * 1024 * 1024;
 
         for mode in [DiagnosticMode::User, DiagnosticMode::Technician] {
             app.mode = Some(mode);
             for section in Section::ALL {
                 app.current_section = section;
+                app.prepare_view();
                 terminal.draw(|frame| render(frame, &app)).unwrap();
                 let buffer = terminal.backend().buffer();
                 assert!(
@@ -149,6 +313,7 @@ mod tests {
 
         for section in [Section::Overview, Section::Thermals] {
             app.current_section = section;
+            app.prepare_view();
             terminal.draw(|frame| render(frame, &app)).unwrap();
             let rendered = terminal
                 .backend()
@@ -204,5 +369,30 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(!user_text.contains("Desktop app pending"));
+    }
+    #[test]
+    fn compact_and_wide_sections_support_inspection_filtering_and_ascii() {
+        for (w, h) in [(80, 24), (140, 40)] {
+            let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+            let mut app = App::new(Some(DiagnosticMode::User));
+            app.preferences.ascii = true;
+            app.preferences.no_color = true;
+            for mode in [DiagnosticMode::User, DiagnosticMode::Technician] {
+                app.mode = Some(mode);
+                for section in Section::ALL {
+                    app.current_section = section;
+                    app.filter = "no match ✓".into();
+                    app.show_inspector = true;
+                    app.prepare_view();
+                    terminal.draw(|f| render(f, &app)).unwrap();
+                    let cells = terminal.backend().buffer().content();
+                    assert!(cells.iter().all(|c| c.symbol().is_ascii()));
+                    assert!(cells.iter().all(|c| c.fg == ratatui::style::Color::Reset));
+                    let text = cells.iter().map(|c| c.symbol()).collect::<String>();
+                    assert!(text.contains("Inspector"));
+                    assert!(text.contains("filter"));
+                }
+            }
+        }
     }
 }

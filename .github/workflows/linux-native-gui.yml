@@ -160,6 +160,7 @@ jobs:
         env:
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
         run: |
           set -euo pipefail
           SD300_SKIP_NPM_CI=1 bash scripts/build-native-gui.sh '${{ matrix.gui_target }}'
@@ -218,7 +219,7 @@ jobs:
           export HOME="$lifecycle_home"
           export CARGO_HOME="$lifecycle_home/.cargo"
           export XDG_CONFIG_HOME="$lifecycle_home/.config"
-          export XDG_DATA_HOME="$lifecycle_home/.local/share"
+          export XDG_DATA_HOME="$lifecycle_home/.local/app data"
           export XDG_CACHE_HOME="$lifecycle_home/.cache"
           export XDG_RUNTIME_DIR="$lifecycle_home/.runtime"
           export SD300_CI_RELEASE_TAG='${{ needs.draft-check.outputs.tag }}'
@@ -238,6 +239,9 @@ jobs:
           receipt="$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
           test -x "$binary" && test -x "$gui" && test -f "$engine"
           test -f "$desktop" && test -f "$receipt"
+          grep -Fxq "Icon=$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png" "$desktop"
+          test -s "$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png"
+          grep -Fxq "Exec=\"$gui\"" "$desktop"
           cmp -s "$binary" "$expected_binary"
           jq -e --arg version '${{ needs.draft-check.outputs.version }}' '
             .provider.source == "cargo-dist" and
@@ -246,7 +250,7 @@ jobs:
           "$gui" --self-test --json | jq -e \
             --arg version '${{ needs.draft-check.outputs.version }}' '
               .success == true and .product_version == $version and
-              .abi_version == 1 and .engine_schema_version == 1
+              .abi_version == 2 and .engine_schema_version == 2
             ' >/dev/null
 
           current=$("$binary" update --json)
@@ -305,7 +309,8 @@ jobs:
         env:
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
-        run: node scripts/prepare-makira-font.mjs gui
+          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
+        run: node scripts/prepare-gui-fonts.mjs gui
       - name: Build in pinned Alpine 3.20
         shell: bash
         run: |
@@ -370,7 +375,7 @@ jobs:
               export HOME=/tmp/sd300-lifecycle
               export CARGO_HOME="$HOME/.cargo"
               export XDG_CONFIG_HOME="$HOME/.config"
-              export XDG_DATA_HOME="$HOME/.local/share"
+              export XDG_DATA_HOME="$HOME/.local/app data"
               export XDG_CACHE_HOME="$HOME/.cache"
               export XDG_RUNTIME_DIR="$HOME/.runtime"
               mkdir -p "$XDG_RUNTIME_DIR"
@@ -391,10 +396,13 @@ jobs:
               receipt="$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
               test -x "$binary" && test -x "$gui" && test -f "$engine"
               test -f "$desktop" && test -f "$receipt"
+              grep -Fxq "Icon=$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png" "$desktop"
+              test -s "$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png"
+              grep -Fxq "Exec=\"$gui\"" "$desktop"
               cmp -s "$binary" "$expected_binary"
               "$gui" --self-test --json | jq -e \
                 --arg version "${{ needs.draft-check.outputs.version }}" \
-                ".success == true and .product_version == \$version and .abi_version == 1" \
+                ".success == true and .product_version == \$version and .abi_version == 2" \
                 >/dev/null
 
               current=$("$binary" update --json)

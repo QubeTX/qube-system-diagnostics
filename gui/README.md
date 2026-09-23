@@ -1,7 +1,7 @@
 # SD-300 native GUI
 
 This directory contains the additive Vercel Native SDK desktop monitor for
-SD-300 v3. It is a native-rendered application: the view is declarative
+SD-300. It is a native-rendered application: the view is declarative
 `src/app.native`, behavior is a Zig `Model`/tagged `Msg`/`update` loop in
 `src/main.zig`, and live diagnostics come from the bundle-relative Rust engine.
 There is no application WebView or JavaScript runtime.
@@ -12,14 +12,15 @@ model** section in `AGENTS.md` (identical in `CLAUDE.md`): it defines what the
 two frontends share, the step-by-step recipe for wiring a field into both, and
 the release-blocking parity invariant.
 
-The v3 app is still in qualification. A successful local build or strict test
-does not prove another target, native installer, physical interaction,
-performance soak, or public release.
+The [v4 qualification record](../docs/qualification/v4/README.md) distinguishes
+native tests, resource measurements, installer evidence and physical-device limits.
+The [original next-version goals](../docs/next-version-targets.md) remain binding
+after the operator-approved 4.0.0-only performance exceptions.
 
 ## Product contract
 
 - This GUI is additive. Bare `sd300` keeps the existing User/Technician chooser
-  and unchanged Ratatui flow; `sd300 gui` launches or focuses this app.
+  and independent Ratatui session; `sd300 gui` launches or focuses this app.
 - Managed wrappers and native installers package the CLI/TUI, GUI, engine, and
   platform integrations together, but installation and update never open the
   app automatically. The one deliberate exception is the app's own "Update
@@ -43,6 +44,14 @@ performance soak, or public release.
 
 ## Runtime model
 
+The v4 GUI review keeps the Warm Carbon visual identity while placing live
+readings, histories and findings first. The header switches audience mode;
+network scans, bandwidth tests and storage setup have separate contextual
+controls. Process pages show every returned row and follow the current full
+inventory rank. See [ADR 0013](../docs/adr/0013-gui-monitoring-hierarchy.md) and
+the [review evidence](../docs/qualification/v4/gui-ux-review.md) for intentional
+presentation changes and remaining acceptance limits.
+
 The GUI dynamically loads one target engine from the application bundle:
 
 - Windows: `sd300_engine.dll`
@@ -56,7 +65,10 @@ mismatches before starting. The engine owns a dedicated Rust thread
 non-cloneable `SystemSnapshot`; it never shares state with the TUI.
 No Rust panic, allocation, reference, or borrowed buffer may cross the C ABI.
 
-The engine preserves the 1/3/5/15/60-second collector cadences and exposes
+Each frontend owns an independent `Monitor` session. Potentially blocking
+native probes run in bounded owned CLI worker processes, with cancellation and
+joined shutdown before engine unload. The engine preserves the live collector
+cadences, refreshes static/driver inventories every five minutes, and exposes
 bounded, latest-only versioned topics. Zig consumes sequence changes, keeps
 bounded histories, and does not queue every missed render. A visible GUI must
 present fast-topic samples at least once per second after renderer optimization;
@@ -133,8 +145,9 @@ manifest or Zig's content-addressed package cache.
 
 ## Settings, tray, and startup
 
-The settings document has separate `shared` and `gui` namespaces. The GUI owns
-its remembered mode and unit, geometry, chart density, navigation, tray,
+The settings document has separate `shared`, `tui` and `gui` namespaces.
+Shared helper paths and terminal presentation preferences have explicit owners.
+The GUI owns its remembered mode and unit, geometry, chart density, navigation, tray,
 close behavior, launch-at-login, and reduced-motion settings. None of these may
 change the next TUI launch, its chooser, or existing terminal defaults.
 
@@ -184,18 +197,19 @@ geometry. Regenerate every committed ICO/ICNS/PNG/hicolor derivative with
 required transparency and palette structure with `zig build check-icons`.
 Never hand-edit generated icon outputs.
 
-Makira is the primary face for body copy, headings, navigation, and large
-numbers. IBM Plex Mono is secondary for technical labels and compact numeric
+Makira and Gail Rock are the main faces: Makira for headings and large readings,
+Gail Rock for body copy, navigation and controls. IBM Plex Mono serves technical labels and compact numeric
 data. The binaries are embedded from `src/fonts`; license notices/evidence live
 under `assets/fonts`. IBM Plex Mono's OFL notice must ship. Do not publicly ship
 Makira unless repository/release evidence confirms that the purchased license
 permits desktop-application embedding and redistribution.
 
-Makira's commercial source file is deliberately excluded from this public
-repository. Local builds use the operator-provided ignored file. Trusted CI
+Both commercial source files are deliberately excluded from this public
+repository. Local builds use the operator-provided ignored files. Trusted CI
 reconstructs the exact reviewed bytes from the split encrypted
 `SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1` and
-`SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2` secrets, then verifies the digest in
+`SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2` secrets for Makira, and
+`SD300_GAIL_ROCK_FONT_BROTLI_BASE64` for Gail Rock, then verifies the digests in
 `toolchain-lock.json` before compiling. Never print, upload, or attach either
 secret or the standalone font file.
 
@@ -241,3 +255,62 @@ for CLI/TUI isolation, desktop/tray lifecycle, and no-console collection.
 
 See [the information architecture](../docs/thinking/2026-07-21-native-gui-information-architecture.md)
 for hierarchy and professional/new-user presentation decisions.
+
+
+### v4 capture histories
+
+Histories use bounded timestamped samples. Missing captures produce empty time buckets;
+bar traces avoid connecting across gaps. CPU temperature remains its own series. The TUI
+preference namespace is preserved when the GUI saves its own preferences. These changes
+are implemented in v4; native results and remaining physical-device limits are recorded in the qualification evidence.
+
+
+### Optional network companion
+
+The terminal's **N** panel and the app's **Network** section can run the installed
+public ND-300 4.0.1 companion. Standard and deep scans explicitly skip speed
+tests. SpeedQX is a separate bandwidth-consuming action with a displayed budget
+and a fresh, optional M-Lab consent choice. Monitoring continues during scans;
+cancellation never invokes network repairs. Unknown companion versions are
+reported separately. Results stay in memory until exported, and redacted exports
+omit imported free-form details.
+
+Optional setup is a separate confirmation in both interfaces. The TUI uses **i**
+inside the **N** panel; the GUI provides **Install optional ND-300**. The CLI
+`sd300 tools nd300` describes the exact operation; `--install --accept` consents.
+Setup uses the official release archive with a platform-specific pinned checksum,
+keeps existing installations, and verifies both executables. The independent
+per-user ND-300 directory survives SD-300 removal and carries its own standalone
+receipt. No PATH changes, elevated install, diagnostic, repair or bandwidth test
+is implied by setup. Optional-tool ownership is independent of SD-300 removal.
+
+
+Optional SMART helper setup is available with **h** in the terminal's companion
+panel, the app's **Install optional SMART helper** action, or
+`sd300 tools smartctl --install --accept`. Inspect `sd300 tools smartctl` first
+for the platform's exact operation. Windows uses a checksum-pinned, unelevated
+component extraction; macOS uses existing Homebrew; Debian/Ubuntu and Alpine
+extract authenticated packages without running their service scripts. Missing
+runtime dependencies or unsupported package managers leave ordinary monitoring
+available with a specific setup instruction. Setup does not authorize a device
+self-test, repair, disk setting change, or privileged read.
+
+A privileged SMART read is a separate operation. In the TUI, select a physical
+drive under Storage and press **A**; in the GUI, use **Review read…** in Storage.
+Review the device, helper path and checksum, then explicitly allow that read.
+Only a short-lived worker requests OS authorization. Monitoring stays
+unprivileged and responsive. The read has a twelve-second limit, authentication
+expires after one minute, and cancellation preserves the previous result.
+Linux needs PolicyKit and a registered graphical authentication agent; a
+headless session retains ordinary unprivileged monitoring. No repair, self-test,
+service or disk-setting change is performed. Captured results remain in memory
+and appear in explicit schema-2 exports with identifier redaction.
+
+### Complete captured inventory queries
+
+Process, connection and device searches run against the engine's complete captured
+inventory before creating bounded pages. Query changes retain the sample capture time;
+clear or failed providers retain their availability state. Connections use twenty rows
+per page and devices use thirty-two, with exact total/matched counts and previous/next
+controls. Device attention filtering is applied before paging. Offline fixture projections
+can still use local filtering; shipped clients use the engine query interface.

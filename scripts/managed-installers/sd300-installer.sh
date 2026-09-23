@@ -747,7 +747,7 @@ sd300_verify_receipt() {
 sd300_verify_binary() {
     binary=$sd300_intended_binary
     [ -x "$binary" ] || sd300_fail "managed SD-300 binary is missing: $binary"
-    reported=$($binary --version 2>/dev/null) || sd300_fail 'managed SD-300 binary did not run'
+    reported=$("$binary" --version 2>/dev/null) || sd300_fail 'managed SD-300 binary did not run'
     [ "$reported" = "sd300 ${sd300_version}" ] \
         || sd300_fail "managed SD-300 binary did not report ${sd300_version}"
     printf '%s\n' "$binary"
@@ -958,11 +958,48 @@ sd300_stage_gui_payload() {
             ;;
     esac
     [ -x "$gui_binary" ] || sd300_fail 'GUI archive entrypoint is missing or not executable'
-    gui_result=$($gui_binary --self-test --json 2>/dev/null) || sd300_fail 'staged GUI self-test failed'
+    gui_result=$("$gui_binary" --self-test --json 2>/dev/null) || sd300_fail 'staged GUI self-test failed'
     printf '%s\n' "$gui_result" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true' || sd300_fail 'staged GUI did not report success'
     printf '%s\n' "$gui_result" | grep -Eq "\"product_version\"[[:space:]]*:[[:space:]]*\"${sd300_version}\"" || sd300_fail 'staged GUI version is incompatible'
-    printf '%s\n' "$gui_result" | grep -Eq '"abi_version"[[:space:]]*:[[:space:]]*1' || sd300_fail 'staged GUI ABI is incompatible'
+    printf '%s\n' "$gui_result" | grep -Eq '"abi_version"[[:space:]]*:[[:space:]]*2([[:space:],}]|$)' || sd300_fail 'staged GUI ABI is incompatible'
+    printf '%s\n' "$gui_result" | grep -Eq '"engine_schema_version"[[:space:]]*:[[:space:]]*2([[:space:],}]|$)' || sd300_fail 'staged GUI schema is incompatible'
 }
+
+sd300_configure_linux_desktop() (
+    # Desktop-entry strings and Exec quoting have separate escaping layers.
+    # An absolute icon path works before the launcher's private XDG_DATA_DIRS
+    # exists, and keeps ownership inside the removable application bundle.
+    [ -f "$1" ] && [ -x "$2" ] && [ -f "$3" ] || return 1
+    for desktop_path in "$2" "$3"; do
+        case "$desktop_path" in /*) ;; *) return 1 ;; esac
+        [ "$(printf '%s' "$desktop_path" | LC_ALL=C tr -d '[:cntrl:]')" = "$desktop_path" ] || return 1
+    done
+    case "$2" in *'='*) return 1 ;; esac
+    desktop_exec=$(printf '%s' "$2" | sed 's/\\/\\\\/g; s/["`$]/\\&/g; s/\\/\\\\/g; s/%/%%/g') || return 1
+    desktop_exec_prefix=''
+    case "$2" in
+        *%*)
+            # GIO checks argv[0] for existence before expanding %% to %. Use
+            # the native env executable for this case so literal percent paths
+            # remain launchable without interpreting the path as shell code.
+            desktop_env=$(command -v env) || return 1
+            case "$desktop_env" in /*) ;; *) return 1 ;; esac
+            desktop_env=$(printf '%s' "$desktop_env" | sed 's/\\/\\\\/g; s/["`$]/\\&/g; s/\\/\\\\/g') || return 1
+            desktop_exec_prefix="\"$desktop_env\" -- "
+            ;;
+    esac
+    desktop_icon=$(printf '%s' "$3" | sed 's/\\/\\\\/g') || return 1
+    desktop_exec_seen=0
+    desktop_icon_seen=0
+    while IFS= read -r desktop_line || [ -n "$desktop_line" ]; do
+        case "$desktop_line" in
+            Exec=*) printf 'Exec=%s"%s"\n' "$desktop_exec_prefix" "$desktop_exec"; desktop_exec_seen=$((desktop_exec_seen + 1)) ;;
+            Icon=*) printf 'Icon=%s\n' "$desktop_icon"; desktop_icon_seen=$((desktop_icon_seen + 1)) ;;
+            *) printf '%s\n' "$desktop_line" ;;
+        esac
+    done < "$1"
+    [ "$desktop_exec_seen" -eq 1 ] && [ "$desktop_icon_seen" -eq 1 ]
+)
 
 sd300_install_gui_payload() {
     sd300_gui_install_started=1
@@ -990,14 +1027,16 @@ sd300_install_gui_payload() {
             fi
             desktop_source="$sd300_gui_root/share/applications/sd300.desktop"
             mkdir -p "$(dirname "$sd300_gui_desktop")"
-            sed "s#@SD300_GUI@#${gui_binary}#g" "$desktop_source" > "$sd300_gui_desktop" || sd300_fail 'could not install the Linux desktop entry'
+            sd300_configure_linux_desktop "$desktop_source" "$gui_binary" \
+                "$sd300_gui_root/libexec/assets/app-icon.png" > "$sd300_gui_desktop" \
+                || sd300_fail 'could not install the Linux desktop entry and application icon'
             chmod 644 "$sd300_gui_desktop"
             ;;
     esac
     mkdir -p "$(dirname "$marker")" || sd300_fail 'could not create the GUI ownership directory'
     printf '%s\n' "{\"schema\":1,\"product\":\"SD-300\",\"version\":\"${sd300_version}\",\"owner\":\"shell-installer\"}" > "$marker" || sd300_fail 'could not write the GUI ownership marker'
     chmod 600 "$marker" || sd300_fail 'could not protect the GUI ownership marker'
-    result=$($gui_binary --self-test --json 2>/dev/null) || sd300_fail 'installed GUI self-test failed'
+    result=$("$gui_binary" --self-test --json 2>/dev/null) || sd300_fail 'installed GUI self-test failed'
     printf '%s\n' "$result" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true' || sd300_fail 'installed GUI did not report success'
 }
 

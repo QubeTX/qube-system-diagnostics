@@ -5,7 +5,7 @@ use super::{DiagnosticWarning, WarningSeverity};
 use crate::collectors::gpu::GpuData;
 use crate::observation::Observation;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct ThermalData {
     pub cpu_temp: Option<f64>,
     pub gpu_temp: Option<f64>,
@@ -20,8 +20,10 @@ pub struct ThermalData {
     pub battery_status: Observation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct SensorInfo {
+    #[serde(default)]
+    pub device_id: Option<String>,
     pub label: String,
     pub temperature: f64,
     pub critical: Option<f64>,
@@ -29,14 +31,16 @@ pub struct SensorInfo {
     pub source: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct FanInfo {
+    #[serde(default)]
+    pub device_id: Option<String>,
     pub label: String,
     pub rpm: u64,
     pub source: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SensorKind {
     Cpu,
@@ -44,7 +48,7 @@ pub enum SensorKind {
     Other,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct BatteryInfo {
     pub percent: f64,
     pub is_charging: bool,
@@ -56,7 +60,7 @@ pub struct BatteryInfo {
     pub provider_status: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PowerSource {
     #[default]
@@ -69,11 +73,16 @@ pub fn collect(
     components: &mut Components,
     gpu: &GpuData,
 ) -> (ThermalData, Vec<DiagnosticWarning>) {
+    #[cfg(not(target_os = "linux"))]
     components.refresh(true);
+    #[cfg(target_os = "linux")]
+    let _ = components;
     let mut warnings = Vec::new();
 
+    #[cfg(not(target_os = "linux"))]
     let mut sensors = Vec::new();
 
+    #[cfg(not(target_os = "linux"))]
     for component in components.iter() {
         let label = component.label().to_string();
         let Some(temp) = component.temperature().map(|value| value as f64) else {
@@ -82,6 +91,7 @@ pub fn collect(
         let critical = component.critical().map(|t| t as f64);
 
         sensors.push(SensorInfo {
+            device_id: None, // sysinfo does not expose a stable sensor identifier
             kind: classify_sensor(&label, ""),
             label,
             temperature: temp,
@@ -90,7 +100,7 @@ pub fn collect(
         });
     }
 
-    #[cfg_attr(not(windows), allow(unused_mut))]
+    #[cfg(not(target_os = "linux"))]
     let mut temperature_status = if sensors.is_empty() {
         Observation::unavailable("sysinfo components", "No temperature values were returned")
     } else {
@@ -122,7 +132,11 @@ pub fn collect(
         (wmi_fans, wmi_fan_status)
     };
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    let (mut sensors, fans, mut temperature_status, fan_status) =
+        super::linux_inventory::thermals(std::path::Path::new("/sys/class/hwmon"));
+
+    #[cfg(not(any(windows, target_os = "linux")))]
     let (fans, fan_status) = (
         Vec::new(),
         Observation::unsupported(
@@ -131,17 +145,8 @@ pub fn collect(
         ),
     );
 
-    if let Some((temperature, label, source)) = gpu_temperature_sensor(gpu) {
-        push_unique_sensor(
-            &mut sensors,
-            SensorInfo {
-                label,
-                temperature,
-                critical: None,
-                kind: SensorKind::Gpu,
-                source,
-            },
-        );
+    for sensor in gpu_temperature_sensors(gpu) {
+        push_unique_sensor(&mut sensors, sensor);
     }
 
     let cpu_temp = hottest_temperature(&sensors, SensorKind::Cpu);
@@ -203,33 +208,33 @@ pub fn collect(
     (data, warnings)
 }
 
+#[cfg(any(not(target_os = "linux"), test))]
 fn classify_sensor(label: &str, identity: &str) -> SensorKind {
     let haystack = format!("{} {}", label, identity).to_ascii_lowercase();
-    if haystack.contains("/intelcpu/")
-        || haystack.contains("/amdcpu/")
-        || haystack.contains("cpu")
-        || haystack.contains("coretemp")
-        || haystack.contains("package")
-        || haystack.contains("tctl")
-        || haystack.contains("tdie")
-    {
-        SensorKind::Cpu
-    } else if haystack.contains("/gpu")
+    if haystack.contains("/gpu")
         || haystack.contains("gpu")
         || haystack.contains("nvidia")
         || haystack.contains("radeon")
     {
         SensorKind::Gpu
+    } else if haystack.contains("/intelcpu/")
+        || haystack.contains("/amdcpu/")
+        || haystack.contains("cpu")
+        || haystack.contains("coretemp")
+        || haystack.contains("tctl")
+        || haystack.contains("tdie")
+    {
+        SensorKind::Cpu
     } else {
         SensorKind::Other
     }
 }
 
 fn push_unique_sensor(sensors: &mut Vec<SensorInfo>, sensor: SensorInfo) {
-    let duplicate = sensors.iter().any(|current| {
-        current.kind == sensor.kind
-            && current.label.eq_ignore_ascii_case(&sensor.label)
-            && (current.temperature - sensor.temperature).abs() < 0.1
+    let duplicate = sensor.device_id.as_ref().is_some_and(|id| {
+        sensors.iter().any(|current| {
+            current.device_id.as_ref() == Some(id) && current.source == sensor.source
+        })
     });
     if !duplicate {
         sensors.push(sensor);
@@ -280,19 +285,27 @@ fn temperature_observation_for_kind(
     }
 }
 
-fn gpu_temperature_sensor(gpu: &GpuData) -> Option<(f64, String, String)> {
-    let adapter = gpu
-        .adapters
+fn gpu_temperature_sensors(gpu: &GpuData) -> Vec<SensorInfo> {
+    gpu.adapters
         .iter()
-        .find(|adapter| adapter.temperature_celsius.is_some())?;
-    let temperature = adapter.temperature_celsius?;
-    (-50.0..=200.0).contains(&temperature).then(|| {
-        (
-            temperature,
-            format!("GPU: {}", adapter.name),
-            adapter.source.clone(),
-        )
-    })
+        .filter_map(|adapter| {
+            let temperature = adapter
+                .temperature_celsius
+                .filter(|v| v.is_finite() && (-50.0..=200.0).contains(v))?;
+            Some(SensorInfo {
+                device_id: (!adapter.device_id.is_empty())
+                    .then(|| format!("{}:temperature", adapter.device_id)),
+                temperature,
+                label: format!("GPU: {}", adapter.name),
+                source: adapter
+                    .fields
+                    .get("temperature_celsius")
+                    .map_or_else(|| adapter.source.clone(), |field| field.source.clone()),
+                critical: None,
+                kind: SensorKind::Gpu,
+            })
+        })
+        .collect()
 }
 
 // --- WMI fallback for Windows ---
@@ -343,7 +356,7 @@ struct AwccWmiMethodFunction {
 }
 
 #[cfg(windows)]
-#[derive(Serialize)]
+#[derive(Serialize, serde::Deserialize)]
 struct AwccMethodInput {
     arg2: u32,
 }
@@ -367,6 +380,32 @@ struct WindowsThermalReadings {
 
 #[cfg(windows)]
 fn collect_wmi_thermals() -> (
+    Vec<SensorInfo>,
+    Vec<FanInfo>,
+    Observation,
+    Observation,
+    Vec<DiagnosticWarning>,
+) {
+    use super::provider_cache::OptionalCache;
+    use std::cell::RefCell;
+    type Result = (
+        Vec<SensorInfo>,
+        Vec<FanInfo>,
+        Observation,
+        Observation,
+        Vec<DiagnosticWarning>,
+    );
+    thread_local! {static CACHE:RefCell<OptionalCache<Result>>=RefCell::new(OptionalCache::default());}
+    CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .sample(collect_wmi_thermals_uncached, |r| {
+                !r.0.is_empty() || !r.1.is_empty()
+            })
+    })
+}
+#[cfg(windows)]
+fn collect_wmi_thermals_uncached() -> (
     Vec<SensorInfo>,
     Vec<FanInfo>,
     Observation,
@@ -433,12 +472,14 @@ fn collect_wmi_thermals() -> (
                             let celsius = (raw_temp as f64 / 10.0) - 273.15;
                             // Sanity check: 0-150C range
                             if (0.0..=150.0).contains(&celsius) {
+                                let device_id = zone.instance_name.clone();
                                 let label = zone.instance_name
                                     .unwrap_or_else(|| "Thermal Zone".into());
                                 let critical = zone.critical_trip_point.map(|c| {
                                     (c as f64 / 10.0) - 273.15
                                 });
                                 sensors.push(SensorInfo {
+                                    device_id,
                                     kind: classify_sensor(&label, ""),
                                     label,
                                     temperature: celsius,
@@ -558,6 +599,21 @@ fn collect_wmi_thermals() -> (
 
 #[cfg(windows)]
 fn collect_hardware_monitor_bridge() -> Option<WindowsThermalReadings> {
+    use super::provider_cache::OptionalCache;
+    use std::cell::RefCell;
+    thread_local! {static CACHE:RefCell<OptionalCache<Option<WindowsThermalReadings>>>=RefCell::new(OptionalCache::default());}
+    CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .sample(collect_hardware_monitor_bridge_uncached, |readings| {
+                readings
+                    .as_ref()
+                    .is_some_and(|r| !r.sensors.is_empty() || !r.fans.is_empty())
+            })
+    })
+}
+#[cfg(windows)]
+fn collect_hardware_monitor_bridge_uncached() -> Option<WindowsThermalReadings> {
     use wmi::{COMLibrary, WMIConnection};
 
     for (namespace, source) in [
@@ -614,6 +670,7 @@ fn collect_hardware_monitor_bridge() -> Option<WindowsThermalReadings> {
             {
                 "temperature" if (-50.0..=200.0).contains(&value) => {
                     sensors.push(SensorInfo {
+                        device_id: row.identifier.clone(),
                         kind: classify_sensor(&name, &identity),
                         label: name,
                         temperature: value,
@@ -622,6 +679,7 @@ fn collect_hardware_monitor_bridge() -> Option<WindowsThermalReadings> {
                     });
                 }
                 "fan" if (0.0..=100_000.0).contains(&value) => fans.push(FanInfo {
+                    device_id: row.identifier.clone(),
                     label: name,
                     rpm: value.round() as u64,
                     source: source.into(),
@@ -652,6 +710,21 @@ fn collect_hardware_monitor_bridge() -> Option<WindowsThermalReadings> {
 
 #[cfg(windows)]
 fn collect_awcc_thermals() -> Option<WindowsThermalReadings> {
+    use super::provider_cache::OptionalCache;
+    use std::cell::RefCell;
+    thread_local! {static CACHE:RefCell<OptionalCache<Option<WindowsThermalReadings>>>=RefCell::new(OptionalCache::default());}
+    CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .sample(collect_awcc_thermals_uncached, |readings| {
+                readings
+                    .as_ref()
+                    .is_some_and(|r| !r.sensors.is_empty() || !r.fans.is_empty())
+            })
+    })
+}
+#[cfg(windows)]
+fn collect_awcc_thermals_uncached() -> Option<WindowsThermalReadings> {
     use wmi::{COMLibrary, WMIConnection};
 
     const SOURCE: &str = "Dell AWCC Thermal_Information (read-only)";
@@ -727,6 +800,7 @@ fn collect_awcc_thermals() -> Option<WindowsThermalReadings> {
         let temperature = f64::from(raw);
         if (-50.0..=200.0).contains(&temperature) {
             sensors.push(SensorInfo {
+                device_id: Some(format!("{}:temperature:{id:02x}", instance.path)),
                 label: format!("Dell thermal sensor 0x{id:02X}"),
                 temperature,
                 critical: None,
@@ -744,6 +818,7 @@ fn collect_awcc_thermals() -> Option<WindowsThermalReadings> {
         };
         if raw <= 100_000 {
             fans.push(FanInfo {
+                device_id: Some(format!("{}:fan:{id:02x}", instance.path)),
                 label: format!("Dell fan 0x{id:02X}"),
                 rpm: u64::from(raw),
                 source: SOURCE.into(),
@@ -833,14 +908,19 @@ fn collect_battery() -> (Option<BatteryInfo>, Observation) {
     {
         collect_battery_windows()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_inventory::battery(std::path::Path::new("/sys/class/power_supply"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        super::apple_inventory::battery()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         (
             None,
-            Observation::unsupported(
-                "platform battery provider",
-                "Battery collection is not implemented on this platform",
-            ),
+            Observation::unsupported("battery provider", "No provider implemented for this OS"),
         )
     }
 }
@@ -988,6 +1068,7 @@ mod tests {
 
     fn sensor(label: &str, kind: SensorKind, source: &str) -> SensorInfo {
         SensorInfo {
+            device_id: None,
             label: label.into(),
             temperature: 55.0,
             critical: None,
@@ -998,6 +1079,11 @@ mod tests {
 
     #[test]
     fn classifies_hardware_monitor_identifiers_without_guessing_generic_zones() {
+        assert_eq!(
+            classify_sensor("GPU Package", "/gpu-amd/0"),
+            SensorKind::Gpu
+        );
+        assert_eq!(classify_sensor("Package", ""), SensorKind::Other);
         assert_eq!(
             classify_sensor("CPU Package", "/intelcpu/0/temperature/0"),
             SensorKind::Cpu
@@ -1010,6 +1096,37 @@ mod tests {
             classify_sensor("Thermal Zone 0", "ACPI\\ThermalZone"),
             SensorKind::Other
         );
+    }
+
+    #[test]
+    fn sensor_deduplication_requires_provider_identity() {
+        let mut sensors = Vec::new();
+        for id in [Some("a"), Some("b"), Some("a"), None, None] {
+            let mut reading = sensor("Identical label", SensorKind::Cpu, "fixture");
+            reading.device_id = id.map(str::to_owned);
+            push_unique_sensor(&mut sensors, reading);
+        }
+        assert_eq!(sensors.len(), 4);
+    }
+
+    #[test]
+    fn every_graphics_adapter_retains_its_temperature_identity() {
+        let gpu = GpuData {
+            adapters: ["pci:01:00.0", "pci:02:00.0"]
+                .into_iter()
+                .map(|id| super::super::gpu::GpuAdapter {
+                    device_id: id.into(),
+                    name: "Identical GPU".into(),
+                    temperature_celsius: Some(54.0),
+                    source: "fixture".into(),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let sensors = gpu_temperature_sensors(&gpu);
+        assert_eq!(sensors.len(), 2);
+        assert_ne!(sensors[0].device_id, sensors[1].device_id);
     }
 
     #[test]

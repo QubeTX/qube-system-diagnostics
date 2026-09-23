@@ -1,0 +1,75 @@
+{
+  "arch": "x86_64",
+  "build": "release",
+  "limitations": "Stage wall times, sequential diagnostic workload; TestBackend excludes terminal transport. Not process CPU or real input latency.",
+  "os": "windows",
+  "schema": 1,
+  "stages": {
+    "cpu.project_and_topology": {
+      "count": 15,
+      "max_ms": 0.0537,
+      "mean_ms": 0.037573333333333334,
+      "p95_ms": 0.0537
+    },
+    "cpu.refresh_all": {
+      "count": 15,
+      "max_ms": 0.7240000000000001,
+      "mean_ms": 0.27718666666666664,
+      "p95_ms": 0.7240000000000001
+    },
+    "findings": {
+      "count": 15,
+      "max_ms": 0.0015,
+      "mean_ms": 0.0010866666666666666,
+      "p95_ms": 0.0015
+    },
+    "memory.project": {
+      "count": 15,
+      "max_ms": 0.0014,
+      "mean_ms": 0.00082,
+      "p95_ms": 0.0014
+    },
+    "memory.refresh": {
+      "count": 15,
+      "max_ms": 0.24409999999999998,
+      "mean_ms": 0.2021333333333333,
+      "p95_ms": 0.24409999999999998
+    },
+    "network.refresh_and_project": {
+      "count": 15,
+      "max_ms": 2.5282,
+      "mean_ms": 1.3010066666666664,
+      "p95_ms": 2.5282
+    },
+    "overview.prepare": {
+      "count": 15,
+      "max_ms": 0.0513,
+      "mean_ms": 0.02986666666666667,
+      "p95_ms": 0.0513
+    },
+    "overview.test_backend_draw": {
+      "count": 15,
+      "max_ms": 0.25579999999999997,
+      "mean_ms": 0.14068666666666668,
+      "p95_ms": 0.25579999999999997
+    },
+    "processes.prepare": {
+      "count": 15,
+      "max_ms": 0.3019,
+      "mean_ms": 0.21123999999999998,
+      "p95_ms": 0.3019
+    },
+    "processes.refresh_and_project": {
+      "count": 15,
+      "max_ms": 6.0832999999999995,
+      "mean_ms": 5.292566666666667,
+      "p95_ms": 6.0832999999999995
+    },
+    "processes.test_backend_draw": {
+      "count": 15,
+      "max_ms": 0.1906,
+      "mean_ms": 0.12725333333333336,
+      "p95_ms": 0.1906
+    }
+  }
+}

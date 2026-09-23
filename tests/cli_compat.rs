@@ -41,11 +41,40 @@ fn normalize_cli_text(bytes: &[u8]) -> String {
 }
 
 fn strip_additive_gui_help(text: &str) -> String {
-    let mut normalized = text
+    let adapted = text
+        .replace(
+            "  r            Retry providers and discovery",
+            "  r            Refresh drivers (Drivers section)",
+        )
+        .replace(
+            "  q / Esc      Quit (Esc closes panels and filters first)",
+            "  q / Esc      Quit",
+        )
+        .replace(
+            "  j / k        Select rows / scroll inspector",
+            "  j / k        Scroll (Processes, Connections, Drivers, Disk)",
+        );
+    let mut normalized = adapted
         .lines()
         .filter(|line| {
             let trimmed = line.trim_start();
-            !trimmed.starts_with("gui ") && !trimmed.starts_with("sd300 gui ")
+            !trimmed.starts_with("gui ")
+                && !trimmed.starts_with("sd300 gui ")
+                && trimmed != "tools         Inspect or explicitly install an independently owned optional companion"
+                && ![
+                    "/            Filter the complete inventory",
+                    "Enter        Inspect selected row",
+                    "Space        Pause view / resume newest sample",
+                    "PgUp/PgDn    Page through rows",
+                    "Home / End   Select first / last row",
+                    "Tab          Next section (Shift+Tab goes back)",
+                    "s            Reverse process sort direction",
+                    "F            Findings, evidence and next steps",
+                    "N            Optional network diagnostics and SpeedQX",
+                    "A            Review a privileged read of the selected drive",
+                    "E            Export this session with redaction",
+                ]
+                .contains(&trimmed)
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -118,7 +147,7 @@ fn collector_command_lock() -> std::sync::MutexGuard<'static, ()> {
 }
 
 #[test]
-fn long_help_is_the_v2_0_6_golden_plus_only_the_additive_gui_lines() {
+fn long_help_preserves_v2_commands_with_explicit_v4_interaction_additions() {
     let output = run(&["--help"]);
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
@@ -132,7 +161,7 @@ fn long_help_is_the_v2_0_6_golden_plus_only_the_additive_gui_lines() {
 }
 
 #[test]
-fn short_help_is_the_v2_0_6_golden_plus_only_the_additive_gui_command() {
+fn short_help_preserves_v2_golden_with_explicit_additive_commands() {
     let output = run(&["-h"]);
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
@@ -246,6 +275,7 @@ fn v2_command_and_legacy_flag_parser_contract_is_unchanged() {
         Some(CliCommand::Snapshot(ReportArgs {
             json: true,
             include_sensitive: false,
+            schema_version: 1,
         }))
     );
 
@@ -256,6 +286,7 @@ fn v2_command_and_legacy_flag_parser_contract_is_unchanged() {
         Some(CliCommand::Capabilities(ReportArgs {
             json: true,
             include_sensitive: false,
+            schema_version: 1,
         }))
     );
 
@@ -383,4 +414,15 @@ fn capabilities_json_preserves_v2_0_6_order_shape_and_single_value_stdout() {
         })
         .collect::<Vec<_>>();
     assert_eq!(actual_ids, expected_ids);
+}
+
+#[test]
+fn optional_install_without_acceptance_is_refused_before_any_changes() {
+    let output = run(&["tools", "nd300", "--install", "--json"]);
+    assert_eq!(output.status.code(), Some(1));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["success"], false);
+    assert_eq!(value["installed"], false);
+    assert!(value["message"].as_str().unwrap().contains("declined"));
+    assert!(output.stderr.is_empty());
 }

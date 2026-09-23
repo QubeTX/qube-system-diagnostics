@@ -1,0 +1,86 @@
+{
+  "arch": "x86_64",
+  "build": "release",
+  "limitations": "Sequential diagnostic workload; TestBackend excludes terminal transport. Windows stage CPU is quantized process time and excludes external services/children. Not whole-product CPU or real input latency.",
+  "os": "windows",
+  "schema": 1,
+  "stages": {
+    "cpu.project_and_topology": {
+      "count": 20,
+      "max_ms": 0.0511,
+      "mean_ms": 0.032455000000000005,
+      "p95_ms": 0.0419,
+      "process_cpu_total_ms": 0.0
+    },
+    "cpu.refresh_all": {
+      "count": 20,
+      "max_ms": 1.4504,
+      "mean_ms": 0.312635,
+      "p95_ms": 0.7496999999999999,
+      "process_cpu_total_ms": 0.0
+    },
+    "findings": {
+      "count": 20,
+      "max_ms": 0.0022,
+      "mean_ms": 0.0015350000000000003,
+      "p95_ms": 0.002,
+      "process_cpu_total_ms": 0.0
+    },
+    "memory.project": {
+      "count": 20,
+      "max_ms": 0.0017000000000000001,
+      "mean_ms": 0.0011699999999999998,
+      "p95_ms": 0.0015,
+      "process_cpu_total_ms": 0.0
+    },
+    "memory.refresh": {
+      "count": 20,
+      "max_ms": 0.708,
+      "mean_ms": 0.24390500000000004,
+      "p95_ms": 0.6323,
+      "process_cpu_total_ms": 0.0
+    },
+    "network.refresh_and_project": {
+      "count": 20,
+      "max_ms": 2.284,
+      "mean_ms": 1.1874500000000001,
+      "p95_ms": 2.1138,
+      "process_cpu_total_ms": 0.0
+    },
+    "overview.prepare": {
+      "count": 20,
+      "max_ms": 0.6213,
+      "mean_ms": 0.06068499999999999,
+      "p95_ms": 0.047299999999999995,
+      "process_cpu_total_ms": 15.625
+    },
+    "overview.test_backend_draw": {
+      "count": 20,
+      "max_ms": 0.3146,
+      "mean_ms": 0.14816500000000002,
+      "p95_ms": 0.2306,
+      "process_cpu_total_ms": 0.0
+    },
+    "processes.prepare": {
+      "count": 20,
+      "max_ms": 1.1356000000000002,
+      "mean_ms": 0.29991,
+      "p95_ms": 0.656,
+      "process_cpu_total_ms": 15.625
+    },
+    "processes.refresh_and_project": {
+      "count": 20,
+      "max_ms": 7.2364,
+      "mean_ms": 5.767200000000001,
+      "p95_ms": 6.6221,
+      "process_cpu_total_ms": 125.0
+    },
+    "processes.test_backend_draw": {
+      "count": 20,
+      "max_ms": 0.2319,
+      "mean_ms": 0.12972499999999998,
+      "p95_ms": 0.1797,
+      "process_cpu_total_ms": 0.0
+    }
+  }
+}

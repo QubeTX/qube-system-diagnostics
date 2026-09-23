@@ -3,7 +3,7 @@ use sysinfo::System;
 
 use crate::observation::Observation;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct MemoryData {
     pub used_bytes: u64,
     pub total_bytes: u64,
@@ -14,7 +14,7 @@ pub struct MemoryData {
     pub module_status: Observation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct MemoryModule {
     pub capacity_bytes: u64,
     pub configured_speed_mt_s: Option<u32>,

@@ -1,0 +1,340 @@
+{
+  "schema": 1,
+  "version": "4.0.0",
+  "decision": "ADR 0017; approved by operator 2026-09-23",
+  "original_reports_unchanged": true,
+  "assessments": [
+    {
+      "target": "macos-arm64",
+      "kind": "tui",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "0fc144d5edbe0d07ca3194b6830a6288ae17c78b1ea0cde6db8d60f9101a1b7f",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "cpu_gate": false,
+        "rss_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "macos-arm64",
+      "kind": "gui-foreground",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "e5b5848c7ca24f64858571a07522bf6cd0d3aaf85335cb7c12b21f705530ca33",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "rss_gate": false,
+        "cpu_gate": false
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "macos-arm64",
+      "kind": "gui-hidden",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "e5b5848c7ca24f64858571a07522bf6cd0d3aaf85335cb7c12b21f705530ca33",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 3,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "rss_gate": true,
+        "cpu_gate": false
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "macos-x86_64",
+      "kind": "tui",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "f0a733f20a0cce107400739ac28837a196f7373d0ae636373a21b546fcdfcce0",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "cpu_gate": true,
+        "rss_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "macos-x86_64",
+      "kind": "gui-foreground",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "271ce910494b8a473776d93bb2b76fd5c044848888a00cf8816cb5542a765b6c",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "rss_gate": true,
+        "cpu_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "macos-x86_64",
+      "kind": "gui-hidden",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "271ce910494b8a473776d93bb2b76fd5c044848888a00cf8816cb5542a765b6c",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 3,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "rss_gate": true,
+        "cpu_gate": false
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "linux-gnu-arm64",
+      "kind": "tui",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "766e816d438811152a350a12f5ffff7cf792baf54c6cf2dcf5d00557a11c673f",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "cpu_gate": true,
+        "rss_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "linux-gnu-arm64",
+      "kind": "gui-foreground",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "3e67d9382a2024b2ec8bc2a95a033a5826daebc6226f48b715fc9ffb607412bd",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "rss_gate": true,
+        "cpu_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "linux-gnu-arm64",
+      "kind": "gui-hidden",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "3e67d9382a2024b2ec8bc2a95a033a5826daebc6226f48b715fc9ffb607412bd",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 3,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "rss_gate": true,
+        "cpu_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "linux-gnu-x86_64",
+      "kind": "tui",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "b73070db5051bab80f5b9be05052f2b24a47b82a713d74678f462e58748af14a",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "cpu_gate": true,
+        "rss_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "linux-gnu-x86_64",
+      "kind": "gui-foreground",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "28749d4d2be975258f78438fba8de46a17810c41775346749c3042da25853cf9",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "rss_gate": false,
+        "cpu_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "linux-gnu-x86_64",
+      "kind": "gui-hidden",
+      "source": "native-resources-ec5635d.json",
+      "sha256": "28749d4d2be975258f78438fba8de46a17810c41775346749c3042da25853cf9",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 3,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "rss_gate": true,
+        "cpu_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "windows-x86_64",
+      "kind": "tui",
+      "source": "windows-tui-309d2f3.json",
+      "sha256": "1937fb4f943b785bc65b9922b13bb9440b51cab336f861a0156eb0dc2000aae8",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200,
+        "private_mib_max": 300
+      },
+      "original_gates": {
+        "foreground_cpu_gate": true,
+        "rss_gate": true,
+        "private_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "linux-musl-x86_64",
+      "kind": "tui",
+      "source": "native-resources-309d2f3.json",
+      "sha256": "70e930e568435992fb396f0a0639d3de3f443743767ba23339d3abcf1714725a",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "cpu_gate": true,
+        "rss_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "linux-musl-x86_64",
+      "kind": "gui-foreground",
+      "source": "native-resources-309d2f3.json",
+      "sha256": "0781c44a4c186462322236ff8d0b92e0f5797527e779cc1d3469de862ae741b5",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "cpu_gate": false,
+        "rss_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "linux-musl-x86_64",
+      "kind": "gui-hidden",
+      "source": "native-resources-309d2f3.json",
+      "sha256": "0781c44a4c186462322236ff8d0b92e0f5797527e779cc1d3469de862ae741b5",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 3,
+        "rss_mib_max": 200
+      },
+      "original_gates": {
+        "cpu_gate": true,
+        "rss_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "windows-x86_64",
+      "kind": "processes-soak-2h",
+      "source": "windows-resources-ee939df.json",
+      "sha256": "c62d441bc878f050f4bee35bdbe88dc2f436eb92ff60634171157d92be7a2946",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200,
+        "private_mib_max": 300
+      },
+      "original_gates": {
+        "cpu_gate": true,
+        "rss_gate": true,
+        "private_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "windows-x86_64",
+      "kind": "foreground-15m",
+      "source": "windows-resources-ee939df.json",
+      "sha256": "c62d441bc878f050f4bee35bdbe88dc2f436eb92ff60634171157d92be7a2946",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 4,
+        "rss_mib_max": 200,
+        "private_mib_max": 300
+      },
+      "original_gates": {
+        "cpu_gate": true,
+        "rss_gate": true,
+        "private_gate": true
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "target": "windows-x86_64",
+      "kind": "hidden-30m",
+      "source": "windows-resources-ee939df.json",
+      "sha256": "c62d441bc878f050f4bee35bdbe88dc2f436eb92ff60634171157d92be7a2946",
+      "policy": "v4.0.0-operator-resource-ceilings",
+      "limits": {
+        "cpu_percent_one_core": 3,
+        "rss_mib_max": 200,
+        "private_mib_max": 300
+      },
+      "original_gates": {
+        "cpu_gate": true,
+        "rss_gate": true,
+        "private_gate": true
+      },
+      "failures": [],
+      "passed": true
+    }
+  ],
+  "passed": true
+}

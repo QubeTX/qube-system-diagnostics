@@ -53,17 +53,23 @@ const PACKAGE_JSON = path.join(TASKS_DIR, 'package.json');
 const PACKAGE_LOCK = path.join(TASKS_DIR, 'package-lock.json');
 const MANIFEST_FILE = path.join(TASKS_DIR, '.install-manifest.json');    // exhaustive record of what install did — read by /tasks-remove
 
-// Makira (the SHAUGHV body face) is a COMMERCIAL license — never bundled/mirrored. It loads
-// from the CDN when reachable and otherwise falls back to the system font stack; the board's
-// Slot Roll + FLIP motion is glyph-agnostic, so behaviour is identical either way.
-const MAKIRA_NOTE = 'Makira (the SHAUGHV body typeface) is under a commercial license and is never bundled or mirrored — it loads from the CDN when reachable and otherwise falls back to the system font stack. Behaviour is identical regardless.';
+// The authorized board type system is shipped in the plugin: Makira for reading/action and
+// Gail Rock for state/metadata. Makira's private CDN carries byte-identical fallback copies;
+// Gail Rock is shipped-only. Both still degrade to the dashboard's system stacks if absent.
+const FONT_NOTE = 'Makira and Gail Rock are bundled as exact WOFF2 assets for the board type system; Makira also has byte-identical private-CDN fallbacks.';
+
+// These directories were owned by the pre-1.1.1 installer. They are no longer runtime inputs,
+// so a newer install removes them from the system-owned .tasks/vendor cache before provisioning.
+const RETIRED_VENDOR_DIRS = ['fonts/ibm-plex-mono', 'fonts/unbounded'];
 
 // Every vendored asset, keyed by its path relative to vendor/. Each declares the sources it
 // can come from, in tier order: `npm` (full) → `cdn` (vendor) → shipped plugin copy (shipped).
-// `sha256` is verified on every fetched/copied byte (integrity + version-pin); a `null`/absent
-// sha means "presence is enough" (generated text like fonts.css). The pins are byte-exact to the
-// files shipped under skills/tasks-start/assets/vendor/ and to the CDN/npm artefacts they mirror.
+// `sha256` is verified on every fetched/copied byte (integrity + version-pin). The pins are
+// byte-exact to the files shipped under skills/tasks-start/assets/vendor/ and, where declared,
+// to the CDN/npm artefacts they mirror.
 const PINNED = {
+  'shaughv-loader.js': { sha256: '5395bdc375e67448f0b6482727af23e222fdca9ee391b609e0d5f3327873f569' },
+  'fonts/makira/Makira-Light.woff2': { sha256: 'eb1d3f4394492e24e482809195442df24ec62cce14741a5fc2985a6251a29d5f' },
   'anime.min.js': {
     sha256: 'b5ce1be3c3f530f192e0f2571d1942846096d66119cbada34bfdc912c4873f35',
     npm: { pkg: 'animejs', version: '3.2.2', file: path.join('animejs', 'lib', 'anime.min.js') },
@@ -73,29 +79,38 @@ const PINNED = {
     sha256: 'f56628c010793a65e618f05b142fd54a7b66b6217c999fe88a2302e160755eb6',
     cdn: 'https://cdn.shaughv.com/js/animated-brand-mark.js',
   },
-  'fonts/ibm-plex-mono/IBMPlexMono-Regular.woff2': {
-    sha256: '0af5656d2fffe95cd621959a684dcfe69e14d851b79b5980340bd012fb075c79',
-    cdn: 'https://cdn.shaughv.com/fonts/ibm-plex-mono/woff2/IBMPlexMono-Regular.woff2',
+  'fonts/makira/Makira-Regular.woff2': {
+    sha256: '8123abbc97aee587e516a6cf70d20bee5b1696e4a0b1aff6307c932efda65ce1',
+    cdn: 'https://cdn.shaughv.com/fonts/makira/woff2/Makira-Regular.woff2',
   },
-  'fonts/ibm-plex-mono/IBMPlexMono-Medium.woff2': {
-    sha256: 'ad59ae21754cc7405f7e73838c8e21f253d96191ea7f7b6297a88b2086b037f1',
-    cdn: 'https://cdn.shaughv.com/fonts/ibm-plex-mono/woff2/IBMPlexMono-Medium.woff2',
+  'fonts/makira/Makira-Medium.woff2': {
+    sha256: '4f59dee09f86558f83d9ca8c0609eda0a944f1907742af2a92abe71eeb773870',
+    cdn: 'https://cdn.shaughv.com/fonts/makira/woff2/Makira-Medium.woff2',
   },
-  'fonts/ibm-plex-mono/IBMPlexMono-SemiBold.woff2': {
-    sha256: 'a7cc7bc1d6e178820edf6374e84edc10271ccca981961ab49ae6a47fc761e8e5',
-    cdn: 'https://cdn.shaughv.com/fonts/ibm-plex-mono/woff2/IBMPlexMono-SemiBold.woff2',
+  'fonts/makira/Makira-SemiBold.woff2': {
+    sha256: '89ed63922acf207e2bd74865e177604e36141a6e0a009b16ef90180c6ebb54d6',
+    cdn: 'https://cdn.shaughv.com/fonts/makira/woff2/Makira-SemiBold.woff2',
   },
-  'fonts/unbounded/Unbounded-Regular.woff2': {
-    sha256: '0b07919a70db342cbeaf0e8f6d788600e597f44541c9ad7ea8715a1c75e89d00',
-    cdn: 'https://cdn.shaughv.com/fonts/unbounded/woff2/Unbounded-Regular.woff2',
+  'fonts/makira/Makira-Bold.woff2': {
+    sha256: 'd4c7c7e0d2d84bb33518dd900264c2bc2c1b7698d3d98d1a65ba2945d0505085',
+    cdn: 'https://cdn.shaughv.com/fonts/makira/woff2/Makira-Bold.woff2',
   },
-  'fonts/unbounded/Unbounded-Bold.woff2': {
-    sha256: '160dc6b33e738a7480c13f5f06a549c560ff2dd2a4eebc48639d650ba5c05fb9',
-    cdn: 'https://cdn.shaughv.com/fonts/unbounded/woff2/Unbounded-Bold.woff2',
+  'fonts/gail-rock/Gail-Rock-Regular.woff2': {
+    sha256: 'acc19a5524b3f8530877b0d2602dd80ea41aa38135cd1feec0057da4ec641bf0',
   },
-  // Generated stylesheet — no remote source, no sha pin (its bytes reference the local /vendor
-  // URLs above with a CDN fallback). Always copied from the shipped plugin bundle when present.
-  'fonts.css': { shippedOnly: true },
+  'fonts/gail-rock/Gail-Rock-Medium.woff2': {
+    sha256: 'd2eb2c255ad5e693246638dc5bc796569732bdc45d6b3cd9e544171c2ad59742',
+  },
+  'fonts/gail-rock/Gail-Rock-Semibold.woff2': {
+    sha256: '88b72e2e3238ab6c9288488b057e5fd4befc925dc8faa2370985fbdb9acdfeaa',
+  },
+  'fonts/gail-rock/Gail-Rock-Bold.woff2': {
+    sha256: '3b2357486231d6e482ff40dc19138fcaab28ecbbab5462a45bbffaed030d76b9',
+  },
+  // The stylesheet is pinned too: a 1.1.0 board must replace its existing copy on upgrade.
+  'fonts.css': {
+    sha256: 'd17b9440e5519ccb21ea223341c5ac4ebd85d3b70da2917d680665e8bcc48115',
+  },
 };
 
 const STATIC_MIME = {
@@ -374,6 +389,11 @@ async function serve({ open = false, port: requested } = {}) {
       if (pathname === '/' || pathname === '/index.html' || pathname === '/dashboard.html') {
         const html = await fsp.readFile(DASHBOARD, 'utf8').catch(() => '<h1>dashboard.html missing</h1>');
         return send(res, 200, 'text/html; charset=utf-8', html);
+      }
+
+      if (pathname === '/dashboard.css' && req.method === 'GET') {
+        const css = await fsp.readFile(path.join(TASKS_DIR, 'dashboard.css'), 'utf8');
+        return send(res, 200, 'text/css; charset=utf-8', css, { 'Cache-Control': 'no-store' });
       }
 
       if (pathname === '/board-config.js' && req.method === 'GET') {
@@ -853,18 +873,17 @@ async function ensure({ open = false } = {}) {
   try { const fd = fs.openSync(LOG_FILE, 'a'); out = fd; err = fd; } catch { /* */ }
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), 'serve', '--port', String(port)], {
     detached: true,
+    windowsHide: true,
     stdio: ['ignore', out, err],
   });
   child.unref();
   // Wait briefly for it to come up so callers learn the real port and can open it.
-  const url = `http://127.0.0.1:${port}/`;
   for (let i = 0; i < 30; i++) {
     const r = await probeRunning();
     if (r) { if (open) openInBrowser(`http://127.0.0.1:${r.port}/`); return `http://127.0.0.1:${r.port}/`; }
     await new Promise((r) => setTimeout(r, 100));
   }
-  if (open) openInBrowser(url);
-  return url;
+  throw new Error('Board startup did not pass the identity check. Inspect ' + LOG_FILE);
 }
 
 // ---------------------------------------------------------------------------
@@ -929,7 +948,7 @@ async function hook(event) {
 
   // A PostToolUse on the ExitPlanMode tool is the "plan approved" moment.
   let ev = event;
-  if (event === 'PostToolUse' && input?.tool_name === 'ExitPlanMode') ev = 'ExitPlanMode';
+  if (process.env.SHAUGHV_TASKS_HOOK_HOST !== 'codex' && event === 'PostToolUse' && input?.tool_name === 'ExitPlanMode') ev = 'ExitPlanMode';
 
   // Decide the reminder FIRST (using a placeholder URL) — a non-commit/push Bash
   // command returns null and we exit without even touching the server or cooldown.
@@ -994,8 +1013,20 @@ function relTasks(abs) { return path.relative(TASKS_DIR, abs).split(path.sep).jo
 // A vendored file is "already good" when it exists and (for sha-pinned assets) matches the pin.
 function alreadyGood(dest, sha) {
   if (!fs.existsSync(dest)) return false;
-  if (!sha) return true;            // presence-only asset (fonts.css)
+  if (!sha) return true;            // compatibility for any future presence-only asset
   return sha256File(dest) === sha;
+}
+
+function pruneRetiredVendorDirs() {
+  const removed = [];
+  for (const rel of RETIRED_VENDOR_DIRS) {
+    const resolved = path.resolve(VENDOR_DIR, ...rel.split('/'));
+    if (!resolved.startsWith(VENDOR_DIR + path.sep)) continue;
+    if (!fs.existsSync(resolved)) continue;
+    fs.rmSync(resolved, { recursive: true, force: true });
+    removed.push(rel);
+  }
+  return removed;
 }
 
 function writeFileAtomic(dest, buf) {
@@ -1258,13 +1289,19 @@ async function install(opts = {}) {
     created: { dirs: [], files: [] },
     npm: [],                 // intentionally empty: node_modules is transient (see pruneNpmScaffolding)
     global: prior?.global?.filter((g) => g.succeeded) || [], // carry forward prior real global changes
-    notes: [MAKIRA_NOTE],
+    notes: [FONT_NOTE],
   };
   writeManifest(manifest); // eager — a crash mid-install still leaves a valid, exhaustive record
 
   if (opts.nodeBootstrap) recordNodeBootstrap(manifest, opts.nodeBootstrap);
 
-  if (cap >= TIER_RANK.shipped) { fs.mkdirSync(VENDOR_DIR, { recursive: true }); trackCreatedDir(manifest, VENDOR_DIR); }
+  if (cap >= TIER_RANK.shipped) {
+    fs.mkdirSync(VENDOR_DIR, { recursive: true });
+    trackCreatedDir(manifest, VENDOR_DIR);
+    const retired = pruneRetiredVendorDirs();
+    if (retired.length) manifest.notes.push(`Removed retired vendored font directories: ${retired.join(', ')}.`);
+    writeManifest(manifest);
+  }
 
   // Decide whether the full (npm) tier is usable; optionally bootstrap node to make it so.
   let npmUsable = false;

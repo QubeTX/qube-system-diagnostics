@@ -5,16 +5,36 @@ an additive native desktop monitor. Part of the **QubeTX 300 Series** alongside
 [TR-300](https://github.com/QubeTX/qube-machine-report) (Machine Report) and
 ND-300 (Network Diagnostic).
 
-> **Release status:** v3.0.0 shipped the native desktop monitor on all six
-> release targets with verified public artifacts — SHA-256 sidecars, an SPDX
-> SBOM, GitHub attestations, and physical Windows installer acceptance.
-> v3.1.0 adds safe in-app and tray-driven updates that run the same
-> owner-preserving CLI transaction. v3.1.2 replaces the generic/ECG identity
-> with the isometric SD/300 mark and makes GUI background monitoring explicit:
-> the tray defaults on, closing the window keeps it running by default, and a
-> live hover summary exposes basic hardware health. v3.1.3 removes the app
-> mark's black plate on Windows/Linux and gives macOS a transparent-corner,
-> softened isometric treatment while retaining the monochrome tray identity.
+SD-300 4.0.0 adds timestamped measurements, bounded background collection,
+an adaptive terminal dashboard, a refined native GUI with Makira and Gail Rock,
+and optional ND-300 diagnostics. Windows, macOS and Linux share the same Rust
+collector core. Managed installers include the terminal tool and a clickable
+app with the SD-300 icon. See the [qualification record](docs/qualification/v4/README.md)
+for measured results, platform limitations and release-specific decisions.
+
+## Monitoring and inspection
+
+The monitoring dashboard adapts to an 80×24 terminal and expands into aligned charts,
+tables and an inspector on wider terminals. All nine sections work in User and Technician
+modes. `/` filters the full inventory, arrows or j/k select rows, PgUp/PgDn move a page,
+and Enter opens details. Space freezes the view while monitoring continues; press it again
+to show the newest capture. F explains findings and their evidence. Process sorts remain
+c (CPU), M (memory), p (PID), n (name), with s reversing direction. Esc closes transient
+panels or clears a filter before quitting. Charts preserve unobserved intervals as gaps.
+
+Optional terminal preferences live in the settings document's independent `tui` object:
+`mouse_enabled` (false), `reduced_motion` (true), `ascii` (false), `no_color` (false).
+`NO_COLOR`, `SD300_ASCII`, and `TERM=dumb` are also honored. GUI preferences do not change
+these defaults. Mouse wheel and row/tab clicks supplement complete keyboard navigation.
+Technician inspection exposes units, availability, source, identity and capture age.
+
+JSON exports retain schema 1 by default. Request `snapshot --json --schema-version 2`
+or `capabilities --json --schema-version 2` for nullable readings, sample metadata and
+shared findings. In a live TUI session, E opens the export panel; E there saves the
+redacted snapshot and C saves capabilities. Reports include completed companion and
+privileged-read results, preserve capture times, and never replace existing files.
+A paused view exports its frozen samples. The GUI uses the same private report writer.
+Unavailable or stale measurements remain explicit in both frontends.
 
 ## Install
 
@@ -111,8 +131,8 @@ and packaging pipeline is also run.
   preferences without changing any TUI startup choice, default, keybinding, or
   refresh cadence.
 - Its Warm Carbon visual system uses black/charcoal depth, restrained orange
-  energy, a subtle fading grid, Makira for primary copy and major numerals, and
-  IBM Plex Mono for compact technical text.
+  energy, a subtle fading grid, Makira for headings and major numerals,
+  Gail Rock for body copy and controls, and IBM Plex Mono for compact technical text.
 
 ## Features
 
@@ -215,10 +235,10 @@ cutover while preserving exact MSI/EXE/PKG ownership when it can be proven.
 
 ## GUI Settings, Tray, and Startup
 
-The versioned settings document separates `shared` and `gui` namespaces. The
-`shared` namespace is reserved for preferences deliberately supported by both
-frontends. GUI mode, temperature unit, window geometry, chart density,
-navigation, tray, close behavior, launch-at-login, and reduced motion remain in
+The versioned settings document separates `shared`, `tui` and `gui` namespaces.
+Verified optional-helper paths are deliberately shared; terminal presentation
+preferences belong under `tui`. GUI mode, temperature unit, window geometry,
+chart density, navigation, tray, close behavior, launch-at-login, and reduced motion remain in
 `gui`. In particular, GUI choices never change the TUI chooser, sort defaults,
 temperature default, or session behavior.
 
@@ -262,7 +282,7 @@ a documented SDK limitation, not a successful Windows/Linux screen-reader claim.
 
 ## Platform Support
 
-| Platform | Target | v3 release requirement |
+| Platform | Target | Composite release requirement |
 |----------|--------|------------------------|
 | Windows x86_64 | `x86_64-pc-windows-msvc` | CLI/TUI + GUI + managed/native lifecycle |
 | macOS x86_64 | `x86_64-apple-darwin` | CLI/TUI + GUI in universal PKG, native Intel qualification |
@@ -287,8 +307,11 @@ scans, and foreground/hidden/soak performance tests. The v3 budgets are at most
 2% of one logical core foreground, 1% hidden/tray, 150 MiB working set/RSS,
 300 MiB private memory/commit, 16.7 ms frame-time p95, and 50 ms input-response
 p95 outside explicit scans, with no unbounded history, event, log, or memory
-growth. These are qualification thresholds, not claims about an unpublished
-candidate.
+growth. For 4.0.0 only, the operator approved 4% foreground CPU, 3% hidden CPU,
+200 MiB RSS, and frame/input p95 up to 100 ms; private memory and the 100 ms
+ordinary-refresh maximum are unchanged. The [original goals](docs/next-version-targets.md)
+automatically return for the next version. Retained reports distinguish original
+target verdicts from the approved release policy.
 
 Qualified release assets include SHA-256 sidecars, an SPDX SBOM, and GitHub
 artifact attestations. After a public release, verify a downloaded asset with:
@@ -330,3 +353,45 @@ telemetry as unsupported.
 PolyForm Noncommercial 1.0.0 - see [LICENSE.md](LICENSE.md).
 
 Built by [QubeTX](https://github.com/QubeTX).
+
+
+### Optional network companion
+
+The terminal's **N** panel and the app's **Network** section can run the installed
+public ND-300 4.0.1 companion. Standard and deep scans explicitly skip speed
+tests. SpeedQX is a separate bandwidth-consuming action with a displayed budget
+and a fresh, optional M-Lab consent choice. Monitoring continues during scans;
+cancellation never invokes network repairs. Unknown companion versions are
+reported separately. Results stay in memory until exported, and redacted exports
+omit imported free-form details.
+
+Optional setup is a separate confirmation in both interfaces. The TUI uses **i**
+inside the **N** panel; the GUI provides **Install optional ND-300**. The CLI
+`sd300 tools nd300` describes the exact operation; `--install --accept` consents.
+Setup uses the official release archive with a platform-specific pinned checksum,
+keeps existing installations, and verifies both executables. The independent
+per-user ND-300 directory survives SD-300 removal and carries its own standalone
+receipt. No PATH changes, elevated install, diagnostic, repair or bandwidth test
+is implied by setup. Optional-tool ownership is independent of SD-300 removal.
+
+
+Optional SMART helper setup is available with **h** in the terminal's companion
+panel, the app's **Install optional SMART helper** action, or
+`sd300 tools smartctl --install --accept`. Inspect `sd300 tools smartctl` first
+for the platform's exact operation. Windows uses a checksum-pinned, unelevated
+component extraction; macOS uses existing Homebrew; Debian/Ubuntu and Alpine
+extract authenticated packages without running their service scripts. Missing
+runtime dependencies or unsupported package managers leave ordinary monitoring
+available with a specific setup instruction. Setup does not authorize a device
+self-test, repair, disk setting change, or privileged read.
+
+A privileged SMART read is a separate operation. In the TUI, select a physical
+drive under Storage and press **A**; in the GUI, use **Review read…** in Storage.
+Review the device, helper path and checksum, then explicitly allow that read.
+Only a short-lived worker requests OS authorization. Monitoring stays
+unprivileged and responsive. The read has a twelve-second limit, authentication
+expires after one minute, and cancellation preserves the previous result.
+Linux needs PolicyKit and a registered graphical authentication agent; a
+headless session retains ordinary unprivileged monitoring. No repair, self-test,
+service or disk-setting change is performed. Captured results remain in memory
+and appear in explicit schema-2 exports with identifier redaction.

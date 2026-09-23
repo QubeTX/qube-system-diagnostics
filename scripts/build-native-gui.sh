@@ -5,6 +5,7 @@ set -euo pipefail
 target=${1:-}
 skip_tests=${SD300_SKIP_NATIVE_TESTS:-0}
 skip_npm_ci=${SD300_SKIP_NPM_CI:-0}
+qualification_automation=${SD300_GUI_QUALIFICATION_AUTOMATION:-0}
 case "$target" in
   macos-x86_64) host_os=Darwin; zig_target=x86_64-macos; rust_target=x86_64-apple-darwin; engine=libsd300_engine.dylib ;;
   macos-arm64) host_os=Darwin; zig_target=aarch64-macos; rust_target=aarch64-apple-darwin; engine=libsd300_engine.dylib ;;
@@ -26,7 +27,7 @@ repo_root=$(CDPATH='' cd -- "$script_root/.." && pwd)
 gui_root="$repo_root/gui"
 engine_root="$repo_root/gui-engine"
 
-node "$script_root/prepare-makira-font.mjs" "$gui_root"
+node "$script_root/prepare-gui-fonts.mjs" "$gui_root"
 if [[ $skip_npm_ci != 1 ]]; then
   (cd "$gui_root" && npm ci --ignore-scripts)
 fi
@@ -57,6 +58,7 @@ fi
 
 stage_base="$repo_root/target/native-gui-stage"
 stage_root="$stage_base/$target"
+if [[ $qualification_automation == 1 ]]; then stage_root+="-automation"; fi
 app_stage="$stage_root/app"
 sdk_stage="$stage_root/sdk"
 case "$stage_root" in
@@ -73,7 +75,7 @@ cat > "$app_stage/build.zig.zon" <<'ZON'
 .{
     .name = .gui,
     .fingerprint = 0xd4ff50f85a707070,
-    .version = "3.1.3",
+    .version = "4.0.0",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{ .native_sdk = .{ .path = "../sdk" } },
     .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "platform", "tools", "app.zon", "README.md" },
@@ -92,6 +94,7 @@ zig_build_target=native
 # retain panic capture and self-test reporting but do not serialize every
 # timer/GPU-surface event to stdout and JSON logs.
 zig_build_args=(-Dtarget="$zig_build_target" -Dcpu=baseline -Doptimize=ReleaseFast -Dtrace=off)
+if [[ $qualification_automation == 1 ]]; then zig_build_args+=(-Dautomation=true); fi
 if [[ $host_os == Linux ]]; then
   gtk_lib_dir=$(pkg-config --variable=libdir gtk4)
   [[ -n $gtk_lib_dir && -d $gtk_lib_dir ]] || {
@@ -167,5 +170,5 @@ find "$app_stage/zig-out" -type d -name '*.dSYM' -prune -exec rm -rf {} + 2>/dev
 node "$script_root/check-native-distribution.mjs" "$gui_root" "$app_stage/zig-out"
 
 engine_sha=$(sha256sum "$engine_artifact" | awk '{print $1}')
-node -e 'const r=JSON.parse(process.argv[1]); console.log(JSON.stringify({schema:1,target:process.argv[2],zig_target:process.argv[3],zig_build_target:process.argv[4],zig_cpu:"baseline",zig_optimize:"ReleaseFast",native_sdk_trace:"off",zig_version:"0.16.0",rust_version:process.argv[5],rust_target:process.argv[6],rust_host:process.argv[6],native_sdk_cli:"0.5.4",native_sdk_patch:r.renderer_patch_sha256,engine_sha256:process.argv[7],package_root:process.argv[8]}))' \
-  "$patch_receipt" "$target" "$zig_target" "$zig_build_target" "$rust_version" "$rust_target" "$engine_sha" "$app_stage/zig-out"
+node -e 'const r=JSON.parse(process.argv[1]); console.log(JSON.stringify({schema:1,target:process.argv[2],zig_target:process.argv[3],zig_build_target:process.argv[4],zig_cpu:"baseline",zig_optimize:"ReleaseFast",native_sdk_trace:"off",qualification_automation:process.argv[9]==="1",zig_version:"0.16.0",rust_version:process.argv[5],rust_target:process.argv[6],rust_host:process.argv[6],native_sdk_cli:"0.5.4",native_sdk_patch:r.renderer_patch_sha256,engine_sha256:process.argv[7],package_root:process.argv[8]}))' \
+  "$patch_receipt" "$target" "$zig_target" "$zig_build_target" "$rust_version" "$rust_target" "$engine_sha" "$app_stage/zig-out" "$qualification_automation"

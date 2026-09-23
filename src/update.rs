@@ -2215,7 +2215,12 @@ fn verify_version(path: &Path, expected: &str) -> std::result::Result<(), String
         ["--version"],
         CommandTimeout::Custom(std::time::Duration::from_secs(15)),
     )
-    .ok_or_else(|| format!("Installed binary did not run: {}", path.display()))?;
+    .map_err(|error| {
+        format!(
+            "Installed binary did not run at {}: {error}",
+            path.display()
+        )
+    })?;
     let reported = String::from_utf8_lossy(&output.stdout);
     if output.status.success()
         && reported
@@ -2319,14 +2324,14 @@ fn fetch_latest_release_json() -> std::result::Result<String, String> {
             args,
             CommandTimeout::Custom(std::time::Duration::from_secs(20)),
         ) {
-            Some(output) if output.status.success() => {
+            Ok(output) if output.status.success() => {
                 return Ok(String::from_utf8_lossy(&output.stdout).to_string())
             }
-            Some(output) => failures.push(format!(
+            Ok(output) => failures.push(format!(
                 "{program} exited {}",
                 output.status.code().unwrap_or(-1)
             )),
-            None => failures.push(format!("{program} unavailable or timed out")),
+            Err(error) => failures.push(format!("{program}: {error}")),
         }
     }
     Err(format!(
@@ -3065,8 +3070,8 @@ fn mac_pkg_receipt_matches() -> bool {
         ["--file-info", "/usr/local/bin/sd300"],
         CommandTimeout::Normal,
     );
-    package_info.is_some_and(|output| output.status.success())
-        && file_info.is_some_and(|output| {
+    package_info.is_ok_and(|output| output.status.success())
+        && file_info.is_ok_and(|output| {
             output.status.success() && String::from_utf8_lossy(&output.stdout).contains(MAC_PKG_ID)
         })
 }

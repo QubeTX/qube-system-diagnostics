@@ -3,9 +3,9 @@ const builtin = @import("builtin");
 
 const windows = std.os.windows;
 
-pub const expected_abi_version: u32 = 1;
-pub const expected_schema_version: u32 = 1;
-pub const expected_product_version = "3.1.3";
+pub const expected_abi_version: u32 = 2;
+pub const expected_schema_version: u32 = 2;
+pub const expected_product_version = "4.0.0";
 
 pub const status_ok: i32 = 0;
 pub const status_unchanged: i32 = 1;
@@ -70,7 +70,8 @@ pub const ProcessRowSummary = extern struct {
     name_len: u32 = 0,
     friendly_name_len: u32 = 0,
     status_len: u32 = 0,
-    reserved: u32 = 0,
+    availability_flags: u32 = 0,
+    start_time_unix_ms: u64 = 0,
     name: [process_name_bytes]u8 = [_]u8{0} ** process_name_bytes,
     friendly_name: [process_name_bytes]u8 = [_]u8{0} ** process_name_bytes,
     status: [process_status_bytes]u8 = [_]u8{0} ** process_status_bytes,
@@ -82,7 +83,9 @@ pub const ProcessSummary = extern struct {
     total_count: u32 = 0,
     total_threads: u32 = 0,
     row_count: u32 = 0,
-    reserved: u32 = 0,
+    matched_count: u32 = 0,
+    page_offset: u32 = 0,
+    observation_status: u32 = 1,
     rows: [process_summary_rows]ProcessRowSummary = [_]ProcessRowSummary{.{}} ** process_summary_rows,
 };
 
@@ -93,10 +96,10 @@ comptime {
     if (@sizeOf(TraySummary) != 32 or @alignOf(TraySummary) != 8) {
         @compileError("TraySummary no longer matches the SD-300 Rust ABI");
     }
-    if (@sizeOf(ProcessRowSummary) != 264 or @alignOf(ProcessRowSummary) != 8) {
+    if (@sizeOf(ProcessRowSummary) != 272 or @alignOf(ProcessRowSummary) != 8) {
         @compileError("ProcessRowSummary no longer matches the SD-300 Rust ABI");
     }
-    if (@sizeOf(ProcessSummary) != 4256 or @alignOf(ProcessSummary) != 8) {
+    if (@sizeOf(ProcessSummary) != 4392 or @alignOf(ProcessSummary) != 8) {
         @compileError("ProcessSummary no longer matches the SD-300 Rust ABI");
     }
 }
@@ -108,9 +111,13 @@ const SetLaunchAtLoginFn = *const fn (u32, u32) callconv(.c) i32;
 const RequestUpdateFn = *const fn (?[*]u8, usize, *usize) callconv(.c) i32;
 const CreateFn = *const fn (*?*anyopaque) callconv(.c) i32;
 const HandleFn = *const fn (?*anyopaque) callconv(.c) i32;
+const RequestStorageProbeFn = *const fn (?*anyopaque, u32, ?[*]const u8, usize) callconv(.c) i32;
+const RequestCompanionFn = *const fn (?*anyopaque, u32, u32) callconv(.c) i32;
 const RequestExportFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
 const ReadExportStatusFn = *const fn (?*anyopaque, ?[*]u8, usize, *usize) callconv(.c) i32;
 const SetProfileFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
+const SetInventoryQueryFn = *const fn (?*anyopaque, u32, [*]const u8, usize, u32, u32) callconv(.c) i32;
+const SetProcessQueryFn = *const fn (?*anyopaque, [*]const u8, usize, u32) callconv(.c) i32;
 const SetProcessSortFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
 const ReadFastSummaryFn = *const fn (?*anyopaque, *FastSummary) callconv(.c) i32;
 const ReadTraySummaryFn = *const fn (?*anyopaque, *TraySummary) callconv(.c) i32;
@@ -185,7 +192,11 @@ pub const Runtime = struct {
     destroy_fn: HandleFn,
     set_profile_fn: SetProfileFn,
     set_process_sort_fn: SetProcessSortFn,
+    set_process_query_fn: SetProcessQueryFn,
+    set_inventory_query_fn: SetInventoryQueryFn,
     request_driver_scan_fn: HandleFn,
+    request_companion_fn: RequestCompanionFn,
+    request_storage_probe_fn: RequestStorageProbeFn,
     read_fast_summary_fn: ReadFastSummaryFn,
     read_tray_summary_fn: ReadTraySummaryFn,
     read_process_summary_fn: ReadProcessSummaryFn,
@@ -216,6 +227,10 @@ pub const Runtime = struct {
         const start_fn = try library.lookup(HandleFn, "sd300_engine_start");
         const set_profile_fn = try library.lookup(SetProfileFn, "sd300_engine_set_profile");
         const set_process_sort_fn = try library.lookup(SetProcessSortFn, "sd300_engine_set_process_sort");
+        const set_inventory_query_fn = try library.lookup(SetInventoryQueryFn, "sd300_engine_set_inventory_query");
+        const set_process_query_fn = try library.lookup(SetProcessQueryFn, "sd300_engine_set_process_query");
+        const request_storage_probe_fn = try library.lookup(RequestStorageProbeFn, "sd300_engine_request_storage_probe");
+        const request_companion_fn = try library.lookup(RequestCompanionFn, "sd300_engine_request_companion");
         const request_driver_scan_fn = try library.lookup(HandleFn, "sd300_engine_request_driver_scan");
         const stop_fn = try library.lookup(HandleFn, "sd300_engine_stop");
         const destroy_fn = try library.lookup(HandleFn, "sd300_engine_destroy");
@@ -256,7 +271,11 @@ pub const Runtime = struct {
             .destroy_fn = destroy_fn,
             .set_profile_fn = set_profile_fn,
             .set_process_sort_fn = set_process_sort_fn,
+            .set_process_query_fn = set_process_query_fn,
+            .set_inventory_query_fn = set_inventory_query_fn,
             .request_driver_scan_fn = request_driver_scan_fn,
+            .request_companion_fn = request_companion_fn,
+            .request_storage_probe_fn = request_storage_probe_fn,
             .read_fast_summary_fn = read_fast_summary_fn,
             .read_tray_summary_fn = read_tray_summary_fn,
             .read_process_summary_fn = read_process_summary_fn,
@@ -272,11 +291,17 @@ pub const Runtime = struct {
 
     pub fn deinit(self: *Runtime) void {
         if (self.handle) |handle| {
-            _ = self.stop_fn(handle);
+            self.stopCollection();
             _ = self.destroy_fn(handle);
             self.handle = null;
         }
         self.library.close();
+    }
+
+    // May run from AppKit's termination notification before main can unwind.
+    // Keep the library loaded until ordinary deinit; stopping is idempotent.
+    pub fn stopCollection(self: *Runtime) void {
+        if (self.handle) |handle| _ = self.stop_fn(handle);
     }
 
     pub fn readFastSummary(self: *Runtime) !FastSummary {
@@ -371,6 +396,25 @@ pub const Runtime = struct {
     pub fn setProcessSort(self: *Runtime, sort: u32) !void {
         if (self.set_process_sort_fn(self.handle, sort) != status_ok) {
             return error.EngineProcessSortFailed;
+        }
+    }
+
+    pub fn setInventoryQuery(self: *Runtime, topic: Topic, filter: []const u8, offset: u32, attention: bool) !void {
+        if (self.set_inventory_query_fn(self.handle, @intFromEnum(topic), filter.ptr, filter.len, offset, @intFromBool(attention)) != status_ok) return error.EngineInventoryQueryFailed;
+    }
+
+    pub fn setProcessQuery(self: *Runtime, filter: []const u8, offset: u32) !void {
+        if (self.set_process_query_fn(self.handle, filter.ptr, filter.len, offset) != status_ok) {
+            return error.EngineProcessQueryFailed;
+        }
+    }
+
+    pub fn requestStorageProbe(self: *Runtime, action: u32, device: []const u8) !void {
+        if (device.len > 128 or self.request_storage_probe_fn(self.handle, action, if (device.len == 0) null else device.ptr, device.len) != status_ok) return error.StorageProbeRejected;
+    }
+    pub fn requestCompanion(self: *Runtime, action: u32, mlab_consent: bool) !void {
+        if (self.request_companion_fn(self.handle, action, @intFromBool(mlab_consent)) != status_ok) {
+            return error.CompanionUnavailableOrBusy;
         }
     }
 
@@ -503,8 +547,8 @@ extern "kernel32" fn FreeLibrary(module: windows.HMODULE) callconv(.winapi) wind
 test "fast summary ABI is stable" {
     try std.testing.expectEqual(@as(usize, 48), @sizeOf(FastSummary));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(FastSummary));
-    try std.testing.expectEqual(@as(usize, 264), @sizeOf(ProcessRowSummary));
+    try std.testing.expectEqual(@as(usize, 272), @sizeOf(ProcessRowSummary));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(ProcessRowSummary));
-    try std.testing.expectEqual(@as(usize, 4256), @sizeOf(ProcessSummary));
+    try std.testing.expectEqual(@as(usize, 4392), @sizeOf(ProcessSummary));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(ProcessSummary));
 }

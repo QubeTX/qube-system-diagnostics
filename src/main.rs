@@ -6,10 +6,35 @@ use sd_300::{
     types::DiagnosticMode,
 };
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Some(Command::StorageProbePrepare { device }) = &cli.command {
+        let result = sd_300::storage_probe::prepare_worker(device);
+        println!("{}", serde_json::to_string(&result).unwrap());
+        return Ok(());
+    }
+    if let Some(Command::StorageProbeRead { port, nonce }) = &cli.command {
+        return sd_300::storage_probe::read_worker(*port, nonce)
+            .map_err(sd_300::error::AppError::platform);
+    }
+    if let Some(Command::StorageProbeElevate { port, nonce }) = &cli.command {
+        let result = sd_300::storage_probe::elevate_worker(*port, nonce);
+        println!("{}", serde_json::to_string(&result).unwrap());
+        return Ok(());
+    }
+    if let Some(Command::CollectWorker { topic }) = &cli.command {
+        return sd_300::collectors::probe::print_worker(*topic);
+    }
+    if let Some(Command::CollectServer { topic }) = &cli.command {
+        return sd_300::collectors::probe::serve(*topic);
+    }
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(run(cli))
+}
 
+async fn run(cli: Cli) -> Result<()> {
     // Enable UTF-8 output on Windows
     #[cfg(windows)]
     {
@@ -23,6 +48,19 @@ async fn main() -> Result<()> {
 
     if let Some(command) = cli.command {
         match command {
+            Command::StorageProbePrepare { .. }
+            | Command::StorageProbeRead { .. }
+            | Command::StorageProbeElevate { .. } => {
+                unreachable!("private probe handled before runtime startup")
+            }
+            Command::CollectServer { topic } => {
+                sd_300::collectors::probe::serve(topic)?;
+                return Ok(());
+            }
+            Command::CollectWorker { topic } => {
+                sd_300::collectors::probe::print_worker(topic)?;
+                return Ok(());
+            }
             Command::Update(args) => {
                 let exit_code = sd_300::update::run_with_relaunch(args.json, args.relaunch_gui)?;
                 std::process::exit(exit_code);
@@ -38,17 +76,20 @@ async fn main() -> Result<()> {
             Command::Snapshot(args) => {
                 let report =
                     sd_300::report::DiagnosticReport::collect(args.include_sensitive).await;
-                sd_300::report::print_snapshot(&report, args.json)?;
+                sd_300::report::print_snapshot(&report, args.json, args.schema_version)?;
                 return Ok(());
             }
             Command::Capabilities(args) => {
                 let report =
                     sd_300::report::DiagnosticReport::collect(args.include_sensitive).await;
-                sd_300::report::print_capabilities(&report, args.json)?;
+                sd_300::report::print_capabilities(&report, args.json, args.schema_version)?;
                 return Ok(());
             }
             Command::Gui => {
                 std::process::exit(sd_300::gui::launch());
+            }
+            Command::Tools(args) => {
+                std::process::exit(sd_300::optional_tools::run_cli(&args));
             }
             Command::MigrateCleanup(args) => {
                 let exit_code = sd_300::migrate::run(&args);

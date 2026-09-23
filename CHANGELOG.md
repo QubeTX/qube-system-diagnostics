@@ -2,6 +2,209 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [4.0.0] - 2026-09-23
+
+- Record the operator-approved 4.0.0-only resource ceilings (4% foreground CPU, 3% hidden CPU, 200 MiB RSS); retain the 300 MiB private-memory limit, original failed verdicts, and all functional gates. Add version-expiring resource assessment and boundary/failure tests. Preserve every original goal for the next version in docs/next-version-targets.md and owned tasks #r16/#r17 (ADR 0017).
+
+- Retain both complete native interaction matrices and all original verdicts. The unchanged-product ce77ebf repeat passes the approved timing policy on all six targets; both Mac native accessibility fixtures and exact keyboard-completion counts pass. Retain the final native resource windows and passing Windows two-hour soak, foreground and hidden windows with exact identities; remaining CPU/RSS overruns remain explicit.
+
+- Record the operator's 2026-09-23 all-platform 4.0.0 responsiveness decision: frame/input p95 and ordinary-refresh maximum may reach 100 ms. Retain original-target verdicts, expire the exception for later versions, and keep CPU/memory, native accessibility, functional, shutdown and lifecycle checks mandatory (ADR 0016; follow-up #r16).
+
+- Reconcile product and contributor typography documentation with the verified Makira heading, Gail Rock body/control, and Plex Mono technical font mapping.
+
+- Guard legacy AppKit accessibility superclass dispatch when NSAccessibilityElement does not implement the requested selector. Native stack attribution found exception unwinding during ordinary semantic publication. Preserve supported text/selection actions and extend the real-host fixture to reject unsupported queries without exceptions.
+
+- Retain the complete native before/after resource matrix with exact artifact identities, measured deltas and all failed limits. Run further GTK graphics-allocation and Mac hidden-frame diagnostics on a separate branch using unchanged application artifacts, without treating observer-attached diagnostics as acceptance.
+
+- Separate macOS accessibility snapshot publication from assistive-client focus actions. Previously each focused publication called the action setter, clearing keyboard-visible focus and producing duplicate input/redraw events. Add an actual AppKit-host regression fixture on both native Mac runners; preserve external accessibility focus requests.
+
+- Retry transient partial automation snapshot reads within the existing bounded deadline. Preserve fatal identity, dispatch-error and output-limit checks after Intel Mac qualification exposed the SDK's non-atomic snapshot replacement; add regression fixtures without changing product binaries or performance thresholds.
+
+- Retain bounded per-input frame/timestamp counters and focused control IDs in native interaction qualification reports. Exclude widget labels and arbitrary role strings, with privacy fixtures, so native input delays and duplicate completion counts can be diagnosed without exporting process or device names.
+
+- Quote staged and installed binary self-test paths in the managed shell installer. Exercise Linux composite lifecycle with a spaced application-data directory and retain a direct installed-version verification fixture.
+
+- Handle GIO's executable-existence check before desktop field-code expansion for literal percent paths by invoking the system env executable without a shell. Retain per-character native launcher cases and diagnostic fixture output.
+
+- Resolve the Linux application-menu icon through an absolute path inside the owned bundle, and quote desktop launch paths using the freedesktop escaping rules. Validate the real GIO parser and launch with literal special-character paths, alongside installed-entry assertions. Windows Start-menu shortcuts and macOS application bundles retain their existing custom icon delivery.
+
+- Record the bounded GUI preference writer and complete interaction timing contract in ADR 0015, including measured evidence and the remaining native qualification boundary.
+
+- Coordinate the unpublished 4.0.0 candidate across CLI, engine, native manifests, packaging and all staged build templates. Extend version reconciliation to the test-stage template. Add native interaction qualification for all six targets using independent automation builds, bounded snapshots, publisher identity, complete percentile coverage and owned cleanup. Correct timing cycles that finish without repainting so idle updates cannot accumulate into an invented long frame.
+
+- Move GUI preference commits off the input/render thread into one joined writer with one replaceable pending document. Preserve atomic namespace-aware writes, report pending/success/failure honestly, and flush the newest request before engine unload, including AppKit termination. Tests cover coalescing, failure, requests during slow I/O and recovery. Local timing attributed 5.5 ms median and 11.3 ms p95 navigation cost to synchronous preference commits.
+
+- Stop macOS native-only event delivery from arming the JavaScript bridge's ten-second, 60 Hz frame keepalive when no WebView exists. Hosted thread counters and stacks attribute the hidden-window cost to this main-thread timer churn; native functional and long-window resource verification remain required.
+
+- Add bounded full-event frame-work and input-to-present qualification counters, including p95, lifetime stall maxima and sample-window coverage. Exclude automation snapshot I/O and queue wait from synchronous work. Keep automation builds in a separate staging directory and verify every patched SDK file in both build preparers; deterministic fixtures cover nesting, idle gaps and overwritten percentile windows.
+
+- Correct Mac diagnostic thread attribution after hosted task-port access denial: use public libproc thread-ID reads with documented nanosecond units, bounded identities extracted from the native stack sample, and an independent native current-thread clock fixture. Report partial coverage and separate the following CPU window from the stack sample. Give the oversized-output regression fixture its own deadline so pipe throughput cannot conflate byte-limit and timeout checks; production limits are unchanged.
+
+- Attribute native macOS diagnostic CPU to bounded live-thread deltas alongside stack samples. Exclude new, ended and reset threads, preserve denied counters, and keep profiler results outside resource acceptance; waiting-stack frequency is not CPU time.
+
+- Preserve completed native GUI resource observations when shutdown fails, and continue candidate measurement after an explicitly reported failure in the immutable public baseline. Keep baseline failures intact; timeouts, malformed or missing reports, and candidate failures still fail qualification. Add deterministic reporting and continuation fixtures after the public musl baseline crashes on close.
+
+- Pair embedded Makira headings/readings with Gail Rock body/navigation/controls. Add reviewed private font provisioning to every native build lane and a heading-font token that keeps intrinsic measurement, paragraph wrapping, selection and rendering on the same face. Retain IBM Plex Mono for compact technical values; verify font coverage and layout/paint agreement. Bound translated glyph-edge raster comparison to one RGB code value with exact alpha; retain exact panel/shadow comparisons.
+
+- Stop and join the GUI engine from AppKit's synchronous termination notification, because `terminate:` does not unwind `main`. Preserve ordinary library-unload ownership and idempotent shutdown; add a native notification fixture and retain the complete-bundle remaining-worker gate on both Mac architectures.
+
+- Derive the GUI connectivity panel's freshness from its own diagnostic topic instead of an unconditional Current badge. Use readable reachability states, label DNS resolution duration separately from RTT, wrap long graphics provenance, and improve spacing in compact Settings.
+
+- Retain bounded process-role, state and parent evidence when native GUI shutdown leaves a helper, without logging executable paths or arguments. Run macOS CPU attribution independently after failed shutdown qualification so both failures remain diagnosable; profiling never substitutes for resource acceptance.
+
+- Review the native GUI across all nine sections and Settings. Prioritize live readings/history, add direct audience switching, wrap explanations and consent, separate optional network scans from bandwidth tests, and place SMART setup with storage. Preserve current process rank on every captured page, avoid startup-zero interpretations, remove synthetic pending detail from available observations, and expose unified/shared GPU memory categories. Record source and live visual evidence separately from accessibility and cross-platform acceptance.
+
+- Reconcile project and contributor documentation with the implemented v4 monitor lanes, isolated workers, adaptive dashboard and independent settings namespaces. Remove obsolete v3 scheduler/layout freezes and distinguish implemented behavior from still-pending native performance/lifecycle qualification.
+
+- Select Cairo before GTK initialization for the Linux CPU-rendered GUI, preserving explicit renderer overrides. Route external quit through close-request so SDK widget cleanup precedes destruction; add native backend, override and lifecycle fixtures. Keep GNU GL smoke coverage and musl repeated shutdown diagnostics. Add separately bounded Apple `sample` runs for native TUI/hidden-GUI CPU attribution; debugger/profile reports cannot qualify performance gates.
+
+- Add an opt-in bounded native backtrace after Alpine GUI shutdown fails with SIGSEGV. Repeat unchanged artifacts only for diagnosis, attach after the sampling window, retain the original failure, and prohibit treating debugger runs as resource qualification. After an unchanged rerun passes, exercise three foreground/hidden shutdown pairs with traces to investigate the intermittent fault.
+
+- Draw opaque solid panels and borders directly through the reviewed SDK patch instead of retaining duplicate panel pixels. Correct fractional shadow-occlusion boundaries that blended pixels twice. Preserve rounded-edge coverage and translucent/gradient memoization; add byte-exact scale, clipping, translation, opacity and border fixtures. Match the warmed benchmark to the actual static-prefix runtime path, retain the generic diagnostic and exercise bounded bidirectional scrolling. Coordinate both preparers and patch/file hashes while retaining official upstream archive pins.
+
+- Preserve in-progress manually dispatched qualification windows, record first/last Windows GUI memory by role, and report retained raster-cache bytes outside render timings. Correct the render fixture's process field availability so process ticks exercise visible numeric changes.
+
+- Restrict GUI collector-presence inspection to collector-shaped processes and retain required-worker verification when protected helpers deny executable lookup. Native GNU long runs exposed a harness AccessDenied on a ping helper after the TUI resource gate passed.
+
+- Attribute Linux GUI RSS to fixed mapping categories after the measurement window and compare the unchanged binary with GTK's diagnostic Cairo renderer. Keep default-renderer acceptance independent and redact mapping paths/addresses from evidence.
+
+- Replace macOS process CPU percentages with checked libproc counters, Mach timebase conversion and per-instance monotonic deltas. Preserve measured idle zero, microsecond creation identity, inaccessible fields and full inventory before ranking. Expose inventory failure/recovery in both frontends and capabilities; use the reserved ABI-2 process-summary word without changing layout. Add native getrusage comparison, identity/reset/unit fixtures and GUI status tests.
+
+- Install Alpine's separate `xvfb-run` package and check native GUI qualification tools before compilation. The musl lane previously built successfully but could not launch its virtual display fixture.
+
+- Retain slow-worker disk/sensor discovery containers and omit unused sysinfo disk I/O collection, following native Mac stage profiling. Refresh device lists and capacities at the existing cadence; retry/resume still resets discovery state. Physical disk activity remains an independent one-second provider.
+
+- Treat future or absent capture timestamps as unavailable age instead of measured zero, restart histories across clock rollback and accept the next genuine sample. Add explicit freshness to schema-2 reports and nullable age to engine schema 2; coordinate GUI parsing and installer checks, and fix the CLI companion verifier's obsolete ABI expectation.
+
+- Apply explicit hidden startup intent before macOS's asynchronous window hide, and connect Linux surface notifications to collection profiles with prompt restore sampling. Extend native hide/restore fixtures, expose X11 setup failures and collect Unix per-stage CPU timing and bounded role attribution to investigate native resource failures.
+
+- Serialize short-lived static, driver and health worker processes within each monitor session after peak-role measurements confirm overlap. Retain independent live sampling, actual capture timestamps and existing cadences; test exclusive admission, cancellation and panic recovery.
+
+- Attribute Windows GUI peak working set to bounded process roles after the first full foreground run passes CPU/private memory but exceeds the RSS gate. Retain the failed result and repeat unchanged artifacts before choosing a product optimization.
+
+- Extend opt-in native before/after resource qualification to both GUI visibility profiles. Verify immutable public GUI baseline hashes, archive bounds and source equivalence; distinguish the legacy in-process collector topology and retain complete-bundle candidate gates.
+
+- Scope Git checkout trust to the mounted source for Alpine qualification commands, preserving global configuration while allowing exact candidate/baseline identity checks across container UID boundaries.
+
+- Preserve explicit unavailable descriptor coverage in Unix performance reports when a protected helper denies fd enumeration. Continue independent CPU/RSS accounting, retain nullable maxima and add denied-versus-zero fixtures.
+
+- Detect Linux GUI mapping/minimized state through GTK/GDK so background windows use the existing reduced collection profile. Add native mapping/recovery fixtures and complete-bundle Mac/Linux foreground/hidden resource smoke checks with bounded process accounting and normal shutdown.
+
+- Add opt-in native before/after release TUI resource measurements to all six CI targets, using immutable baseline bytes, sequential measurements and retained failure reports. Validate Unix completed-child CPU accounting separately and keep visual interaction observers outside the resource window.
+
+- Reconcile the GUI engine's separately resolved Rust dependencies with the qualified CLI lockfile, including sysinfo and serialization. Check shared versions, registry sources and checksums alongside product-version validation so frontend builds cannot silently drift.
+
+- Read Linux and macOS interface counters with explicit per-interface failures, native identities, scoped addresses and 64-bit byte semantics. Preserve other readable rows, reset failed baselines and exclude loopback from the documented aggregate. Keep unavailable cumulative bytes nullable in schema 2 and inspectors, add native local-payload fixtures, and expose successful GPU utilization provenance in GUI Technician mode.
+
+- Prefer a persistent native PDH query for Windows GPU engine utilization, retaining fractional values, adapter identity, measured intervals and explicit warmup after reset/resume. Bound native array parsing and retry, preserve incomplete fields and the existing WMI/NVIDIA fallbacks, and test real worker warmup/reset against available adapters.
+
+- Add whole-process Windows GUI measurement with suspended-before-job ownership, isolated settings, bundle hashes, required worker checks, visibility validation and clean-shutdown assertions. Extend stage profiling with slow providers and quantized process CPU, retaining the still-failing long TUI resource result.
+
+- Qualify noisy worker termination by either the output limit or its earlier absolute deadline, with a fixed cleanup allowance and owner-reaping assertion. Native Apple Silicon evidence identified deadline-first behavior; production limits and collection behavior are unchanged.
+
+- Use native Windows ICMP reply status and millisecond RTT inside the bounded diagnostic worker, with below-resolution RTT left unavailable. Resolve the OS-selected IPv4 route instead of the first printed default route. Remove periodic ping/route subprocesses and show provider provenance in both frontends; retain ICMP-independent TCP reachability fallback.
+
+- Replace invented macOS input devices with structured IOHIDDevice inventory; stop treating device presence or Linux link-down as driver-health evidence. Preserve per-provider discovery failures, service-manager scope and actual runtime states across Windows, macOS and Linux. Project bounded observations and service details into both frontends, shared findings and nullable schema-2 exports while retaining schema-1 keys.
+
+- Replace remaining optional-result command adapters with explicit execution errors, preserving nonzero exit status separately from timeout, missing executable, denied access and invalid text. Propagate failure reasons through gateway/ping and install verification paths; retain bounded ownership and output handling.
+
+- Extend the verified macOS terminal polling path to Linux after the same resize/input test exposes lost readiness on both GNU architectures. Retain the unchanged Windows backend and record the long-window native-network resource result, which still exceeds the CPU gate.
+
+- Use crossterm's file-descriptor polling backend on macOS to retain pending input when resize and keyboard readiness arrive together. Extend real PTY qualification with immediate resize/key pairs without delays or retries.
+
+- Read Windows interface octets and addresses through bounded native tables using full GUID/LUID identities. Remove repeated address enumeration and partial-GUID grouping; preserve native failures and recovery warmup. Define hardware-only aggregate scope while retaining virtual/tunnel rows, and expose per-interface rate/address availability in both frontends and schema-2 exports.
+
+- Report the native pipe fixture's actual failure category and elapsed time before asserting its expected outcome, so hosted failures distinguish output limits from deadlines and I/O errors.
+
+- Attach the successful capture time, age and latest provider state to retained storage-fault and incomplete-observation findings. Keep hardware fault evidence after refresh failure, explicitly mark stale or clock-discontinuous ages, and replace obsolete GUI ABI copy with useful findings guidance.
+
+- Retain bounded structural diagnostics on native terminal qualification failures: completed steps, fixed-label positions, cursor and process state, without arbitrary screen contents. Distinguish platform interaction failures from emulator assumptions before selecting a product fix.
+
+- Deliver isolated collector responses through bounded in-memory frames instead of per-sample temporary files. Validate lengths before allocation, bound pipe draining and stderr, and reap owned processes immediately after malformed, partial, cancelled or timed-out responses. Add native fragmented/large/inherited-pipe fixtures.
+
+- Add native PTY qualification across all six targets for both modes and terminal sizes, filtering, Unicode/ASCII, mouse and keyboard navigation, frozen views, consent dismissal and terminal restoration. Capture input latency separately from terminal setup, add release-stage profiling, and retain failed long-window resource measurements.
+
+- Calculate Windows per-process CPU from process-time deltas over monotonic capture intervals, independent of monitor affinity and processor-group size. Reset unreadable/reused/rolled-back baselines and use the same aggregate CPU provider on GUI Processes as other pages. Add a native restricted-affinity comparison against GetProcessTimes.
+
+- Start redirected Windows collector helpers detached from consoles, retaining suspended-before-job ownership and bounded cancellation. Verify both file and memory output capture without console allocation; reduce transient processes and working sets without changing cadence.
+
+- Prefer a reusable read-only NVML session for NVIDIA telemetry on Windows and Linux, with bounded discovery backoff and the existing nvidia-smi fallback. Require versioned allocated-memory semantics, preserve individual permission/unsupported errors and PCI identity, and expose memory/temperature provenance in both frontends.
+
+- Replace periodic Windows netstat processes with bounded native IPv4/IPv6 TCP/UDP owner-PID tables. Preserve per-provider failures and partial endpoint inventories through reports, findings and both frontends. Correct Linux ss abbreviated states, add a PID-unavailable procfs fallback on minimal hosts, and include macOS UDP endpoints. Native fixtures compare owned loopback sockets with the actual worker output.
+
+- Compute disk activity deltas inside the isolated worker using its monotonic capture clock. Carry capture intervals across IPC, reset baselines on worker replacement/retry/resume, and record fast samples from completed captures rather than scheduled starts.
+
+- Retire isolated static, driver and health workers after each infrequent probe while retaining results and existing refresh/retry cadence in the parent session.
+
+- Resume suspended Windows helpers through a process-specific PSS thread snapshot, retaining owned-job cancellation and a Toolhelp fallback. Add a real ConPTY process-tree benchmark that includes terminated-child CPU costs.
+
+- Search and page full connection/device inventories in the GUI engine before bounded projection. Preserve capture metadata, whole-inventory totals and attention filtering; show missing connection PIDs explicitly. Add guarded query ABI loading and fixtures beyond the former row limits.
+
+- Add explicit TUI session exports through the shared schema-2 redaction path, with one background writer per frontend, private report files and atomic no-clobber persistence. Preserve frozen samples and completed companion results; move GUI file writes off its collection loop.
+- Track storage read/write error availability and whole-inventory coverage independently in the GUI. Mark early or unqualified SpeedQX measurements partial and ignore inherited TAR_OPTIONS during verified companion extraction.
+
+- Normalize accepted storage callback sockets to blocking mode before applying finite read/write timeouts on Windows and macOS. Native qualification caught inherited nonblocking mode that Linux does not preserve.
+
+- Add separately prepared and confirmed, single-device SMART reads in Storage in both frontends. Isolate OS authorization, verify helper bytes and product version, bound read/callback/cancellation work, preserve prior results, and include redacted schema-2 findings. Add native synthetic privileged-worker qualification across all six targets without touching physical devices.
+
+- Correlate Windows disk health by unique serial and PnP identity, and retrieve reliability counters through the documented physical-disk association. Reject ambiguous joins and SMART device replacements; preserve conflicting fault evidence instead of letting later healthy readings erase it.
+
+- Fetch signed Alpine package indexes without requiring or modifying a system cache during confirmed SMART setup.
+
+- Capture bounded native Alpine package-manager diagnostics when optional SMART qualification fails, without printing downloaded archive bytes.
+
+- Add separately confirmed SMART helper setup through checksum-pinned Windows component extraction, existing macOS Homebrew, and authenticated Debian/Ubuntu or Alpine package extraction. Preserve independent ownership, verify the JSON interface, avoid package service scripts, and retry ordinary health collection after successful setup. Native qualification exercises installation without device probes.
+
+- Add separately confirmed ND-300 archive setup in both frontends and the `tools nd300` command. Pin official hashes for all six targets, preserve existing owners, verify installed executables, reserve destinations without replacement, and retain ND-300 after SD-300 removal.
+- Discover optional tools in standard platform locations and deliberately shared provider paths; preserve those choices across GUI settings writes with bounded cross-process locking.
+
+- Recover from companion worker panics or thread creation failure, verify one-active-request cancellation, and project unavailable speed readings as missing data in both interfaces. Extend snapshot tests through the companion privacy boundary.
+
+- Add explicit ND-300 4.0.1 and separately confirmed SpeedQX actions to both frontends. Bound in-memory process output and cancellation; retain diagnostic exit outcomes, partial checks, nullable throughput and provenance. Export only validated fields in redacted companion reports.
+- Replace shell-dependent resource-test producers with native fixtures, serialize timing-sensitive subprocess tests, and use populated deterministic redaction fixtures instead of concurrent live inventories.
+
+- Search and page the complete GUI process inventory before selecting bounded rows. Query changes reuse the actual capture timestamp; ABI-2 page counts and offsets match Rust/Zig layout assertions.
+
+### Fixed
+
+- Read macOS storage counters through bounded native IOKit property snapshots, release owned references, require registry identity, and filter virtual/backing layers using cached physical-disk inventory.
+
+- Reuse one owned subprocess per isolated collector lane with bounded atomic responses and cancellation. Cache Windows graphics topology by device identity and back off negative thermal/NVIDIA discovery without reusing stale numeric readings.
+- Invalidate discovery after interface/disk topology changes and resume; reset rate baselines after long fast-sample gaps.
+
+- Replace section-specific render-time sorting with an adaptive prepared dashboard, complete-inventory filters, identity-preserving selection, contextual inspection, paging, pause-view and opt-in mouse input. Add independent TUI preferences and terminal fallbacks.
+- Render captured time buckets with explicit gaps in both frontends, keep CPU/GPU thermal histories separate, correct IEC byte labels, and subscribe the GUI storage view to live disk activity.
+
+- Preserve stable thermal/fan channel identities in both frontends, keep identical labels separate, and collect every GPU temperature. Read Linux hwmon units and fault/enable flags explicitly; do not classify generic package temperatures as CPU readings.
+
+- Identify GPUs through DXGI LUID/PCI locations, Linux DRM/PCI devices and Metal registry IDs. Join NVIDIA telemetry by PCI identity, preserve per-field availability, and keep shared/unified memory and allocation budgets distinct from dedicated VRAM.
+- Aggregate Windows GPU counters per physical engine across processes, then select the busiest engine. Preserve existing driver/display telemetry through PnP location matching; a temperature-only adapter no longer displays fabricated zero utilization.
+
+- Add Linux power-supply battery, DRM display, hardware-backed network link and DMI/device-tree identity providers with documented units and explicit missing fields. Add native macOS CoreGraphics displays, IOKit power-source snapshots and hardware identity.
+
+- Add opt-in schema-2 JSON exports with nullable measurements, sample metadata and shared findings while freezing schema-1 keys. GUI exports use the richer report.
+- Preserve process creation identity and per-field availability in both frontends, label CPU normalization, and use the Windows batch sampler for the full TUI inventory. Revise the internal process ABI atomically with native layout assertions.
+- Distinguish resource pressure, reported storage faults and incomplete observations in shared findings; expose evidence and next steps in both interfaces (TUI: F).
+
+- Sample physical disk activity independently each second using identity-keyed counter deltas, documented Windows/Linux/macOS units, warmup/reset handling, and nullable latency. Keep SMART refreshes from overwriting activity charts.
+- Match Windows health rows by physical device number, remove partition-order health guesses, enumerate every structured macOS physical disk, and parse optional smartctl JSON/exit bitmasks while retaining partial telemetry.
+- Correct swapped medium/slow GUI topic metadata and keep one-shot exports within the cancellable worker boundary.
+- Scope the initial measurement placeholder to a running monitor session so populated offline/fixture views remain visible.
+- Move TUI and engine collection into independent bounded latest-result lanes; isolate native/helper probes in cancellable version-checked subprocesses, skip overdue work, and back off failed providers.
+- Render startup progressively, attach actual capture metadata to engine topics, and append timestamped TUI histories only on fresh samples without combining CPU and GPU temperature series.
+- Normalize network counters by monotonic elapsed time and invalidate first/reset/resume samples; retain the full process inventory before frontend ranking.
+- Parse ICMP reply RTT instead of subprocess duration, correct macOS timeout units, and use a TCP reachability fallback without mislabelling it as ICMP latency.
+- Bound collector output and cancellation with owned Windows jobs/Unix process groups and file-backed capture, eliminating inherited-pipe EOF waits and unjoined reader threads.
+
+### Development
+
+- Reconcile candidate installer/self-test ABI assertions with the revised process ABI and print Linux package validation payloads before failed assertions.
+
+- Execute root collector and isolated-engine tests on every native GUI architecture, including the Alpine musl lane; cross-compilation alone is not the provider qualification bar.
+
+- Copy the staged native test model contract back to the source checkout and run strict binding checks, preventing stale contracts from silently reducing validation coverage.
+- Track the accepted v4 monitoring and qualification plan; refresh the task board bundle while preserving project identity and existing acceptance items.
+
 ## [3.1.3] - 2026-07-25
 
 ### Changed

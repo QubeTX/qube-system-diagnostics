@@ -1,0 +1,1405 @@
+{
+  "schema": 1,
+  "run": "https://github.com/QubeTX/qube-system-diagnostics/actions/runs/35923985086",
+  "purpose": "Final native resource windows after the macOS focus and legacy-accessibility fixes. Original gates and failures are preserved. Resource-budget decision remains pending. Windows local windows are retained separately; unchanged Linux musl code uses the preceding native matrix.",
+  "limits": {
+    "foreground_cpu_percent_one_core": 2,
+    "hidden_cpu_percent_one_core": 1,
+    "summed_rss_mib": 150,
+    "windows_private_mib": 300
+  },
+  "results": [
+    {
+      "target": "macos-arm64",
+      "identity": {
+        "source_run": 35922389957,
+        "source_head": "ec5635d6bf8ed13a96d0405f8a762e245739e459",
+        "build_checkout": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+        "harness_source": "ec5635d6bf8ed13a96d0405f8a762e245739e459",
+        "target": "macos-arm64",
+        "before_evidence": "docs/qualification/v4/native-resources-309d2f3.json",
+        "sha256": "e5b5848c7ca24f64858571a07522bf6cd0d3aaf85335cb7c12b21f705530ca33",
+        "engine_sha256": "9d1ffbafff2fa0d8bfe9c8e46c15358b75cefbc71ef56c2c1a1cc8c00569080e",
+        "collector_sha256": "0fc144d5edbe0d07ca3194b6830a6288ae17c78b1ea0cde6db8d60f9101a1b7f"
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "report": {
+            "schema": 2,
+            "binary": "/Users/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/macos-arm64/app/zig-out/bin/sd300",
+            "sha256": "0fc144d5edbe0d07ca3194b6830a6288ae17c78b1ea0cde6db8d60f9101a1b7f",
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "darwin",
+            "build": "release",
+            "dimensions": [
+              80,
+              24
+            ],
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process",
+            "measured_seconds": 900.2792606250001,
+            "samples": 2668,
+            "cpu_percent_one_core": 2.0468372210648575,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 9.21875,
+                "processes": 1
+              },
+              "collector:diagnostics": {
+                "rss_mib": 5.015625,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 8.703125,
+                "processes": 1
+              },
+              "collector:connections": {
+                "rss_mib": 4.578125,
+                "processes": 1
+              },
+              "collector:activity": {
+                "rss_mib": 5.796875,
+                "processes": 1
+              },
+              "collector:drivers": {
+                "rss_mib": 4.015625,
+                "processes": 1
+              },
+              "helper:system_profiler": {
+                "rss_mib": 16.734375,
+                "processes": 2
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 6.742832384,
+                "rss_mib_peak_per_process": 9.21875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:static": {
+                "observed_cpu_seconds": 0.013208999,
+                "rss_mib_peak_per_process": 1.640625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:diagnostics": {
+                "observed_cpu_seconds": 1.05332776,
+                "rss_mib_peak_per_process": 5.015625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 3.3350899199999997,
+                "rss_mib_peak_per_process": 8.71875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:connections": {
+                "observed_cpu_seconds": 1.2185844479999999,
+                "rss_mib_peak_per_process": 4.578125,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:activity": {
+                "observed_cpu_seconds": 1.195617792,
+                "rss_mib_peak_per_process": 5.796875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:drivers": {
+                "observed_cpu_seconds": 0.045598663,
+                "rss_mib_peak_per_process": 5.796875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:system_profiler": {
+                "observed_cpu_seconds": 0.243671661,
+                "rss_mib_peak_per_process": 9.5625,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ping": {
+                "observed_cpu_seconds": 0.29506087600000014,
+                "rss_mib_peak_per_process": 1.3125,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:health": {
+                "observed_cpu_seconds": 0.13536357499999999,
+                "rss_mib_peak_per_process": 4.71875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:diskutil": {
+                "observed_cpu_seconds": 0.060481289,
+                "rss_mib_peak_per_process": 8.453125,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "cpu_gate": false,
+            "rss_mib_max": 54.0625,
+            "rss_gate": true,
+            "fd_count_max": 57,
+            "observed_fd_count_max": 57,
+            "fd_unavailable_samples": 0,
+            "process_count_max": 9,
+            "observed_process_identities": 130,
+            "terminal_restored": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 0.8962053571428612
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "report": {
+            "schema": 2,
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "darwin",
+            "binary": "/Users/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/macos-arm64/app/zig-out/bin/sd300-gui",
+            "sha256": "e5b5848c7ca24f64858571a07522bf6cd0d3aaf85335cb7c12b21f705530ca33",
+            "engine_sha256": "9d1ffbafff2fa0d8bfe9c8e46c15358b75cefbc71ef56c2c1a1cc8c00569080e",
+            "collector_sha256": "0fc144d5edbe0d07ca3194b6830a6288ae17c78b1ea0cde6db8d60f9101a1b7f",
+            "launcher_sha256": "e5b5848c7ca24f64858571a07522bf6cd0d3aaf85335cb7c12b21f705530ca33",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "legacy_in_process": false,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process",
+            "renderer_override": "none_or_external",
+            "collector_topics_at_start": [
+              "activity",
+              "connections",
+              "diagnostics",
+              "slow"
+            ],
+            "measured_seconds": 900.1268023329999,
+            "samples": 2655,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 142.828125,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 8.5,
+                "processes": 1
+              },
+              "collector:connections": {
+                "rss_mib": 4.296875,
+                "processes": 1
+              },
+              "collector:diagnostics": {
+                "rss_mib": 4.171875,
+                "processes": 1
+              },
+              "collector:activity": {
+                "rss_mib": 5.265625,
+                "processes": 1
+              },
+              "collector:drivers": {
+                "rss_mib": 4.125,
+                "processes": 1
+              },
+              "helper:system_profiler": {
+                "rss_mib": 17.046875,
+                "processes": 2
+              },
+              "helper:ping": {
+                "rss_mib": 1.390625,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 7.359676416,
+                "rss_mib_peak_per_process": 142.984375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 3.4132834560000003,
+                "rss_mib_peak_per_process": 8.625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:connections": {
+                "observed_cpu_seconds": 1.319386544,
+                "rss_mib_peak_per_process": 4.59375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:diagnostics": {
+                "observed_cpu_seconds": 1.101870144,
+                "rss_mib_peak_per_process": 5.015625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:health": {
+                "observed_cpu_seconds": 0.115669367,
+                "rss_mib_peak_per_process": 4.671875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:activity": {
+                "observed_cpu_seconds": 1.297064416,
+                "rss_mib_peak_per_process": 5.84375,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:diskutil": {
+                "observed_cpu_seconds": 0.097107498,
+                "rss_mib_peak_per_process": 8.390625,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ping": {
+                "observed_cpu_seconds": 0.27519187700000003,
+                "rss_mib_peak_per_process": 1.390625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:drivers": {
+                "observed_cpu_seconds": 0.032180123,
+                "rss_mib_peak_per_process": 4.359375,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:system_profiler": {
+                "observed_cpu_seconds": 0.222981535,
+                "rss_mib_peak_per_process": 9.90625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:static": {
+                "observed_cpu_seconds": 0.029424749,
+                "rss_mib_peak_per_process": 6.140625,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "rss_gate": false,
+            "rss_mib_max": 187.625,
+            "fd_count_max": 62,
+            "observed_fd_count_max": 62,
+            "fd_unavailable_samples": 0,
+            "process_count_max": 9,
+            "observed_process_identities": 124,
+            "rss_last_window_delta": -0.8392099056603683,
+            "collector_topics_at_end": [
+              "activity",
+              "connections",
+              "diagnostics",
+              "slow"
+            ],
+            "clean_shutdown": true,
+            "cpu_percent_one_core": 2.152366749860718,
+            "cpu_gate": false,
+            "remaining_processes": {
+              "count": 0,
+              "processes": [],
+              "truncated": false
+            }
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "report": {
+            "schema": 2,
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "darwin",
+            "binary": "/Users/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/macos-arm64/app/zig-out/bin/sd300-gui",
+            "sha256": "e5b5848c7ca24f64858571a07522bf6cd0d3aaf85335cb7c12b21f705530ca33",
+            "engine_sha256": "9d1ffbafff2fa0d8bfe9c8e46c15358b75cefbc71ef56c2c1a1cc8c00569080e",
+            "collector_sha256": "0fc144d5edbe0d07ca3194b6830a6288ae17c78b1ea0cde6db8d60f9101a1b7f",
+            "launcher_sha256": "e5b5848c7ca24f64858571a07522bf6cd0d3aaf85335cb7c12b21f705530ca33",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "legacy_in_process": false,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process",
+            "renderer_override": "none_or_external",
+            "collector_topics_at_start": [
+              "slow"
+            ],
+            "measured_seconds": 900.2794107499999,
+            "samples": 2652,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 139.578125,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 8.515625,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 15.720541696,
+                "rss_mib_peak_per_process": 139.578125,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 0.045302752,
+                "rss_mib_peak_per_process": 8.53125,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:health": {
+                "observed_cpu_seconds": 0.009101666,
+                "rss_mib_peak_per_process": 4.125,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "rss_gate": true,
+            "rss_mib_max": 148.09375,
+            "fd_count_max": 20,
+            "observed_fd_count_max": 20,
+            "fd_unavailable_samples": 0,
+            "process_count_max": 3,
+            "observed_process_identities": 3,
+            "rss_last_window_delta": 4.08667452830187,
+            "collector_topics_at_end": [
+              "slow",
+              "static"
+            ],
+            "clean_shutdown": true,
+            "cpu_percent_one_core": 1.7867675088336463,
+            "cpu_gate": false,
+            "remaining_processes": {
+              "count": 0,
+              "processes": [],
+              "truncated": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "target": "macos-x86_64",
+      "identity": {
+        "source_run": 35922389957,
+        "source_head": "ec5635d6bf8ed13a96d0405f8a762e245739e459",
+        "build_checkout": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+        "harness_source": "ec5635d6bf8ed13a96d0405f8a762e245739e459",
+        "target": "macos-x86_64",
+        "before_evidence": "docs/qualification/v4/native-resources-309d2f3.json",
+        "sha256": "271ce910494b8a473776d93bb2b76fd5c044848888a00cf8816cb5542a765b6c",
+        "engine_sha256": "2c41236cc3ee0cfbcd040f25a97437ec8631cd95f7b5f9ac3b9d29453ad17cb6",
+        "collector_sha256": "f0a733f20a0cce107400739ac28837a196f7373d0ae636373a21b546fcdfcce0"
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "report": {
+            "schema": 2,
+            "binary": "/Users/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/macos-x86_64/app/zig-out/bin/sd300",
+            "sha256": "f0a733f20a0cce107400739ac28837a196f7373d0ae636373a21b546fcdfcce0",
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "darwin",
+            "build": "release",
+            "dimensions": [
+              80,
+              24
+            ],
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process",
+            "measured_seconds": 900.166917113,
+            "samples": 2835,
+            "cpu_percent_one_core": 1.563629115047015,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 5.95703125,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 5.3125,
+                "processes": 1
+              },
+              "collector:connections": {
+                "rss_mib": 3.09765625,
+                "processes": 1
+              },
+              "collector:diagnostics": {
+                "rss_mib": 3.171875,
+                "processes": 1
+              },
+              "collector:activity": {
+                "rss_mib": 3.86328125,
+                "processes": 1
+              },
+              "collector:drivers": {
+                "rss_mib": 2.75,
+                "processes": 1
+              },
+              "helper:system_profiler": {
+                "rss_mib": 10.50390625,
+                "processes": 2
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 4.694669824,
+                "rss_mib_peak_per_process": 5.96875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 3.09420128,
+                "rss_mib_peak_per_process": 5.3125,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:connections": {
+                "observed_cpu_seconds": 0.8923890560000001,
+                "rss_mib_peak_per_process": 3.1171875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:diagnostics": {
+                "observed_cpu_seconds": 0.923741296,
+                "rss_mib_peak_per_process": 3.171875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:activity": {
+                "observed_cpu_seconds": 0.7244858240000001,
+                "rss_mib_peak_per_process": 4.02734375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:health": {
+                "observed_cpu_seconds": 0.08360321000000003,
+                "rss_mib_peak_per_process": 2.984375,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ping": {
+                "observed_cpu_seconds": 0.13947082800000002,
+                "rss_mib_peak_per_process": 0.5703125,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:diskutil": {
+                "observed_cpu_seconds": 0.091726043,
+                "rss_mib_peak_per_process": 5.44921875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:drivers": {
+                "observed_cpu_seconds": 0.031041282,
+                "rss_mib_peak_per_process": 2.7734375,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:system_profiler": {
+                "observed_cpu_seconds": 0.134496194,
+                "rss_mib_peak_per_process": 6.2734375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:static": {
+                "observed_cpu_seconds": 0.016418167,
+                "rss_mib_peak_per_process": 5.53125,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "cpu_gate": true,
+            "rss_mib_max": 34.65625,
+            "rss_gate": true,
+            "fd_count_max": 57,
+            "observed_fd_count_max": 57,
+            "fd_unavailable_samples": 0,
+            "process_count_max": 9,
+            "observed_process_identities": 117,
+            "terminal_restored": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 0.8544059187279167
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "report": {
+            "schema": 2,
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "darwin",
+            "binary": "/Users/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/macos-x86_64/app/zig-out/bin/sd300-gui",
+            "sha256": "271ce910494b8a473776d93bb2b76fd5c044848888a00cf8816cb5542a765b6c",
+            "engine_sha256": "2c41236cc3ee0cfbcd040f25a97437ec8631cd95f7b5f9ac3b9d29453ad17cb6",
+            "collector_sha256": "f0a733f20a0cce107400739ac28837a196f7373d0ae636373a21b546fcdfcce0",
+            "launcher_sha256": "271ce910494b8a473776d93bb2b76fd5c044848888a00cf8816cb5542a765b6c",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "legacy_in_process": false,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process",
+            "renderer_override": "none_or_external",
+            "collector_topics_at_start": [
+              "activity",
+              "connections",
+              "diagnostics",
+              "slow"
+            ],
+            "measured_seconds": 900.088448621,
+            "samples": 2801,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 98.29296875,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 5.0859375,
+                "processes": 1
+              },
+              "collector:connections": {
+                "rss_mib": 2.71484375,
+                "processes": 1
+              },
+              "collector:diagnostics": {
+                "rss_mib": 2.6484375,
+                "processes": 1
+              },
+              "collector:activity": {
+                "rss_mib": 3.08203125,
+                "processes": 1
+              },
+              "collector:drivers": {
+                "rss_mib": 2.6875,
+                "processes": 1
+              },
+              "helper:system_profiler": {
+                "rss_mib": 4.24609375,
+                "processes": 1
+              },
+              "helper:ping": {
+                "rss_mib": 0.5703125,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 6.625378432,
+                "rss_mib_peak_per_process": 98.54296875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 3.048702272,
+                "rss_mib_peak_per_process": 5.32421875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:connections": {
+                "observed_cpu_seconds": 0.894060304,
+                "rss_mib_peak_per_process": 3.05078125,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:diagnostics": {
+                "observed_cpu_seconds": 0.9276094,
+                "rss_mib_peak_per_process": 3.18359375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:health": {
+                "observed_cpu_seconds": 0.06320757,
+                "rss_mib_peak_per_process": 2.6875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:activity": {
+                "observed_cpu_seconds": 0.71986048,
+                "rss_mib_peak_per_process": 3.984375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:drivers": {
+                "observed_cpu_seconds": 0.028469957,
+                "rss_mib_peak_per_process": 2.73046875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ping": {
+                "observed_cpu_seconds": 0.13977701100000003,
+                "rss_mib_peak_per_process": 0.5703125,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:system_profiler": {
+                "observed_cpu_seconds": 0.077927086,
+                "rss_mib_peak_per_process": 4.3828125,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:diskutil": {
+                "observed_cpu_seconds": 0.062563791,
+                "rss_mib_peak_per_process": 5.3671875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper": {
+                "observed_cpu_seconds": 0.005505418,
+                "rss_mib_peak_per_process": 2.2109375,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "rss_gate": true,
+            "rss_mib_max": 119.328125,
+            "fd_count_max": 61,
+            "observed_fd_count_max": 61,
+            "fd_unavailable_samples": 0,
+            "process_count_max": 8,
+            "observed_process_identities": 115,
+            "rss_last_window_delta": 2.303752790178578,
+            "collector_topics_at_end": [
+              "activity",
+              "connections",
+              "diagnostics",
+              "slow"
+            ],
+            "clean_shutdown": true,
+            "cpu_percent_one_core": 1.7664822856420157,
+            "cpu_gate": true,
+            "remaining_processes": {
+              "count": 0,
+              "processes": [],
+              "truncated": false
+            }
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "report": {
+            "schema": 2,
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "darwin",
+            "binary": "/Users/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/macos-x86_64/app/zig-out/bin/sd300-gui",
+            "sha256": "271ce910494b8a473776d93bb2b76fd5c044848888a00cf8816cb5542a765b6c",
+            "engine_sha256": "2c41236cc3ee0cfbcd040f25a97437ec8631cd95f7b5f9ac3b9d29453ad17cb6",
+            "collector_sha256": "f0a733f20a0cce107400739ac28837a196f7373d0ae636373a21b546fcdfcce0",
+            "launcher_sha256": "271ce910494b8a473776d93bb2b76fd5c044848888a00cf8816cb5542a765b6c",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "legacy_in_process": false,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process",
+            "renderer_override": "none_or_external",
+            "collector_topics_at_start": [
+              "slow"
+            ],
+            "measured_seconds": 900.1015848920001,
+            "samples": 2794,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 104.6015625,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 4.9921875,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 8.953611136000001,
+                "rss_mib_peak_per_process": 104.6015625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 0.040477792,
+                "rss_mib_peak_per_process": 5.0,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:static": {
+                "observed_cpu_seconds": 0.006265669,
+                "rss_mib_peak_per_process": 2.59765625,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "rss_gate": true,
+            "rss_mib_max": 109.59375,
+            "fd_count_max": 28,
+            "observed_fd_count_max": 28,
+            "fd_unavailable_samples": 0,
+            "process_count_max": 3,
+            "observed_process_identities": 3,
+            "rss_last_window_delta": -17.921118951612897,
+            "collector_topics_at_end": [
+              "slow"
+            ],
+            "clean_shutdown": true,
+            "cpu_percent_one_core": 1.0252179481616215,
+            "cpu_gate": false,
+            "remaining_processes": {
+              "count": 0,
+              "processes": [],
+              "truncated": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "target": "linux-gnu-arm64",
+      "identity": {
+        "source_run": 35922389957,
+        "source_head": "ec5635d6bf8ed13a96d0405f8a762e245739e459",
+        "build_checkout": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+        "harness_source": "ec5635d6bf8ed13a96d0405f8a762e245739e459",
+        "target": "linux-gnu-arm64",
+        "before_evidence": "docs/qualification/v4/native-resources-309d2f3.json",
+        "sha256": "3e67d9382a2024b2ec8bc2a95a033a5826daebc6226f48b715fc9ffb607412bd",
+        "engine_sha256": "7b7509c33efcb630db4d0ea288400c81f230ae85274ed6262f33fc4fec52ed61",
+        "collector_sha256": "766e816d438811152a350a12f5ffff7cf792baf54c6cf2dcf5d00557a11c673f"
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "report": {
+            "schema": 2,
+            "binary": "/home/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/linux-gnu-arm64/app/zig-out/bin/sd300",
+            "sha256": "766e816d438811152a350a12f5ffff7cf792baf54c6cf2dcf5d00557a11c673f",
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "linux",
+            "build": "release",
+            "dimensions": [
+              80,
+              24
+            ],
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process",
+            "measured_seconds": 900.129560345,
+            "samples": 3555,
+            "cpu_percent_one_core": 0.8991085679819332,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 6.48828125,
+                "processes": 1
+              },
+              "collector:diagnostics": {
+                "rss_mib": 3.984375,
+                "processes": 1
+              },
+              "collector:connections": {
+                "rss_mib": 3.88671875,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 4.25390625,
+                "processes": 1
+              },
+              "collector:activity": {
+                "rss_mib": 3.6875,
+                "processes": 1
+              },
+              "collector:drivers": {
+                "rss_mib": 3.87109375,
+                "processes": 1
+              },
+              "helper": {
+                "rss_mib": 0.0,
+                "processes": 1
+              },
+              "helper:ping": {
+                "rss_mib": 1.7890625,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 5.6899999999999995,
+                "rss_mib_peak_per_process": 6.69140625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:diagnostics": {
+                "observed_cpu_seconds": 0.37,
+                "rss_mib_peak_per_process": 3.99609375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:connections": {
+                "observed_cpu_seconds": 0.1,
+                "rss_mib_peak_per_process": 3.90625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 0.05,
+                "rss_mib_peak_per_process": 4.25390625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:activity": {
+                "observed_cpu_seconds": 0.14,
+                "rss_mib_peak_per_process": 3.6875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ping": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 1.7890625,
+                "cpu_unavailable_identities": 0
+              },
+              "helper": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 0,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ss": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 1.9296875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:drivers": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 3.87109375,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "cpu_gate": true,
+            "rss_mib_max": 27.9609375,
+            "rss_gate": true,
+            "fd_count_max": null,
+            "observed_fd_count_max": 306,
+            "fd_unavailable_samples": 1427,
+            "process_count_max": 8,
+            "observed_process_identities": 136,
+            "terminal_restored": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 0.4018155809859145
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "report": {
+            "schema": 2,
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "linux",
+            "binary": "/home/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/linux-gnu-arm64/app/zig-out/bin/sd300-gui",
+            "sha256": "3e67d9382a2024b2ec8bc2a95a033a5826daebc6226f48b715fc9ffb607412bd",
+            "engine_sha256": "7b7509c33efcb630db4d0ea288400c81f230ae85274ed6262f33fc4fec52ed61",
+            "collector_sha256": "766e816d438811152a350a12f5ffff7cf792baf54c6cf2dcf5d00557a11c673f",
+            "launcher_sha256": "3e67d9382a2024b2ec8bc2a95a033a5826daebc6226f48b715fc9ffb607412bd",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "legacy_in_process": false,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process",
+            "renderer_override": "none_or_external",
+            "collector_topics_at_start": [
+              "activity",
+              "connections",
+              "diagnostics",
+              "slow"
+            ],
+            "measured_seconds": 900.070135662,
+            "samples": 3555,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 129.2421875,
+                "processes": 1
+              },
+              "collector:connections": {
+                "rss_mib": 3.87890625,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 4.25,
+                "processes": 1
+              },
+              "collector:diagnostics": {
+                "rss_mib": 4.078125,
+                "processes": 1
+              },
+              "collector:activity": {
+                "rss_mib": 3.66796875,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 7.26,
+                "rss_mib_peak_per_process": 129.2421875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:connections": {
+                "observed_cpu_seconds": 0.11000000000000001,
+                "rss_mib_peak_per_process": 3.90234375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 0.05,
+                "rss_mib_peak_per_process": 4.25,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:diagnostics": {
+                "observed_cpu_seconds": 0.37,
+                "rss_mib_peak_per_process": 4.109375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:activity": {
+                "observed_cpu_seconds": 0.15,
+                "rss_mib_peak_per_process": 3.66796875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ping": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 1.7890625,
+                "cpu_unavailable_identities": 0
+              },
+              "helper": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 0,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ss": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 2.05859375,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "rss_gate": true,
+            "rss_mib_max": 145.1171875,
+            "fd_count_max": null,
+            "observed_fd_count_max": 47,
+            "fd_unavailable_samples": 1431,
+            "process_count_max": 7,
+            "observed_process_identities": 137,
+            "rss_last_window_delta": 0.8451694542253563,
+            "root_mappings_after_window": {
+              "available": true,
+              "rss_mib_by_backing": {
+                "product_files": 7.296875,
+                "anonymous": 40.0625,
+                "other_files": 13.140625,
+                "graphics_libraries": 50.37109375,
+                "gtk_libraries": 6.43359375,
+                "stack": 1.8359375
+              },
+              "note": "Read after the resource window; anonymous includes runtime allocations and graphics heaps"
+            },
+            "collector_topics_at_end": [
+              "activity",
+              "connections",
+              "diagnostics",
+              "slow"
+            ],
+            "clean_shutdown": true,
+            "cpu_percent_one_core": 1.0607774463017434,
+            "cpu_gate": true,
+            "remaining_processes": {
+              "count": 0,
+              "processes": [],
+              "truncated": false
+            }
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "report": {
+            "schema": 2,
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "linux",
+            "binary": "/home/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/linux-gnu-arm64/app/zig-out/bin/sd300-gui",
+            "sha256": "3e67d9382a2024b2ec8bc2a95a033a5826daebc6226f48b715fc9ffb607412bd",
+            "engine_sha256": "7b7509c33efcb630db4d0ea288400c81f230ae85274ed6262f33fc4fec52ed61",
+            "collector_sha256": "766e816d438811152a350a12f5ffff7cf792baf54c6cf2dcf5d00557a11c673f",
+            "launcher_sha256": "3e67d9382a2024b2ec8bc2a95a033a5826daebc6226f48b715fc9ffb607412bd",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "legacy_in_process": false,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process",
+            "renderer_override": "none_or_external",
+            "visible_before_hide": 1,
+            "hidden_method": "X11 unmap of owned windows after startup; tray not supported",
+            "collector_topics_at_start": [
+              "slow"
+            ],
+            "measured_seconds": 900.1506785729998,
+            "samples": 3550,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 119.05859375,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 4.2578125,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 1.6600000000000001,
+                "rss_mib_peak_per_process": 121.8671875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 4.2578125,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "rss_gate": true,
+            "rss_mib_max": 123.31640625,
+            "fd_count_max": 16,
+            "observed_fd_count_max": 16,
+            "fd_unavailable_samples": 0,
+            "process_count_max": 2,
+            "observed_process_identities": 2,
+            "rss_last_window_delta": 1.410123239436615,
+            "root_mappings_after_window": {
+              "available": true,
+              "rss_mib_by_backing": {
+                "product_files": 7.359375,
+                "anonymous": 39.8125,
+                "graphics_libraries": 50.44921875,
+                "other_files": 13.15234375,
+                "gtk_libraries": 6.43359375,
+                "stack": 1.8515625
+              },
+              "note": "Read after the resource window; anonymous includes runtime allocations and graphics heaps"
+            },
+            "collector_topics_at_end": [
+              "slow"
+            ],
+            "clean_shutdown": true,
+            "cpu_percent_one_core": 0.19349471610254962,
+            "cpu_gate": true,
+            "remaining_processes": {
+              "count": 0,
+              "processes": [],
+              "truncated": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "target": "linux-gnu-x86_64",
+      "identity": {
+        "source_run": 35922389957,
+        "source_head": "ec5635d6bf8ed13a96d0405f8a762e245739e459",
+        "build_checkout": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+        "harness_source": "ec5635d6bf8ed13a96d0405f8a762e245739e459",
+        "target": "linux-gnu-x86_64",
+        "before_evidence": "docs/qualification/v4/native-resources-309d2f3.json",
+        "sha256": "28749d4d2be975258f78438fba8de46a17810c41775346749c3042da25853cf9",
+        "engine_sha256": "64c4272799575e50a16d260040018b4b8d5b73629d1e8d52c4e17da08221f8ac",
+        "collector_sha256": "b73070db5051bab80f5b9be05052f2b24a47b82a713d74678f462e58748af14a"
+      },
+      "windows": [
+        {
+          "kind": "tui",
+          "report": {
+            "schema": 2,
+            "binary": "/home/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/linux-gnu-x86_64/app/zig-out/bin/sd300",
+            "sha256": "b73070db5051bab80f5b9be05052f2b24a47b82a713d74678f462e58748af14a",
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "linux",
+            "build": "release",
+            "dimensions": [
+              80,
+              24
+            ],
+            "cpu_method": "wait4 user+system including waited descendants; startup and shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS, conservatively counts shared mappings per process",
+            "measured_seconds": 900.006153704,
+            "samples": 3530,
+            "cpu_percent_one_core": 1.6247410020275521,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 7.8671875,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 5.30859375,
+                "processes": 1
+              },
+              "collector:diagnostics": {
+                "rss_mib": 5.15234375,
+                "processes": 1
+              },
+              "collector:connections": {
+                "rss_mib": 4.8203125,
+                "processes": 1
+              },
+              "collector:activity": {
+                "rss_mib": 4.671875,
+                "processes": 1
+              },
+              "collector:drivers": {
+                "rss_mib": 4.859375,
+                "processes": 1
+              },
+              "helper:ping": {
+                "rss_mib": 2.2578125,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 10.350000000000001,
+                "rss_mib_peak_per_process": 8.0078125,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 0.08,
+                "rss_mib_peak_per_process": 5.30859375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:diagnostics": {
+                "observed_cpu_seconds": 1.01,
+                "rss_mib_peak_per_process": 5.1640625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:connections": {
+                "observed_cpu_seconds": 0.12,
+                "rss_mib_peak_per_process": 4.8515625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:activity": {
+                "observed_cpu_seconds": 0.2,
+                "rss_mib_peak_per_process": 4.671875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ping": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 2.3046875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 0,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:drivers": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 4.859375,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:health": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 4.796875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ss": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 2.5390625,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "cpu_gate": true,
+            "rss_mib_max": 34.9375,
+            "rss_gate": true,
+            "fd_count_max": null,
+            "observed_fd_count_max": 315,
+            "fd_unavailable_samples": 1416,
+            "process_count_max": 7,
+            "observed_process_identities": 134,
+            "terminal_restored": true,
+            "clean_shutdown": true,
+            "rss_last_window_delta": 0.4885025672804524
+          }
+        },
+        {
+          "kind": "gui-foreground",
+          "report": {
+            "schema": 2,
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "linux",
+            "binary": "/home/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/linux-gnu-x86_64/app/zig-out/bin/sd300-gui",
+            "sha256": "28749d4d2be975258f78438fba8de46a17810c41775346749c3042da25853cf9",
+            "engine_sha256": "64c4272799575e50a16d260040018b4b8d5b73629d1e8d52c4e17da08221f8ac",
+            "collector_sha256": "b73070db5051bab80f5b9be05052f2b24a47b82a713d74678f462e58748af14a",
+            "launcher_sha256": "28749d4d2be975258f78438fba8de46a17810c41775346749c3042da25853cf9",
+            "build": "release",
+            "mode": "foreground",
+            "section": "Thermals",
+            "legacy_in_process": false,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process",
+            "renderer_override": "none_or_external",
+            "collector_topics_at_start": [
+              "activity",
+              "connections",
+              "diagnostics",
+              "slow"
+            ],
+            "measured_seconds": 900.1504656489999,
+            "samples": 3531,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 131.64453125,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 5.25390625,
+                "processes": 1
+              },
+              "collector:connections": {
+                "rss_mib": 4.9765625,
+                "processes": 1
+              },
+              "collector:diagnostics": {
+                "rss_mib": 5.15625,
+                "processes": 1
+              },
+              "collector:activity": {
+                "rss_mib": 4.73828125,
+                "processes": 1
+              },
+              "helper:ping": {
+                "rss_mib": 2.29296875,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 12.09,
+                "rss_mib_peak_per_process": 131.64453125,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 0.08,
+                "rss_mib_peak_per_process": 5.25390625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:connections": {
+                "observed_cpu_seconds": 0.12,
+                "rss_mib_peak_per_process": 4.9765625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:diagnostics": {
+                "observed_cpu_seconds": 1.05,
+                "rss_mib_peak_per_process": 5.15625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:activity": {
+                "observed_cpu_seconds": 0.2,
+                "rss_mib_peak_per_process": 4.73828125,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ping": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 2.3046875,
+                "cpu_unavailable_identities": 0
+              },
+              "helper:ss": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 2.5390625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:health": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 5.0,
+                "cpu_unavailable_identities": 0
+              },
+              "helper": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 0,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "rss_gate": false,
+            "rss_mib_max": 154.0625,
+            "fd_count_max": null,
+            "observed_fd_count_max": 42,
+            "fd_unavailable_samples": 1416,
+            "process_count_max": 7,
+            "observed_process_identities": 137,
+            "rss_last_window_delta": 1.181823211756381,
+            "root_mappings_after_window": {
+              "available": true,
+              "rss_mib_by_backing": {
+                "product_files": 8.1796875,
+                "anonymous": 39.94921875,
+                "other_files": 14.734375,
+                "graphics_libraries": 50.55078125,
+                "gtk_libraries": 6.32421875,
+                "stack": 1.76953125
+              },
+              "note": "Read after the resource window; anonymous includes runtime allocations and graphics heaps"
+            },
+            "collector_topics_at_end": [
+              "activity",
+              "connections",
+              "diagnostics",
+              "slow"
+            ],
+            "clean_shutdown": true,
+            "cpu_percent_one_core": 1.789755114816776,
+            "cpu_gate": true,
+            "remaining_processes": {
+              "count": 0,
+              "processes": [],
+              "truncated": false
+            }
+          }
+        },
+        {
+          "kind": "gui-hidden",
+          "report": {
+            "schema": 2,
+            "revision": "3388a42aafcc2beb0fc0d101105d5f558fbf4a66",
+            "platform": "linux",
+            "binary": "/home/runner/work/qube-system-diagnostics/qube-system-diagnostics/downloaded/target/native-gui-stage/linux-gnu-x86_64/app/zig-out/bin/sd300-gui",
+            "sha256": "28749d4d2be975258f78438fba8de46a17810c41775346749c3042da25853cf9",
+            "engine_sha256": "64c4272799575e50a16d260040018b4b8d5b73629d1e8d52c4e17da08221f8ac",
+            "collector_sha256": "b73070db5051bab80f5b9be05052f2b24a47b82a713d74678f462e58748af14a",
+            "launcher_sha256": "28749d4d2be975258f78438fba8de46a17810c41775346749c3042da25853cf9",
+            "build": "release",
+            "mode": "hidden",
+            "section": "Overview",
+            "legacy_in_process": false,
+            "cpu_method": "wait4 user+system including waited descendants; startup/shutdown included; 100% = one logical core",
+            "memory_method": "250 ms summed live descendant RSS; shared mappings count per process",
+            "renderer_override": "none_or_external",
+            "visible_before_hide": 1,
+            "hidden_method": "X11 unmap of owned windows after startup; tray not supported",
+            "collector_topics_at_start": [
+              "slow"
+            ],
+            "measured_seconds": 900.1429168950003,
+            "samples": 3531,
+            "rss_peak_roles": {
+              "monitor": {
+                "rss_mib": 121.7265625,
+                "processes": 1
+              },
+              "collector:slow": {
+                "rss_mib": 5.32421875,
+                "processes": 1
+              },
+              "collector:health": {
+                "rss_mib": 5.18359375,
+                "processes": 1
+              }
+            },
+            "diagnostic_live_role_cost": {
+              "monitor": {
+                "observed_cpu_seconds": 2.19,
+                "rss_mib_peak_per_process": 125.0390625,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:slow": {
+                "observed_cpu_seconds": 0.01,
+                "rss_mib_peak_per_process": 5.32421875,
+                "cpu_unavailable_identities": 0
+              },
+              "collector:health": {
+                "observed_cpu_seconds": 0,
+                "rss_mib_peak_per_process": 5.18359375,
+                "cpu_unavailable_identities": 0
+              }
+            },
+            "diagnostic_note": "Role CPU omits work after the final live poll and children that exit between polls; the total wait4 CPU includes waited descendants",
+            "rss_gate": true,
+            "rss_mib_max": 132.234375,
+            "fd_count_max": 21,
+            "observed_fd_count_max": 21,
+            "fd_unavailable_samples": 0,
+            "process_count_max": 3,
+            "observed_process_identities": 3,
+            "rss_last_window_delta": 1.5947791253541084,
+            "root_mappings_after_window": {
+              "available": true,
+              "rss_mib_by_backing": {
+                "product_files": 8.1171875,
+                "anonymous": 40.0859375,
+                "graphics_libraries": 50.75,
+                "other_files": 14.8046875,
+                "gtk_libraries": 6.3203125,
+                "stack": 1.765625
+              },
+              "note": "Read after the resource window; anonymous includes runtime allocations and graphics heaps"
+            },
+            "collector_topics_at_end": [
+              "slow"
+            ],
+            "clean_shutdown": true,
+            "cpu_percent_one_core": 0.25389957051304485,
+            "cpu_gate": true,
+            "remaining_processes": {
+              "count": 0,
+              "processes": [],
+              "truncated": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

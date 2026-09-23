@@ -196,6 +196,7 @@ jobs:
         env:
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
         run: |
           set -euo pipefail
           SD300_SKIP_NPM_CI=1 bash scripts/build-native-gui.sh '${{ matrix.gui_target }}'
@@ -499,7 +500,7 @@ jobs:
           test -x "$gui" && test -f "$engine" && test -f "$receipt"
           "$gui" --self-test --json | jq -e \
             --arg version '${{ needs.build.outputs.version }}' \
-            '.success == true and .product_version == $version and .abi_version == 1' \
+            '.success == true and .product_version == $version and .abi_version == 2' \
             >/dev/null
 
           third=$("$CARGO_HOME/bin/sd300" update --json)
@@ -598,7 +599,7 @@ jobs:
           self_test=$($gui --self-test --json)
           jq -e --arg version '${{ needs.build.outputs.version }}' '
             .success == true and .product == "SD-300" and
-            .product_version == $version and .abi_version == 1
+            .product_version == $version and .abi_version == 2
           ' <<< "$self_test"
           pkgutil --pkg-info com.qubetx.sd300.pkg | grep -Fqx 'package-id: com.qubetx.sd300.pkg'
           pkgutil --files com.qubetx.sd300.pkg | grep -Fqx 'usr/local/bin/sd300'

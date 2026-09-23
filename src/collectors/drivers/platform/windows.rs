@@ -431,7 +431,10 @@ fn query_services(data: &mut DriverData) {
     let scm = unsafe { OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), SC_MANAGER_CONNECT) };
     let scm = match scm {
         Ok(h) => h,
-        Err(_) => return, // Skip services silently
+        Err(error) => {
+            data.observations.push(service_error(&error));
+            return;
+        }
     };
 
     let service_names = [
@@ -456,20 +459,47 @@ fn query_services(data: &mut DriverData) {
         let svc = unsafe { OpenServiceW(scm, PCWSTR(wide_name.as_ptr()), SERVICE_QUERY_STATUS) };
         let svc = match svc {
             Ok(h) => h,
-            Err(_) => continue,
+            Err(error) => {
+                data.services.push(ServiceInfo {
+                    name: svc_name.to_string(),
+                    display_name: svc_name.to_string(),
+                    is_running: false,
+                    state: String::new(),
+                    observation: service_error(&error),
+                });
+                continue;
+            }
         };
 
         let mut status = SERVICE_STATUS::default();
         let query_ok = unsafe { QueryServiceStatus(svc, &mut status) };
 
-        if query_ok.is_ok() {
-            let display_name = get_service_display_name(scm, &wide_name);
-            data.services.push(ServiceInfo {
-                name: svc_name.to_string(),
-                display_name,
-                is_running: status.dwCurrentState == SERVICE_RUNNING,
-            });
-        }
+        let observation = match query_ok {
+            Ok(()) => crate::observation::Observation::available("Windows Service Control Manager"),
+            Err(error) => service_error(&error),
+        };
+        let state = if observation.is_available() {
+            match status.dwCurrentState {
+                SERVICE_RUNNING => "running",
+                SERVICE_STOPPED => "stopped",
+                SERVICE_START_PENDING => "start pending",
+                SERVICE_STOP_PENDING => "stop pending",
+                SERVICE_CONTINUE_PENDING => "continue pending",
+                SERVICE_PAUSE_PENDING => "pause pending",
+                SERVICE_PAUSED => "paused",
+                _ => "unknown service state",
+            }
+            .into()
+        } else {
+            String::new()
+        };
+        data.services.push(ServiceInfo {
+            name: svc_name.to_string(),
+            display_name: get_service_display_name(scm, &wide_name),
+            is_running: observation.is_available() && status.dwCurrentState == SERVICE_RUNNING,
+            state,
+            observation,
+        });
 
         unsafe {
             let _ = CloseServiceHandle(svc);
@@ -478,6 +508,16 @@ fn query_services(data: &mut DriverData) {
 
     unsafe {
         let _ = CloseServiceHandle(scm);
+    }
+}
+
+fn service_error(error: &windows::core::Error) -> crate::observation::Observation {
+    use crate::observation::Observation;
+    let source = "Windows Service Control Manager";
+    match error.code().0 as u32 {
+        0x80070005 => Observation::permission_denied(source, "Service query was denied"),
+        0x80070424 => Observation::unavailable(source, "This optional service is not installed"),
+        _ => Observation::error(source, format!("Service query failed: {error}")),
     }
 }
 

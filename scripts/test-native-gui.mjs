@@ -34,7 +34,7 @@ function copyRequired(source, destination) {
 // and Zig content hash. SD-300 carries a reviewed downstream renderer patch,
 // so app tests must use the same generated, repository-relative dependency
 // graph as release builds instead of mutating Zig's content-addressed cache.
-run(process.execPath, [resolve(scriptRoot, "prepare-makira-font.mjs"), guiRoot], repoRoot);
+run(process.execPath, [resolve(scriptRoot, "prepare-gui-fonts.mjs"), guiRoot], repoRoot);
 run(process.execPath, [resolve(scriptRoot, "prepare-native-sdk.mjs"), guiRoot], repoRoot);
 
 const stageRelative = relative(stageBase, stageRoot);
@@ -62,7 +62,7 @@ for (const name of ["sd300_engine.dll", "libsd300_engine.dylib", "libsd300_engin
 writeFileSync(resolve(appStage, "build.zig.zon"), `.{
     .name = .gui,
     .fingerprint = 0xd4ff50f85a707070,
-    .version = "3.0.0",
+    .version = "4.0.0",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .native_sdk = .{ .path = "../sdk" },
@@ -75,3 +75,11 @@ writeFileSync(resolve(appStage, "build.zig.zon"), `.{
 // `native test` implementation exposed by npx, without Windows cmd.exe
 // quoting or any chance of resolving a globally installed package.
 run(process.execPath, [resolve(sdkRoot, "bin", "native.js"), "test", appStage, "--yes", ...process.argv.slice(2)], guiRoot);
+
+// Tests compile the identical app sources in the pinned patched-SDK stage.
+// Bring back the generated contract so the subsequent strict source check
+// validates bindings, instead of silently falling back to structural checks
+// against an old contract from a previous build.
+mkdirSync(resolve(guiRoot, "zig-out"), { recursive: true });
+copyRequired(resolve(appStage, "zig-out", "model-contract.zon"), resolve(guiRoot, "zig-out", "model-contract.zon"));
+run(process.execPath, [resolve(sdkRoot, "bin", "native.js"), "check", "--strict"], guiRoot);

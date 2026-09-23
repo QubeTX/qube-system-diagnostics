@@ -1,0 +1,7 @@
+{
+  "timestamp":"2026-09-23T00:00:00Z","timed_out":true,
+  "adapters":{"category":"private-adapter","status":"Ok","summary":"private-host 192.0.2.1","details":"198.51.100.2"},
+  "gateway":{"category":"Gateway","status":"Fail","summary":"Timed out","details":null,"timed_out":true},
+  "dns":{"category":"DNS","status":"Warn","summary":"private-host warning","details":null},
+  "public_ip_details":{"ip":"198.51.100.2"},"technician":{"arp_table":[{"ip":"192.0.2.1","mac":"private-adapter"}]}
+}

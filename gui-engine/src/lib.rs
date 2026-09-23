@@ -1,22 +1,20 @@
+mod inventory;
 use std::ffi::{c_char, c_void};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sd_300::collectors::disk_health::DiskHealthStatus;
-use sd_300::collectors::{self, DiagnosticWarning, SystemSnapshot, WarningSeverity};
+use sd_300::collectors::{self, DiagnosticWarning, SystemSnapshot};
 use sd_300::types::ProcessSortKey;
 use serde::Serialize;
 use serde_json::json;
 
-pub const ABI_VERSION: u32 = 1;
-pub const SCHEMA_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = sd_300::gui::ENGINE_ABI_VERSION;
+pub const SCHEMA_VERSION: u32 = sd_300::gui::ENGINE_SCHEMA_VERSION;
 
 pub const STATUS_OK: i32 = 0;
 pub const STATUS_UNCHANGED: i32 = 1;
@@ -91,7 +89,7 @@ impl Topic {
     fn provenance(self) -> &'static str {
         match self {
             Self::Static => "SD-300 system, display, memory, and network collectors",
-            Self::Fast => "SD-300 sysinfo-backed live collectors",
+            Self::Fast => "SD-300 platform live collectors",
             Self::Medium => "SD-300 platform connection collector",
             Self::Slow => "SD-300 disk, GPU, and thermal collectors",
             Self::Diagnostics => "SD-300 gateway, DNS, and internet collectors",
@@ -138,7 +136,8 @@ pub struct ProcessRowSummary {
     pub name_len: u32,
     pub friendly_name_len: u32,
     pub status_len: u32,
-    pub reserved: u32,
+    pub availability_flags: u32,
+    pub start_time_unix_ms: u64,
     pub name: [u8; PROCESS_NAME_BYTES],
     pub friendly_name: [u8; PROCESS_NAME_BYTES],
     pub status: [u8; PROCESS_STATUS_BYTES],
@@ -154,7 +153,8 @@ impl Default for ProcessRowSummary {
             name_len: 0,
             friendly_name_len: 0,
             status_len: 0,
-            reserved: 0,
+            availability_flags: 0,
+            start_time_unix_ms: 0,
             name: [0; PROCESS_NAME_BYTES],
             friendly_name: [0; PROCESS_NAME_BYTES],
             status: [0; PROCESS_STATUS_BYTES],
@@ -170,7 +170,10 @@ pub struct ProcessSummary {
     pub total_count: u32,
     pub total_threads: u32,
     pub row_count: u32,
-    pub reserved: u32,
+    pub matched_count: u32,
+    pub page_offset: u32,
+    /// 0 available, 1 unavailable, 2 unsupported, 3 denied, 4 error, 5 contradictory.
+    pub observation_status: u32,
     pub rows: [ProcessRowSummary; PROCESS_SUMMARY_ROWS],
 }
 
@@ -182,7 +185,9 @@ impl Default for ProcessSummary {
             total_count: 0,
             total_threads: 0,
             row_count: 0,
-            reserved: 0,
+            observation_status: 1,
+            matched_count: 0,
+            page_offset: 0,
             rows: [ProcessRowSummary::default(); PROCESS_SUMMARY_ROWS],
         }
     }
@@ -194,6 +199,12 @@ struct LatestTopic {
     json: Vec<u8>,
 }
 
+#[derive(Default)]
+struct ProcessQuery {
+    filter: String,
+    offset: usize,
+}
+
 struct Shared {
     stop: AtomicBool,
     running: AtomicBool,
@@ -201,6 +212,16 @@ struct Shared {
     export_request: AtomicU8,
     profile: AtomicU8,
     process_sort: AtomicU8,
+    process_query: Mutex<ProcessQuery>,
+    process_query_dirty: AtomicBool,
+    inventory_queries: Mutex<[inventory::Query; 2]>,
+    inventory_dirty: AtomicU8,
+    storage_request: Mutex<Option<(u8, String)>>,
+    storage_cancel: AtomicBool,
+    storage_busy: AtomicBool,
+    companion_request: AtomicU8,
+    companion_busy: AtomicBool,
+    companion_cancel: AtomicBool,
     wake_lock: Mutex<()>,
     wake: Condvar,
     topics: Mutex<[LatestTopic; TOPIC_COUNT]>,
@@ -220,6 +241,16 @@ impl Default for Shared {
             export_request: AtomicU8::new(EXPORT_NONE),
             profile: AtomicU8::new(PROFILE_FOREGROUND),
             process_sort: AtomicU8::new(PROCESS_SORT_CPU),
+            process_query: Mutex::new(ProcessQuery::default()),
+            process_query_dirty: AtomicBool::new(false),
+            inventory_queries: Mutex::new(std::array::from_fn(|_| inventory::Query::default())),
+            inventory_dirty: AtomicU8::new(0),
+            storage_request: Mutex::new(None),
+            storage_cancel: AtomicBool::new(false),
+            storage_busy: AtomicBool::new(false),
+            companion_request: AtomicU8::new(0),
+            companion_busy: AtomicBool::new(false),
+            companion_cancel: AtomicBool::new(false),
             wake_lock: Mutex::new(()),
             wake: Condvar::new(),
             topics: Mutex::new(std::array::from_fn(|_| LatestTopic::default())),
@@ -303,10 +334,21 @@ struct StaticProjection<'a> {
 
 #[derive(Serialize)]
 struct FastProjection<'a> {
+    findings: Vec<sd_300::findings::Finding>,
+    disk_activity: &'a collectors::disk_activity::DiskActivity,
+    activity_sample: Option<&'a collectors::sampling::SampleMeta>,
     cpu: &'a collectors::cpu::CpuData,
     memory: &'a collectors::memory::MemoryData,
     network: &'a collectors::network::NetworkData,
-    processes: &'a collectors::processes::ProcessData,
+    processes: ProcessProjection<'a>,
+}
+
+#[derive(Serialize)]
+struct ProcessProjection<'a> {
+    observation: &'a sd_300::observation::Observation,
+    list: &'a [collectors::processes::ProcessInfo],
+    total_count: usize,
+    total_threads: usize,
 }
 
 #[derive(Serialize)]
@@ -317,9 +359,40 @@ struct SlowProjection<'a> {
 }
 
 #[derive(Serialize)]
-struct MediumProjection<'a> {
-    active_connections: &'a [collectors::network_diag::ConnectionInfo],
-    listening_ports: &'a [collectors::network_diag::ConnectionInfo],
+struct DiagnosticsProjection<'a> {
+    #[serde(flatten)]
+    network: &'a collectors::network_diag::NetworkDiagData,
+    companion: &'a sd_300::companion::State,
+    companion_lines: Vec<String>,
+    optional_setup: &'a sd_300::optional_tools::State,
+    storage_probe: &'a sd_300::storage_probe::State,
+    storage_probe_lines: Vec<String>,
+    setup_network_notice: String,
+    setup_smart_notice: &'static str,
+}
+fn publish_diagnostics(shared: &Shared, snapshot: &SystemSnapshot) {
+    publish_sample(
+        shared,
+        Topic::Diagnostics,
+        &DiagnosticsProjection {
+            network: &snapshot.network_diag,
+            companion: &snapshot.companion,
+            companion_lines: snapshot.companion.lines(),
+            optional_setup: &snapshot.optional_setup,
+            storage_probe: &snapshot.storage_probe,
+            storage_probe_lines: snapshot.storage_probe.lines(),
+            setup_network_notice: format!(
+                "{} Destination: {}",
+                sd_300::optional_tools::NETWORK_NOTICE,
+                sd_300::optional_tools::network_directory()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|e| e)
+            ),
+            setup_smart_notice: sd_300::smart_setup::notice(),
+        },
+        &snapshot.warnings,
+        snapshot.samples.get("diagnostics"),
+    );
 }
 
 #[derive(Serialize)]
@@ -330,9 +403,11 @@ struct TopicEnvelope<'a, T: ?Sized> {
     topic: &'static str,
     sequence: u64,
     captured_unix_ms: u64,
-    freshness_ms: u64,
+    freshness_ms: Option<u64>,
+    freshness: &'static str,
     availability: &'static str,
     provenance: &'static str,
+    sample: Option<&'a collectors::sampling::SampleMeta>,
     warnings: &'a [DiagnosticWarning],
     data: &'a T,
 }
@@ -358,13 +433,24 @@ fn unix_ms() -> u64 {
 }
 
 fn publish<T: Serialize>(shared: &Shared, topic: Topic, data: &T, warnings: &[DiagnosticWarning]) {
+    publish_sample(shared, topic, data, warnings, None);
+}
+
+fn publish_sample<T: Serialize>(
+    shared: &Shared,
+    topic: Topic,
+    data: &T,
+    warnings: &[DiagnosticWarning],
+    sample: Option<&collectors::sampling::SampleMeta>,
+) {
     let mut topics = match shared.topics.lock() {
         Ok(topics) => topics,
         Err(_) => return,
     };
     let state = &mut topics[topic as usize];
     state.sequence = state.sequence.saturating_add(1);
-    let captured_unix_ms = unix_ms();
+    let now = unix_ms();
+    let captured_unix_ms = sample.map_or(now, |sample| sample.captured_unix_ms);
     let envelope = TopicEnvelope {
         schema_version: SCHEMA_VERSION,
         product_version: env!("CARGO_PKG_VERSION"),
@@ -372,9 +458,18 @@ fn publish<T: Serialize>(shared: &Shared, topic: Topic, data: &T, warnings: &[Di
         topic: topic.name(),
         sequence: state.sequence,
         captured_unix_ms,
-        freshness_ms: 0,
-        availability: "available",
+        freshness_ms: sample.map_or(Some(0), |sample| sample.age_ms_at(now)),
+        freshness: sample.map_or("current", |sample| sample.freshness_at(now)),
+        availability: sample.map_or("available", |sample| match sample.observation.status {
+            sd_300::observation::ObservationStatus::Available => "available",
+            sd_300::observation::ObservationStatus::Unavailable => "unavailable",
+            sd_300::observation::ObservationStatus::Unsupported => "unsupported",
+            sd_300::observation::ObservationStatus::PermissionDenied => "permission_denied",
+            sd_300::observation::ObservationStatus::Error => "error",
+            sd_300::observation::ObservationStatus::Contradictory => "contradictory",
+        }),
         provenance: topic.provenance(),
+        sample,
         warnings,
         data,
     };
@@ -388,26 +483,49 @@ fn publish<T: Serialize>(shared: &Shared, topic: Topic, data: &T, warnings: &[Di
 }
 
 fn publish_fast(shared: &Shared, snapshot: &SystemSnapshot) {
-    publish(
+    publish_sample(
         shared,
         Topic::Fast,
         &FastProjection {
+            findings: sd_300::findings::for_snapshot(snapshot),
+            disk_activity: &snapshot.disk_activity,
+            activity_sample: snapshot.samples.get("activity"),
             cpu: &snapshot.cpu,
             memory: &snapshot.memory,
             network: &snapshot.network,
-            processes: &snapshot.processes,
+            processes: ProcessProjection {
+                observation: &snapshot.processes.observation,
+                list: &snapshot.processes.list
+                    [..snapshot.processes.list.len().min(PROCESS_SUMMARY_ROWS)],
+                total_count: snapshot.processes.total_count,
+                total_threads: snapshot.processes.total_threads,
+            },
         },
         &snapshot.warnings,
+        snapshot.samples.get("fast"),
     );
     update_fast_summary(shared, snapshot);
 }
 
 fn update_fast_summary(shared: &Shared, snapshot: &SystemSnapshot) {
+    if snapshot
+        .samples
+        .get("fast")
+        .is_some_and(|s| !s.observation.is_available())
+    {
+        return;
+    }
     if let Ok(mut summary) = shared.summary.lock() {
-        let sequence = summary.sequence.saturating_add(1);
+        let sequence = snapshot
+            .samples
+            .get("fast")
+            .map_or_else(|| summary.sequence.saturating_add(1), |s| s.sequence);
         *summary = FastSummary {
             sequence,
-            captured_unix_ms: unix_ms(),
+            captured_unix_ms: snapshot
+                .samples
+                .get("fast")
+                .map_or(0, |s| s.captured_unix_ms),
             cpu_percent: snapshot.cpu.total_usage,
             memory_percent: snapshot.memory.usage_percent() as f32,
             memory_used_bytes: snapshot.memory.used_bytes,
@@ -431,10 +549,65 @@ fn update_process_summary(shared: &Shared, snapshot: &SystemSnapshot) {
     let Ok(mut summary) = shared.process_summary.lock() else {
         return;
     };
-    let sequence = summary.sequence.saturating_add(1);
+    let Ok(query) = shared.process_query.lock() else {
+        return;
+    };
+    let mut rows: Vec<_> = snapshot
+        .processes
+        .list
+        .iter()
+        .filter(|row| {
+            query.filter.is_empty()
+                || row.name.to_lowercase().contains(&query.filter)
+                || row.friendly_name.to_lowercase().contains(&query.filter)
+                || row.status.to_lowercase().contains(&query.filter)
+                || row.pid.to_string().contains(&query.filter)
+        })
+        .collect();
+    let sort = selected_process_sort(shared);
+    rows.sort_by(|a, b| {
+        use std::cmp::Ordering;
+        let order = match sort {
+            ProcessSortKey::Cpu => b
+                .cpu_observation
+                .is_available()
+                .cmp(&a.cpu_observation.is_available())
+                .then_with(|| {
+                    if a.cpu_observation.is_available() && b.cpu_observation.is_available() {
+                        b.cpu_percent.total_cmp(&a.cpu_percent)
+                    } else {
+                        Ordering::Equal
+                    }
+                }),
+            ProcessSortKey::Memory => b
+                .memory_observation
+                .is_available()
+                .cmp(&a.memory_observation.is_available())
+                .then_with(|| {
+                    if a.memory_observation.is_available() && b.memory_observation.is_available() {
+                        b.memory_bytes.cmp(&a.memory_bytes)
+                    } else {
+                        Ordering::Equal
+                    }
+                }),
+            ProcessSortKey::Pid => a.pid.cmp(&b.pid),
+            ProcessSortKey::Name => a
+                .friendly_name
+                .to_lowercase()
+                .cmp(&b.friendly_name.to_lowercase())
+                .then_with(|| a.name.cmp(&b.name)),
+        };
+        order
+            .then_with(|| a.pid.cmp(&b.pid))
+            .then_with(|| a.start_time_unix_ms.cmp(&b.start_time_unix_ms))
+    });
+    let offset = query
+        .offset
+        .min(rows.len().saturating_sub(1) / PROCESS_SUMMARY_ROWS * PROCESS_SUMMARY_ROWS);
+    let sample = snapshot.samples.get("fast");
     let mut next = ProcessSummary {
-        sequence,
-        captured_unix_ms: unix_ms(),
+        sequence: summary.sequence.saturating_add(1),
+        captured_unix_ms: sample.map_or(0, |sample| sample.captured_unix_ms),
         total_count: snapshot
             .processes
             .total_count
@@ -445,17 +618,25 @@ fn update_process_summary(shared: &Shared, snapshot: &SystemSnapshot) {
             .total_threads
             .try_into()
             .unwrap_or(u32::MAX),
-        row_count: snapshot
-            .processes
-            .list
-            .len()
-            .min(PROCESS_SUMMARY_ROWS)
-            .try_into()
-            .unwrap_or(PROCESS_SUMMARY_ROWS as u32),
+        matched_count: rows.len().try_into().unwrap_or(u32::MAX),
+        page_offset: offset.try_into().unwrap_or(u32::MAX),
+        observation_status: match snapshot.processes.observation.status {
+            sd_300::observation::ObservationStatus::Available => 0,
+            sd_300::observation::ObservationStatus::Unavailable => 1,
+            sd_300::observation::ObservationStatus::Unsupported => 2,
+            sd_300::observation::ObservationStatus::PermissionDenied => 3,
+            sd_300::observation::ObservationStatus::Error => 4,
+            sd_300::observation::ObservationStatus::Contradictory => 5,
+        },
+        row_count: rows.len().saturating_sub(offset).min(PROCESS_SUMMARY_ROWS) as u32,
         ..ProcessSummary::default()
     };
-    for (destination, source) in next.rows.iter_mut().zip(&snapshot.processes.list) {
+    for (destination, source) in next.rows.iter_mut().zip(rows.into_iter().skip(offset)) {
         destination.pid = source.pid;
+        destination.start_time_unix_ms = source.start_time_unix_ms.unwrap_or(0);
+        destination.availability_flags = u32::from(source.cpu_observation.is_available())
+            | (u32::from(source.memory_observation.is_available()) << 1)
+            | (u32::from(source.start_time_unix_ms.is_some()) << 2);
         destination.cpu_percent = source.cpu_percent;
         destination.memory_bytes = source.memory_bytes;
         destination.memory_percent = source.memory_percent;
@@ -504,7 +685,7 @@ fn update_tray_summary(shared: &Shared, snapshot: &SystemSnapshot) {
             } else {
                 (free_bytes as f64 / total_bytes as f64 * 100.0) as f32
             },
-            gpu_available: u32::from(snapshot.gpu.telemetry_available),
+            gpu_available: u32::from(snapshot.gpu.utilization().is_some()),
             storage_available: u32::from(total_bytes > 0),
             disk_health,
             reserved: 0,
@@ -535,128 +716,153 @@ fn selected_process_sort(shared: &Shared) -> ProcessSortKey {
         .unwrap_or(ProcessSortKey::Cpu)
 }
 
-struct CollectorWorkers<'a> {
-    shared: &'a Shared,
-    diagnostics: Option<JoinHandle<()>>,
-    health: Option<JoinHandle<()>>,
-    drivers: Option<JoinHandle<()>>,
-}
-
-impl<'a> CollectorWorkers<'a> {
-    fn new(shared: &'a Shared) -> Self {
-        Self {
-            shared,
-            diagnostics: None,
-            health: None,
-            drivers: None,
-        }
-    }
-
-    fn join_slot(shared: &Shared, slot: &mut Option<JoinHandle<()>>, label: &str) {
-        if let Some(handle) = slot.take() {
-            if handle.join().is_err() {
-                set_error(shared, &format!("{label} collector worker panicked"));
-            }
-        }
-    }
-
-    fn join_diagnostics(&mut self) {
-        Self::join_slot(self.shared, &mut self.diagnostics, "diagnostics");
-    }
-
-    fn join_health(&mut self) {
-        Self::join_slot(self.shared, &mut self.health, "health");
-    }
-
-    fn join_drivers(&mut self) {
-        Self::join_slot(self.shared, &mut self.drivers, "drivers");
-    }
-}
-
-impl Drop for CollectorWorkers<'_> {
-    fn drop(&mut self) {
-        // These probes execute code from the engine dynamic library. The
-        // top-level engine worker must not return (and let the GUI close the
-        // library) until every child has left that code.
-        self.join_diagnostics();
-        self.join_health();
-        self.join_drivers();
-    }
-}
-
 fn collect_loop(shared: &Shared) {
+    use sd_300::monitor::{Lane, Monitor, Profile};
+    let profile = || match shared.profile.load(Ordering::Acquire) {
+        PROFILE_OVERVIEW => Profile::Overview,
+        PROFILE_HIDDEN => Profile::Hidden,
+        PROFILE_PROCESSES => Profile::Processes,
+        _ => Profile::Summary,
+    };
+    let monitor = Monitor::start(profile());
+    let mut companion = sd_300::companion::Controller::default();
+    let mut optional_setup = sd_300::optional_tools::Controller::default();
+    let mut storage_probe = sd_300::storage_probe::Controller::default();
+    let mut exporter = sd_300::export::Controller::default();
     let mut snapshot = SystemSnapshot::default();
-    let mut workers = CollectorWorkers::new(shared);
-
-    // Static identity and display inventory are collected once on the engine
-    // worker even for the lightweight Overview profile. They are part of the
-    // existing TUI contract, do not participate in the one-second loop, and
-    // therefore add parity without adding permanent renderer/collector load.
-    snapshot.refresh_static();
-    publish(
-        shared,
-        Topic::Static,
-        &StaticProjection {
-            system: &snapshot.system,
-            displays: &snapshot.displays,
-            memory_modules: &snapshot.memory.modules,
-            memory_module_status: &snapshot.memory.module_status,
-            network_adapters: &snapshot.network.adapters,
-            network_adapter_status: &snapshot.network.adapter_status,
-        },
-        &snapshot.warnings,
-    );
-    let (health_tx, health_rx) = mpsc::channel();
-    let mut health_running = false;
-
-    // The first native surface only displays CPU and memory. Start with the
-    // smallest truthful collection set and do not run command-backed connection,
-    // GPU, diagnostic, health, or driver probes until the UI selects a profile
-    // that needs them.
-    if matches!(
-        shared.profile.load(Ordering::Acquire),
-        PROFILE_OVERVIEW | PROFILE_HIDDEN
-    ) {
-        snapshot.refresh_overview();
-        thread::sleep(Duration::from_millis(250));
-        snapshot.refresh_overview();
-        update_fast_summary(shared, &snapshot);
-        publish(
-            shared,
-            Topic::Warnings,
-            &snapshot.warnings,
-            &snapshot.warnings,
-        );
-        let capabilities = sd_300::report::capabilities_for(&snapshot);
-        publish(
-            shared,
-            Topic::Capabilities,
-            &capabilities,
-            &snapshot.warnings,
-        );
-        let mut active_profile = shared.profile.load(Ordering::Acquire);
-        let mut next_overview = Instant::now() + Duration::from_secs(1);
-        let mut next_hidden_slow = Instant::now();
-        let mut next_hidden_health = Instant::now();
-        while !shared.stop.load(Ordering::Acquire) {
-            service_export_request(shared, &snapshot);
-            let profile = shared.profile.load(Ordering::Acquire);
-            if !matches!(profile, PROFILE_OVERVIEW | PROFILE_HIDDEN) {
-                break;
+    while !shared.stop.load(Ordering::Acquire) {
+        let storage_request = shared
+            .storage_request
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        let storage_cancelled = shared.storage_cancel.swap(false, Ordering::AcqRel);
+        if storage_cancelled {
+            storage_probe.cancel();
+        }
+        if let Some((action, device)) = &storage_request {
+            if !storage_cancelled {
+                match action {
+                    1 => {
+                        storage_probe.cancel();
+                        if snapshot
+                            .samples
+                            .get("health")
+                            .is_some_and(|m| m.observation.is_available() && !m.is_stale())
+                        {
+                            if let Some(drive) = snapshot
+                                .disk_health
+                                .drives
+                                .iter()
+                                .find(|d| d.device_id == *device)
+                            {
+                                storage_probe.prepare(drive);
+                            } else {
+                                storage_probe.state.message =
+                                    "The selected drive is no longer in the current inventory"
+                                        .into();
+                            }
+                        } else {
+                            storage_probe.state.message = "Wait for a current storage inventory before requesting a privileged read".into();
+                        }
+                    }
+                    2 => {
+                        storage_probe.confirm(true);
+                    }
+                    _ => {}
+                }
             }
-            if profile != active_profile {
-                active_profile = profile;
-                next_overview = Instant::now();
+        }
+        let storage_changed = storage_probe.poll();
+        if storage_request.is_some() || storage_cancelled || storage_changed {
+            snapshot.storage_probe = storage_probe.state.clone();
+            if !storage_probe.state.running {
+                shared.storage_busy.store(false, Ordering::Release);
             }
-            let now = Instant::now();
-            if now >= next_overview {
-                snapshot.refresh_overview();
-                update_fast_summary(shared, &snapshot);
-                next_overview = now + Duration::from_secs(1);
+            publish_diagnostics(shared, &snapshot);
+        }
+        let request = shared.companion_request.swap(0, Ordering::AcqRel);
+        let consent = request & 16 != 0;
+        use sd_300::companion::Action;
+        let action = match request & 15 {
+            1 => Some(Action::Standard),
+            2 => Some(Action::Deep),
+            3 => Some(Action::SpeedQuick),
+            4 => Some(Action::SpeedDeep),
+            _ => None,
+        };
+        if request == 5 {
+            optional_setup.start_network(true);
+        }
+        if request == 6 {
+            optional_setup.start_smart(true);
+        }
+        if let Some(action) = action {
+            companion.start(action, consent);
+        }
+        if shared.companion_cancel.swap(false, Ordering::AcqRel) {
+            companion.cancel();
+            optional_setup.cancel();
+        }
+        let changed_companion = companion.poll();
+        let changed_setup = optional_setup.poll();
+        if changed_setup
+            && optional_setup.state.succeeded
+            && optional_setup.state.tool == "smartctl"
+        {
+            monitor.retry(Lane::Health);
+        }
+        if request != 0 || changed_companion || changed_setup {
+            snapshot.companion = companion.state.clone();
+            snapshot.optional_setup = optional_setup.state.clone();
+            if !companion.state.running && !optional_setup.state.running {
+                shared.companion_busy.store(false, Ordering::Release);
             }
-            if profile == PROFILE_HIDDEN && now >= next_hidden_slow {
-                snapshot.refresh_slow();
-                publish(
+            publish_diagnostics(shared, &snapshot);
+        }
+        monitor.set_profile(profile());
+        monitor.set_sort(selected_process_sort(shared));
+        if shared.driver_request.swap(false, Ordering::AcqRel) {
+            monitor.retry(Lane::Drivers);
+        }
+        let changed = monitor.drain(&mut snapshot);
+        if shared.process_query_dirty.swap(false, Ordering::AcqRel)
+            && !changed.contains(&Lane::Fast)
+        {
+            update_process_summary(shared, &snapshot);
+        }
+        let inventory_dirty = shared.inventory_dirty.swap(0, Ordering::AcqRel);
+        if inventory_dirty & 1 != 0 && !changed.contains(&Lane::Connections) {
+            inventory::publish(shared, &snapshot, 0);
+        }
+        if inventory_dirty & 2 != 0 && !changed.contains(&Lane::Drivers) {
+            inventory::publish(shared, &snapshot, 1);
+        }
+        for lane in &changed {
+            let sample = snapshot.samples.get(lane.name());
+            match lane {
+                Lane::Activity => {} // Carried by the next fast projection.
+                Lane::Fast => {
+                    publish_fast(shared, &snapshot);
+                    if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {
+                        update_process_summary(shared, &snapshot);
+                    }
+                }
+                Lane::Static => publish_sample(
+                    shared,
+                    Topic::Static,
+                    &StaticProjection {
+                        system: &snapshot.system,
+                        displays: &snapshot.displays,
+                        memory_modules: &snapshot.memory.modules,
+                        memory_module_status: &snapshot.memory.module_status,
+                        network_adapters: &snapshot.network.adapters,
+                        network_adapter_status: &snapshot.network.adapter_status,
+                    },
+                    &snapshot.warnings,
+                    sample,
+                ),
+                Lane::Slow => publish_sample(
                     shared,
                     Topic::Slow,
                     &SlowProjection {
@@ -665,429 +871,85 @@ fn collect_loop(shared: &Shared) {
                         thermals: &snapshot.thermals,
                     },
                     &snapshot.warnings,
-                );
-                update_tray_summary(shared, &snapshot);
-                next_hidden_slow = now + Duration::from_secs(30);
-            }
-            if profile == PROFILE_HIDDEN && now >= next_hidden_health && !health_running {
-                let sender = health_tx.clone();
-                workers.health = Some(thread::spawn(move || {
-                    let _ = sender.send(collectors::disk_health::collect());
-                }));
-                health_running = true;
-                next_hidden_health = now + Duration::from_secs(60);
-            }
-            if let Ok((health, warnings)) = health_rx.try_recv() {
-                workers.join_health();
-                health_running = false;
-                snapshot.disk_health = health;
-                snapshot
-                    .warnings
-                    .retain(|warning| warning.source != "Disk Health");
-                snapshot.warnings.extend(warnings);
-                publish(
+                    sample,
+                ),
+                Lane::Connections => inventory::publish(shared, &snapshot, 0),
+                Lane::Diagnostics => publish_diagnostics(shared, &snapshot),
+                Lane::Health => publish_sample(
                     shared,
                     Topic::Health,
                     &snapshot.disk_health,
                     &snapshot.warnings,
-                );
-                update_tray_summary(shared, &snapshot);
-            }
-            wait_for_wake(
-                shared,
-                next_overview.saturating_duration_since(Instant::now()),
-            );
-        }
-        if shared.stop.load(Ordering::Acquire) {
-            return;
-        }
-    }
-
-    if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {
-        snapshot.refresh_processes_gui(selected_process_sort(shared));
-        update_process_summary(shared, &snapshot);
-    } else {
-        snapshot.refresh_fast_gui_summary();
-    }
-    thread::sleep(Duration::from_millis(250));
-    if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {
-        snapshot.refresh_processes_gui(selected_process_sort(shared));
-        update_process_summary(shared, &snapshot);
-    } else {
-        snapshot.refresh_fast_gui_summary();
-    }
-    publish_fast(shared, &snapshot);
-    publish(
-        shared,
-        Topic::Warnings,
-        &snapshot.warnings,
-        &snapshot.warnings,
-    );
-    let capabilities = sd_300::report::capabilities_for(&snapshot);
-    publish(
-        shared,
-        Topic::Capabilities,
-        &capabilities,
-        &snapshot.warnings,
-    );
-
-    let (driver_tx, driver_rx) = mpsc::channel();
-    let (diag_tx, diag_rx) = mpsc::channel();
-    let mut driver_running = false;
-    let mut diag_running = false;
-    let mut next_fast = Instant::now() + Duration::from_secs(1);
-    let mut next_medium = Instant::now();
-    let mut next_slow = Instant::now();
-    let mut next_diag = Instant::now();
-    let mut next_health = Instant::now();
-    let mut active_profile = shared.profile.load(Ordering::Acquire);
-    let mut active_process_sort = shared.process_sort.load(Ordering::Acquire);
-    shared.driver_request.store(true, Ordering::Release);
-
-    while !shared.stop.load(Ordering::Acquire) {
-        service_export_request(shared, &snapshot);
-        let now = Instant::now();
-        let profile = shared.profile.load(Ordering::Acquire);
-        if profile != active_profile {
-            active_profile = profile;
-            next_fast = now;
-        }
-        let process_sort = shared.process_sort.load(Ordering::Acquire);
-        if process_sort != active_process_sort {
-            active_process_sort = process_sort;
-            if profile == PROFILE_PROCESSES {
-                next_fast = now;
+                    sample,
+                ),
+                Lane::Drivers => inventory::publish(shared, &snapshot, 1),
             }
         }
-        if profile == PROFILE_OVERVIEW {
-            if now >= next_fast {
-                snapshot.refresh_overview();
-                update_fast_summary(shared, &snapshot);
-                next_fast = now + Duration::from_secs(1);
-            }
-            thread::sleep(Duration::from_millis(50));
-            continue;
-        }
-        let hidden = profile == PROFILE_HIDDEN;
-        let process_view = profile == PROFILE_PROCESSES;
-        let full_detail = profile == PROFILE_FOREGROUND;
-        let mut capability_state_changed = false;
-
-        if now >= next_fast {
-            if hidden {
-                // Tray/hidden mode still samples its visible CPU and memory
-                // summary every second. It deliberately skips the process
-                // inventory: no hidden UI consumes that table, and reopening
-                // the window forces a full foreground refresh.
-                snapshot.refresh_overview();
-                update_fast_summary(shared, &snapshot);
-            } else if process_view {
-                snapshot.refresh_processes_gui(selected_process_sort(shared));
-                update_process_summary(shared, &snapshot);
-                publish_fast(shared, &snapshot);
-            } else {
-                snapshot.refresh_fast_gui_summary();
-                publish_fast(shared, &snapshot);
-            }
-            next_fast = now + Duration::from_secs(1);
-        }
-        if full_detail && now >= next_medium {
-            snapshot.refresh_connections();
-            publish(
-                shared,
-                Topic::Medium,
-                &MediumProjection {
-                    active_connections: &snapshot.network_diag.active_connections,
-                    listening_ports: &snapshot.network_diag.listening_ports,
-                },
-                &snapshot.warnings,
-            );
-            next_medium = now + Duration::from_secs(3);
-        }
-        if full_detail && now >= next_slow {
-            snapshot.refresh_slow();
-            publish(
-                shared,
-                Topic::Slow,
-                &SlowProjection {
-                    disk: &snapshot.disk,
-                    gpu: &snapshot.gpu,
-                    thermals: &snapshot.thermals,
-                },
-                &snapshot.warnings,
-            );
+        if !changed.is_empty() {
             update_tray_summary(shared, &snapshot);
-            capability_state_changed = true;
-            next_slow = now + Duration::from_secs(5);
-        }
-        if full_detail && now >= next_diag && !diag_running {
-            let sender = diag_tx.clone();
-            workers.diagnostics = Some(thread::spawn(move || {
-                let _ = sender.send(collectors::network_diag::collect_connectivity());
-            }));
-            diag_running = true;
-            next_diag = now + Duration::from_secs(15);
-        }
-        if full_detail && now >= next_health && !health_running {
-            let sender = health_tx.clone();
-            workers.health = Some(thread::spawn(move || {
-                let _ = sender.send(collectors::disk_health::collect());
-            }));
-            health_running = true;
-            next_health = now + Duration::from_secs(60);
-        }
-        if full_detail && shared.driver_request.swap(false, Ordering::AcqRel) && !driver_running {
-            let sender = driver_tx.clone();
-            workers.drivers = Some(thread::spawn(move || {
-                let _ = sender.send(collectors::drivers::collect());
-            }));
-            driver_running = true;
-        }
-
-        if let Ok(drivers) = driver_rx.try_recv() {
-            workers.join_drivers();
-            driver_running = false;
-            snapshot.drivers = drivers;
-            snapshot
-                .warnings
-                .retain(|warning| warning.source != "Drivers");
-            if let collectors::drivers::DriverScanStatus::ScanFailed(message) =
-                &snapshot.drivers.scan_status
-            {
-                snapshot.warnings.push(DiagnosticWarning {
-                    source: "Drivers".into(),
-                    message: message.clone(),
-                    severity: WarningSeverity::Warning,
-                });
-            }
-            publish(
-                shared,
-                Topic::Drivers,
-                &snapshot.drivers,
-                &snapshot.warnings,
-            );
-            capability_state_changed = true;
-        }
-        if let Ok((diagnostics, warnings)) = diag_rx.try_recv() {
-            workers.join_diagnostics();
-            diag_running = false;
-            snapshot.network_diag.gateway = diagnostics.gateway;
-            snapshot.network_diag.dns = diagnostics.dns;
-            snapshot.network_diag.internet = diagnostics.internet;
-            snapshot
-                .warnings
-                .retain(|warning| warning.source != "Network");
-            snapshot.warnings.extend(warnings);
-            publish(
-                shared,
-                Topic::Diagnostics,
-                &snapshot.network_diag,
-                &snapshot.warnings,
-            );
-            capability_state_changed = true;
-        }
-        if let Ok((health, warnings)) = health_rx.try_recv() {
-            workers.join_health();
-            health_running = false;
-            snapshot.disk_health = health;
-            snapshot
-                .warnings
-                .retain(|warning| warning.source != "Disk Health");
-            snapshot.warnings.extend(warnings);
-            publish(
-                shared,
-                Topic::Health,
-                &snapshot.disk_health,
-                &snapshot.warnings,
-            );
-            update_tray_summary(shared, &snapshot);
-            capability_state_changed = true;
-        }
-
-        if capability_state_changed {
             publish(
                 shared,
                 Topic::Warnings,
                 &snapshot.warnings,
                 &snapshot.warnings,
             );
-            let capabilities = sd_300::report::capabilities_for(&snapshot);
             publish(
                 shared,
                 Topic::Capabilities,
-                &capabilities,
+                &sd_300::report::capabilities_for(&snapshot),
                 &snapshot.warnings,
             );
         }
-        if process_view && !driver_running && !diag_running && !health_running {
-            // The Processes profile has no command-backed background jobs to
-            // poll. Profile/sort/export/stop setters all signal this condvar,
-            // so sleep directly until the next one-second sample instead of
-            // waking the collector worker twenty times per second.
-            wait_for_wake(shared, next_fast.saturating_duration_since(Instant::now()));
-        } else {
-            // Detailed pages can have driver, connectivity, or disk-health
-            // workers completing on channels that do not own the wake handle.
-            thread::sleep(Duration::from_millis(50));
-        }
+        service_export_request(shared, &snapshot, &mut exporter);
+        wait_for_wake(shared, Duration::from_millis(50));
     }
+    drop(companion);
+    drop(optional_setup);
+    drop(storage_probe);
+    shared.storage_busy.store(false, Ordering::Release);
+    shared.companion_busy.store(false, Ordering::Release);
+    shared.companion_request.store(0, Ordering::Release);
+    shared.companion_cancel.store(false, Ordering::Release);
+    // Monitor Drop cancels process groups and joins every worker before the
+    // engine can unload. No uninterruptible native probe runs in this DLL.
 }
-
-fn service_export_request(shared: &Shared, snapshot: &SystemSnapshot) {
-    let kind = shared.export_request.swap(EXPORT_NONE, Ordering::AcqRel);
-    if kind == EXPORT_NONE {
+fn service_export_request(
+    shared: &Shared,
+    snapshot: &SystemSnapshot,
+    exporter: &mut sd_300::export::Controller,
+) {
+    use sd_300::export::Kind;
+    let request = shared.export_request.load(Ordering::Acquire);
+    if request == EXPORT_NONE {
         return;
     }
-    let result = write_export(snapshot, kind);
-    let status = match result {
-        Ok(path) => json!({
-            "state": "complete",
-            "kind": if kind == EXPORT_SNAPSHOT { "redacted_snapshot" } else { "capabilities" },
-            "path": path.to_string_lossy(),
-        }),
-        Err(error) => {
-            set_error(shared, &error);
-            json!({
-                "state": "error",
-                "kind": if kind == EXPORT_SNAPSHOT { "redacted_snapshot" } else { "capabilities" },
-                "error": error,
-            })
+    if !exporter.running() {
+        let kind = if request == EXPORT_SNAPSHOT {
+            Kind::Snapshot
+        } else {
+            Kind::Capabilities
+        };
+        exporter.start(snapshot, kind);
+    }
+    if !exporter.poll() {
+        return;
+    }
+    let status = match exporter.result.as_ref() {
+        Some(Ok(path)) => {
+            json!({"state":"complete", "kind":exporter.kind.label(), "path":path.to_string_lossy()})
         }
+        Some(Err(error)) => {
+            set_error(shared, error);
+            json!({"state":"error", "kind":exporter.kind.label(), "error":error})
+        }
+        None => return,
     };
     if let (Ok(bytes), Ok(mut destination)) =
         (serde_json::to_vec(&status), shared.export_status.lock())
     {
         *destination = bytes;
     }
-}
-
-fn write_export(snapshot: &SystemSnapshot, kind: u8) -> Result<PathBuf, String> {
-    let directory = sd_300::settings::reports_dir()?;
-    ensure_export_directory(&directory)?;
-    let captured = unix_ms();
-    let stem = if kind == EXPORT_SNAPSHOT {
-        "sd300-redacted-snapshot"
-    } else if kind == EXPORT_CAPABILITIES {
-        "sd300-capabilities"
-    } else {
-        return Err("unknown export kind".into());
-    };
-    let report = sd_300::report::DiagnosticReport::from_snapshot(snapshot, false);
-    let bytes = if kind == EXPORT_SNAPSHOT {
-        serde_json::to_vec_pretty(&report)
-    } else {
-        serde_json::to_vec_pretty(&json!({
-            "schema_version": report.schema_version,
-            "product": report.product,
-            "product_version": report.product_version,
-            "target_os": report.target_os,
-            "target_arch": report.target_arch,
-            "capabilities": report.capabilities,
-            "warnings": report.warnings,
-        }))
-    }
-    .map_err(|error| format!("could not serialize the requested export: {error}"))?;
-
-    for suffix in 0..100u8 {
-        let file_name = if suffix == 0 {
-            format!("{stem}-{captured}.json")
-        } else {
-            format!("{stem}-{captured}-{suffix}.json")
-        };
-        let destination = directory.join(file_name);
-        if destination.exists() {
-            continue;
-        }
-        write_export_atomically(&destination, &bytes)?;
-        return Ok(destination);
-    }
-    Err("could not allocate a unique report filename".into())
-}
-
-fn ensure_export_directory(directory: &Path) -> Result<(), String> {
-    match fs::symlink_metadata(directory) {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
-            return Err(format!(
-                "report destination {} is not an owned directory and was preserved",
-                directory.display()
-            ));
-        }
-        Ok(_) => return restrict_export_directory(directory),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(format!(
-                "could not inspect report destination {}: {error}",
-                directory.display()
-            ));
-        }
-    }
-    fs::create_dir_all(directory).map_err(|error| {
-        format!(
-            "could not create report destination {}: {error}",
-            directory.display()
-        )
-    })?;
-    restrict_export_directory(directory)
-}
-
-#[cfg(unix)]
-fn restrict_export_directory(directory: &Path) -> Result<(), String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-
-    let effective_uid = unsafe { libc::geteuid() };
-    for path in directory.parent().into_iter().chain([directory]) {
-        let metadata = fs::symlink_metadata(path)
-            .map_err(|error| format!("could not inspect {}: {error}", path.display()))?;
-        if !metadata.is_dir()
-            || metadata.file_type().is_symlink()
-            || metadata.uid() != effective_uid
-        {
-            return Err(format!(
-                "report destination component {} is not a same-user directory and was preserved",
-                path.display()
-            ));
-        }
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-            .map_err(|error| format!("could not restrict {}: {error}", path.display()))?;
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn restrict_export_directory(_directory: &Path) -> Result<(), String> {
-    Ok(())
-}
-
-fn write_export_atomically(destination: &Path, bytes: &[u8]) -> Result<(), String> {
-    let temporary = destination.with_extension("json.tmp");
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&temporary).map_err(|error| {
-        format!(
-            "could not create temporary report {}: {error}",
-            temporary.display()
-        )
-    })?;
-    let result = (|| {
-        file.write_all(bytes)?;
-        file.write_all(b"\n")?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&temporary, destination)
-    })();
-    if let Err(error) = result {
-        let _ = fs::remove_file(&temporary);
-        return Err(format!(
-            "could not commit report {}: {error}",
-            destination.display()
-        ));
-    }
-    Ok(())
+    shared.export_request.store(EXPORT_NONE, Ordering::Release);
 }
 
 fn wait_for_wake(shared: &Shared, timeout: Duration) {
@@ -1306,6 +1168,186 @@ pub extern "C" fn sd300_engine_set_process_sort(handle: *mut c_void, sort: u32) 
         }
         let sort = u8::try_from(sort).unwrap_or(PROCESS_SORT_CPU);
         engine.shared.process_sort.store(sort, Ordering::Release);
+        engine
+            .shared
+            .process_query_dirty
+            .store(true, Ordering::Release);
+        engine.shared.wake.notify_all();
+        STATUS_OK
+    }))
+    .unwrap_or(STATUS_PANIC)
+}
+
+/// Re-project the captured full inventory; this does not manufacture a new sample.
+#[no_mangle]
+pub extern "C" fn sd300_engine_set_process_query(
+    handle: *mut c_void,
+    filter: *const u8,
+    length: usize,
+    offset: u32,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        let Some(engine) = engine_from_handle(handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if length > 256 || (length != 0 && filter.is_null()) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let bytes = if length == 0 {
+            &[][..]
+        } else {
+            std::slice::from_raw_parts(filter, length)
+        };
+        let Ok(filter) = std::str::from_utf8(bytes) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Ok(mut query) = engine.shared.process_query.lock() else {
+            return STATUS_PANIC;
+        };
+        *query = ProcessQuery {
+            filter: filter.trim().to_lowercase(),
+            offset: offset as usize / PROCESS_SUMMARY_ROWS * PROCESS_SUMMARY_ROWS,
+        };
+        engine
+            .shared
+            .process_query_dirty
+            .store(true, Ordering::Release);
+        engine.shared.wake.notify_all();
+        STATUS_OK
+    }))
+    .unwrap_or(STATUS_PANIC)
+}
+
+/// Full captured inventory query; bounded UTF-8 input and one replaceable request per table.
+#[no_mangle]
+pub extern "C" fn sd300_engine_set_inventory_query(
+    handle: *mut c_void,
+    topic: u32,
+    filter: *const u8,
+    length: usize,
+    offset: u32,
+    attention_only: u32,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        let Some(engine) = engine_from_handle(handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let index = match topic {
+            2 => 0,
+            6 => 1,
+            _ => return STATUS_INVALID_TOPIC,
+        };
+        if length > 256 || (length != 0 && filter.is_null()) || attention_only > 1 {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let bytes = if length == 0 {
+            &[][..]
+        } else {
+            std::slice::from_raw_parts(filter, length)
+        };
+        let Ok(filter) = std::str::from_utf8(bytes) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if filter.chars().any(char::is_control) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let Ok(mut queries) = engine.shared.inventory_queries.lock() else {
+            return STATUS_PANIC;
+        };
+        queries[index] = inventory::Query {
+            filter: filter.trim().to_lowercase(),
+            offset: offset as usize,
+            attention_only: attention_only == 1,
+        };
+        engine
+            .shared
+            .inventory_dirty
+            .fetch_or(1 << index, Ordering::Release);
+        engine.shared.wake.notify_all();
+        STATUS_OK
+    }))
+    .unwrap_or(STATUS_PANIC)
+}
+
+/// 0 cancels; 1/2 diagnostics; 3/4 confirmed bandwidth tests; 5/6 confirmed ND/SMART setup.
+/// M-Lab consent is session-only and never inferred from another action.
+#[no_mangle]
+pub extern "C" fn sd300_engine_request_companion(
+    handle: *mut c_void,
+    action: u32,
+    mlab_consent: u32,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        let Some(engine) = engine_from_handle(handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if action > 6 || mlab_consent > 1 || (!(3..=4).contains(&action) && mlab_consent != 0) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        if action == 0 {
+            engine
+                .shared
+                .companion_cancel
+                .store(true, Ordering::Release);
+        } else {
+            if engine.shared.companion_busy.swap(true, Ordering::AcqRel) {
+                return STATUS_ALREADY_RUNNING;
+            }
+            engine.shared.companion_request.store(
+                action as u8 | ((mlab_consent as u8) << 4),
+                Ordering::Release,
+            );
+        }
+        engine.shared.wake.notify_all();
+        STATUS_OK
+    }))
+    .unwrap_or(STATUS_PANIC)
+}
+
+/// Actions: 0 cancel/decline, 1 prepare a current device, 2 confirm the prepared
+/// operation. A confirm without preparation cannot launch an elevated process.
+#[no_mangle]
+pub extern "C" fn sd300_engine_request_storage_probe(
+    handle: *mut c_void,
+    action: u32,
+    device: *const u8,
+    len: usize,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        let Some(engine) = engine_from_handle(handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if action > 2
+            || len > 128
+            || (len > 0 && device.is_null())
+            || (action != 1 && len != 0)
+            || (action == 1 && len == 0)
+        {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        if action == 0 {
+            engine.shared.storage_cancel.store(true, Ordering::Release);
+        } else {
+            let value = if len == 0 {
+                ""
+            } else {
+                let Ok(value) = std::str::from_utf8(std::slice::from_raw_parts(device, len)) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                if value.chars().any(char::is_control) {
+                    return STATUS_INVALID_ARGUMENT;
+                }
+                value
+            };
+            if engine.shared.storage_busy.swap(true, Ordering::AcqRel) {
+                return STATUS_ALREADY_RUNNING;
+            }
+            *engine
+                .shared
+                .storage_request
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = Some((action as u8, value.into()));
+        }
         engine.shared.wake.notify_all();
         STATUS_OK
     }))
@@ -1536,20 +1578,15 @@ pub extern "C" fn sd300_engine_last_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sd_300::collectors::WarningSeverity;
+    use std::time::Instant;
 
     #[test]
-    fn collector_worker_guard_joins_children_before_scope_exit() {
-        let shared = Shared::default();
-        let completed = Arc::new(AtomicBool::new(false));
-        {
-            let mut workers = CollectorWorkers::new(&shared);
-            let completed = Arc::clone(&completed);
-            workers.health = Some(thread::spawn(move || {
-                thread::sleep(Duration::from_millis(10));
-                completed.store(true, Ordering::Release);
-            }));
-        }
-        assert!(completed.load(Ordering::Acquire));
+    fn collector_session_cancels_and_joins_on_shutdown() {
+        let started = Instant::now();
+        let monitor = sd_300::monitor::Monitor::start(sd_300::monitor::Profile::Overview);
+        drop(monitor);
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
@@ -1569,7 +1606,7 @@ mod tests {
             serde_json::from_slice(&buffer[..required - 1]).expect("valid metadata JSON");
         assert_eq!(metadata["abi_version"], ABI_VERSION);
         assert_eq!(metadata["schema_version"], SCHEMA_VERSION);
-        assert_eq!(metadata["product_version"], "3.1.3");
+        assert_eq!(metadata["product_version"], "4.0.0");
     }
 
     #[test]
@@ -1624,7 +1661,7 @@ mod tests {
         let envelope: serde_json::Value =
             serde_json::from_slice(&state.json).expect("valid topic JSON");
         assert_eq!(envelope["schema_version"], SCHEMA_VERSION);
-        assert_eq!(envelope["product_version"], "3.1.3");
+        assert_eq!(envelope["product_version"], "4.0.0");
         assert_eq!(envelope["target"], target_label());
         assert_eq!(envelope["topic"], "warnings");
         assert_eq!(envelope["sequence"], 1);
@@ -1635,15 +1672,92 @@ mod tests {
     }
 
     #[test]
+    fn future_capture_keeps_its_observation_but_cannot_claim_zero_age() {
+        let shared = Shared::default();
+        let sample = collectors::sampling::SampleMeta {
+            sequence: 3,
+            captured_unix_ms: unix_ms() + 60_000,
+            expected_interval_ms: 1000,
+            observation: sd_300::observation::Observation::available("fixture"),
+            ..Default::default()
+        };
+        publish_sample(&shared, Topic::Fast, &42, &[], Some(&sample));
+        let topics = shared.topics.lock().unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&topics[Topic::Fast as usize].json).unwrap();
+        assert_eq!(envelope["schema_version"], 2);
+        assert!(envelope["freshness_ms"].is_null());
+        assert_eq!(envelope["freshness"], "clock_changed");
+        assert_eq!(envelope["availability"], "available");
+        assert_eq!(envelope["captured_unix_ms"], sample.captured_unix_ms);
+    }
+
+    #[test]
     fn fast_summary_layout_is_fixed_for_the_zig_boundary() {
         assert_eq!(std::mem::size_of::<FastSummary>(), 48);
         assert_eq!(std::mem::align_of::<FastSummary>(), 8);
         assert_eq!(std::mem::size_of::<TraySummary>(), 32);
         assert_eq!(std::mem::align_of::<TraySummary>(), 8);
-        assert_eq!(std::mem::size_of::<ProcessRowSummary>(), 264);
+        assert_eq!(std::mem::size_of::<ProcessRowSummary>(), 272);
         assert_eq!(std::mem::align_of::<ProcessRowSummary>(), 8);
-        assert_eq!(std::mem::size_of::<ProcessSummary>(), 4256);
+        assert_eq!(std::mem::size_of::<ProcessSummary>(), 4392);
         assert_eq!(std::mem::align_of::<ProcessSummary>(), 8);
+    }
+
+    #[test]
+    fn process_query_searches_full_inventory_and_preserves_capture_time() {
+        use collectors::processes::ProcessInfo;
+        let engine = Engine::new();
+        let handle = (&engine as *const Engine).cast_mut().cast::<c_void>();
+        let mut snapshot = SystemSnapshot::default();
+        snapshot.processes.list = (1..=250)
+            .map(|pid| ProcessInfo {
+                pid,
+                name: format!("process-{pid}"),
+                friendly_name: format!("Process {pid}"),
+                start_time_unix_ms: Some(pid as u64),
+                ..ProcessInfo::default()
+            })
+            .collect();
+        snapshot.processes.total_count = 250;
+        sd300_engine_set_process_sort(handle, PROCESS_SORT_PID.into());
+        assert_eq!(
+            sd300_engine_set_process_query(handle, b"PROCESS".as_ptr(), 7, 240),
+            STATUS_OK
+        );
+        update_process_summary(&engine.shared, &snapshot);
+        let first = *engine.shared.process_summary.lock().unwrap();
+        assert_eq!(first.matched_count, 250);
+        assert_eq!(first.page_offset, 240);
+        assert_eq!(first.row_count, 10);
+        assert_eq!(first.rows[0].pid, 241);
+        assert_eq!(
+            sd300_engine_set_process_query(handle, b"250".as_ptr(), 3, 0),
+            STATUS_OK
+        );
+        update_process_summary(&engine.shared, &snapshot);
+        let second = *engine.shared.process_summary.lock().unwrap();
+        assert_eq!(second.matched_count, 1);
+        assert_eq!(second.rows[0].pid, 250);
+        assert!(second.sequence > first.sequence);
+        assert_eq!(second.captured_unix_ms, first.captured_unix_ms);
+        assert_eq!(
+            sd300_engine_set_process_query(handle, ptr::null(), 257, 0),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_set_process_query(handle, [255].as_ptr(), 1, 0),
+            STATUS_INVALID_ARGUMENT
+        );
+        // Empty filter with an out-of-range page clamps after process exit.
+        assert_eq!(
+            sd300_engine_set_process_query(handle, ptr::null(), 0, u32::MAX),
+            STATUS_OK
+        );
+        update_process_summary(&engine.shared, &snapshot);
+        assert_eq!(
+            engine.shared.process_summary.lock().unwrap().page_offset,
+            240
+        );
     }
 
     #[test]
@@ -1681,6 +1795,18 @@ mod tests {
             sd300_engine_read_process_summary(handle, 11, &mut destination),
             STATUS_UNCHANGED
         );
+    }
+
+    #[test]
+    fn process_inventory_failure_and_recovery_cross_the_fixed_summary() {
+        let shared = Shared::default();
+        let mut snapshot = SystemSnapshot::default();
+        snapshot.processes.observation = sd_300::observation::Observation::permission_denied("fixture", "Denied");
+        update_process_summary(&shared, &snapshot);
+        assert_eq!(shared.process_summary.lock().unwrap().observation_status, 3);
+        snapshot.processes.observation = sd_300::observation::Observation::available("fixture");
+        update_process_summary(&shared, &snapshot);
+        assert_eq!(shared.process_summary.lock().unwrap().observation_status, 0);
     }
 
     #[test]
@@ -1735,6 +1861,73 @@ mod tests {
     }
 
     #[test]
+    fn companion_requests_are_explicit_bounded_and_never_infer_consent() {
+        let engine = Engine::new();
+        let handle = (&engine as *const Engine).cast_mut().cast::<c_void>();
+        assert_eq!(engine.shared.companion_request.load(Ordering::Acquire), 0);
+        assert_eq!(
+            sd300_engine_request_companion(handle, 1, 1),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_companion(handle, 99, 0),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_companion(handle, 5, 1),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(sd300_engine_request_companion(handle, 3, 0), STATUS_OK);
+        assert_eq!(engine.shared.companion_request.load(Ordering::Acquire), 3);
+        assert_eq!(
+            sd300_engine_request_companion(handle, 4, 1),
+            STATUS_ALREADY_RUNNING
+        );
+        assert_eq!(sd300_engine_request_companion(handle, 0, 0), STATUS_OK);
+        assert!(engine.shared.companion_cancel.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn storage_probe_requests_are_bounded_and_cannot_smuggle_an_operation() {
+        let engine = Engine::new();
+        let handle = (&engine as *const Engine).cast_mut().cast::<c_void>();
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 3, ptr::null(), 0),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 1, ptr::null(), 1),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 1, ptr::null(), 129),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 2, b"x".as_ptr(), 1),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 1, b"bad\n".as_ptr(), 4),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 1, b"/dev/sda".as_ptr(), 8),
+            STATUS_OK
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 2, ptr::null(), 0),
+            STATUS_ALREADY_RUNNING
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 0, ptr::null(), 0),
+            STATUS_OK
+        );
+        assert!(engine.shared.storage_cancel.load(Ordering::Acquire));
+        assert!(!engine.shared.running.load(Ordering::Acquire));
+    }
+
+    #[test]
     fn export_status_is_caller_owned_and_requests_fail_closed() {
         let engine = Engine::new();
         let handle = (&engine as *const Engine).cast_mut().cast::<c_void>();
@@ -1761,48 +1954,5 @@ mod tests {
             STATUS_INVALID_ARGUMENT
         );
         assert_eq!(sd300_engine_request_export(handle, 1), STATUS_NOT_RUNNING);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn export_directory_and_report_are_private_to_the_current_user() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let temporary = tempfile::tempdir().expect("temporary root");
-        let application = temporary.path().join("sd300");
-        let reports = application.join("reports");
-
-        fs::create_dir(&application).expect("application directory");
-        fs::set_permissions(&application, fs::Permissions::from_mode(0o755))
-            .expect("relax application directory before the test");
-        ensure_export_directory(&reports).expect("private reports directory");
-
-        assert_eq!(
-            fs::metadata(&application)
-                .expect("application metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o700
-        );
-        assert_eq!(
-            fs::metadata(&reports)
-                .expect("reports metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o700
-        );
-
-        let report = reports.join("snapshot.json");
-        write_export_atomically(&report, br#"{"redacted":true}"#).expect("private atomic report");
-        assert_eq!(
-            fs::metadata(report)
-                .expect("report metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
     }
 }

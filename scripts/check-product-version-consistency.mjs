@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkSharedLocks } from "./check-shared-rust-locks.mjs";
 
 const semverPattern = String.raw`[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`;
 
@@ -141,7 +142,7 @@ function nativeMarkupVersions(repoRoot) {
 
 function stagedZonVersion(repoRoot, relativePath) {
   const text = readSource(repoRoot, relativePath);
-  const stageBlock = requiredMatch(
+  const stageBlock = relativePath.endsWith(".mjs") ? text : requiredMatch(
     text,
     /(?:\$stageZon\s*=\s*@'|cat\s+>\s+"\$app_stage\/build\.zig\.zon"\s+<<'ZON')([\s\S]*?)(?:'@|\nZON)/,
     `${relativePath} staged build.zig.zon template`,
@@ -205,6 +206,7 @@ function collectVersionSurfaces(repoRoot) {
         stagedZonVersion(repoRoot, "scripts/build-native-gui.sh"),
       ],
       ["scripts/package-native-gui-linux.sh default", linuxPackageDefaultVersion(repoRoot)],
+      ["scripts/test-native-gui.mjs staged build.zig.zon", stagedZonVersion(repoRoot, "scripts/test-native-gui.mjs")],
     ],
   };
 }
@@ -219,6 +221,7 @@ function main() {
   }
   const scriptRoot = dirname(fileURLToPath(import.meta.url));
   const repoRoot = resolve(options.repoRoot ?? resolve(scriptRoot, ".."));
+  checkSharedLocks(repoRoot);
   const { rootVersion, surfaces } = collectVersionSurfaces(repoRoot);
   const failures = [];
 

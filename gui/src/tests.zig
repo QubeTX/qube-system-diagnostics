@@ -7,7 +7,54 @@ const window_visibility = @import("platform/window_visibility.zig");
 const canvas = native_sdk.canvas;
 const testing = std.testing;
 
+test { _ = @import("settings_writer.zig"); }
+
 const AppMarkup = canvas.MarkupView(main.Model, main.Msg);
+
+test "frame work counts nested events once and excludes queue wait" {
+    var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
+    profile.beginWorkAt(100_000);
+    profile.beginWorkAt(200_000);
+    profile.endWorkAt(400_000);
+    profile.endWorkAt(600_000);
+    try testing.expectEqual(@as(u64, 0), profile.stats(.frame_work).total);
+    profile.beginWorkAt(9_000_000);
+    profile.work_presented = true;
+    profile.endWorkAt(9_700_000);
+    try testing.expectEqual(@as(u64, 1200), profile.stats(.frame_work).p95_us);
+    try testing.expectEqual(@as(u64, 1), profile.stats(.frame_work).total);
+    profile.reset();
+    try testing.expectEqual(@as(u64, 0), profile.pending_work_ns);
+    profile.enabled = false;
+    profile.beginWorkAt(1);
+    profile.endWorkAt(100_000);
+    try testing.expectEqual(@as(u64, 0), profile.stats(.frame_work).total);
+}
+
+test "profile keeps percentile coverage and lifetime stalls explicit" {
+    var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
+    profile.recordNs(.frame_work, 101_000_000);
+    for (0..native_sdk.runtime.max_frame_profile_samples) |_| profile.recordNs(.frame_work, 1_000_000);
+    const stats = profile.stats(.frame_work);
+    try testing.expectEqual(@as(u64, 1000), stats.p95_us);
+    try testing.expectEqual(@as(u64, 101_000), stats.total_max_us);
+    try testing.expectEqual(native_sdk.runtime.max_frame_profile_samples, stats.window_len);
+    try testing.expectEqual(native_sdk.runtime.max_frame_profile_samples + 1, stats.total);
+}
+
+test "no-damage update cycles do not accumulate into a fabricated long frame" {
+    var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
+    for (0..20) |index| {
+        const start = (index + 1) * std.time.ns_per_s;
+        profile.beginWorkAt(start);
+        profile.work_presented = true; // Timer with no pending paint, or a no-damage completion.
+        profile.endWorkAt(start + std.time.ns_per_ms);
+    }
+    const stats = profile.stats(.frame_work);
+    try testing.expectEqual(@as(u64, 20), stats.total);
+    try testing.expectEqual(@as(u64, 1000), stats.p95_us);
+    try testing.expectEqual(@as(u64, 1000), stats.total_max_us);
+}
 
 fn buildTree(arena: std.mem.Allocator, model: *const main.Model) !main.AppUi.Tree {
     var view = try AppMarkup.init(arena, main.app_markup);
@@ -108,6 +155,7 @@ fn buildRenderBenchDisplayList(
     model: *const main.Model,
     builder: *canvas.Builder,
     nodes: []canvas.WidgetLayoutNode,
+    prefix_count: ?*usize,
 ) !canvas.DisplayList {
     const size = native_sdk.geometry.SizeF.init(1180, 760);
     const tokens = main.qubeTokens(model);
@@ -119,6 +167,7 @@ fn buildRenderBenchDisplayList(
         nodes,
     );
     try main.warmCarbonChrome(model, builder, size, tokens);
+    if (prefix_count) |count| count.* = builder.displayList().commands.len;
     try layout.emitDisplayList(builder, tokens);
     return builder.displayList();
 }
@@ -208,9 +257,13 @@ fn expectByText(widget: canvas.Widget, kind: canvas.WidgetKind, text: []const u8
 }
 
 test "a fast summary updates the native overview projection" {
+    var test_clock = native_sdk.TestClock{};
+    test_clock.setWallMs(1_777_777_777_000);
     var model = main.initialModel();
+    model.clock = test_clock.clock();
     main.applySummary(&model, engine.FastSummary{
         .sequence = 42,
+        .captured_unix_ms = 1_777_777_777_000,
         .cpu_percent = 18.25,
         .memory_percent = 62.5,
         .memory_used_bytes = 16 * 1024 * 1024 * 1024,
@@ -234,14 +287,17 @@ test "a fast summary updates the native overview projection" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const tree = try buildTree(arena_state.allocator(), &model);
-    _ = try expectByText(tree.root, .badge, "LIVE · SAMPLE 42");
+    _ = try expectByText(tree.root, .badge, "Live");
     _ = try expectByText(tree.root, .text, "18.3%");
     _ = try expectByText(tree.root, .text, "16.0 GiB used of 32.0 GiB");
-    _ = try expectByText(tree.root, .badge, "3 WARNINGS");
+    _ = try expectByText(tree.root, .badge, "0 FINDINGS");
 }
 
 test "re-reading one fast sequence does not invent another history sample" {
+    var test_clock = native_sdk.TestClock{};
+    test_clock.setWallMs(1_777_777_777_000);
     var model = main.initialModel();
+    model.clock = test_clock.clock();
     const summary = engine.FastSummary{
         .sequence = 9,
         .captured_unix_ms = 1_777_777_777_000,
@@ -258,8 +314,8 @@ test "re-reading one fast sequence does not invent another history sample" {
 
     main.applySummary(&model, summary);
 
-    try testing.expectEqualSlices(f64, &cpu_history, &model.cpu_history);
-    try testing.expectEqualSlices(f64, &memory_history, &model.memory_history);
+    try testing.expectEqualSlices(u8, std.mem.asBytes(&cpu_history), std.mem.asBytes(&model.cpu_history));
+    try testing.expectEqualSlices(u8, std.mem.asBytes(&memory_history), std.mem.asBytes(&model.memory_history));
     try testing.expectEqual(@as(u64, 1_777_777_777_000), model.overview_topic_meta.captured_unix_ms);
 }
 
@@ -289,8 +345,8 @@ test "top sample state becomes stale until sequence and capture advance" {
     var arena_stale = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_stale.deinit();
     const stale_tree = try buildTree(arena_stale.allocator(), &model);
-    _ = try expectByText(stale_tree.root, .badge, "STALE · SAMPLE 9");
-    try testing.expect(findByText(stale_tree.root, .badge, "LIVE · SAMPLE 9") == null);
+    _ = try expectByText(stale_tree.root, .badge, "Readings delayed");
+    try testing.expect(findByText(stale_tree.root, .badge, "Live") == null);
 
     var next = summary;
     next.sequence = 10;
@@ -298,6 +354,65 @@ test "top sample state becomes stale until sequence and capture advance" {
     main.applySummary(&model, next);
     try testing.expect(model.summaryLive());
     try testing.expect(!model.summaryStale());
+}
+
+test "clock rollback cannot rejuvenate samples and later captures recover history" {
+    var clock = native_sdk.TestClock{};
+    clock.setWallMs(10_000);
+    var model = main.initialModel();
+    model.clock = clock.clock();
+    var summary = engine.FastSummary{ .sequence = 1, .captured_unix_ms = 10_000, .cpu_percent = 7, .memory_total_bytes = 100 };
+    main.applySummary(&model, summary);
+    try testing.expect(model.summaryLive());
+    model.detail.disk_io_available = true;
+    model.detail.activity_observation.available = true;
+    model.detail.activity_captured_unix_ms = 10_000;
+    try testing.expect(model.diskIoAvailable());
+    clock.setWallMs(9_000);
+    main.applySummary(&model, summary);
+    try testing.expect(model.summaryStale());
+    try testing.expect(!model.collectorAgeAvailable());
+    try testing.expect(!model.diskIoAvailable());
+    try testing.expectEqualStrings("Capture age unavailable", model.collectorState());
+    summary.sequence = 2;
+    summary.captured_unix_ms = 9_000;
+    summary.cpu_percent = 3;
+    main.applySummary(&model, summary);
+    try testing.expect(model.summaryLive());
+    try testing.expectEqual(@as(u64, 9_000), model.histories[0].latest);
+    try testing.expectEqual(@as(f64, 3), model.cpu_history[59]);
+    try testing.expect(std.math.isNan(model.cpu_history[58]));
+    clock.setWallMs(10_000);
+    summary.sequence = 3;
+    summary.captured_unix_ms = 10_000;
+    main.applySummary(&model, summary);
+    try testing.expectEqual(@as(f64, 3), model.cpu_history[58]);
+    try testing.expectEqual(@as(f64, 3), model.cpu_history[59]);
+}
+
+test "connectivity freshness belongs to its diagnostic capture not live CPU" {
+    var clock = native_sdk.TestClock{};
+    clock.setWallMs(100_000);
+    var model = main.initialModel();
+    model.clock = clock.clock();
+    try testing.expectEqualStrings("Waiting for checks", model.diagnosticsState());
+    const meta = &model.detail.topic_meta[4];
+    meta.ready = true;
+    meta.availability_buffer.set("available");
+    meta.expected_interval_ms = 15_000;
+    meta.captured_unix_ms = 100_000;
+    try testing.expectEqualStrings("Current", model.diagnosticsState());
+    clock.setWallMs(145_001);
+    main.applySummary(&model, .{ .sequence = 1, .captured_unix_ms = 145_001, .cpu_percent = 3, .memory_total_bytes = 100 });
+    try testing.expect(model.summaryLive());
+    try testing.expectEqualStrings("Checks delayed", model.diagnosticsState());
+    meta.availability_buffer.set("error");
+    try testing.expectEqualStrings("Checks unavailable", model.diagnosticsState());
+    meta.availability_buffer.set("available");
+    meta.captured_unix_ms = 150_000;
+    try testing.expectEqualStrings("Capture age unavailable", model.diagnosticsState());
+    clock.setWallMs(150_000);
+    try testing.expectEqualStrings("Current", model.diagnosticsState());
 }
 
 test "top sample state exposes collector failure without claiming live" {
@@ -316,16 +431,21 @@ test "top sample state exposes collector failure without claiming live" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const tree = try buildTree(arena_state.allocator(), &model);
-    _ = try expectByText(tree.root, .badge, "COLLECTOR FAILED · LAST SAMPLE 7");
-    try testing.expect(findByText(tree.root, .badge, "LIVE · SAMPLE 7") == null);
+    _ = try expectByText(tree.root, .badge, "Collection interrupted");
+    try testing.expect(findByText(tree.root, .badge, "Live") == null);
 }
 
 test "instrument trace remains a bounded real CPU history" {
+    var test_clock = native_sdk.TestClock{};
+    test_clock.setWallMs(1_777_777_777_000);
     var model = main.initialModel();
+    model.clock = test_clock.clock();
     var sequence: u64 = 1;
     while (sequence <= 75) : (sequence += 1) {
+        test_clock.setWallMs(@intCast(sequence * 1000));
         main.applySummary(&model, engine.FastSummary{
             .sequence = sequence,
+            .captured_unix_ms = sequence * 1000,
             .cpu_percent = @floatFromInt(sequence),
             .memory_percent = 50,
             .memory_used_bytes = 8 * 1024 * 1024 * 1024,
@@ -408,23 +528,25 @@ test "drivers view exposes a real asynchronous rescan action" {
     _ = try expectByText(tree.root, .button, "Scan again");
 }
 
-test "process table defaults to a focused primary set and expands on demand" {
+test "process pages expose every returned row before advancing" {
     var model = main.initialModel();
     model.active_section = 6;
+    model.process_query_active = true;
+    model.process_matches = 32;
     model.detail.process_count = 16;
     for (0..model.detail.process_count) |index| {
         model.detail.process_rows[index].id = @intCast(index + 1);
         model.detail.process_rows[index].pid = @intCast(index + 1);
     }
-    try testing.expectEqual(@as(usize, 8), model.visibleProcessCount());
-    try testing.expectEqualStrings("Show all matches", model.processToggleLabel());
-
+    try testing.expectEqual(@as(usize, 16), model.visibleProcessCount());
+    try testing.expectEqual(@as(u32, 16), model.processes()[15].pid);
     var fx = main.Effects.init(testing.allocator);
     defer fx.deinit();
     fx.executor = .fake;
-    main.update(&model, .toggle_process_rows, &fx);
-    try testing.expectEqual(@as(usize, 16), model.visibleProcessCount());
-    try testing.expectEqualStrings("Show primary 8", model.processToggleLabel());
+    main.update(&model, .process_next_page, &fx);
+    try testing.expectEqual(@as(u32, 16), model.process_page_offset);
+    try testing.expectEqual(@as(u32, 2), model.processPageNumber());
+    try testing.expect(!model.processHasNext());
 }
 
 test "process consumers sort immediately by CPU memory PID and name" {
@@ -528,10 +650,12 @@ test "connection and driver filters operate on bounded projections" {
 
 test "audience mode changes interpretation without touching terminal defaults" {
     var model = main.initialModel();
+    model.fast_summary_seen = true;
+    model.engine_ready = true;
     model.cpu_percent = 92;
     model.memory_percent = 80;
     try testing.expect(model.userMode());
-    try testing.expect(std.mem.indexOf(u8, model.cpuAssessment(), "critical") != null);
+    try testing.expect(std.mem.indexOf(u8, model.cpuAssessment(), "very high") != null);
     try testing.expect(std.mem.indexOf(u8, model.memoryAssessment(), "elevated") != null);
 
     var fx = main.Effects.init(testing.allocator);
@@ -539,6 +663,42 @@ test "audience mode changes interpretation without touching terminal defaults" {
     fx.executor = .fake;
     main.update(&model, .toggle_audience_mode, &fx);
     try testing.expect(model.technicianMode());
+}
+
+test "overview never interprets startup or interrupted measurements as current headroom" {
+    var model = main.initialModel();
+    try testing.expectEqualStrings("Waiting for the first CPU reading.", model.cpuAssessment());
+    try testing.expectEqualStrings("Waiting for the first memory reading.", model.memoryAssessment());
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const tree = try buildTree(arena.allocator(), &model);
+    _ = try expectByText(tree.root, .text, "Waiting for data");
+    try testing.expect(findByText(tree.root, .text, "0.0%") == null);
+    model.fast_summary_seen = true;
+    model.fast_summary_failed = true;
+    try testing.expect(std.mem.indexOf(u8, model.cpuAssessment(), "older") != null);
+    try testing.expect(std.mem.indexOf(u8, model.memoryAssessment(), "older") != null);
+}
+
+test "bandwidth consent wraps and SMART setup is located with storage" {
+    var model = main.initialModel();
+    model.active_section = 5;
+    model.companion_confirmation = 3;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const tree = try buildTree(arena.allocator(), &model);
+    const consent = try expectByText(tree.root, .text, "M-Lab publishes measurement results and your IP address. Enable it only if you consent to that publication.");
+    // Explicit wrapping compiles into a paragraph, rather than an ellipsized leaf.
+    try testing.expect(consent.spans.len > 0);
+    try testing.expect(findByText(tree.root, .button, "Set up SMART helper…") == null);
+    model.active_section = 3;
+    model.detail.health_ready = true;
+    model.companion_setup_confirmation = true;
+    model.companion_setup_smart = true;
+    try testing.expect(model.smartSetupConfirming());
+    try testing.expect(!model.networkSetupConfirming());
+    const storage = try buildTree(arena.allocator(), &model);
+    _ = try expectByText(storage.root, .button, "Set up SMART helper…");
 }
 
 test "tray commands map to real show and graceful quit effects" {
@@ -615,6 +775,13 @@ test "close-policy quit consults startup tray presence, not the live setting" {
         try testing.expect(!tray_on.close_to_tray);
         try testing.expect(main.shouldQuitForHiddenWindow(tray_on.tray_session_active, tray_on.close_to_tray, true));
     }
+}
+
+test "hidden startup uses intent before asynchronous platform hide completes" {
+    try testing.expect(!main.startupPresentationActive(false, true));
+    try testing.expect(!main.startupPresentationActive(false, false));
+    try testing.expect(main.startupPresentationActive(true, true));
+    try testing.expect(!main.startupPresentationActive(true, false));
 }
 
 test "minimized window keeps foreground cadence via policy-hidden not visibility" {
@@ -757,6 +924,49 @@ test "hidden startup requires both lifecycle arguments" {
     try testing.expect(!main.startsHidden(&.{ "sd300-gui", "--startup" }));
 }
 
+test "bundled font pair covers monitoring text and keeps measurement and paint on the same face" {
+    for ([_][]const u8{ @embedFile("fonts/Makira-Regular.ttf"), @embedFile("fonts/Gail-Rock-Regular.ttf") }, 0..) |bytes, index| {
+        const face = try canvas.font_ttf.Face.parse(bytes);
+        for (32..127) |codepoint| {
+            // Gail Rock's supplied face omits the grave accent. Technical
+            // identifiers retain Plex Mono; do not rewrite the font binary.
+            if (index == 1 and codepoint == '`') continue;
+            if (face.glyphIndex(@intCast(codepoint)) == 0) std.debug.print("font {d} lacks U+{X}\n", .{ index, codepoint });
+            try testing.expect(face.glyphIndex(@intCast(codepoint)) != 0);
+        }
+        for ([_]u32{ 0x00b0, 0x00b7, 0x2026 }) |codepoint| {
+            if (face.glyphIndex(codepoint) == 0) std.debug.print("font {d} lacks U+{X}\n", .{ index, codepoint });
+            try testing.expect(face.glyphIndex(codepoint) != 0);
+        }
+    }
+    const Measure = struct {
+        fn width(_: ?*anyopaque, font: canvas.FontId, _: f32, text: []const u8) f32 {
+            return @as(f32, @floatFromInt(text.len)) * @as(f32, @floatFromInt(font + 1));
+        }
+    };
+    const provider = canvas.TextMeasureProvider{ .measure_fn = Measure.width };
+    var model = main.initialModel();
+    var tokens = main.qubeTokens(&model);
+    tokens.text_measure = &provider;
+    try testing.expect(tokens.typography.font_id != tokens.typography.heading_font_id.?);
+    for ([_]canvas.WidgetSize{ .default, .heading, .display }) |size| {
+        const widget = canvas.Widget{ .id = 1, .kind = .text, .size = size, .text = "CPU 37.4%", .frame = native_sdk.geometry.RectF.init(0, 0, 800, 90) };
+        const expected = if (size == .default) tokens.typography.font_id else tokens.typography.heading_font_id.?;
+        const intrinsic = canvas.intrinsicWidgetSize(widget, tokens);
+        try testing.expectApproxEqAbs(Measure.width(null, expected, 0, widget.text), intrinsic.width, 0.01);
+        var commands: [16]canvas.CanvasCommand = undefined;
+        var builder = canvas.Builder.init(&commands);
+        try canvas.emitWidgetTree(&builder, widget, tokens);
+        var found = false;
+        for (builder.displayList().commands) |command| switch (command) {
+            .draw_text => |text| { try testing.expectEqual(expected, text.font_id); found = true; },
+            else => {},
+        };
+        if (!found) std.debug.print("no text command for size {s}\n", .{@tagName(size)});
+        try testing.expect(found);
+    }
+}
+
 test "the overview lays out at the production window size" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
@@ -772,6 +982,135 @@ test "the overview lays out at the production window size" {
     try testing.expect(layout.nodes.len > 20);
     _ = try expectByText(tree.root, .text, "System overview");
     _ = try expectByText(tree.root, .button, "Refresh");
+}
+
+test "every GUI section keeps controls inside compact and wide windows" {
+    for ([_]f32{ 960, 1180, 1600 }) |width| {
+        for (0..10) |section| {
+            for ([_]bool{ false, true }) |technician| {
+                var arena = std.heap.ArenaAllocator.init(testing.allocator);
+                defer arena.deinit();
+                var model = main.initialModel();
+                model.active_section = @intCast(section);
+                model.audience_mode = if (technician) .technician else .user;
+                warmPopulate(&model, @intCast(section));
+                if (section == 5) model.companion_confirmation = 3;
+                const tree = try buildTree(arena.allocator(), &model);
+                const nodes = try arena.allocator().alloc(canvas.WidgetLayoutNode, 2048);
+                const layout = try canvas.layoutWidgetTreeWithTokens(tree.root,
+                    native_sdk.geometry.RectF.init(0, 0, width, 640), main.qubeTokens(&model), nodes);
+                for (layout.nodes) |node| {
+                    if (node.widget.kind != .button and node.widget.kind != .list_item) continue;
+                    if (node.frame.x < -0.1 or node.frame.x + node.frame.width > width + 0.1) {
+                        std.debug.print("section {d} tech {} width {d}: control {s} extends from {d} to {d}\n",
+                            .{ section, technician, width, node.widget.text, node.frame.x, node.frame.x + node.frame.width });
+                        return error.ControlOutsideWindow;
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "solid panels and borders match per-pixel drawing across clipping scale and opacity" {
+    const geometry = native_sdk.geometry;
+    const Scene = struct {
+        const Shape = enum { rect, rounded, border, square_border };
+        fn render(pixels: []u8, memo: ?*canvas.ReferenceRenderMemo, fill: canvas.Fill, shape: Shape, width: f32, scale: f32, opacity: f32, offset: f32, background: canvas.Color) !void {
+            const rect = geometry.RectF.init(-2.25 + offset, 3.5, 25.75, 24.25);
+            const commands = [_]canvas.CanvasCommand{
+                .{ .push_clip = .{ .rect = geometry.RectF.init(2.5, 1.25, 28.5, 31.5) } },
+                .{ .push_opacity = opacity },
+                .{ .transform = canvas.Affine.translate(1.25, -0.5) },
+                switch (shape) {
+                    .rect => .{ .fill_rect = .{ .id = 1, .rect = rect, .fill = fill } },
+                    .rounded => .{ .fill_rounded_rect = .{ .id = 1, .rect = rect, .radius = canvas.Radius.all(5.25), .fill = fill } },
+                    .border, .square_border => .{ .stroke_rect = .{ .id = 1, .rect = rect, .radius = canvas.Radius.all(if (shape == .border) 5.25 else 0), .stroke = .{ .fill = fill, .width = width } } },
+                },
+                .pop_opacity,
+                .pop_clip,
+            };
+            var render_commands: [8]canvas.RenderCommand = undefined;
+            const plan = try (canvas.DisplayList{ .commands = &commands }).renderPlan(&render_commands);
+            const surface = (try canvas.ReferenceRenderSurface.init(96, 80, pixels)).withRenderMemo(memo);
+            try surface.renderPass(.{
+                .surface_size = geometry.SizeF.init(48, 40),
+                .scale = scale,
+                .full_repaint = true,
+                .commands = plan.commands,
+            }, background);
+        }
+    };
+    var actual: [96 * 80 * 4]u8 = undefined;
+    var expected: [96 * 80 * 4]u8 = undefined;
+    for ([_]Scene.Shape{ .rect, .rounded, .border, .square_border }) |shape| {
+        const widths: []const f32 = if (shape == .border or shape == .square_border) &.{ 0.75, 3, 40 } else &.{1};
+        for (widths) |width| {
+            for ([_]f32{ 1, 1.25, 2 }) |scale| {
+                for ([_]f32{ 1, 0.65 }) |opacity| {
+                    for ([_]u8{ 255, 192 }) |alpha| {
+                        var memo = canvas.ReferenceRenderMemo.init(testing.allocator);
+                        defer memo.deinit();
+                        memo.min_pixels = 0;
+                        const color = canvas.Color.rgba8(237, 91, 32, alpha);
+                        // A constant gradient deliberately exercises the unchanged
+                        // per-pixel fill path instead of the solid-panel shortcut.
+                        const stops = [_]canvas.GradientStop{
+                            .{ .offset = 0, .color = color },
+                        };
+                        const reference_fill = canvas.Fill{ .linear_gradient = .{
+                            .start = geometry.PointF.init(0, 0),
+                            .end = geometry.PointF.init(48, 40),
+                            .stops = &stops,
+                        } };
+                        for (0..3) |frame| {
+                            const background = if (frame == 0) canvas.Color.rgb8(13, 32, 79) else canvas.Color.rgb8(194, 138, 41);
+                            const offset: f32 = if (frame < 2) 0 else 3.25;
+                            try Scene.render(&expected, null, reference_fill, shape, width, scale, opacity, offset, background);
+                            try Scene.render(&actual, &memo, .{ .color = color }, shape, width, scale, opacity, offset, background);
+                            try testing.expectEqualSlices(u8, &expected, &actual);
+                        }
+                        if (opacity == 1 and alpha == 255) {
+                            try testing.expectEqual(@as(usize, 0), memo.entry_total_bytes);
+                        } else {
+                            try testing.expect(memo.entry_total_bytes > 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "retained chrome shadow regions never overlap fractional panel edges" {
+    const geometry = native_sdk.geometry;
+    var expected: [96 * 80 * 4]u8 = undefined;
+    var actual: [96 * 80 * 4]u8 = undefined;
+    for ([_]f32{ 1, 1.25, 2 }) |scale| {
+        for ([_]f32{ 0, 0.25, 0.5, 0.75 }) |offset| {
+            for ([_]u8{ 255, 180 }) |alpha| {
+                var memo = canvas.ReferenceRenderMemo.init(testing.allocator);
+                defer memo.deinit();
+                const rect = geometry.RectF.init(5 + offset, 6.25, 30.5, 24.75);
+                const commands = [_]canvas.CanvasCommand{
+                    .{ .fill_rect = .{ .rect = geometry.RectF.init(0, 0, 48, 40), .fill = .{ .color = canvas.Color.rgb8(130, 140, 150) } } },
+                    .{ .push_clip = .{ .rect = geometry.RectF.init(2.5, 2.25, 41.25, 34.5) } },
+                    .{ .shadow = .{ .rect = rect, .radius = canvas.Radius.all(5.25), .blur = 4, .color = canvas.Color.rgba8(0, 0, 0, 180) } },
+                    .{ .fill_rounded_rect = .{ .rect = rect, .radius = canvas.Radius.all(5.25), .fill = .{ .color = canvas.Color.rgba8(240, 240, 240, alpha) } } },
+                    .pop_clip,
+                };
+                var rendered: [8]canvas.RenderCommand = undefined;
+                const plan = try (canvas.DisplayList{ .commands = &commands }).renderPlan(&rendered);
+                const pass = canvas.CanvasRenderPass{ .surface_size = geometry.SizeF.init(48, 40), .scale = scale, .full_repaint = true, .commands = plan.commands };
+                const clear = canvas.Color.rgb8(40, 50, 60);
+                const reference = try canvas.ReferenceRenderSurface.init(96, 80, &expected);
+                const retained = (try canvas.ReferenceRenderSurface.init(96, 80, &actual)).withRenderMemo(&memo);
+                try reference.renderPass(pass, clear);
+                _ = try retained.renderPassDamageWithStaticPrefix(pass, clear, &.{}, 1);
+                try testing.expectEqualSlices(u8, &expected, &actual);
+            }
+        }
+    }
 }
 
 test "headless SD-300 1 Hz renderer benchmark" {
@@ -825,8 +1164,8 @@ test "headless SD-300 1 Hz renderer benchmark" {
     defer allocator.free(nodes_b);
 
     const build_start = std.Io.Timestamp.now(testing.io, .real).nanoseconds;
-    const list_a = try buildRenderBenchDisplayList(arena_a.allocator(), &model_a, builder_a, nodes_a);
-    const list_b = try buildRenderBenchDisplayList(arena_b.allocator(), &model_b, builder_b, nodes_b);
+    const list_a = try buildRenderBenchDisplayList(arena_a.allocator(), &model_a, builder_a, nodes_a, null);
+    const list_b = try buildRenderBenchDisplayList(arena_b.allocator(), &model_b, builder_b, nodes_b, null);
     const build_ns = std.Io.Timestamp.now(testing.io, .real).nanoseconds - build_start;
 
     const initial_scratch = try allocator.create(RenderBenchFrameScratch);
@@ -852,10 +1191,12 @@ test "headless SD-300 1 Hz renderer benchmark" {
     try testing.expect(damage_ba.count >= 2);
 
     var makira_face = try canvas.font_ttf.Face.parse(@embedFile("fonts/Makira-Regular.ttf"));
+    var gail_face = try canvas.font_ttf.Face.parse(@embedFile("fonts/Gail-Rock-Regular.ttf"));
     var plex_face = try canvas.font_ttf.Face.parse(@embedFile("fonts/IBMPlexMono-Regular.ttf"));
     const tokens = main.qubeTokens(&model_a);
     const fonts = [_]canvas.ReferenceFont{
-        .{ .id = tokens.typography.font_id, .face = &makira_face },
+        .{ .id = tokens.typography.font_id, .face = &gail_face },
+        .{ .id = tokens.typography.heading_font_id.?, .face = &makira_face },
         .{ .id = tokens.typography.mono_font_id, .face = &plex_face },
     };
     const pixel_len = width * height * 4;
@@ -983,6 +1324,8 @@ const WarmPool = struct {
     builder0: *canvas.Builder,
     builder1: *canvas.Builder,
     diff: []canvas.DiffChange,
+    static_prefix_count: usize = 0,
+    generic_diagnostic: bool = false,
 
     fn build(pool: *WarmPool, slot: u1, model: *const main.Model) !canvas.DisplayList {
         const arena = if (slot == 0) pool.arena0 else pool.arena1;
@@ -991,7 +1334,17 @@ const WarmPool = struct {
         const builder = if (slot == 0) pool.builder0 else pool.builder1;
         _ = arena.reset(.retain_capacity);
         builder.* = canvas.Builder.init(cmds);
-        return buildRenderBenchDisplayList(arena.allocator(), model, builder, nodes);
+        return buildRenderBenchDisplayList(arena.allocator(), model, builder, nodes, &pool.static_prefix_count);
+    }
+
+    fn render(pool: *WarmPool, surface: canvas.ReferenceRenderSurface, frame: canvas.CanvasFrame, damage: []const native_sdk.geometry.RectF) !bool {
+        // Match runtime/canvas_frame.zig. The generic path is retained only
+        // as an explicitly labelled diagnostic, never the shipping-path gate.
+        const mode = if (pool.generic_diagnostic)
+            try surface.renderPassDamage(frame.renderPass(), pool.clear, damage)
+        else
+            try surface.renderPassDamageWithStaticPrefix(frame.renderPass(), pool.clear, frame.dirtyRects(), pool.static_prefix_count);
+        return mode == .fallback;
     }
 };
 
@@ -1035,12 +1388,14 @@ fn warmPopulate(model: *main.Model, section: u8) void {
             d.fast_ready = true;
             d.medium_ready = true;
             d.diagnostics_ready = true;
+            d.network_rate_available = true;
             d.interface_count = 4;
             d.interface_total_count = 6;
             for (0..4) |i| {
                 const r = &d.interface_rows[i];
                 r.id = @intCast(i);
                 r.is_up = true;
+                r.rate_available = true;
                 r.download_kib_s = 100 + @as(f64, @floatFromInt(i)) * 40;
                 r.upload_kib_s = 20 + @as(f64, @floatFromInt(i)) * 8;
                 r.received_gib = 12.5;
@@ -1081,9 +1436,10 @@ fn warmPopulate(model: *main.Model, section: u8) void {
             d.process_total_count = 486;
             d.process_total_threads = 3277;
             d.process_count = 16;
-            model.show_all_processes = true;
             for (0..16) |i| {
                 const r = &d.process_rows[i];
+                r.cpu_available = true;
+                r.memory_available = true;
                 r.id = @intCast(i);
                 r.pid = @intCast(1000 + i * 7);
                 warmSetName(&r.friendly_buffer, "Process {d}", .{i});
@@ -1164,9 +1520,9 @@ fn warmApply(
     const frame = try cur.framePlan(prev, pool.frame_options, scratch.storage());
     const damage = renderBenchDamage(try canvas.DisplayList.diff(prev, cur, pool.diff));
     const start = warmClock();
-    const mode = try surface.renderPassDamage(frame.renderPass(), pool.clear, damage.slice());
+    const mode = try pool.render(surface, frame, damage.slice());
     const ns: u64 = @intCast(warmClock() - start);
-    return .{ .ns = ns, .fallback = mode == .fallback, .rects = damage.count, .ratio = frame.profile().dirty_ratio };
+    return .{ .ns = ns, .fallback = mode, .rects = if (pool.generic_diagnostic) damage.count else frame.dirtyRects().len, .ratio = frame.profile().dirty_ratio };
 }
 
 fn warmSummarize(
@@ -1177,7 +1533,7 @@ fn warmSummarize(
     dmaskhit: u64,
     dmaskmiss: u64,
 ) void {
-    var times: [64]u64 = undefined;
+    var times: [128]u64 = undefined;
     var total: u64 = 0;
     var damage_n: usize = 0;
     var fallback_n: usize = 0;
@@ -1242,31 +1598,31 @@ fn warmRunTick(
 
     // Seed the retained surface with frame A.
     const seed_frame = try list_a.framePlan(null, pool.frame_options, s0.storage());
-    try surface.renderPass(seed_frame.renderPass(), pool.clear);
+    _ = try pool.render(surface, seed_frame, &.{});
 
     // Correctness gate: applying the A->B damage to the retained surface must
-    // reproduce a full render of B byte-for-byte. Guards against synthesizing
-    // an incomplete damage set that would make the timings meaningless.
+    // reproduce a full render of B. Only one RGB code value of glyph-edge
+    // rounding is allowed; missing damage or shifted geometry still fails.
     const frame_ab = try list_b.framePlan(list_a, pool.frame_options, s1.storage());
     const damage_ab = renderBenchDamage(try canvas.DisplayList.diff(list_a, list_b, pool.diff));
-    _ = try surface.renderPassDamage(frame_ab.renderPass(), pool.clear, damage_ab.slice());
+    _ = try pool.render(surface, frame_ab, damage_ab.slice());
     const full_b = try list_b.framePlan(null, pool.frame_options, s2.storage());
     const verify_surface = (try canvas.ReferenceRenderSurface.init(pool.width, pool.height, pool.verify)).withFonts(pool.fonts);
     try verify_surface.renderPass(full_b.renderPass(), pool.clear);
-    try testing.expectEqualSlices(u8, pool.verify, pool.pixels);
+    try expectTextRasterEquivalent(pool.verify, pool.pixels);
 
     // Re-seed to A, then precompute both directions with distinct scratch so
     // the alternating steady-state loop can reuse them.
-    try surface.renderPass(seed_frame.renderPass(), pool.clear);
+    _ = try pool.render(surface, seed_frame, &.{});
     const frame_ba = try list_a.framePlan(list_b, pool.frame_options, s2.storage());
     const damage_ba = renderBenchDamage(try canvas.DisplayList.diff(list_b, list_a, pool.diff));
 
     // Warm the memo/caches (even count returns the surface to A).
     for (0..4) |i| {
         if (i % 2 == 0) {
-            _ = try surface.renderPassDamage(frame_ab.renderPass(), pool.clear, damage_ab.slice());
+            _ = try pool.render(surface, frame_ab, damage_ab.slice());
         } else {
-            _ = try surface.renderPassDamage(frame_ba.renderPass(), pool.clear, damage_ba.slice());
+            _ = try pool.render(surface, frame_ba, damage_ba.slice());
         }
     }
 
@@ -1282,9 +1638,9 @@ fn warmRunTick(
         const frame = if (use_ab) frame_ab else frame_ba;
         const damage = if (use_ab) &damage_ab else &damage_ba;
         const start = warmClock();
-        const mode = try surface.renderPassDamage(frame.renderPass(), pool.clear, damage.slice());
+        const mode = try pool.render(surface, frame, damage.slice());
         const ns: u64 = @intCast(warmClock() - start);
-        samples[i] = .{ .ns = ns, .fallback = mode == .fallback, .rects = damage.count, .ratio = frame.profile().dirty_ratio };
+        samples[i] = .{ .ns = ns, .fallback = mode, .rects = if (pool.generic_diagnostic) damage.count else frame.dirtyRects().len, .ratio = frame.profile().dirty_ratio };
     }
 
     const dhits: u64 = @intCast(memo.hits - base_hits);
@@ -1292,6 +1648,12 @@ fn warmRunTick(
     const dmaskhit: u64 = @intCast(memo.glyph_mask_hits - base_mask_hits);
     const dmaskmiss: u64 = @intCast(memo.glyph_mask_misses - base_mask_misses);
     warmSummarize(name, samples[0..sample_count], dhits, dmiss, dmaskhit, dmaskmiss);
+    // Report retained raster allocation separately from measured render time.
+    var glyph_bytes: usize = 0;
+    for (memo.glyph_entries) |entry| glyph_bytes += entry.pixels.len;
+    std.debug.print("MEMO_BYTES {s} commands={d} glyph_pixels={d} glyph_masks={d} prefix={d} images={d}\n", .{
+        name, memo.entry_total_bytes, glyph_bytes, memo.glyph_mask_total_bytes, memo.static_prefix_pixels.len, memo.image_scale_total_bytes,
+    });
 }
 
 fn warmRunBurst(
@@ -1304,20 +1666,19 @@ fn warmRunBurst(
     defer memo.deinit();
     const surface = (try canvas.ReferenceRenderSurface.init(pool.width, pool.height, pool.pixels)).withFonts(pool.fonts).withRenderMemo(&memo);
 
-    const step: usize = 20;
     const preroll: usize = 4;
-    const measured: usize = 16;
+    const measured: usize = 128;
 
     base_model.scroll_top = 0;
     var prev = try pool.build(0, base_model);
     const seed_frame = try prev.framePlan(null, pool.frame_options, scratch.storage());
-    try surface.renderPass(seed_frame.renderPass(), pool.clear);
+    _ = try pool.render(surface, seed_frame, &.{});
 
     var slot: u1 = 1;
     var frame_index: usize = 1;
 
     for (0..preroll) |_| {
-        base_model.scroll_top = @floatFromInt(frame_index * step);
+        base_model.scroll_top = warmScrollOffset(frame_index);
         const cur = try pool.build(slot, base_model);
         _ = try warmApply(pool, surface, prev, cur, scratch);
         prev = cur;
@@ -1330,9 +1691,9 @@ fn warmRunBurst(
     const base_mask_hits = memo.glyph_mask_hits;
     const base_mask_misses = memo.glyph_mask_misses;
 
-    var samples: [64]WarmSample = undefined;
+    var samples: [measured]WarmSample = undefined;
     for (0..measured) |i| {
-        base_model.scroll_top = @floatFromInt(frame_index * step);
+        base_model.scroll_top = warmScrollOffset(frame_index);
         const cur = try pool.build(slot, base_model);
         samples[i] = try warmApply(pool, surface, prev, cur, scratch);
         prev = cur;
@@ -1345,6 +1706,34 @@ fn warmRunBurst(
     const dmaskhit: u64 = @intCast(memo.glyph_mask_hits - base_mask_hits);
     const dmaskmiss: u64 = @intCast(memo.glyph_mask_misses - base_mask_misses);
     warmSummarize(name, samples[0..measured], dhits, dmiss, dmaskhit, dmaskmiss);
+    // Reversing direction must preserve pixels within the same glyph-edge bound.
+    const full = try prev.framePlan(null, pool.frame_options, scratch.storage());
+    const reference = (try canvas.ReferenceRenderSurface.init(pool.width, pool.height, pool.verify)).withFonts(pool.fonts);
+    try reference.renderPass(full.renderPass(), pool.clear);
+    try expectTextRasterEquivalent(pool.verify, pool.pixels);
+}
+
+fn expectTextRasterEquivalent(expected: []const u8, actual: []const u8) !void {
+    try testing.expectEqual(expected.len, actual.len);
+    var differences: usize = 0;
+    var maximum: i16 = 0;
+    for (expected, actual, 0..) |a, b, index| {
+        const difference: i16 = @intCast(@abs(@as(i16, a) - @as(i16, b)));
+        if (difference != 0) differences += 1;
+        maximum = @max(maximum, difference);
+        // Reusing an f32 coverage mask at another integer translation can
+        // cross an 8-bit RGB rounding boundary. Alpha and geometry stay exact.
+        if (difference > (if (index % 4 == 3) @as(i16, 0) else 1)) {
+            std.debug.print("raster mismatch byte {d}: expected {d}, got {d}\n", .{ index, a, b });
+            return error.RasterMismatch;
+        }
+    }
+    if (differences != 0) std.debug.print("TEXT_RASTER rounding_channels={d} maximum_rgb_delta={d} alpha_exact=true\n", .{ differences, maximum });
+}
+
+fn warmScrollOffset(frame_index: usize) f64 {
+    const phase = frame_index % 40;
+    return @floatFromInt(20 * (if (phase <= 20) phase else 40 - phase));
 }
 
 test "headless SD-300 warmed-state scroll damage attribution benchmark" {
@@ -1357,11 +1746,13 @@ test "headless SD-300 warmed-state scroll damage attribution benchmark" {
     const pixel_len = width * height * 4;
 
     var makira_face = try canvas.font_ttf.Face.parse(@embedFile("fonts/Makira-Regular.ttf"));
+    var gail_face = try canvas.font_ttf.Face.parse(@embedFile("fonts/Gail-Rock-Regular.ttf"));
     var plex_face = try canvas.font_ttf.Face.parse(@embedFile("fonts/IBMPlexMono-Regular.ttf"));
     var tokens_model = main.initialModel();
     const tokens = main.qubeTokens(&tokens_model);
     const fonts = [_]canvas.ReferenceFont{
-        .{ .id = tokens.typography.font_id, .face = &makira_face },
+        .{ .id = tokens.typography.font_id, .face = &gail_face },
+        .{ .id = tokens.typography.heading_font_id.?, .face = &makira_face },
         .{ .id = tokens.typography.mono_font_id, .face = &plex_face },
     };
 
@@ -1412,6 +1803,7 @@ test "headless SD-300 warmed-state scroll damage attribution benchmark" {
         .builder0 = builder0,
         .builder1 = builder1,
         .diff = diff,
+        .generic_diagnostic = std.c.getenv("SD300_GENERIC_RENDER_DIAGNOSTIC") != null,
     };
 
     const s0 = try allocator.create(WarmRenderBenchFrameScratch);
@@ -1426,7 +1818,7 @@ test "headless SD-300 warmed-state scroll damage attribution benchmark" {
     const model_b = try allocator.create(main.Model);
     defer allocator.destroy(model_b);
 
-    std.debug.print("\nSD300_WARM_BENCH surface={d}x{d} sections=5,6,8 (Network/Processes/Drivers)\n", .{ width, height });
+    std.debug.print("\nSD300_WARM_BENCH surface={d}x{d} sections=5,6,8 path={s}\n", .{ width, height, if (pool.generic_diagnostic) "generic-diagnostic" else "production-static-prefix" });
 
     const sections = [_]u8{ 5, 6, 8 };
     const scrolls = [_]f64{ 0, 420 };
@@ -1450,4 +1842,138 @@ test "headless SD-300 warmed-state scroll damage attribution benchmark" {
         const burst_name = try std.fmt.bufPrint(&burst_name_buf, "sec{d} scroll-burst  warm      ", .{section});
         try warmRunBurst(&pool, burst_name, model_a, s0);
     }
+}
+
+test "engine process pages retain global match counts with fixed display storage" {
+    var model = main.initialModel();
+    model.process_query_active = true;
+    model.process_matches = 250;
+    model.process_page_offset = 240;
+    model.detail.process_count = 10;
+    model.process_filter_buffer.set("all inventory query");
+    try testing.expectEqual(@as(usize, 250), model.processMatchCount());
+    try testing.expectEqual(@as(usize, 10), model.visibleProcessCount());
+    try testing.expectEqual(@as(u32, 16), model.processPageNumber());
+    try testing.expect(model.processHasPrevious());
+    try testing.expect(!model.processHasNext());
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    main.update(&model, .process_previous_page, &fx);
+    try testing.expectEqual(@as(u32, 224), model.process_page_offset);
+    main.update(&model, .process_next_page, &fx);
+    try testing.expectEqual(@as(u32, 240), model.process_page_offset);
+}
+
+test "bandwidth actions require a distinct confirmation and reset M-Lab consent" {
+    var model = main.initialModel();
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    main.update(&model, .companion_speed_quick, &fx);
+    try testing.expect(model.companionConfirming());
+    try testing.expect(!model.companion_mlab_consent);
+    main.update(&model, .companion_toggle_mlab, &fx);
+    try testing.expect(model.companion_mlab_consent);
+    main.update(&model, .companion_dismiss_speed, &fx);
+    try testing.expect(!model.companionConfirming());
+    try testing.expect(!model.companion_mlab_consent);
+    main.update(&model, .companion_speed_deep, &fx);
+    try testing.expect(std.mem.indexOf(u8, model.companionBudget(), "20 GB") != null);
+    model.active_section = 5;
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const tree = try buildTree(arena_state.allocator(), &model);
+    _ = try expectByText(tree.root, .button, "Start bandwidth test");
+}
+
+test "optional setup requires a distinct confirmation and dismissal preserves monitoring" {
+    var model = main.Model{};
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    main.update(&model, .companion_speed_quick, &fx);
+    main.update(&model, .companion_toggle_mlab, &fx);
+    main.update(&model, .companion_setup, &fx);
+    try testing.expect(model.companionSetupConfirming());
+    try testing.expect(!model.companionConfirming());
+    try testing.expect(!model.companion_mlab_consent);
+    try testing.expect(!model.companionRunning());
+    main.update(&model, .companion_dismiss_setup, &fx);
+    try testing.expect(!model.companionSetupConfirming());
+    try testing.expect(!model.companionRunning());
+}
+
+test "SMART setup uses the shared operation notice and never implies probe consent" {
+    var model = main.initialModel();
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    model.companion_ui.setup_smart_notice.set("A separately confirmed SMART setup operation");
+    main.update(&model, .companion_smart_setup, &fx);
+    try testing.expect(model.companionSetupConfirming());
+    try testing.expect(!model.companionSetupUnavailable());
+    try testing.expectEqualStrings("A separately confirmed SMART setup operation", model.companionSetupNotice());
+    try testing.expect(!model.companionRunning());
+    main.update(&model, .companion_dismiss_setup, &fx);
+    try testing.expect(!model.companionSetupConfirming());
+}
+
+test "storage selection retains device identity and consent comes from prepared core state" {
+    var model = main.initialModel();
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    try testing.expect(model.storagePrepareDisabled());
+    model.detail.drive_health_count = 2;
+    model.detail.drive_health_rows[0].device_buffer.set("/dev/disk1");
+    model.detail.drive_health_rows[1].device_buffer.set("/dev/disk2");
+    try testing.expectEqualStrings("/dev/disk1", model.storageDevice());
+    main.update(&model, .storage_next, &fx);
+    try testing.expectEqualStrings("/dev/disk2", model.storageDevice());
+    std.mem.swap(@import("projection.zig").DriveHealthRow, &model.detail.drive_health_rows[0], &model.detail.drive_health_rows[1]);
+    try testing.expectEqualStrings("/dev/disk2", model.storageDevice());
+    model.detail.drive_health_count = 1;
+    model.detail.drive_health_rows[0].device_buffer.set("/dev/disk3");
+    try testing.expect(model.storagePrepareDisabled());
+    try testing.expect(!model.storageConfirming());
+    try model.companion_ui.apply(testing.allocator, "{\"data\":{\"storage_probe\":{\"awaiting_consent\":true,\"notice\":\"Exact bounded read\"},\"storage_probe_lines\":[\"Review first\"]}}");
+    try testing.expect(model.storageConfirming());
+    try testing.expectEqualStrings("Exact bounded read", model.storageNotice());
+    try testing.expectEqual(@as(usize, 1), model.storageLines().len);
+    try testing.expect(!model.storageRunning());
+}
+
+test "full inventory pages preserve counts and missing process identity" {
+    var model = main.initialModel();
+    try model.detail.applyMediumJson(testing.allocator,
+        \\{"sequence":7,"captured_unix_ms":42,"data":{"active_connections":[{"local_port":249,"state":"established"}],"matched_count":1,"total_count":250,"listening_count":5,"page_offset":0}}
+    );
+    model.connection_filter_buffer.set("249");
+    main.rebuildConnectionFilter(&model);
+    try testing.expectEqual(@as(usize, 1), model.connectionMatchCount());
+    try testing.expectEqual(@as(u32, 250), model.detail.connection_total_count);
+    try testing.expect(!model.connections()[0].pid_available);
+    try testing.expect(model.connectionNextDisabled());
+    try testing.expectEqual(@as(u64, 42), model.detail.topicMeta(2).captured_unix_ms);
+    try model.detail.applyDriversJson(testing.allocator,
+        \\{"sequence":8,"captured_unix_ms":42,"data":{"devices":[{"name":"Device-249","status":"disabled"}],"matched_count":250,"total_count":250,"attention_count":1,"page_offset":224,"scan_status":"success"}}
+    );
+    model.driver_filter_buffer.set("249");
+    try testing.expectEqualStrings("Device-249", model.drivers()[0].name());
+    try testing.expectEqual(@as(usize, 8), model.driverPageNumber());
+    try testing.expect(model.driverNextDisabled());
+    try testing.expect(!model.driverPreviousDisabled());
+}
+
+test "process inventory denial remains distinct and recovery removes it" {
+    var model = main.initialModel();
+    const summary_type = @import("engine.zig").ProcessSummary;
+    model.detail.applyProcessSummary(summary_type{ .sequence = 1, .observation_status = 3 });
+    try testing.expectEqualStrings("permission_denied", model.detail.process_observation.status());
+    try testing.expect(!model.detail.process_observation.available);
+    try testing.expect(!model.detail.process_values_warmed);
+    model.detail.applyProcessSummary(summary_type{ .sequence = 2, .observation_status = 0 });
+    try testing.expect(model.detail.process_observation.available);
+    try testing.expectEqualStrings("available", model.detail.process_observation.status());
 }

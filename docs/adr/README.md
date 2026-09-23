@@ -25,6 +25,23 @@ Rules:
 | [0004](0004-v3-release-scope-decisions.md) | v3.0.0 release scope: functional bar now, evidence bar deferred deliberately | Accepted |
 | [0005](0005-in-app-update-coordinator.md) | In-app updates spawn the CLI as a detached coordinator; the GUI never mutates the installation | Accepted |
 
+| [0006](0006-v4-sampling-and-terminal-contract.md) | Bounded independent collection and the v4 terminal contract | Accepted |
+| [0007](0007-adaptive-presentation-and-time-buckets.md) | Adaptive presentation and captured time buckets | Accepted |
+
+| [0008](0008-reusable-isolated-providers.md) | Reusable isolated providers and session-local caches | Accepted |
+
+| [0009](0009-optional-network-companion.md) | Optional network companion and result privacy | Accepted |
+
+| [0010](0010-bounded-privileged-storage-reads.md) | Bounded, explicitly authorized storage reads | Accepted |
+| [0011](0011-solid-panel-rendering.md) | Draw opaque panels without retaining duplicate pixels | Accepted |
+| [0012](0012-linux-software-presentation.md) | Linux software presentation and ordered window cleanup | Candidate |
+| [0013](0013-gui-monitoring-hierarchy.md) | GUI monitoring hierarchy and complete process pages | Accepted |
+| [0014](0014-macos-termination-cleanup.md) | Join collectors before AppKit termination | Candidate |
+| [0015](0015-gui-preference-writes-and-interaction-timing.md) | Keep preference writes outside GUI interaction | Accepted |
+| [0016](0016-v4-responsiveness-release-decision.md) | Version-scoped v4 responsiveness release decision | Accepted |
+
+| [0017](0017-v4-resource-release-decision.md) | Version-scoped v4 resource release decision | Accepted |
+
 ## Dual-frontend contract pointer
 
 The rules for changing SD-300 across its two frontends — what the TUI and native

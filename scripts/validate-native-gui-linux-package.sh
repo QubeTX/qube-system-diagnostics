@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -Eeuo pipefail
+trap 'printf "Linux package validation failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
 
 archive=${1:-}
 version=${2:-}
@@ -313,9 +314,15 @@ if [[ -f $cache ]]; then
 fi
 desktop="$root/share/applications/sd300.desktop"
 grep -Fq 'Exec=@SD300_GUI@' "$desktop"
-sed "s#@SD300_GUI@#${entry}#g" "$desktop" > "$desktop.configured"
+installer_source="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/managed-installers/sd300-installer.sh"
+SD300_MANAGED_INSTALLER_TEST_ONLY=1 sh -c '
+  . "$1"
+  sd300_configure_linux_desktop "$2" "$3" "$4"
+' sh "$installer_source" "$desktop" "$entry" "$root/libexec/assets/app-icon.png" > "$desktop.configured"
 mv "$desktop.configured" "$desktop"
-grep -Fqx "Exec=$entry" "$desktop"
+grep -Fqx "Exec=\"$entry\"" "$desktop"
+grep -Fqx "Icon=$root/libexec/assets/app-icon.png" "$desktop"
+test -s "$root/libexec/assets/app-icon.png"
 grep -Fqx 'Terminal=false' "$desktop"
 
 for forbidden in \
@@ -395,11 +402,12 @@ grep -Eq "Machine:[[:space:]]+${expected_machine}$" < <(readelf -h "$root/libexe
 grep -Eq "Machine:[[:space:]]+${expected_machine}$" < <(readelf -h "$root/libexec/libsd300_engine.so")
 grep -E 'Requesting program interpreter:' < <(readelf -l "$root/libexec/sd300-gui") | grep -Fq "$expected_interpreter"
 
-self_test=$($entry --self-test --json)
+self_test=$("$entry" --self-test --json)
+printf 'GUI self-test payload: %s\n' "$self_test"
 jq -e --arg version "$version" --arg arch "$expected_arch" '
   .success == true and .product == "SD-300" and
-  .product_version == $version and .abi_version == 1 and
-  .engine_schema_version == 1 and .target_os == "linux" and
+  .product_version == $version and .abi_version == 2 and
+  .engine_schema_version == 2 and .target_os == "linux" and
   .target_arch == $arch
 ' <<< "$self_test" >/dev/null
 

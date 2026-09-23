@@ -2,14 +2,14 @@ use serde::Serialize;
 
 use crate::observation::Observation;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct DisplayData {
     pub displays: Vec<DisplayInfo>,
     pub inventory_status: Observation,
     pub brightness_status: Observation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct DisplayInfo {
     pub label: String,
     pub active: Option<bool>,
@@ -26,7 +26,18 @@ pub fn collect() -> DisplayData {
         collect_windows()
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_inventory::displays(
+            std::path::Path::new("/sys/class/drm"),
+            std::path::Path::new("/sys/class/backlight"),
+        )
+    }
+    #[cfg(target_os = "macos")]
+    {
+        super::apple_inventory::displays()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         DisplayData {
             displays: Vec::new(),

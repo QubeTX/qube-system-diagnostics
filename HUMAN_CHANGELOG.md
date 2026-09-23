@@ -2,7 +2,210 @@
 
 A plain-English companion to [CHANGELOG.md](./CHANGELOG.md). It explains what changed and why without requiring release-engineering or code knowledge.
 
-The newest section is work in progress. It is deliberately candid about what has passed and what still blocks release.
+The newest section describes the monitoring update and the evidence behind it.
+
+---
+
+## September 23, 2026 — More trustworthy monitoring
+
+- Behind the scenes: record the owner-approved resource headroom for this release while keeping the original goals as next-release targets. Missing measurements, input/accessibility bugs and failed shutdowns still fail qualification.
+
+- Behind the scenes: Mac checks confirm that routine updates no longer create duplicate keyboard events or trigger the unsupported accessibility calls we found. The unchanged-app repeat meets the approved responsiveness limit on every platform. Completed stability checks and remaining resource-use overruns are recorded together, including earlier failed results.
+
+- Behind the scenes: release checks now apply the owner's approved responsiveness budget while still reporting the stricter long-term targets. Resource use, correct input handling, accessibility and reliable shutdown remain required; the timing exception expires with this release.
+
+- Behind the scenes: align the product documentation with the requested font pairing so future updates preserve it.
+
+- Avoid repeated internal Mac accessibility errors during ordinary screen updates, while keeping supported assistive controls available.
+
+- Behind the scenes: keep the full cross-platform performance results, including the limits that still need work. Separate diagnostic runs investigate remaining costs without disturbing the unattended stability checks.
+
+- Keep keyboard focus visible on Mac when the app updates its accessibility information. Screen readers can still move focus, while routine screen updates no longer act like extra key presses.
+
+- Behind the scenes: prevent the interaction test from stopping when it reads a status file midway through an update. Real app errors and timeouts still fail the test.
+
+- Behind the scenes: responsiveness tests now explain which interaction was delayed without retaining private device or process names. This helps distinguish a slow response from a problem in the test's timing records.
+
+- Installer checks also accept application folders containing spaces, so verifying the installed app does not undo an otherwise valid installation.
+
+- Linux launcher checks now cover each special character separately, including percent signs, so unusual installation folders do not silently lose their application-menu entry.
+
+- The Linux application menu can find SD-300's custom logo before the app opens. Its clickable launcher also handles spaces and special characters in the installation folder. The normal installers include the desktop app alongside the terminal tool on every supported system.
+
+- Behind the scenes: document why settings save in the background and how responsiveness is measured, so future changes preserve smooth navigation and reliable saving.
+
+- Behind the scenes: the complete update is being qualified together across supported systems. Responsiveness checks exercise both viewing modes and compact and wide layouts, and distinguish a screen that needs no repaint from a stalled one.
+
+- Changing pages and preferences no longer waits for settings to reach disk. The app saves in the background, explains failures and finishes the latest save before closing.
+
+- The Mac app avoids repeatedly waking its interface for messages that have no recipient. Behind the scenes, native testing checks the resulting background resource use and continued responsiveness.
+
+- Behind the scenes: responsiveness checks now include preparing a screen and reacting to input, with explicit coverage and stall reporting. Separate test builds keep automation out of the app customers install.
+
+- Behind the scenes: Mac performance investigations can read permitted thread counters without requesting debugger access. Separate checks distinguish excessive output from a slow helper, while the app keeps the same time and memory limits.
+
+- Behind the scenes: Mac performance diagnosis now separates threads doing work from threads waiting, so optimizations can target measured costs without confusing a profiler trace with a performance pass.
+
+- Behind the scenes: performance comparisons keep useful measurements when an older app crashes while closing, then continue testing its replacement. A failed older version remains clearly marked as failed and cannot make the new version pass.
+
+- The desktop app now pairs Makira's headings and large readings with Gail Rock for navigation, controls and explanations. The fonts travel with the app, keeping the same appearance on every supported system, while dense technical values remain easy to scan.
+
+- Quitting the Mac app now finishes its background monitoring cleanup before the operating system closes it. Behind the scenes, native checks verify that quitting leaves no collectors behind.
+
+- Connection checks now say when their results are delayed or unavailable, even while other readings remain live. Clearer labels distinguish a network response from the time needed to look up a name, and long hardware explanations stay readable.
+
+- Behind the scenes: Mac testing now explains which background work remains after the app closes and preserves performance traces even when another check fails, without recording private command lines.
+
+- The desktop monitor puts useful readings first, makes its two viewing modes easier to reach, and keeps explanations and consent readable. Network scans and bandwidth tests have separate controls, and storage tools live with storage. Process rankings follow the values on screen, waiting states no longer look like idle readings, and graphics memory labels explain what is shared with the rest of the computer.
+
+- Behind the scenes: project guidance now describes how the new monitor actually runs, and the task board separates completed features from the remaining release checks.
+
+- Linux uses a lighter drawing path by default and closes through the same cleanup as its window button. Explicit rendering choices remain respected. Behind the scenes, native Linux lifecycle checks and separate Mac performance traces investigate the remaining release blockers.
+
+- Behind the scenes: minimal Linux testing now captures where the app fails during shutdown, without mixing debugger results into performance acceptance. Repeated close checks investigate failures that disappear on a single retry.
+
+- The app avoids keeping duplicate pictures of simple solid panels and borders, and fixes uneven shadows at some scaled edges. Behind the scenes, rendering checks now follow the app's actual drawing path and compare every pixel across scaling, scrolling and translucent overlays.
+
+- Behind the scenes: long test runs keep their original app build until they finish. Memory reports now identify growth by component, and rendering tests exercise changing process readings as well as scrolling.
+
+- Behind the scenes: a protected network helper no longer interrupts Linux app testing when the monitor's own collectors can still be verified.
+
+- Behind the scenes: Linux memory testing now separates graphics-library memory from app allocations and compares rendering paths without changing the app's defaults or recording private file paths.
+
+- Mac process readings now distinguish an idle application from an unreadable one and stop carrying a previous busy reading into an idle interval. Both views explain when the process inventory cannot be read and recover when access returns.
+
+- Behind the scenes: minimal Linux testing now installs and checks its display test tools before the long build, so missing test dependencies are reported promptly.
+
+- Storage and temperature checks reuse hardware discovery work and avoid reading disk activity twice. Live readings still refresh as often, including when disks appear or disappear.
+
+- A clock adjustment no longer makes an old reading look brand new. Both views explain when capture age is unknown, charts restart across the clock change, and richer exports preserve that distinction. Behind the scenes, installation checks recognize the updated app and engine together.
+
+- Hidden Mac launches request background monitoring immediately. Linux window changes now reach the monitoring engine, including a prompt refresh when the window returns. Behind the scenes, platform checks report more precise causes when background operation or performance fails.
+
+- Occasional hardware inventory checks take turns to reduce memory peaks while live monitoring continues. Behind the scenes, checks verify that waiting work can stop promptly and a failed check cannot block later ones.
+
+- Behind the scenes: longer testing exposed a memory peak missed by short checks. Reports now identify which background checks overlap at that peak so improvements target the measured cause.
+
+- Behind the scenes: before-and-after comparisons cover the app as well as the terminal, including background operation. Baseline downloads are verified and every result identifies the exact files measured.
+
+- Behind the scenes: isolated Linux checks can verify the mounted source safely without changing the machine's global trust settings.
+
+- Behind the scenes: performance reports explain when a protected helper limits inspection, while preserving the resource measurements that remain readable.
+
+- The Linux app can reduce background work when its window is hidden or minimized. Behind the scenes, Mac and Linux checks verify the app's window state, background collectors and clean shutdown before accepting performance results.
+
+- Behind the scenes: Mac and Linux can run the same before-and-after resource comparisons as Windows on their own systems. Checks include work performed by background helpers and preserve failed results for investigation.
+
+- Behind the scenes: both views build their shared monitoring code with the same supporting libraries. Release checks catch accidental differences that could make the terminal and app report different results.
+
+- Linux and Mac network monitoring distinguishes failed reads from idle traffic and keeps other readable interfaces useful. Totals explain their scope, missing counters stay visibly unavailable, and the detailed graphics view explains where utilization came from.
+
+- Windows graphics readings can use a lighter native counter query and retain small changes that rounded readings missed. Newly detected or reset counters warm up before displaying a value; older provider routes remain available when needed.
+
+- Behind the scenes: performance checks count background collectors as well as the app window, verify that the requested checks are running, and keep failed measurements visible. More detailed profiling helps target costly work without reducing monitoring frequency.
+
+- Behind the scenes: noisy background-check tests now recognize either safety limit stopping the check, while still requiring prompt cleanup. This avoids treating a correctly enforced timeout as a product failure on Mac.
+
+- Windows connection checks use the operating system's actual route and ping reply, with fewer background program launches. Readings below the provider's timing precision remain unavailable, and blocked pings still do not prove the internet is down.
+
+- Device checks report what the operating system actually detected. A missing keyboard query, unplugged cable or optional service no longer becomes an invented healthy or failed device. Both views explain limited access and distinguish services that are running, idle, absent or unreadable.
+
+- Failed network and installation checks explain whether a helper was missing, denied access, took too long or returned unusable text. Behind the scenes, callers receive distinct failures instead of an ambiguous empty result.
+
+- Linux terminal navigation receives the same resize protection verified on Mac. Behind the scenes, longer resource checks remain release requirements even when shorter checks look healthy.
+
+- Mac terminal input uses a polling path that keeps pending keystrokes visible during resizing. Behind the scenes, native checks exercise rapid resizing and navigation together.
+
+- Windows network readings use less repeated discovery and keep similarly named adapters separate. The total explains which interfaces it includes, virtual connections remain inspectable, and unavailable speeds or addresses no longer look like idle traffic or a missing address.
+
+- Behind the scenes: background-check tests explain the failure they encountered, making platform-specific fixes easier to verify.
+
+- A failed refresh keeps a previously reported drive warning visible and explains how old its evidence is. Missing timestamps and clock changes remain explicit, so older results do not appear freshly measured.
+
+- Behind the scenes: a failed terminal check now keeps enough context to investigate without saving private readings from the screen.
+
+- Background readings pass directly to the monitor without writing temporary reports. Broken or stuck checks still stop cleanly, and a noisy helper cannot make cancellation unresponsive.
+
+- Behind the scenes: real terminal checks now exercise navigation, search, resizing, paused views and clean exit on every supported operating system. Timing measurements help identify slow work, and failed performance checks stay visible in the release evidence.
+
+- Process CPU readings keep the same meaning when Windows limits which processors the monitor can use. A busy thread counts as one processor, and missing readings or a reused process number start with a clear warmup.
+
+- Windows monitoring uses less memory by avoiding unused console hosts for background checks. Readings keep their existing update frequency, and checks still stop cleanly when cancelled.
+
+- NVIDIA monitoring can read the installed driver directly, reducing repeated helper launches. Graphics memory keeps its allocated-memory meaning, and unsupported or denied readings stay visibly separate from real zero values. Existing helper-based readings remain available as a fallback.
+
+- Connection monitoring does less background work on Windows, recognizes more connection states on Linux, and includes UDP on Mac computers. Minimal Linux systems can still show endpoints without an extra tool. Missing ownership and failed or partial checks are clearly identified instead of looking like an empty, healthy result.
+
+- Disk speeds stay accurate when a background response arrives late. Restarting a check or waking the computer shows a brief warmup instead of an artificial spike, and sample timing follows the actual readings.
+
+- Background inventory and storage-health checks release their helper processes between readings, reducing idle memory without slowing updates.
+
+- Windows background checks spend less time starting helper programs. Behind the scenes, performance measurements now include the whole monitoring process family, including helpers that have already exited.
+
+- Desktop searches now reach every collected connection and device, with pages for longer lists and clear empty results. Missing process identities stay visibly unavailable. Searching older readings does not make them appear freshly measured.
+
+- Save a private, redacted report of your terminal session, including completed optional diagnostics. Saving keeps monitoring responsive and preserves earlier reports; a paused view saves the readings you froze.
+- Missing storage error readings stay visibly missing, and the desktop shows how many drives supplied each counter. An unfinished bandwidth test stays marked incomplete. Behind the scenes, optional downloads unpack with consistent settings.
+
+- Optional administrator-authorized storage reads wait for their result correctly on Windows and Mac computers. Behind the scenes, native checks caught a platform difference that Linux-only testing would have missed.
+
+- Review an optional administrator-authorized storage read before allowing it. Monitoring stays responsive, cancellation keeps earlier results, and private details stay out of redacted exports. Behind the scenes, synthetic checks exercise the privileged process without opening a real drive.
+
+- Storage health stays attached to the correct drive, including systems with identical models. Conflicting checks remain visible, and a reassuring response no longer hides a fault reported by another check.
+
+- Optional storage-health setup works on fresh Alpine Linux systems even when their package cache is empty.
+
+- Behind the scenes: optional-tool checks now reveal why a Linux package download failed, so a fix can target the actual cause.
+
+- Optional storage-health setup explains the platform-specific operation before asking to install. It keeps existing tools and leaves background services alone. Missing system libraries get a useful explanation, and successful setup refreshes ordinary storage readings.
+
+- Optional network-tool setup explains the download and asks before installing. Existing installations are preserved, and the companion remains available if you remove the monitor. Changing desktop preferences keeps your chosen diagnostic tools.
+
+- A failed optional scan can be cancelled or retried without taking down monitoring. Missing speed measurements are clearly marked, and privacy checks cover combined diagnostic exports.
+
+- Run optional network checks from either interface while monitoring continues. Bandwidth tests show their budget and ask separately about publishing measurements through M-Lab. Cancelled or unfinished checks do not become confirmed network faults, and private report details stay out of redacted exports.
+- Behind the scenes: failure tests now create predictable workloads so slow test-machine startup cannot be mistaken for broken monitoring.
+
+- Find any running process from the app, including quieter processes beyond the first page, and browse the results without losing the live view.
+
+**Fixed**
+
+- Macs read storage activity directly from the operating system, avoiding a helper launch on every sample. Virtual disks are kept out of the physical-drive total so activity is not counted twice.
+
+- Monitoring reuses its isolated workers instead of repeatedly starting them. Hardware discovery is reused when devices are unchanged, and unavailable optional sensors are retried less aggressively. New devices, resume and explicit retry refresh discovery.
+
+- The terminal dashboard now fits smaller screens and uses extra space for charts and useful details. Search the full list, keep your place as applications update, and pause what you see while monitoring continues. Keyboard navigation remains complete; mouse support is optional.
+- Both interfaces show gaps when readings are missing instead of drawing invented continuity. Processor and graphics temperatures stay separate, and desktop storage activity updates promptly. Terminal appearance preferences remain independent of the desktop app.
+
+- Separate sensors keep their own identity even when they share a label. Linux reports readable temperatures and fan speeds while excluding readings the device marks invalid. Graphics temperatures stay separate from processor temperatures.
+
+- Graphics readings stay attached to the correct device, even when two cards have the same name. Graphics monitoring now includes Linux driver readings and Mac graphics inventory. Shared memory and recommended allocation budgets are clearly distinguished from dedicated video memory.
+- Windows graphics load reflects the busiest engine. A card that only exposes temperature no longer appears idle just because its utilization is missing.
+
+- Linux now reports readable battery, display, adapter and computer details. Macs gain native display and battery discovery. Missing brightness or energy readings stay unavailable instead of being guessed from unrelated values.
+
+- Detailed reports distinguish missing readings from measured zero and explain when observations were captured. Existing report consumers keep their familiar format unless they choose the richer one.
+- Both interfaces preserve the identity of a running application and show when its processor or memory reading is unavailable. Windows can gather the complete application list more efficiently.
+- Findings explain their evidence and suggest a next step. Busy processors are described as heavy demand; they are not treated as proof of broken hardware.
+
+- Storage activity updates promptly, independently of slower health checks. Idle drives no longer show a made-up response time, and drive health is attached to the correct physical device.
+- Mac storage discovery includes additional drives. Optional storage-health tools preserve useful partial readings and distinguish an unreadable device from a failing one.
+- Exporting a diagnostic snapshot now has a finite collection wait, including when a hardware provider stops responding.
+- The startup message appears only while a live monitor is warming up; it does not cover already available diagnostic information.
+- The monitor opens before hardware discovery finishes and remains usable while slow checks run. Failed checks show their status and can recover without restarting the app.
+- Charts no longer repeat an old temperature or graphics reading as if it were new. Both interfaces show when their readings were captured.
+- Network traffic readings account for the time between measurements, and connection checks report the reply time rather than the time taken to start a helper.
+- Process sorting can find memory-heavy applications even when they are using little processor time.
+- A stuck or excessively noisy helper can no longer leave output-reader threads waiting indefinitely. Filtered connection checks no longer automatically label the internet offline.
+
+**Behind the scenes**
+
+- Installer checks recognize the updated internal interface and report the actual failing result, making platform-specific failures diagnosable.
+
+- Run the shared monitoring tests on every supported kind of operating system and processor, including the lightweight Linux build.
+
+- Strengthened interface checks so they validate the current screen bindings after native tests instead of relying on an older generated description.
+- Set up tracked work and verification for the monitoring improvements. The complete update will ship together after testing.
 
 ---
 

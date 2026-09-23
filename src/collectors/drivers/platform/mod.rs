@@ -1,10 +1,12 @@
 #[cfg(target_os = "windows")]
 mod windows;
 
-#[cfg(target_os = "macos")]
+#[cfg(any(test, target_os = "macos"))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod macos;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod linux;
 
 use super::DriverData;

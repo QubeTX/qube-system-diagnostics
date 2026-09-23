@@ -342,10 +342,76 @@ index 7f6d6ec..32393e1 100644
  void native_sdk_appkit_set_tray_callback(native_sdk_appkit_host_t *host, native_sdk_appkit_tray_callback_t callback, void *context);
  
 diff --git a/src/platform/macos/appkit_host.m b/src/platform/macos/appkit_host.m
-index e725386..107fe63 100644
 --- a/src/platform/macos/appkit_host.m
 +++ b/src/platform/macos/appkit_host.m
-@@ -11021,6 +11021,16 @@ void native_sdk_appkit_update_tray_title(native_sdk_appkit_host_t *host, const c
+@@ -390,6 +390,7 @@
+ @property(nonatomic, assign) NativeSdkMetalSurfaceView *surfaceView;
+ @property(nonatomic, assign) uint64_t widgetId;
+ @property(nonatomic, assign) uint32_t actionFlags;
++- (void)applySnapshotFocus:(BOOL)focused;
+ - (BOOL)emitSetTextAccessibilityValue:(id)value;
+ - (BOOL)emitSetSelectionAccessibilityValue:(id)value;
+ @end
+@@ -1256,6 +1257,13 @@
+     return [self.surfaceView emitWidgetAccessibilityActionWithId:self.widgetId action:NATIVE_SDK_APPKIT_WIDGET_ACCESSIBILITY_ACTION_DISMISS];
+ }
+ 
++// Publishing the app's semantic state is not an assistive-client action.
++// Do not echo it into the runtime: that clears keyboard-visible focus
++// and creates a second input/redraw for each focused publication.
++- (void)applySnapshotFocus:(BOOL)focused {
++    [super setAccessibilityFocused:focused];
++}
++
+ /* An assistive client focuses a widget by WRITING AXFocused (the
+  * platform idiom for moving keyboard focus into a text field). The
+  * inherited setter only stores the flag on this snapshot element —
+@@ -1279,7 +1287,13 @@
+          [attribute isEqualToString:NSAccessibilitySelectedTextRangesAttribute])) {
+         return (self.actionFlags & NATIVE_SDK_APPKIT_WIDGET_ACTION_SET_SELECTION) != 0;
+     }
+-    return [super accessibilityIsAttributeSettable:attribute];
++    // This legacy informal-protocol hook is not implemented by
++    // NSAccessibilityElement on current AppKit. Sending it unconditionally
++    // throws during ordinary property publication (caught inside AppKit).
++    if ([NSAccessibilityElement instancesRespondToSelector:_cmd]) {
++        return [super accessibilityIsAttributeSettable:attribute];
++    }
++    return NO;
+ }
+ 
+ - (void)accessibilitySetValue:(id)value forAttribute:(NSAccessibilityAttributeName)attribute {
+@@ -1292,7 +1306,9 @@
+         [self emitSetSelectionAccessibilityValue:value];
+         return;
+     }
+-    [super accessibilitySetValue:value forAttribute:attribute];
++    if ([NSAccessibilityElement instancesRespondToSelector:_cmd]) {
++        [super accessibilitySetValue:value forAttribute:attribute];
++    }
+ }
+ 
+ - (BOOL)emitSetTextAccessibilityValue:(id)value {
+@@ -5356,7 +5372,7 @@
+             }
+         }
+         element.accessibilityEnabled = (node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_ENABLED) != 0;
+-        element.accessibilityFocused = (node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_FOCUSED) != 0;
++        [element applySnapshotFocus:(node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_FOCUSED) != 0];
+         element.accessibilitySelected = (node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_SELECTED) != 0;
+         if ((node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_EXPANDED) != 0) {
+             element.accessibilityExpanded = YES;
+@@ -9926,6 +9942,9 @@
+ 
+ - (void)emitEventNamed:(NSString *)name detailJSON:(NSString *)detailJSON windowId:(uint64_t)windowId {
+     WKWebView *webView = [self webViewForWindowId:windowId];
++    // Native-only windows have no JavaScript bridge. Do not keep a ten-second
++    // 60 Hz frame pump alive for an event with no recipient.
++    if (!webView) return;
+     NSData *nameData = [NSJSONSerialization dataWithJSONObject:name ?: @"" options:NSJSONWritingFragmentsAllowed error:nil];
+     NSString *nameJSON = nameData ? [[NSString alloc] initWithData:nameData encoding:NSUTF8StringEncoding] : @"\"\"";
+     NSString *detail = detailJSON.length > 0 ? detailJSON : @"null";
+@@ -11021,6 +11040,16 @@
      }
  }
  
@@ -919,7 +985,7 @@ index 5ad2932..9e84877 100644
      if (!host || !host->tray_active) return 0;
      host->tray_items.clear();
 diff --git a/src/primitives/canvas/reference.zig b/src/primitives/canvas/reference.zig
-index bbf819b..981199f 100644
+index bbf819b..ef33da3 100644
 --- a/src/primitives/canvas/reference.zig
 +++ b/src/primitives/canvas/reference.zig
 @@ -84,6 +84,56 @@ const referenceDistanceToSegment = reference_paths.referenceDistanceToSegment;
@@ -1324,21 +1390,46 @@ index bbf819b..981199f 100644
      pub fn pixelRgba8(self: ReferenceRenderSurface, x: usize, y: usize) [4]u8 {
          if (x >= self.width or y >= self.height) return .{ 0, 0, 0, 0 };
          const index = (y * self.width + x) * 4;
-@@ -342,6 +716,13 @@ pub const ReferenceRenderSurface = struct {
-         // test (bit-identical on integer bounds); rounded fills take
-         // the anti-aliased signed-distance coverage.
-         const binary = referenceRadiusIsZero(radius);
+@@ -313,6 +687,12 @@ pub const ReferenceRenderSurface = struct {
+ 
+     fn fillRect(self: ReferenceRenderSurface, command: RenderCommand, value: FillRect, draw_bounds: geometry.RectF) Error!void {
+         const pixel_rect = referencePixelRect(draw_bounds, self.width, self.height) orelse return;
++        // Opaque flat fills overwrite their background. Drawing the bytes
++        // directly is cheaper than hashing and retaining a second full panel.
++        if (referenceOpaqueSolidColor(value.fill, command.opacity)) |color| {
++            self.clearRect(draw_bounds, color);
++            return;
++        }
+         // Render memo: a large translucent fill (the modal scrim's wash
+         // covers the whole viewport) blends every pixel; it reads only
+         // the pixel it writes, so no apron rows join the key.
+@@ -333,15 +713,18 @@ pub const ReferenceRenderSurface = struct {
+         const rect = command.transform.transformRect(value.rect).normalized();
+         const pixel_rect = referencePixelRect(draw_bounds, self.width, self.height) orelse return;
+         const radius = referenceScaleRadius(value.radius, command.transform);
+-        // Render memo: a large rounded fill (a dialog surface) tests the
+-        // corner mask per pixel; it reads only the pixel it blends into,
+-        // so no apron rows join the key.
++        // Preserve the binary pixel-center rule for square corners and the
++        // existing coverage calculation for rounded edges. Opaque interiors
++        // need no background-dependent command memo or copied panel storage.
++        const binary = referenceRadiusIsZero(radius);
 +        if (!binary) {
 +            if (referenceOpaqueSolidColor(value.fill, command.opacity)) |color| {
 +                self.fillRoundedOpaqueSolid(pixel_rect, rect, radius, color);
-+                self.memoStore(probe, pixel_rect);
 +                return;
 +            }
 +        }
+         const probe = self.memoProbe(pixel_rect, 0, referenceMemoParamsHash(2, command, value));
+         if (self.memoReplay(probe, pixel_rect)) return;
+-        // Square-cornered fills keep the legacy binary pixel-center
+-        // test (bit-identical on integer bounds); rounded fills take
+-        // the anti-aliased signed-distance coverage.
+-        const binary = referenceRadiusIsZero(radius);
          var y = pixel_rect.y;
          while (y < pixel_rect.y + pixel_rect.height) : (y += 1) {
              var x = pixel_rect.x;
-@@ -358,6 +739,46 @@ pub const ReferenceRenderSurface = struct {
+@@ -358,6 +741,46 @@ pub const ReferenceRenderSurface = struct {
          self.memoStore(probe, pixel_rect);
      }
  
@@ -1385,7 +1476,7 @@ index bbf819b..981199f 100644
      fn strokeRect(self: ReferenceRenderSurface, command: RenderCommand, value: StrokeRect, draw_bounds: geometry.RectF) Error!void {
          const stroke_width = nonNegative(value.stroke.width) * referenceTransformScale(command.transform);
          if (stroke_width <= 0) return;
-@@ -368,6 +789,7 @@ pub const ReferenceRenderSurface = struct {
+@@ -368,12 +791,14 @@ pub const ReferenceRenderSurface = struct {
          const radius = referenceScaleRadius(value.radius, command.transform);
          const outer_radius = referenceOutsetRadius(radius, half_width);
          const inner_radius = referenceInsetRadius(radius, half_width);
@@ -1393,17 +1484,34 @@ index bbf819b..981199f 100644
          const pixel_rect = referencePixelRect(draw_bounds, self.width, self.height) orelse return;
          // Render memo: a rounded border's pixel rect spans the WHOLE
          // stroked rect (a dialog outline covers the dialog), and every
-@@ -388,6 +810,9 @@ pub const ReferenceRenderSurface = struct {
+         // pixel tests two corner masks. It reads only the pixel it
+         // blends into, so no apron rows join the key.
+-        const probe = self.memoProbe(pixel_rect, 0, referenceMemoParamsHash(5, command, value));
++        const direct = referenceOpaqueSolidColor(value.stroke.fill, command.opacity) != null;
++        const probe = if (direct) null else self.memoProbe(pixel_rect, 0, referenceMemoParamsHash(5, command, value));
+         if (self.memoReplay(probe, pixel_rect)) return;
+         // Square-cornered borders keep the legacy binary ring test
+         // (bit-identical on integer bounds). Rounded borders derive
+@@ -388,6 +813,18 @@ pub const ReferenceRenderSurface = struct {
              var x = pixel_rect.x;
              while (x < pixel_rect.x + pixel_rect.width) : (x += 1) {
                  const point = referencePixelCenter(x, y);
 +                if (inner_core) |core| {
-+                    if (core.containsPoint(point)) continue;
++                    if (core.containsPoint(point)) {
++                        if (direct) {
++                            // This interior is provably untouched. Jump to the
++                            // first pixel center outside it, preserving the
++                            // same half-open containment rule at fractional x.
++                            const end: usize = @intFromFloat(@min(@ceil(core.maxX() - 0.5), @as(f32, @floatFromInt(pixel_rect.x + pixel_rect.width))));
++                            if (end > x) x = end - 1;
++                        }
++                        continue;
++                    }
 +                }
                  if (binary) {
                      if (referencePointInRoundedRect(point, outer, outer_radius) and !referencePointInRoundedRect(point, inner, inner_radius)) {
                          self.blendPixel(@intCast(x), @intCast(y), referenceSampleFill(value.stroke.fill, command.transform, point), command.opacity);
-@@ -865,12 +1290,50 @@ pub const ReferenceRenderSurface = struct {
+@@ -865,12 +1302,50 @@ pub const ReferenceRenderSurface = struct {
          // placement, then apply the command transform on top.
          const local = Affine{ .a = scale, .b = 0, .c = 0, .d = -scale, .tx = pen_x + cell_inset, .ty = baseline };
          const total = command.transform.multiply(local);
@@ -1455,7 +1563,7 @@ index bbf819b..981199f 100644
          // Glyph coverage blends in sRGB, not linear light (see
          // `CoverageBlend`): apparent text weight is set by how edge
          // pixels darken, and re-blending them in linear light thins
-@@ -881,6 +1344,7 @@ pub const ReferenceRenderSurface = struct {
+@@ -881,6 +1356,7 @@ pub const ReferenceRenderSurface = struct {
              .transform = command.transform,
              .opacity = command.opacity,
              .coverage_blend = .srgb,
@@ -1463,7 +1571,7 @@ index bbf819b..981199f 100644
          };
          // The outline is already in device space; TrueType interiorness
          // is the nonzero rule. The glyph raster budgets are derived from
-@@ -898,6 +1362,8 @@ pub const ReferenceRenderSurface = struct {
+@@ -898,6 +1374,8 @@ pub const ReferenceRenderSurface = struct {
              referenceVectorClip(pixel_rect),
              &sink,
          ) catch return false;
@@ -1472,7 +1580,7 @@ index bbf819b..981199f 100644
          return true;
      }
  
-@@ -915,6 +1381,14 @@ pub const ReferenceRenderSurface = struct {
+@@ -915,6 +1393,14 @@ pub const ReferenceRenderSurface = struct {
  
      fn blendPixel(self: ReferenceRenderSurface, x: usize, y: usize, color: Color, opacity: f32) void {
          const index = (y * self.width + x) * 4;
@@ -1487,7 +1595,7 @@ index bbf819b..981199f 100644
          const dst = [4]u8{
              self.pixels[index + 0],
              self.pixels[index + 1],
-@@ -934,6 +1408,14 @@ pub const ReferenceRenderSurface = struct {
+@@ -934,6 +1420,14 @@ pub const ReferenceRenderSurface = struct {
      /// `CoverageBlend`).
      fn blendPixelCoverage(self: ReferenceRenderSurface, x: usize, y: usize, color: Color, coverage: f32, opacity: f32, blend: CoverageBlend) void {
          const index = (y * self.width + x) * 4;
@@ -1502,7 +1610,7 @@ index bbf819b..981199f 100644
          const dst = [4]u8{
              self.pixels[index + 0],
              self.pixels[index + 1],
-@@ -988,8 +1470,10 @@ const ReferenceCoverageSink = struct {
+@@ -988,8 +1482,10 @@ const ReferenceCoverageSink = struct {
      transform: Affine,
      opacity: f32,
      coverage_blend: CoverageBlend,
@@ -1513,7 +1621,7 @@ index bbf819b..981199f 100644
          if (x < 0 or y < 0) return;
          const px: usize = @intCast(x);
          const py: usize = @intCast(y);
-@@ -1000,6 +1484,22 @@ const ReferenceCoverageSink = struct {
+@@ -1000,6 +1496,22 @@ const ReferenceCoverageSink = struct {
      }
  };
  
@@ -1536,7 +1644,7 @@ index bbf819b..981199f 100644
  fn referenceVectorClip(pixel_rect: ReferencePixelRect) vector.ClipRect {
      return .{
          .x0 = @intCast(pixel_rect.x),
-@@ -1047,6 +1547,80 @@ fn referenceMemoParamsHash(kind: u8, command: RenderCommand, value: anytype) u64
+@@ -1047,6 +1559,88 @@ fn referenceMemoParamsHash(kind: u8, command: RenderCommand, value: anytype) u64
      return hasher.final();
  }
  
@@ -1563,7 +1671,7 @@ index bbf819b..981199f 100644
 +}
 +
 +fn referenceOpaqueSolidColor(fill: Fill, opacity: f32) ?Color {
-+    if (opacity < 1) return null;
++    if (!(opacity >= 1)) return null;
 +    return switch (fill) {
 +        .color => |color| if (color.a >= 1) color else null,
 +        else => null,
@@ -1599,7 +1707,15 @@ index bbf819b..981199f 100644
 +    const rounded_core = referenceRoundedCore(rect, radius, 0.5) orelse return null;
 +    const command_core = command.bounds.normalized().deflate(geometry.InsetsF.all(0.5));
 +    const interior = geometry.RectF.intersection(rounded_core, command_core);
-+    return if (interior.isEmpty()) null else interior;
++    // Scissors round outward to pixel bounds. Fractional split boundaries
++    // would therefore paint the same shadow pixel in adjacent fragments.
++    // Only skip whole pixels strictly inside the guaranteed opaque core.
++    const x0 = @ceil(interior.minX());
++    const y0 = @ceil(interior.minY());
++    const x1 = @floor(interior.maxX());
++    const y1 = @floor(interior.maxY());
++    if (x1 <= x0 or y1 <= y0) return null;
++    return geometry.RectF.init(x0, y0, x1 - x0, y1 - y0);
 +}
 +
 +fn referenceGlyphMemoParamsHash(value: DrawText, command: RenderCommand, glyph: u16, total: Affine) u64 {
@@ -1617,7 +1733,7 @@ index bbf819b..981199f 100644
  /// Recursively hash a plain value BIT-EXACTLY: floats hash their bit
  /// patterns (so -0.0 and 0.0, or two NaNs, are distinct keys — stricter
  /// than `==`, which can only cause a spurious miss, never a wrong hit).
-@@ -1124,6 +1698,93 @@ fn referenceScaleRect(rect: geometry.RectF, scale: f32) geometry.RectF {
+@@ -1124,6 +1718,93 @@ fn referenceScaleRect(rect: geometry.RectF, scale: f32) geometry.RectF {
      return geometry.RectF.init(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale);
  }
  
@@ -3020,3 +3136,335 @@ index d111f82..2074d24 100644
  pub fn validateTrayMenuItems(items: []const platform.TrayMenuItem) !void {
      if (items.len > platform.max_tray_items) return error.InvalidTrayOptions;
      for (items, 0..) |item, index| {
+diff --git a/src/primitives/canvas/tokens.zig b/src/primitives/canvas/tokens.zig
+--- a/src/primitives/canvas/tokens.zig
++++ b/src/primitives/canvas/tokens.zig
+@@ -322,6 +322,8 @@
+ pub const TypographyTokens = struct {
+     font_id: FontId = default_sans_font_id,
+     mono_font_id: FontId = default_mono_font_id,
++    /// Optional face for heading/display text; body remains the default.
++    heading_font_id: ?FontId = null,
+     font_family: FontFamily = default_sans_font_family,
+     mono_font_family: FontFamily = default_mono_font_family,
+     body_size: f32 = 14,
+@@ -1126,6 +1128,7 @@
+ pub const TypographyTokenOverrides = struct {
+     font_id: ?FontId = null,
+     mono_font_id: ?FontId = null,
++    heading_font_id: ?FontId = null,
+     font_family: ?FontFamily = null,
+     mono_font_family: ?FontFamily = null,
+     body_size: ?f32 = null,
+diff --git a/src/primitives/canvas/widget_metrics.zig b/src/primitives/canvas/widget_metrics.zig
+--- a/src/primitives/canvas/widget_metrics.zig
++++ b/src/primitives/canvas/widget_metrics.zig
+@@ -23,6 +23,13 @@
+         .lg => @max(8, tokens.typography.button_size + tokens.metrics.button_label_lg_step),
+         .default, .icon, .heading, .display => tokens.typography.button_size,
+     };
++}
++
++pub fn widgetBodyFontId(widget: Widget, tokens: DesignTokens) @import("root.zig").FontId {
++    if (widget.kind == .text and (widget.size == .heading or widget.size == .display)) {
++        return tokens.typography.heading_font_id orelse tokens.typography.font_id;
++    }
++    return tokens.typography.font_id;
+ }
+ 
+ pub fn widgetBodyTextSize(widget: Widget, tokens: DesignTokens) f32 {
+@@ -100,12 +107,14 @@
+ /// a snapped paint frame never wraps a line the layout frame fit —
+ /// painted lines are therefore always <= the reserved line count.
+ pub fn widgetTextSpanLayoutOptions(widget: Widget, tokens: DesignTokens, max_width: f32) text_spans_model.TextSpanLayoutOptions {
++    var typography = tokens.typography;
++    typography.font_id = widgetBodyFontId(widget, tokens);
+     return .{
+         .size = widgetBodyTextSize(widget, tokens),
+         .max_width = max_width,
+         .wrap = .word,
+         .alignment = widget.text_alignment,
+-        .typography = tokens.typography,
++        .typography = typography,
+         .measure = tokens.text_measure,
+     };
+ }
+diff --git a/src/primitives/canvas/widget_layout.zig b/src/primitives/canvas/widget_layout.zig
+--- a/src/primitives/canvas/widget_layout.zig
++++ b/src/primitives/canvas/widget_layout.zig
+@@ -247,7 +247,7 @@
+     if (widget.kind != .text) return frame;
+     if (widget.spans.len > 0) return frame;
+     if (std.mem.indexOfScalar(u8, widget.text, '\n') != null) return frame;
+-    const measured = measuredTextWidth(tokens, widget.text, widgetBodyTextSize(widget, tokens));
++    const measured = measureTextWidthForFont(tokens.text_measure, widget_metrics.widgetBodyFontId(widget, tokens), widget.text, widgetBodyTextSize(widget, tokens));
+     const width = @min(measured, frame.width);
+     const dx: f32 = switch (widget.text_alignment) {
+         .start => 0,
+@@ -1718,7 +1718,7 @@
+         );
+     }
+     return geometry.SizeF.init(
+-        measuredTextWidth(tokens, widget.text, text_size),
++        measureTextWidthForFont(tokens.text_measure, widget_metrics.widgetBodyFontId(widget, tokens), widget.text, text_size),
+         widgetLineHeight(text_size),
+     );
+ }
+@@ -1955,7 +1955,7 @@
+ fn intrinsicRowTextWidgetSize(widget: Widget, tokens: DesignTokens) geometry.SizeF {
+     const text_size = widgetBodyTextSize(widget, tokens);
+     const inset = widgetControlInset(widget, tokens, tokens.spacing.md);
+-    const text_width = measuredTextWidth(tokens, widget.text, text_size);
++    const text_width = measureTextWidthForFont(tokens.text_measure, widget_metrics.widgetBodyFontId(widget, tokens), widget.text, text_size);
+     // A leading icon widens the row by the same shared metrics the
+     // renderer paints with, so measured widths and pixels agree.
+     const icon_width = if (widget.icon.len > 0)
+diff --git a/src/primitives/canvas/widget_render.zig b/src/primitives/canvas/widget_render.zig
+--- a/src/primitives/canvas/widget_render.zig
++++ b/src/primitives/canvas/widget_render.zig
+@@ -912,7 +912,7 @@
+     const text_size = widgetBodyTextSize(widget, tokens);
+     try builder.drawText(.{
+         .id = widgetPartId(widget.id, 1),
+-        .font_id = tokens.typography.font_id,
++        .font_id = widget_metrics.widgetBodyFontId(widget, tokens),
+         .size = text_size,
+         .origin = pixelSnapTextPoint(tokens, textOrigin(widget.frame, text_size, 0)),
+         .color = widgetForegroundColor(widget, tokens, tokens.colors.text),
+diff --git a/src/primitives/canvas/widget_text_select.zig b/src/primitives/canvas/widget_text_select.zig
+--- a/src/primitives/canvas/widget_text_select.zig
++++ b/src/primitives/canvas/widget_text_select.zig
+@@ -102,7 +102,7 @@
+ pub fn staticTextDrawText(widget: Widget, tokens: DesignTokens) DrawText {
+     const text_size = widget_metrics.widgetBodyTextSize(widget, tokens);
+     return .{
+-        .font_id = tokens.typography.font_id,
++        .font_id = widget_metrics.widgetBodyFontId(widget, tokens),
+         .size = text_size,
+         .origin = pixelSnapTextPoint(tokens, staticTextOrigin(widget.frame, text_size)),
+         .color = tokens.colors.text,
+diff --git a/src/primitives/canvas/layout_audit.zig b/src/primitives/canvas/layout_audit.zig
+--- a/src/primitives/canvas/layout_audit.zig
++++ b/src/primitives/canvas/layout_audit.zig
+@@ -279,7 +279,7 @@
+     var max_line_width: f32 = 0;
+     var start: usize = 0;
+     while (start <= widget.text.len and widget.text.len > 0) {
+-        const end = text_model.nextTextLineEnd(widget.text, start, tokens.typography.font_id, text_size, .{
++        const end = text_model.nextTextLineEnd(widget.text, start, widget_metrics.widgetBodyFontId(widget, tokens), text_size, .{
+             .max_width = frame.width + layout_audit_wrap_slack,
+             .line_height = line_height,
+             .wrap = .none,
+@@ -287,7 +287,7 @@
+             .measure = tokens.text_measure,
+         });
+         line_count += 1;
+-        const line_width = text_metrics.measureTextWidthForFont(tokens.text_measure, tokens.typography.font_id, widget.text[start..end], text_size);
++        const line_width = text_metrics.measureTextWidthForFont(tokens.text_measure, widget_metrics.widgetBodyFontId(widget, tokens), widget.text[start..end], text_size);
+         max_line_width = @max(max_line_width, line_width);
+         if (end >= widget.text.len) break;
+         start = end;
+diff --git a/src/automation/snapshot.zig b/src/automation/snapshot.zig
+index e90764e..f58bf44 100644
+--- a/src/automation/snapshot.zig
++++ b/src/automation/snapshot.zig
+@@ -52,6 +52,9 @@ pub const FrameProfileStage = struct {
+     name: []const u8 = "",
+     p50_us: u64 = 0,
+     p90_us: u64 = 0,
++    p95_us: u64 = 0,
++    total_max_us: u64 = 0,
++    window_len: usize = 0,
+     max_us: u64 = 0,
+     /// Lifetime samples recorded for this stage since enable.
+     count: u64 = 0,
+@@ -291,10 +294,13 @@ pub fn writeText(input: Input, writer: anytype) !void {
+     if (input.frame_profile) |profile| {
+         try writer.writeAll("frame_profile");
+         for (profile.stages) |stage| {
+-            try writer.print(" {s}_p50_us={d} {s}_p90_us={d} {s}_max_us={d} {s}_n={d}", .{
++            try writer.print(" {s}_p50_us={d} {s}_p90_us={d} {s}_p95_us={d} {s}_max_us={d} {s}_total_max_us={d} {s}_window_n={d} {s}_n={d}", .{
+                 stage.name, stage.p50_us,
+                 stage.name, stage.p90_us,
++                stage.name, stage.p95_us,
+                 stage.name, stage.max_us,
++                stage.name, stage.total_max_us,
++                stage.name, stage.window_len,
+                 stage.name, stage.count,
+             });
+         }
+@@ -832,7 +838,7 @@ test "snapshot emits the frame_profile line only while profiling" {
+         .frame_profile = .{ .stages = &stages },
+     }, &writer);
+     const text = writer.buffered();
+-    try std.testing.expect(std.mem.indexOf(u8, text, "\nframe_profile rebuild_p50_us=120 rebuild_p90_us=340 rebuild_max_us=900 rebuild_n=12 encode_p50_us=8 encode_p90_us=15 encode_max_us=22 encode_n=60\n") != null);
++    try std.testing.expect(std.mem.indexOf(u8, text, "\nframe_profile rebuild_p50_us=120 rebuild_p90_us=340 rebuild_p95_us=0 rebuild_max_us=900 rebuild_total_max_us=0 rebuild_window_n=0 rebuild_n=12 encode_p50_us=8 encode_p90_us=15 encode_p95_us=0 encode_max_us=22 encode_total_max_us=0 encode_window_n=0 encode_n=60\n") != null);
+ 
+     // Profiling off -> no frame_profile line.
+     var off_buffer: [512]u8 = undefined;
+diff --git a/src/runtime/automation_snapshot.zig b/src/runtime/automation_snapshot.zig
+index 5de5195..a820aa8 100644
+--- a/src/runtime/automation_snapshot.zig
++++ b/src/runtime/automation_snapshot.zig
+@@ -130,6 +130,9 @@ pub fn RuntimeAutomationSnapshot(comptime Runtime: type) type {
+                     .name = stage.name(),
+                     .p50_us = stats.p50_us,
+                     .p90_us = stats.p90_us,
++                    .p95_us = stats.p95_us,
++                    .total_max_us = stats.total_max_us,
++                    .window_len = stats.window_len,
+                     .max_us = stats.max_us,
+                     .count = stats.total,
+                 };
+diff --git a/src/runtime/flow.zig b/src/runtime/flow.zig
+index 2a38484..bacb38c 100644
+--- a/src/runtime/flow.zig
++++ b/src/runtime/flow.zig
+@@ -195,6 +195,29 @@ pub fn RuntimeFlow(comptime Runtime: type) type {
+         }
+ 
+         pub fn dispatchPlatformEvent(self: *Runtime, app: App, event_value: platform.Event) anyerror!void {
++            // Frame-request bookkeeping includes automation snapshot I/O and is
++            // excluded. Its nested input/frame events are measured separately.
++            const profile_work = event_value != .frame_requested;
++            if (profile_work) self.frame_profile.beginWork();
++            defer if (profile_work) {
++                if (self.frame_profile.enabled) {
++                    // A no-damage completion is still the end of this cycle.
++                    // Likewise an unchanged timer update with no pending frame
++                    // must not accumulate across seconds into a fabricated stall.
++                    var completed_cycle = event_value == .gpu_surface_frame;
++                    if (event_value == .timer) {
++                        completed_cycle = true;
++                        for (self.views[0..self.view_count]) |view| {
++                            if (view.gpu_canvas_frame_requested) {
++                                completed_cycle = false;
++                                break;
++                            }
++                        }
++                    }
++                    if (completed_cycle) self.frame_profile.work_presented = true;
++                }
++                self.frame_profile.endWork();
++            };
+             // Session recording: stage the event on entry, commit it on
+             // exit — so effect results drained DURING dispatch precede
+             // the event record in the journal (replay feeds them before
+diff --git a/src/runtime/frame_profile.zig b/src/runtime/frame_profile.zig
+index 0f0d744..8836600 100644
+--- a/src/runtime/frame_profile.zig
++++ b/src/runtime/frame_profile.zig
+@@ -26,6 +26,12 @@ pub const max_frame_profile_samples: usize = 128;
+ 
+ /// The instrumented stage boundaries, in pipeline order.
+ pub const FrameProfileStage = enum {
++    /// Synchronous event work accumulated through the next completed present.
++    /// Includes model update/layout/raster/host calls; excludes queue wait and
++    /// physical display scanout. Nested event work is counted exactly once.
++    frame_work,
++    /// Input receipt to responding present, from the existing host timestamps.
++    input_latency,
+     /// App build fn + tree finalize (`UiApp.rebuild`'s view build).
+     rebuild,
+     /// Widget tree layout (`layoutWidgetTreeWithTokens`).
+@@ -69,6 +75,8 @@ pub const frame_profile_stage_count = std.enums.values(FrameProfileStage).len;
+ pub const FrameProfileStageStats = struct {
+     p50_us: u64 = 0,
+     p90_us: u64 = 0,
++    p95_us: u64 = 0,
++    total_max_us: u64 = 0,
+     max_us: u64 = 0,
+     /// Samples currently in the window (bounded by
+     /// `max_frame_profile_samples`).
+@@ -89,6 +97,40 @@ pub const FrameProfile = struct {
+     totals: [frame_profile_stage_count]u64 = @splat(0),
+     samples_us: [frame_profile_stage_count][max_frame_profile_samples]u32 = @splat(@splat(0)),
+ 
++    total_max_us: [frame_profile_stage_count]u32 = @splat(0),
++    work_depth: usize = 0,
++    work_begin_ns: u64 = 0,
++    pending_work_ns: u64 = 0,
++    work_presented: bool = false,
++
++    pub fn beginWork(self: *FrameProfile) void {
++        if (!self.enabled) return;
++        self.beginWorkAt(runtime_clock.monotonicNanoseconds());
++    }
++
++    pub fn beginWorkAt(self: *FrameProfile, now: u64) void {
++        if (!self.enabled) return;
++        if (self.work_depth == 0) self.work_begin_ns = now;
++        self.work_depth += 1;
++    }
++
++    pub fn endWork(self: *FrameProfile) void {
++        if (!self.enabled) return;
++        self.endWorkAt(runtime_clock.monotonicNanoseconds());
++    }
++
++    pub fn endWorkAt(self: *FrameProfile, now: u64) void {
++        if (!self.enabled or self.work_depth == 0) return;
++        self.work_depth -= 1;
++        if (self.work_depth != 0) return;
++        self.pending_work_ns +|= now -| self.work_begin_ns;
++        if (self.work_presented) {
++            self.recordNs(.frame_work, self.pending_work_ns);
++            self.pending_work_ns = 0;
++            self.work_presented = false;
++        }
++    }
++
+     /// Monotonic stamp for a stage begin: 0 (never recorded) when
+     /// profiling is off, so `end` costs one compare and nothing else.
+     pub inline fn begin(self: *const FrameProfile) u64 {
+@@ -103,6 +145,7 @@ pub const FrameProfile = struct {
+         if (begin_ns == 0) return;
+         const now = runtime_clock.monotonicNanoseconds();
+         self.recordNs(stage, now -| begin_ns);
++        if (stage == .present) self.work_presented = true;
+     }
+ 
+     /// Record an externally measured duration (host-stamped decode/draw
+@@ -116,6 +159,7 @@ pub const FrameProfile = struct {
+         self.heads[index] = @intCast((self.heads[index] + 1) % max_frame_profile_samples);
+         if (self.lens[index] < max_frame_profile_samples) self.lens[index] += 1;
+         self.totals[index] +%= 1;
++        self.total_max_us[index] = @max(self.total_max_us[index], sample);
+     }
+ 
+     /// Drop every recorded sample (enable state is left alone).
+@@ -123,6 +167,11 @@ pub const FrameProfile = struct {
+         self.lens = @splat(0);
+         self.heads = @splat(0);
+         self.totals = @splat(0);
++        self.total_max_us = @splat(0);
++        self.work_depth = 0;
++        self.work_begin_ns = 0;
++        self.pending_work_ns = 0;
++        self.work_presented = false;
+     }
+ 
+     /// True when any stage holds samples — the snapshot's "print the
+@@ -147,6 +196,8 @@ pub const FrameProfile = struct {
+         return .{
+             .p50_us = sorted[nearestRank(len, 50)],
+             .p90_us = sorted[nearestRank(len, 90)],
++            .p95_us = sorted[nearestRank(len, 95)],
++            .total_max_us = self.total_max_us[index],
+             .max_us = sorted[len - 1],
+             .window_len = len,
+             .total = self.totals[index],
+diff --git a/src/runtime/gpu_surface_events.zig b/src/runtime/gpu_surface_events.zig
+index f254d55..4cbf3b8 100644
+--- a/src/runtime/gpu_surface_events.zig
++++ b/src/runtime/gpu_surface_events.zig
+@@ -149,6 +149,9 @@ pub fn RuntimeGpuSurfaceEvents(comptime Runtime: type) type {
+                     self.views[index].recordGpuSurfaceInputLatencyForFrame(frame_event.timestamp_ns);
+                 }
+                 const input_latency_recorded = had_pending_input and self.views[index].gpu_pending_input_timestamp_ns == 0;
++                if (input_latency_recorded and !frame_event.occluded) {
++                    self.frame_profile.recordNs(.input_latency, self.views[index].gpu_input_latency_ns);
++                }
+                 if (input_latency_recorded) {
+                     self.invalidateFor(.state, self.views[index].frame);
+                 }

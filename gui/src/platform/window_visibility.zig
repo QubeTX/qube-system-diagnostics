@@ -80,6 +80,21 @@ extern fn sd300_main_window_show() callconv(.c) void;
 extern fn sd300_main_window_hide() callconv(.c) void;
 extern fn sd300_claim_unix_instance() callconv(.c) c_int;
 extern fn sd300_model_open() callconv(.c) void;
+extern fn sd300_configure_renderer() callconv(.c) void;
+extern fn sd300_install_termination_cleanup() callconv(.c) void;
+extern fn sd300_uninstall_termination_cleanup() callconv(.c) void;
+
+pub fn installTerminationCleanup() void {
+    if (comptime builtin.os.tag == .macos) sd300_install_termination_cleanup();
+}
+
+pub fn uninstallTerminationCleanup() void {
+    if (comptime builtin.os.tag == .macos) sd300_uninstall_termination_cleanup();
+}
+
+pub fn configureRendering() void {
+    if (comptime builtin.os.tag == .linux) sd300_configure_renderer();
+}
 
 /// Windows uses an explicit per-logon mutex because launching an `.exe`
 /// directly has no OS application-identity arbitration. macOS LaunchServices
@@ -179,9 +194,15 @@ pub fn mainWindowVisible() bool {
     return switch (builtin.os.tag) {
         .windows => windowsMainWindowVisible(),
         .macos => sd300_main_window_visible() != 0,
-        .linux => true,
+        .linux => sd300_main_window_visible() != 0,
         else => @compileError("SD-300 GUI supports only Windows, macOS, and Linux"),
     };
+}
+
+pub fn mainWindowPresentationActive() bool {
+    // GTK mapping notifications restore the foreground profile immediately.
+    // Windows/macOS retain their existing minimize/close-policy contract.
+    return if (comptime builtin.os.tag == .linux) mainWindowVisible() else !mainWindowPolicyHidden();
 }
 
 /// Whether the main window is alive but hidden by the close policy. This is

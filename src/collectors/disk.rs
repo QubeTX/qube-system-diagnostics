@@ -1,12 +1,12 @@
 use serde::Serialize;
 use sysinfo::Disks;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct DiskData {
     pub partitions: Vec<PartitionInfo>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct PartitionInfo {
     pub name: String,
     pub mount_point: String,
@@ -18,7 +18,7 @@ pub struct PartitionInfo {
     pub disk_type: DiskType,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiskType {
     Ssd,
@@ -46,7 +46,14 @@ impl PartitionInfo {
 }
 
 pub fn collect(disks: &mut Disks) -> DiskData {
-    disks.refresh(true);
+    // Physical I/O has its own one-second sampler. Capacity views do not use
+    // sysinfo's I/O counters; querying them here repeats costly IOKit discovery.
+    disks.refresh_specifics(
+        true,
+        sysinfo::DiskRefreshKind::nothing()
+            .with_kind()
+            .with_storage(),
+    );
 
     let partitions = disks
         .iter()

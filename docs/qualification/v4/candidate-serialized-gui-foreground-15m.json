@@ -1,0 +1,85 @@
+{
+  "schema": 2,
+  "binary": "C:\\Users\\hey\\git\\qube-system-diagnostics\\target\\native-gui-stage\\windows-x86_64\\app\\zig-out\\bin\\sd300-gui.exe",
+  "sha256": "8a9290a30d4415eb3931cfb51a6630569046bad441196ee94d63f1060280c4a0",
+  "engine_sha256": "e557386e5d4cfc6ad6c7530a24095750c357eb642adcb5a86c5af297fb30b466",
+  "revision": "109b2b4",
+  "collector_sha256": "1e59b639b969e786c48293a367d140c30bfdf7b8ef7c34f8da73c5ce98f26531",
+  "build": "release",
+  "mode": "foreground",
+  "section": "Thermals",
+  "legacy_in_process": false,
+  "warmup_seconds": 15,
+  "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+  "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+  "collector_topics_at_start": [
+    "activity",
+    "connections",
+    "diagnostics",
+    "slow"
+  ],
+  "required_collector_topics": [
+    "activity",
+    "connections",
+    "diagnostics",
+    "slow"
+  ],
+  "rss_peak_elapsed_seconds": 585.2997654999926,
+  "measured_seconds": 900.0229929999914,
+  "samples": 3589,
+  "cpu_percent_one_core": 1.2048303303735823,
+  "cpu_interval_p95": 6.236907483951655,
+  "rss_mib_max": 155.140625,
+  "private_mib_max": 254.03515625,
+  "rss_peak_roles": {
+    "gui": {
+      "rss_mib": 65.46484375,
+      "private_mib": 214.01953125,
+      "processes": 1
+    },
+    "collector:diagnostics": {
+      "rss_mib": 10.9765625,
+      "private_mib": 2.12109375,
+      "processes": 1
+    },
+    "collector:slow": {
+      "rss_mib": 41.8046875,
+      "private_mib": 26.47265625,
+      "processes": 1
+    },
+    "collector:activity": {
+      "rss_mib": 9.16796875,
+      "private_mib": 1.875,
+      "processes": 1
+    },
+    "collector:connections": {
+      "rss_mib": 9.76171875,
+      "private_mib": 3.08984375,
+      "processes": 1
+    },
+    "collector:static": {
+      "rss_mib": 17.96484375,
+      "private_mib": 6.45703125,
+      "processes": 1
+    }
+  },
+  "rss_last_window_delta": 7.040666462988838,
+  "private_last_window_delta": 5.864274179469277,
+  "handles_max": 1287,
+  "process_count_max": 6,
+  "processes_created": 21,
+  "process_names": [
+    "sd300-gui.exe",
+    "sd300.exe"
+  ],
+  "cpu_gate": true,
+  "rss_gate": false,
+  "private_gate": true,
+  "collector_topics_at_end": [
+    "activity",
+    "connections",
+    "diagnostics",
+    "slow"
+  ],
+  "clean_shutdown": true
+}

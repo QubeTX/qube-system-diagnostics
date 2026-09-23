@@ -2,6 +2,27 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// Private bounded preparation; no device access or authorization.
+    #[command(hide = true)]
+    StorageProbePrepare { device: String },
+    /// Private single-device read after explicit OS authorization.
+    #[command(hide = true)]
+    StorageProbeRead { port: u16, nonce: String },
+    /// Private isolated Windows authorization broker.
+    #[command(hide = true)]
+    StorageProbeElevate { port: u16, nonce: String },
+    /// Private, read-only collector worker. No arbitrary command execution.
+    #[command(hide = true)]
+    CollectWorker {
+        #[arg(value_enum)]
+        topic: CollectorTopic,
+    },
+    /// Private session-local collector process with bounded framed responses.
+    #[command(hide = true)]
+    CollectServer {
+        #[arg(value_enum)]
+        topic: CollectorTopic,
+    },
     /// Check for updates and install the latest release.
     Update(UpdateActionArgs),
     /// Install the latest release through the preferred managed CLI channel.
@@ -14,6 +35,8 @@ pub enum Command {
     Capabilities(ReportArgs),
     /// Open or focus the installed SD-300 desktop monitor.
     Gui,
+    /// Inspect or explicitly install an independently owned optional companion.
+    Tools(OptionalToolArgs),
     /// Installer-only cleanup used to make a fresh native install authoritative.
     #[command(alias = "mc", hide = true)]
     MigrateCleanup(MigrateArgs),
@@ -35,6 +58,36 @@ pub enum Command {
     /// Perform an elevated, proven-owner Global Windows uninstall.
     #[command(hide = true)]
     UninstallWorker(UninstallWorkerArgs),
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct OptionalToolArgs {
+    #[arg(value_enum)]
+    pub tool: OptionalTool,
+    /// Install the verified official distribution; requires explicit acceptance.
+    #[arg(long)]
+    pub install: bool,
+    /// Consent to the exact operation described by `sd300 tools TOOL`.
+    #[arg(long, requires = "install")]
+    pub accept: bool,
+    #[arg(long)]
+    pub json: bool,
+}
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionalTool {
+    Nd300,
+    Smartctl,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollectorTopic {
+    Activity,
+    Static,
+    Slow,
+    Connections,
+    Diagnostics,
+    Health,
+    Drivers,
 }
 
 #[derive(Args, Debug, Clone, Default, PartialEq, Eq)]
@@ -59,6 +112,9 @@ pub struct UpdateActionArgs {
 
 #[derive(Args, Debug, Clone, PartialEq, Eq)]
 pub struct ReportArgs {
+    /// JSON representation: legacy schema 1 (default) or nullable, attributed schema 2.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=2), requires = "json")]
+    pub schema_version: u8,
     /// Emit machine-readable JSON instead of a compact text summary.
     #[arg(long)]
     pub json: bool,
@@ -217,14 +273,25 @@ EXAMPLES:
 
 KEYBINDINGS:
   1-9          Switch to section
-  q / Esc      Quit
+  q / Esc      Quit (Esc closes panels and filters first)
   Ctrl+C       Quit to shell
   m            Return to mode selection
   ?            Help overlay
   f            Toggle temperature unit (C/F)
-  j / k        Scroll (Processes, Connections, Drivers, Disk)
+  j / k        Select rows / scroll inspector
   c / M / p / n  Sort processes by CPU / Memory / PID / Name
-  r            Refresh drivers (Drivers section)
+  r            Retry providers and discovery
+  /            Filter the complete inventory
+  Enter        Inspect selected row
+  Space        Pause view / resume newest sample
+  PgUp/PgDn    Page through rows
+  Home / End   Select first / last row
+  Tab          Next section (Shift+Tab goes back)
+  s            Reverse process sort direction
+  F            Findings, evidence and next steps
+  N            Optional network diagnostics and SpeedQX
+  A            Review a privileged read of the selected drive
+  E            Export this session with redaction
 
 SECTIONS:
   1 Overview    System health dashboard / identity and gauges
@@ -318,6 +385,7 @@ mod tests {
             Some(Command::Snapshot(ReportArgs {
                 json: true,
                 include_sensitive: false,
+                schema_version: 1,
             }))
         );
 
@@ -478,6 +546,19 @@ mod tests {
         assert_eq!(
             error.kind(),
             clap::error::ErrorKind::MissingRequiredArgument
+        );
+    }
+
+    #[test]
+    fn schema_selection_is_explicit_and_bounded_without_changing_text_exports() {
+        assert!(Cli::try_parse_from(["sd300", "snapshot"]).is_ok());
+        assert!(Cli::try_parse_from(["sd300", "capabilities"]).is_ok());
+        assert!(Cli::try_parse_from(["sd300", "snapshot", "--schema-version", "2"]).is_err());
+        assert!(
+            Cli::try_parse_from(["sd300", "snapshot", "--json", "--schema-version", "2"]).is_ok()
+        );
+        assert!(
+            Cli::try_parse_from(["sd300", "snapshot", "--json", "--schema-version", "3"]).is_err()
         );
     }
 }

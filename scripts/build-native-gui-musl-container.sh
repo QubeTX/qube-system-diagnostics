@@ -19,10 +19,10 @@ grep -Eq '^3\.20([.]|$)' /etc/alpine-release || {
 
 apk add --no-cache \
   bash build-base ca-certificates curl findutils git gtk4.0-dev nodejs npm \
-  lddtreepax patchelf pkgconf scanelf spdx-licenses-text tar xz
-for command in lddtreepax scanelf; do
+  lddtreepax patchelf pkgconf scanelf spdx-licenses-text tar xz xvfb xvfb-run xauth xdotool dbus
+for command in lddtreepax scanelf xvfb-run dbus-run-session xdotool; do
   command -v "$command" >/dev/null || {
-    echo "the Alpine private-runtime packager requires $command" >&2
+    echo "the Alpine native qualification environment requires $command" >&2
     exit 1
   }
 done
@@ -61,6 +61,23 @@ export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 
 script_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH='' cd -- "$script_root/.." && pwd)
+if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
+  cargo test --locked --manifest-path "$repo_root/Cargo.toml"
+  cargo test --locked --manifest-path "$repo_root/Cargo.toml" --test optional_setup -- --ignored --nocapture
+  cargo test --locked --manifest-path "$repo_root/Cargo.toml" --test storage_privilege -- --ignored --nocapture
+  RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=-crt-static" \
+    cargo test --locked --manifest-path "$repo_root/gui-engine/Cargo.toml"
+  apk add --no-cache python3 python3-dev py3-pip linux-headers
+  python3 -m venv /tmp/sd300-qualification-python
+  /tmp/sd300-qualification-python/bin/python -m pip install --disable-pip-version-check \
+    'psutil==7.2.2' 'pyte==0.8.2' 'wcwidth==0.8.4'
+  cargo build --release --locked --bin sd300 --example profile-monitor
+  /tmp/sd300-qualification-python/bin/python scripts/qualify-tui-native.py "$output_dir/terminal-qualification"
+  /tmp/sd300-qualification-python/bin/python scripts/test-measure-tui-unix.py
+  /tmp/sd300-qualification-python/bin/python scripts/test-resource-metrics.py
+  /tmp/sd300-qualification-python/bin/python scripts/test-resource-baseline.py
+  /tmp/sd300-qualification-python/bin/python scripts/test-gui-interaction-report.py
+fi
 npm_cache=${RUNNER_TEMP:-/tmp}/sd300-native-npm-cache
 rm -rf "$repo_root/gui/node_modules" "$npm_cache"
 npm --prefix "$repo_root/gui" ci --ignore-scripts --cache "$npm_cache"
@@ -71,5 +88,47 @@ npm --prefix "$repo_root/gui" ci --ignore-scripts --offline --cache "$npm_cache"
 node "$script_root/prepare-native-sdk.mjs" "$repo_root/gui"
 node "$script_root/check-native-distribution.mjs" "$repo_root/gui"
 SD300_SKIP_NPM_CI=1 bash "$script_root/build-native-gui.sh" linux-musl-x86_64
+if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
+  cc -Wall -Wextra -Werror scripts/test-linux-window-visibility.c gui/src/platform/window_visibility_linux.c $(pkg-config --cflags --libs gtk4) -o target/test-linux-window-visibility
+  xvfb-run -a target/test-linux-window-visibility
+  bundle=target/native-gui-stage/linux-musl-x86_64/app/zig-out/bin
+  cp target/release/sd300 "$bundle/sd300"
+  for mode in foreground hidden; do
+    flags=(); [[ $mode != hidden ]] || flags+=(--hidden)
+    if ! GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- /tmp/sd300-qualification-python/bin/python scripts/measure-gui-unix.py \
+      "$bundle/sd300-gui" --output "$output_dir/gui-resource-smoke/$mode.json" --revision "$(git -c safe.directory="$repo_root" rev-parse HEAD)" --seconds 30 "${flags[@]}"; then
+      # Repeat the exact binary only to attribute its native failure. The
+      # debugger is never attached to an accepted resource measurement.
+      apk add --no-cache gdb
+      GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- /tmp/sd300-qualification-python/bin/python scripts/measure-gui-unix.py \
+        "$bundle/sd300-gui" --output "$output_dir/gui-resource-smoke/$mode-shutdown-trace.json" --revision "$(git -c safe.directory="$repo_root" rev-parse HEAD)" --seconds 30 --trace-shutdown "${flags[@]}" || true
+      exit 1
+    fi
+  done
+  # A previous unchanged build crashed on quit, then passed a repeat. Keep a
+  # bounded lifecycle stress lane until that intermittent failure is explained.
+  # Trace every owned shutdown so a reproduced crash cannot lose its evidence.
+  # These debugger-attached runs never qualify CPU or memory gates.
+  apk add --no-cache gdb
+  for attempt in 1 2 3; do
+    for mode in foreground hidden; do
+      flags=(); [[ $mode != hidden ]] || flags+=(--hidden)
+      GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- /tmp/sd300-qualification-python/bin/python scripts/measure-gui-unix.py \
+        "$bundle/sd300-gui" --output "$output_dir/gui-resource-smoke/$mode-lifecycle-$attempt.json" --revision "$(git -c safe.directory="$repo_root" rev-parse HEAD)" --seconds 20 --trace-shutdown "${flags[@]}"
+    done
+  done
+fi
 bash "$script_root/package-native-gui-linux.sh" \
   linux-musl-x86_64 "$output_dir" "$version"
+python3 "$script_root/test-linux-desktop-entry.py"
+if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
+  SD300_SKIP_NPM_CI=1 SD300_SKIP_NATIVE_TESTS=1 SD300_GUI_QUALIFICATION_AUTOMATION=1 bash "$script_root/build-native-gui.sh" linux-musl-x86_64
+  interaction_bundle=target/native-gui-stage/linux-musl-x86_64-automation/app/zig-out/bin
+  cp target/release/sd300 "$interaction_bundle/sd300"
+  GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- /tmp/sd300-qualification-python/bin/python scripts/qualify-gui-interaction.py \
+    "$interaction_bundle/sd300-gui" --output "$output_dir/gui-interaction.json" --revision "$(git -c safe.directory="$repo_root" rev-parse HEAD)"
+fi
+if [[ ${SD300_RESOURCE_SECONDS:-0} != 0 ]]; then
+  /tmp/sd300-qualification-python/bin/python scripts/qualify-native-resources.py \
+    "$output_dir/resource-qualification" --seconds "$SD300_RESOURCE_SECONDS" --target linux-musl-x86_64
+fi

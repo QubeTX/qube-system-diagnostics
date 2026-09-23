@@ -12,7 +12,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.mode.unwrap_or(DiagnosticMode::User);
 
     // Clock
-    let now = chrono_free_time();
+    let now = format!("{} UTC", time_at(app.presentation_time_ms / 1000));
 
     // Mode badge
     let (mode_label, mode_fg, mode_bg) = match mode {
@@ -44,22 +44,25 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(clock_text, Style::default().fg(COLOR_MUTED)),
     ]);
 
-    let separator_line = Line::from(Span::styled(
-        "\u{2500}".repeat(area.width as usize),
-        Style::default().fg(COLOR_BORDER),
-    ));
+    let (status, color) = if let Some(at) = app.paused_at {
+        (
+            format!(
+                " PAUSED at {} UTC · collection continues · Space resumes newest data",
+                time_at(at / 1000)
+            ),
+            COLOR_WARN,
+        )
+    } else {
+        (format!(" {}", app.view.status), COLOR_MUTED)
+    };
+    let separator_line = Line::from(Span::styled(status, Style::default().fg(color)));
 
     let paragraph = Paragraph::new(vec![title_line, separator_line]);
     frame.render_widget(paragraph, area);
 }
 
 /// Get current time as HH:MM:SS (without chrono dependency)
-fn chrono_free_time() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+fn time_at(secs: u64) -> String {
     let secs_of_day = secs % 86400;
     let h = secs_of_day / 3600;
     let m = (secs_of_day % 3600) / 60;

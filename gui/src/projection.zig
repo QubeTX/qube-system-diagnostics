@@ -10,13 +10,6 @@ pub const max_disks: usize = 16;
 pub const max_gpus: usize = 8;
 pub const max_interfaces: usize = 16;
 pub const max_processes: usize = 16;
-// Keep row identity stable for a full 30 one-second engine samples. The GUI
-// still applies CPU and memory values from every projection it consumes, but a
-// near-tie cannot invalidate every process-name/PID cell on each visual frame.
-// Thirty samples is short enough to surface a genuinely sustained new top
-// consumer while making the table readable and substantially cheaper to paint
-// on the SDK's Windows/Linux software presentation paths.
-const process_rank_reconcile_samples: u64 = 30;
 pub const max_sensors: usize = 24;
 pub const max_fans: usize = 12;
 pub const max_connections: usize = 20;
@@ -34,7 +27,9 @@ pub const TopicMeta = struct {
     schema_version: u32 = 0,
     sequence: u64 = 0,
     captured_unix_ms: u64 = 0,
-    freshness_ms: u64 = 0,
+    freshness_ms: ?u64 = null,
+    expected_interval_ms: u64 = 1000,
+    detail_buffer: canvas.TextBuffer(192) = .{},
     topic_buffer: canvas.TextBuffer(24) = canvas.TextBuffer(24).init("pending"),
     availability_buffer: canvas.TextBuffer(32) = canvas.TextBuffer(32).init("pending"),
     provenance_buffer: canvas.TextBuffer(160) = canvas.TextBuffer(160).init("collector topic pending"),
@@ -51,6 +46,9 @@ pub const TopicMeta = struct {
     }
     pub fn target(meta: *const TopicMeta) []const u8 {
         return meta.target_buffer.text();
+    }
+    pub fn detail(meta: *const TopicMeta) []const u8 {
+        return meta.detail_buffer.text();
     }
 };
 
@@ -114,6 +112,20 @@ pub const WarningRow = struct {
     pub fn severity(row: *const WarningRow) []const u8 {
         return row.severity_buffer.text();
     }
+};
+
+pub const FindingRow = struct {
+    id: u32 = 0,
+    kind_buffer: canvas.TextBuffer(32) = .init("incomplete_observation"),
+    title_buffer: canvas.TextBuffer(128) = .init(""),
+    evidence_buffer: canvas.TextBuffer(256) = .init(""),
+    next_buffer: canvas.TextBuffer(256) = .init(""),
+    source_buffer: canvas.TextBuffer(64) = .init(""),
+    pub fn kind(row: *const FindingRow) []const u8 { return row.kind_buffer.text(); }
+    pub fn title(row: *const FindingRow) []const u8 { return row.title_buffer.text(); }
+    pub fn evidence(row: *const FindingRow) []const u8 { return row.evidence_buffer.text(); }
+    pub fn nextStep(row: *const FindingRow) []const u8 { return row.next_buffer.text(); }
+    pub fn source(row: *const FindingRow) []const u8 { return row.source_buffer.text(); }
 };
 
 pub const CapabilityRow = struct {
@@ -218,7 +230,18 @@ pub const DiskRow = struct {
 };
 
 pub const GpuRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
+    shared_limit_mib: u64 = 0,
+    shared_limit_available: bool = false,
+    dedicated_system_mib: u64 = 0,
+    dedicated_system_available: bool = false,
+    recommended_mib: u64 = 0,
+    recommended_available: bool = false,
+    unified: bool = false,
+    identity_buffer: canvas.TextBuffer(192) = .init("Not reported"),
+    utilization_observation: ObservationView = .{},
+    memory_observation: ObservationView = .{},
+    temperature_observation: ObservationView = .{},
     utilization_percent: f64 = 0,
     memory_used_mib: f64 = 0,
     memory_total_mib: f64 = 0,
@@ -237,6 +260,10 @@ pub const GpuRow = struct {
     resolution_buffer: canvas.TextBuffer(48) = canvas.TextBuffer(48).init("Not reported"),
     source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("platform inventory"),
 
+    pub fn identity(row: *const GpuRow) []const u8 { return row.identity_buffer.text(); }
+    pub fn utilizationObservation(row: *const GpuRow) []const u8 { return row.utilization_observation.summary(); }
+    pub fn memoryObservation(row: *const GpuRow) []const u8 { return row.memory_observation.summary(); }
+    pub fn temperatureObservation(row: *const GpuRow) []const u8 { return row.temperature_observation.summary(); }
     pub fn name(row: *const GpuRow) []const u8 {
         return row.name_buffer.text();
     }
@@ -255,7 +282,13 @@ pub const GpuRow = struct {
 };
 
 pub const InterfaceRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
+    counters_available: bool = false,
+    counter_observation: ObservationView = .{},
+    rate_available: bool = false,
+    included_in_total: bool = false,
+    rate_observation: ObservationView = .{},
+    address_observation: ObservationView = .{},
     download_kib_s: f64 = 0,
     upload_kib_s: f64 = 0,
     received_gib: f64 = 0,
@@ -278,10 +311,22 @@ pub const InterfaceRow = struct {
     pub fn mac(row: *const InterfaceRow) []const u8 {
         return row.mac_buffer.text();
     }
+    pub fn rateObservation(row: *const InterfaceRow) []const u8 {
+        return row.rate_observation.summary();
+    }
+    pub fn counterObservation(row: *const InterfaceRow) []const u8 {
+        return row.counter_observation.summary();
+    }
+    pub fn addressObservation(row: *const InterfaceRow) []const u8 {
+        return row.address_observation.summary();
+    }
 };
 
 pub const ProcessRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
+    start_time_unix_ms: u64 = 0,
+    cpu_available: bool = false,
+    memory_available: bool = false,
     pid: u32 = 0,
     cpu_percent: f64 = 0,
     memory_mib: f64 = 0,
@@ -302,10 +347,11 @@ pub const ProcessRow = struct {
 };
 
 pub const SensorRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
     temperature_celsius: f64 = 0,
     critical_celsius: f64 = 0,
     critical_available: bool = false,
+    identity_buffer: canvas.TextBuffer(256) = canvas.TextBuffer(256).init("Provider does not expose a stable identifier"),
     label_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("Sensor"),
     kind_buffer: canvas.TextBuffer(24) = canvas.TextBuffer(24).init("other"),
     source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("platform sensor"),
@@ -319,11 +365,13 @@ pub const SensorRow = struct {
     pub fn source(row: *const SensorRow) []const u8 {
         return row.source_buffer.text();
     }
+    pub fn identity(row: *const SensorRow) []const u8 { return row.identity_buffer.text(); }
 };
 
 pub const FanRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
     rpm: u64 = 0,
+    identity_buffer: canvas.TextBuffer(256) = canvas.TextBuffer(256).init("Provider does not expose a stable identifier"),
     label_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("Fan"),
     source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("platform sensor"),
 
@@ -333,6 +381,7 @@ pub const FanRow = struct {
     pub fn source(row: *const FanRow) []const u8 {
         return row.source_buffer.text();
     }
+    pub fn identity(row: *const FanRow) []const u8 { return row.identity_buffer.text(); }
 };
 
 pub const ConnectionRow = struct {
@@ -340,6 +389,7 @@ pub const ConnectionRow = struct {
     local_port: u16 = 0,
     remote_port: u16 = 0,
     pid: u32 = 0,
+    pid_available: bool = false,
     protocol_buffer: canvas.TextBuffer(12) = canvas.TextBuffer(12).init("tcp"),
     local_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("*"),
     remote_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("*"),
@@ -394,6 +444,7 @@ pub const DriverRow = struct {
 };
 
 pub const DriveHealthRow = struct {
+    device_buffer: canvas.TextBuffer(128) = .{},
     id: u32 = 0,
     temperature_celsius: f64 = 0,
     temperature_available: bool = false,
@@ -403,7 +454,8 @@ pub const DriveHealthRow = struct {
     power_on_hours_available: bool = false,
     read_errors_total: u64 = 0,
     write_errors_total: u64 = 0,
-    error_counts_available: bool = false,
+    read_errors_available: bool = false,
+    write_errors_available: bool = false,
     read_mib_s: f64 = 0,
     write_mib_s: f64 = 0,
     queue_depth: f64 = 0,
@@ -415,6 +467,7 @@ pub const DriveHealthRow = struct {
     health_buffer: canvas.TextBuffer(32) = canvas.TextBuffer(32).init("unknown"),
     source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("platform storage provider"),
 
+    pub fn device(self: *const DriveHealthRow) []const u8 { return self.device_buffer.text(); }
     pub fn model(row: *const DriveHealthRow) []const u8 {
         return row.model_buffer.text();
     }
@@ -434,6 +487,8 @@ pub const ServiceRow = struct {
     running: bool = false,
     name_buffer: canvas.TextBuffer(96) = canvas.TextBuffer(96).init("Service"),
     display_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("Service"),
+    state_buffer: canvas.TextBuffer(96) = canvas.TextBuffer(96).init("unavailable"),
+    observation: ObservationView = .{},
 
     pub fn name(row: *const ServiceRow) []const u8 {
         return row.name_buffer.text();
@@ -442,8 +497,17 @@ pub const ServiceRow = struct {
         return row.display_buffer.text();
     }
     pub fn state(row: *const ServiceRow) []const u8 {
-        return if (row.running) "running" else "not running";
+        return row.state_buffer.text();
     }
+    pub fn detail(row: *const ServiceRow) []const u8 { return row.observation.summary(); }
+};
+
+pub const DriverObservationRow = struct {
+    id: u32 = 0,
+    observation: ObservationView = .{},
+    pub fn source(row: *const DriverObservationRow) []const u8 { return row.observation.source(); }
+    pub fn state(row: *const DriverObservationRow) []const u8 { return row.observation.status(); }
+    pub fn detail(row: *const DriverObservationRow) []const u8 { return row.observation.detail(); }
 };
 
 pub const Projection = struct {
@@ -477,9 +541,12 @@ pub const Projection = struct {
     swap_used_gib: f64 = 0,
     swap_total_gib: f64 = 0,
     total_download_kib_s: f64 = 0,
+    network_aggregation_buffer: canvas.TextBuffer(192) = .{},
+    network_rate_observation: ObservationView = .{},
     total_upload_kib_s: f64 = 0,
     process_total_count: u32 = 0,
     process_total_threads: u32 = 0,
+    process_observation: ObservationView = .{},
     process_samples_observed: u8 = 0,
     process_values_warmed: bool = false,
     cpu_temperature_celsius: f64 = 0,
@@ -510,15 +577,18 @@ pub const Projection = struct {
     internet_latency_available: bool = false,
     gateway_target_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("Not reported"),
     gateway_error_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init(""),
+    gateway_source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("Not reported"),
     dns_domain_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("Not reported"),
     dns_result_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("Not reported"),
     dns_error_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init(""),
     internet_target_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("Not reported"),
     internet_error_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init(""),
+    internet_source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("Not reported"),
     driver_total_count: u32 = 0,
     driver_attention_count: u32 = 0,
     driver_scan_buffer: canvas.TextBuffer(96) = canvas.TextBuffer(96).init("not scanned"),
     memory_module_observation: ObservationView = .{},
+    network_rate_available: bool = false,
     network_adapter_observation: ObservationView = .{},
     display_inventory_observation: ObservationView = .{},
     display_brightness_observation: ObservationView = .{},
@@ -557,13 +627,26 @@ pub const Projection = struct {
     connection_rows: [max_connections]ConnectionRow = [_]ConnectionRow{.{}} ** max_connections,
     connection_count: usize = 0,
     connection_total_count: u32 = 0,
+    connection_observation: ObservationView = .{},
+    connection_matched_count: u32 = 0,
+    connection_page_offset: u32 = 0,
+    connection_paged: bool = false,
     listening_count: u32 = 0,
     driver_rows: [max_drivers]DriverRow = [_]DriverRow{.{}} ** max_drivers,
     driver_count: usize = 0,
+    driver_matched_count: u32 = 0,
+    driver_page_offset: u32 = 0,
+    driver_paged: bool = false,
     drive_health_rows: [max_drive_health]DriveHealthRow = [_]DriveHealthRow{.{}} ** max_drive_health,
     drive_health_count: usize = 0,
     drive_health_total_count: u32 = 0,
     disk_io_available: bool = false,
+    activity_sequence: u64 = 0,
+    activity_captured_unix_ms: u64 = 0,
+    activity_observation: ObservationView = .{},
+    disk_read_latency_available: bool = false,
+    disk_write_latency_available: bool = false,
+    disk_queue_available: bool = false,
     disk_read_mib_s: f64 = 0,
     disk_write_mib_s: f64 = 0,
     disk_queue_depth: f64 = 0,
@@ -571,13 +654,17 @@ pub const Projection = struct {
     disk_write_latency_ms: f64 = 0,
     disk_read_errors_total: u64 = 0,
     disk_write_errors_total: u64 = 0,
-    disk_errors_available: bool = false,
+    disk_read_errors_measured_drives: u32 = 0,
+    disk_write_errors_measured_drives: u32 = 0,
     display_rows: [max_displays]DisplayRow = [_]DisplayRow{.{}} ** max_displays,
     display_count: usize = 0,
     display_total_count: u32 = 0,
     warning_rows: [max_warnings]WarningRow = [_]WarningRow{.{}} ** max_warnings,
     warning_row_count: usize = 0,
     warning_total_count: u32 = 0,
+    finding_rows: [16]FindingRow = [_]FindingRow{.{}} ** 16,
+    finding_row_count: usize = 0,
+    finding_total_count: u32 = 0,
     capability_rows: [max_capabilities]CapabilityRow = [_]CapabilityRow{.{}} ** max_capabilities,
     capability_count: usize = 0,
     capability_total_count: u32 = 0,
@@ -587,6 +674,8 @@ pub const Projection = struct {
     service_rows: [max_services]ServiceRow = [_]ServiceRow{.{}} ** max_services,
     service_count: usize = 0,
     service_total_count: u32 = 0,
+    driver_observation_rows: [32]DriverObservationRow = [_]DriverObservationRow{.{}} ** 32,
+    driver_observation_count: usize = 0,
 
     pub fn osName(self: *const Projection) []const u8 {
         return self.os_name_buffer.text();
@@ -630,6 +719,12 @@ pub const Projection = struct {
     }
     pub fn networkAdapterStatus(self: *const Projection) []const u8 {
         return self.network_adapter_observation.status();
+    }
+    pub fn networkAggregation(self: *const Projection) []const u8 {
+        return self.network_aggregation_buffer.text();
+    }
+    pub fn networkRateObservation(self: *const Projection) []const u8 {
+        return self.network_rate_observation.summary();
     }
     pub fn networkAdapterObservation(self: *const Projection) []const u8 {
         return self.network_adapter_observation.summary();
@@ -769,6 +864,8 @@ pub const Projection = struct {
     pub fn warnings(self: *const Projection) []const WarningRow {
         return self.warning_rows[0..self.warning_row_count];
     }
+
+    pub fn findings(self: *const Projection) []const FindingRow { return self.finding_rows[0..self.finding_row_count]; }
     pub fn capabilities(self: *const Projection) []const CapabilityRow {
         return self.capability_rows[0..self.capability_count];
     }
@@ -777,6 +874,11 @@ pub const Projection = struct {
     }
     pub fn services(self: *const Projection) []const ServiceRow {
         return self.service_rows[0..self.service_count];
+    }
+    pub fn gatewaySource(self: *const Projection) []const u8 { return self.gateway_source_buffer.text(); }
+    pub fn internetSource(self: *const Projection) []const u8 { return self.internet_source_buffer.text(); }
+    pub fn driverObservations(self: *const Projection) []const DriverObservationRow {
+        return self.driver_observation_rows[0..self.driver_observation_count];
     }
     pub fn topicMeta(self: *const Projection, index: usize) *const TopicMeta {
         return &self.topic_meta[@min(index, topic_count - 1)];
@@ -794,6 +896,10 @@ pub const Projection = struct {
         meta.availability_buffer.set(envelope.availability);
         meta.provenance_buffer.set(envelope.provenance);
         meta.target_buffer.set(envelope.target);
+        if (envelope.sample) |sample| {
+            meta.expected_interval_ms = sample.expected_interval_ms;
+            if (sample.observation.detail) |detail| meta.detail_buffer.set(detail);
+        }
         self.topic_meta[index] = meta;
     }
 
@@ -895,7 +1001,38 @@ pub const Projection = struct {
         const envelope = parsed.value;
         self.captureTopicMeta(1, envelope);
         const data = envelope.data;
+        self.finding_total_count = saturatedU32(data.findings.len);
+        self.finding_row_count = @min(data.findings.len, self.finding_rows.len);
+        for (data.findings[0..self.finding_row_count], 0..) |item, index| {
+            var row = FindingRow{ .id = @intCast(index) };
+            row.kind_buffer.set(item.kind); row.title_buffer.set(item.title);
+            row.evidence_buffer.set(item.evidence); row.next_buffer.set(item.next_step);
+            row.source_buffer.set(item.source); self.finding_rows[index] = row;
+        }
         self.fast_ready = true;
+        if (data.activity_sample) |sample| {
+            self.activity_captured_unix_ms = sample.captured_unix_ms;
+            setObservation(&self.activity_observation, sample.observation);
+            if (sample.sequence != self.activity_sequence) {
+                self.activity_sequence = sample.sequence;
+                self.disk_io_available = data.disk_activity.devices.len > 0;
+                self.disk_read_mib_s = 0;
+                self.disk_write_mib_s = 0;
+                self.disk_read_latency_ms = 0;
+                self.disk_write_latency_ms = 0;
+                self.disk_queue_depth = 0;
+                self.disk_read_latency_available = false;
+                self.disk_write_latency_available = false;
+                self.disk_queue_available = data.disk_activity.devices.len > 0;
+                for (data.disk_activity.devices) |device| {
+                    if (device.read_bytes_per_sec) |read| { self.disk_read_mib_s += read / 1048576; } else { self.disk_io_available = false; }
+                    if (device.write_bytes_per_sec) |write| { self.disk_write_mib_s += write / 1048576; } else { self.disk_io_available = false; }
+                    if (device.read_latency_ms) |latency| { self.disk_read_latency_ms = @max(self.disk_read_latency_ms, latency); self.disk_read_latency_available = true; }
+                    if (device.write_latency_ms) |latency| { self.disk_write_latency_ms = @max(self.disk_write_latency_ms, latency); self.disk_write_latency_available = true; }
+                    if (device.queue_depth) |queue| { self.disk_queue_depth += @floatFromInt(queue); } else { self.disk_queue_available = false; }
+                }
+            }
+        }
         self.cpu_model_buffer.set(data.cpu.cpu_model);
         self.physical_core_count = saturatedU32(data.cpu.core_count);
         self.logical_thread_count = saturatedU32(data.cpu.thread_count);
@@ -927,16 +1064,32 @@ pub const Projection = struct {
         copyMemoryModules(self, data.memory.modules[0..self.memory_module_count]);
 
         setObservation(&self.network_adapter_observation, data.network.adapter_status);
+        self.network_rate_available = std.mem.eql(u8, data.network.sample.observation.status, "available");
+        self.network_aggregation_buffer.set(data.network.aggregation);
+        setObservation(&self.network_rate_observation, data.network.sample.observation);
         self.total_download_kib_s = @as(f64, @floatFromInt(data.network.total_download_rate)) / 1024.0;
         self.total_upload_kib_s = @as(f64, @floatFromInt(data.network.total_upload_rate)) / 1024.0;
         self.interface_total_count = saturatedU32(data.network.interfaces.len);
-        self.interface_count = @min(data.network.interfaces.len, max_interfaces);
-        for (data.network.interfaces[0..self.interface_count], 0..) |item, index| {
-            var row = InterfaceRow{ .id = @intCast(index) };
+        var interface_indices: [max_interfaces]usize = undefined;
+        self.interface_count = selectInterfaceIndices(data.network.interfaces, &interface_indices);
+        for (interface_indices[0..self.interface_count], 0..) |source_index, index| {
+            const item = data.network.interfaces[source_index];
+            // Keep UI identity independent of priority and enumeration position.
+            var identity = std.hash.Wyhash.init(0);
+            identity.update(item.name);
+            identity.update("\x00");
+            identity.update(item.mac_address);
+            var row = InterfaceRow{ .id = identity.final() };
+            row.counters_available = std.mem.eql(u8, item.counter_status.status, "available");
+            setObservation(&row.counter_observation, item.counter_status);
+            row.rate_available = std.mem.eql(u8, item.rate_status.status, "available");
+            row.included_in_total = item.included_in_total;
+            setObservation(&row.rate_observation, item.rate_status);
+            setObservation(&row.address_observation, item.address_status);
             row.name_buffer.set(item.name);
             row.state_buffer.set(item.operational_state);
             row.mac_buffer.set(item.mac_address);
-            row.address_buffer.set(if (item.ip_addresses.len > 0) item.ip_addresses[0] else "No address");
+            row.address_buffer.set(if (!row.address_observation.available) "Address unavailable" else if (item.ip_addresses.len > 0) item.ip_addresses[0] else "No assigned address");
             row.download_kib_s = @as(f64, @floatFromInt(item.download_rate)) / 1024.0;
             row.upload_kib_s = @as(f64, @floatFromInt(item.upload_rate)) / 1024.0;
             row.received_gib = @as(f64, @floatFromInt(item.received_bytes)) / gib;
@@ -946,6 +1099,7 @@ pub const Projection = struct {
         }
 
         const candidate_count = @min(data.processes.list.len, max_processes);
+        setObservation(&self.process_observation, data.processes.observation);
         var candidate_rows = [_]ProcessRow{.{}} ** max_processes;
         for (data.processes.list[0..candidate_count], 0..) |item, index| {
             candidate_rows[index] = processRow(item);
@@ -961,13 +1115,17 @@ pub const Projection = struct {
     pub fn applyProcessSummary(self: *Projection, summary: engine.ProcessSummary) void {
         var meta = self.topic_meta[1];
         meta.ready = true;
-        meta.schema_version = 1;
+        meta.schema_version = engine.expected_schema_version;
         meta.sequence = summary.sequence;
         meta.captured_unix_ms = summary.captured_unix_ms;
-        meta.freshness_ms = 0;
+        meta.freshness_ms = null; // Computed from capture time by the presentation clock.
         meta.topic_buffer.set("fast");
         meta.availability_buffer.set("available");
         meta.provenance_buffer.set("SD-300 platform process collector");
+        const status: []const u8 = switch (summary.observation_status) {
+            0 => "available", 1 => "unavailable", 2 => "unsupported", 3 => "permission_denied", 5 => "contradictory", else => "error",
+        };
+        setObservation(&self.process_observation, .{ .status = status, .source = "platform process inventory", .detail = if (summary.observation_status == 0) "CPU is percent of one logical processor; unreadable fields remain unavailable" else "The inventory could not be read. Inspect capabilities for provider details and retry." });
         if (!self.topic_meta[1].ready) {
             meta.target_buffer.set(if (self.topic_meta[0].ready) self.topic_meta[0].target() else "active target");
         }
@@ -977,7 +1135,9 @@ pub const Projection = struct {
         const candidate_count = @min(@as(usize, @intCast(summary.row_count)), max_processes);
         var candidate_rows = [_]ProcessRow{.{}} ** max_processes;
         for (summary.rows[0..candidate_count], 0..) |item, index| {
-            var row = ProcessRow{ .id = item.pid, .pid = item.pid };
+            var row = ProcessRow{ .id = (@as(u64, item.pid) << 32) ^ item.start_time_unix_ms, .pid = item.pid,
+                .start_time_unix_ms = item.start_time_unix_ms, .cpu_available = item.availability_flags & 1 != 0,
+                .memory_available = item.availability_flags & 2 != 0 };
             row.name_buffer.set(summaryText(&item.name, item.name_len));
             row.friendly_buffer.set(summaryText(&item.friendly_name, item.friendly_name_len));
             row.status_buffer.set(summaryText(&item.status, item.status_len));
@@ -1003,56 +1163,25 @@ pub const Projection = struct {
     ) void {
         self.process_total_count = total_count;
         self.process_total_threads = total_threads;
-        if (total_count > 0) {
-            self.process_samples_observed +|= 1;
-            self.process_values_warmed = self.process_samples_observed >= 2;
+        // The engine already ranked the complete inventory. Preserve that
+        // captured order, including consecutive samples, query changes and PID reuse.
+        if (sequence != self.process_order_sequence) {
+            if (total_count > 0) {
+                self.process_samples_observed +|= 1;
+            } else {
+                self.process_samples_observed = 0;
+            }
         }
-        const candidate_count = candidates.len;
-        const reorder_due = self.process_count == 0 or
-            sequence <= self.process_order_sequence or
-            sequence - self.process_order_sequence >= process_rank_reconcile_samples;
-        if (reorder_due) {
-            self.process_count = candidate_count;
-            self.process_order_sequence = sequence;
-            for (candidates, 0..) |item, index| {
-                self.process_rows[index] = item;
-            }
-        } else {
-            // Live CPU and memory values still update every fast sample. Keep
-            // row positions stable between sustained rank reconciliations so
-            // a one-second sample does not repaint every name/status cell just
-            // because two near-equal processes swapped order.
-            const previous_rows = self.process_rows;
-            const previous_count = self.process_count;
-            var next_rows = [_]ProcessRow{.{}} ** max_processes;
-            var used = [_]bool{false} ** max_processes;
-            var next_count: usize = 0;
-
-            for (previous_rows[0..previous_count]) |previous| {
-                for (candidates, 0..) |item, candidate_index| {
-                    if (!used[candidate_index] and item.pid == previous.pid) {
-                        next_rows[next_count] = item;
-                        used[candidate_index] = true;
-                        next_count += 1;
-                        break;
-                    }
-                }
-            }
-            for (candidates, 0..) |item, candidate_index| {
-                if (next_count >= candidate_count) break;
-                if (used[candidate_index]) continue;
-                next_rows[next_count] = item;
-                next_count += 1;
-            }
-            self.process_rows = next_rows;
-            self.process_count = next_count;
-        }
+        self.process_values_warmed = self.process_samples_observed >= 2;
+        self.process_order_sequence = sequence;
+        self.process_count = @min(candidates.len, max_processes);
+        @memcpy(self.process_rows[0..self.process_count], candidates[0..self.process_count]);
     }
 
     pub fn applySlowJson(self: *Projection, allocator: std.mem.Allocator, bytes: []const u8) !void {
         const parsed = try std.json.parseFromSlice(Envelope(SlowDataJson), allocator, bytes, .{ .ignore_unknown_fields = true });
         defer parsed.deinit();
-        self.captureTopicMeta(2, parsed.value);
+        self.captureTopicMeta(3, parsed.value);
         const data = parsed.value.data;
         self.slow_ready = true;
         const gib = 1024.0 * 1024.0 * 1024.0;
@@ -1078,7 +1207,11 @@ pub const Projection = struct {
         self.gpu_count = @min(data.gpu.adapters.len, max_gpus);
         for (data.gpu.adapters[0..self.gpu_count], 0..) |item, index| {
             var row = GpuRow{
-                .id = @intCast(index),
+                .id = if (item.device_id.len > 0) std.hash.Wyhash.hash(0, item.device_id) else @intCast(index),
+                .shared_limit_mib = item.shared_memory_mb orelse 0, .shared_limit_available = item.shared_memory_mb != null,
+                .dedicated_system_mib = item.dedicated_system_memory_mb orelse 0, .dedicated_system_available = item.dedicated_system_memory_mb != null,
+                .recommended_mib = item.recommended_working_set_mb orelse 0, .recommended_available = item.recommended_working_set_mb != null,
+                .unified = item.unified_memory orelse false,
                 .telemetry_available = item.telemetry_available,
                 .utilization_available = item.utilization_percent != null,
                 .memory_used_available = item.memory_used_mb != null,
@@ -1087,6 +1220,10 @@ pub const Projection = struct {
                 .refresh_rate_available = item.refresh_rate_hz != null,
             };
             row.name_buffer.set(item.name);
+            row.identity_buffer.set(item.device_id);
+            setObservation(&row.utilization_observation, item.fields.utilization_percent);
+            setObservation(&row.memory_observation, item.fields.memory_used_mb);
+            setObservation(&row.temperature_observation, item.fields.temperature_celsius);
             row.driver_buffer.set(item.driver_version orelse "Not reported");
             row.status_buffer.set(item.status orelse "Unknown");
             row.resolution_buffer.set(item.current_resolution orelse "Not reported");
@@ -1130,6 +1267,7 @@ pub const Projection = struct {
         self.sensor_count = @min(data.thermals.sensors.len, max_sensors);
         for (data.thermals.sensors[0..self.sensor_count], 0..) |item, index| {
             var row = SensorRow{ .id = @intCast(index) };
+            if (item.device_id) |id| { row.id = std.hash.Wyhash.hash(0, id); row.identity_buffer.set(id); }
             row.label_buffer.set(item.label);
             row.kind_buffer.set(item.kind);
             row.source_buffer.set(item.source);
@@ -1142,6 +1280,7 @@ pub const Projection = struct {
         self.fan_count = @min(data.thermals.fans.len, max_fans);
         for (data.thermals.fans[0..self.fan_count], 0..) |item, index| {
             var row = FanRow{ .id = @intCast(index), .rpm = item.rpm };
+            if (item.device_id) |id| { row.id = std.hash.Wyhash.hash(0, id); row.identity_buffer.set(id); }
             row.label_buffer.set(item.label);
             row.source_buffer.set(item.source);
             self.fan_rows[index] = row;
@@ -1151,14 +1290,18 @@ pub const Projection = struct {
     pub fn applyMediumJson(self: *Projection, allocator: std.mem.Allocator, bytes: []const u8) !void {
         const parsed = try std.json.parseFromSlice(Envelope(MediumJson), allocator, bytes, .{ .ignore_unknown_fields = true });
         defer parsed.deinit();
-        self.captureTopicMeta(3, parsed.value);
+        self.captureTopicMeta(2, parsed.value);
         self.medium_ready = true;
         const data = parsed.value.data;
-        self.listening_count = saturatedU32(data.listening_ports.len);
-        self.connection_total_count = saturatedU32(data.active_connections.len);
+        self.listening_count = data.listening_count orelse saturatedU32(data.listening_ports.len);
+        setObservation(&self.connection_observation, data.connections_observation);
+        self.connection_total_count = data.total_count orelse saturatedU32(data.active_connections.len);
+        self.connection_paged = data.matched_count != null;
+        self.connection_matched_count = data.matched_count orelse self.connection_total_count;
+        self.connection_page_offset = data.page_offset;
         self.connection_count = @min(data.active_connections.len, max_connections);
         for (data.active_connections[0..self.connection_count], 0..) |item, index| {
-            var row = ConnectionRow{ .id = @intCast(index), .local_port = item.local_port, .remote_port = item.remote_port, .pid = item.pid orelse 0 };
+            var row = ConnectionRow{ .id = @intCast(index), .local_port = item.local_port, .remote_port = item.remote_port, .pid = item.pid orelse 0, .pid_available = item.pid != null };
             row.protocol_buffer.set(item.protocol);
             row.local_buffer.set(item.local_addr);
             row.remote_buffer.set(item.remote_addr);
@@ -1179,6 +1322,7 @@ pub const Projection = struct {
         self.gateway_latency_available = data.gateway.latency_ms != null;
         self.gateway_target_buffer.set(data.gateway.target);
         self.gateway_error_buffer.set(data.gateway.@"error" orelse "");
+        self.gateway_source_buffer.set(data.gateway.source);
         self.dns_resolved = data.dns.resolved;
         self.dns_latency_ms = data.dns.resolution_ms orelse 0;
         self.dns_latency_available = data.dns.resolution_ms != null;
@@ -1190,6 +1334,7 @@ pub const Projection = struct {
         self.internet_latency_available = data.internet.latency_ms != null;
         self.internet_target_buffer.set(data.internet.target);
         self.internet_error_buffer.set(data.internet.@"error" orelse "");
+        self.internet_source_buffer.set(data.internet.source);
     }
 
     pub fn applyHealthJson(self: *Projection, allocator: std.mem.Allocator, bytes: []const u8) !void {
@@ -1197,21 +1342,37 @@ pub const Projection = struct {
         defer parsed.deinit();
         self.captureTopicMeta(5, parsed.value);
         self.health_ready = true;
-        self.disk_io_available = false;
-        self.disk_read_mib_s = 0;
-        self.disk_write_mib_s = 0;
-        self.disk_queue_depth = 0;
-        self.disk_read_latency_ms = 0;
-        self.disk_write_latency_ms = 0;
+        if (self.activity_sequence == 0) {
+            self.disk_io_available = false;
+            self.disk_read_mib_s = 0;
+            self.disk_write_mib_s = 0;
+            self.disk_queue_depth = 0;
+            self.disk_read_latency_ms = 0;
+            self.disk_write_latency_ms = 0;
+        }
         self.disk_read_errors_total = 0;
         self.disk_write_errors_total = 0;
-        self.disk_errors_available = false;
+        self.disk_read_errors_measured_drives = 0;
+        self.disk_write_errors_measured_drives = 0;
         setObservation(&self.disk_health_observation, parsed.value.data.health_status);
         setObservation(&self.disk_reliability_observation, parsed.value.data.reliability_status);
+        // Sum the complete inventory, independently for each nullable field.
+        // The bounded table must never truncate the aggregate or imply full coverage.
+        for (parsed.value.data.drives) |item| {
+            if (item.read_errors_total) |count| {
+                self.disk_read_errors_total +|= count;
+                self.disk_read_errors_measured_drives +|= 1;
+            }
+            if (item.write_errors_total) |count| {
+                self.disk_write_errors_total +|= count;
+                self.disk_write_errors_measured_drives +|= 1;
+            }
+        }
         self.drive_health_total_count = saturatedU32(parsed.value.data.drives.len);
         self.drive_health_count = @min(parsed.value.data.drives.len, max_drive_health);
         for (parsed.value.data.drives[0..self.drive_health_count], 0..) |item, index| {
             var row = DriveHealthRow{ .id = @intCast(index) };
+            row.device_buffer.set(item.device_id);
             row.model_buffer.set(item.model);
             row.media_buffer.set(item.media_type);
             row.health_buffer.set(item.health_status);
@@ -1224,7 +1385,8 @@ pub const Projection = struct {
             row.power_on_hours_available = item.power_on_hours != null;
             row.read_errors_total = item.read_errors_total orelse 0;
             row.write_errors_total = item.write_errors_total orelse 0;
-            row.error_counts_available = item.read_errors_total != null or item.write_errors_total != null;
+            row.read_errors_available = item.read_errors_total != null;
+            row.write_errors_available = item.write_errors_total != null;
             if (item.io_stats) |io| {
                 const mib = 1024.0 * 1024.0;
                 row.io_available = true;
@@ -1233,17 +1395,14 @@ pub const Projection = struct {
                 row.queue_depth = io.queue_depth;
                 row.read_latency_ms = io.avg_read_latency_ms;
                 row.write_latency_ms = io.avg_write_latency_ms;
-                self.disk_io_available = true;
-                self.disk_read_mib_s += row.read_mib_s;
-                self.disk_write_mib_s += row.write_mib_s;
-                self.disk_queue_depth += row.queue_depth;
-                self.disk_read_latency_ms = @max(self.disk_read_latency_ms, row.read_latency_ms);
-                self.disk_write_latency_ms = @max(self.disk_write_latency_ms, row.write_latency_ms);
-            }
-            if (row.error_counts_available) {
-                self.disk_errors_available = true;
-                self.disk_read_errors_total +|= row.read_errors_total;
-                self.disk_write_errors_total +|= row.write_errors_total;
+                if (self.activity_sequence == 0) {
+                    self.disk_io_available = true;
+                    self.disk_read_mib_s += row.read_mib_s;
+                    self.disk_write_mib_s += row.write_mib_s;
+                    self.disk_queue_depth += row.queue_depth;
+                    self.disk_read_latency_ms = @max(self.disk_read_latency_ms, row.read_latency_ms);
+                    self.disk_write_latency_ms = @max(self.disk_write_latency_ms, row.write_latency_ms);
+                }
             }
             self.drive_health_rows[index] = row;
         }
@@ -1258,7 +1417,7 @@ pub const Projection = struct {
         setValueLabel(&self.driver_scan_buffer, data.scan_status);
         const groups = [_][]const DriverJson{
             data.network, data.bluetooth, data.audio,  data.input, data.display,
-            data.storage, data.usb,       data.system, data.other,
+            data.storage, data.usb,       data.system, data.other, data.devices,
         };
         var total: usize = 0;
         var attention: usize = 0;
@@ -1268,8 +1427,11 @@ pub const Projection = struct {
                 attention += 1;
             };
         }
-        self.driver_total_count = saturatedU32(total);
-        self.driver_attention_count = saturatedU32(attention);
+        self.driver_total_count = data.total_count orelse saturatedU32(total);
+        self.driver_attention_count = data.attention_count orelse saturatedU32(attention);
+        self.driver_paged = data.matched_count != null;
+        self.driver_matched_count = data.matched_count orelse self.driver_total_count;
+        self.driver_page_offset = data.page_offset;
         self.driver_count = 0;
         for ([_]bool{ true, false }) |attention_pass| {
             for (groups) |group| {
@@ -1288,19 +1450,30 @@ pub const Projection = struct {
                 }
             }
         }
-        self.service_total_count = saturatedU32(data.services.len);
+        self.service_total_count = data.service_total_count orelse saturatedU32(data.services.len);
         self.service_count = @min(data.services.len, max_services);
         for (data.services[0..self.service_count], 0..) |service, index| {
             var row = ServiceRow{ .id = @intCast(index), .running = service.is_running };
             row.name_buffer.set(service.name);
             row.display_buffer.set(service.display_name);
+            setObservation(&row.observation, service.observation);
+            row.state_buffer.set(if (row.observation.available) service.state else row.observation.status());
             self.service_rows[index] = row;
+        }
+        self.driver_observation_count = @min(data.observations.len, self.driver_observation_rows.len);
+        for (data.observations[0..self.driver_observation_count], 0..) |observation, index| {
+            var row = DriverObservationRow{ .id = @intCast(index) };
+            setObservation(&row.observation, observation);
+            self.driver_observation_rows[index] = row;
         }
     }
 };
 
 fn processRow(item: ProcessJson) ProcessRow {
-    var row = ProcessRow{ .id = item.pid, .pid = item.pid };
+    var row = ProcessRow{ .id = (@as(u64, item.pid) << 32) ^ (item.start_time_unix_ms orelse 0), .pid = item.pid,
+        .start_time_unix_ms = item.start_time_unix_ms orelse 0,
+        .cpu_available = std.mem.eql(u8, item.cpu_observation.status, "available"),
+        .memory_available = std.mem.eql(u8, item.memory_observation.status, "available") };
     row.name_buffer.set(item.name);
     row.friendly_buffer.set(item.friendly_name);
     row.status_buffer.set(item.status);
@@ -1322,9 +1495,13 @@ fn Envelope(comptime Data: type) type {
         topic: []const u8 = "unknown",
         sequence: u64 = 0,
         captured_unix_ms: u64 = 0,
-        freshness_ms: u64 = 0,
+        freshness_ms: ?u64 = null,
         availability: []const u8 = "unavailable",
         provenance: []const u8 = "not reported",
+        sample: ?struct {
+            expected_interval_ms: u64 = 1000,
+            observation: ObservationJson = .{},
+        } = null,
         data: Data,
     };
 }
@@ -1354,7 +1531,7 @@ const DisplayJson = struct {
 const ObservationJson = struct {
     status: []const u8 = "unavailable",
     source: []const u8 = "not_collected",
-    detail: ?[]const u8 = "The collector has not run yet",
+    detail: ?[]const u8 = null,
 };
 const DisplaysJson = struct {
     displays: []const DisplayJson = &.{},
@@ -1413,6 +1590,10 @@ const MemoryJson = struct {
     module_status: ObservationJson = .{},
 };
 const InterfaceJson = struct {
+    counter_status: ObservationJson = .{},
+    rate_status: ObservationJson = .{},
+    address_status: ObservationJson = .{},
+    included_in_total: bool = false,
     name: []const u8 = "",
     ip_addresses: []const []const u8 = &.{},
     mac_address: []const u8 = "",
@@ -1424,12 +1605,33 @@ const InterfaceJson = struct {
     operational_state: []const u8 = "unknown",
 };
 const NetworkJson = struct {
+    aggregation: []const u8 = "",
+    sample: struct { observation: ObservationJson = .{} } = .{},
     interfaces: []const InterfaceJson = &.{},
     total_download_rate: u64 = 0,
     total_upload_rate: u64 = 0,
     adapter_status: ObservationJson = .{},
 };
+
+fn selectInterfaceIndices(interfaces: []const InterfaceJson, indices: *[max_interfaces]usize) usize {
+    var count: usize = 0;
+    // Prefer active aggregate contributors, then other active interfaces, then
+    // inactive ones. Never let virtual inventory displace the live connection.
+    for (0..3) |priority| {
+        for (interfaces, 0..) |item, index| {
+            const item_priority: usize = if (!item.is_up) 2 else if (item.included_in_total) 0 else 1;
+            if (priority != item_priority) continue;
+            indices[count] = index;
+            count += 1;
+            if (count == max_interfaces) return count;
+        }
+    }
+    return count;
+}
 const ProcessJson = struct {
+    start_time_unix_ms: ?u64 = null,
+    cpu_observation: ObservationJson = .{},
+    memory_observation: ObservationJson = .{},
     pid: u32 = 0,
     name: []const u8 = "",
     friendly_name: []const u8 = "",
@@ -1439,11 +1641,18 @@ const ProcessJson = struct {
     status: []const u8 = "unknown",
 };
 const ProcessesJson = struct {
+    observation: ObservationJson = .{},
     list: []const ProcessJson = &.{},
     total_count: usize = 0,
     total_threads: usize = 0,
 };
 const FastDataJson = struct {
+    findings: []const struct { kind: []const u8, title: []const u8, evidence: []const u8, next_step: []const u8, source: []const u8 } = &.{},
+    disk_activity: struct { devices: []const struct {
+        read_bytes_per_sec: ?f64 = null, write_bytes_per_sec: ?f64 = null,
+        read_latency_ms: ?f64 = null, write_latency_ms: ?f64 = null, queue_depth: ?u64 = null,
+    } = &.{} } = .{},
+    activity_sample: ?struct { sequence: u64 = 0, captured_unix_ms: u64 = 0, observation: ObservationJson = .{} } = null,
     cpu: CpuJson,
     memory: MemoryJson,
     network: NetworkJson,
@@ -1462,6 +1671,16 @@ const PartitionJson = struct {
 };
 const DiskJson = struct { partitions: []const PartitionJson = &.{} };
 const GpuAdapterJson = struct {
+    device_id: []const u8 = "",
+    unified_memory: ?bool = null,
+    shared_memory_mb: ?u64 = null,
+    dedicated_system_memory_mb: ?u64 = null,
+    recommended_working_set_mb: ?u64 = null,
+    fields: struct {
+        utilization_percent: ObservationJson = .{},
+        memory_used_mb: ObservationJson = .{},
+        temperature_celsius: ObservationJson = .{},
+    } = .{},
     name: []const u8 = "",
     driver_version: ?[]const u8 = null,
     status: ?[]const u8 = null,
@@ -1480,6 +1699,7 @@ const GpuJson = struct {
     telemetry_status: ObservationJson = .{},
 };
 const SensorJson = struct {
+    device_id: ?[]const u8 = null,
     label: []const u8 = "",
     temperature: f64 = 0,
     critical: ?f64 = null,
@@ -1487,6 +1707,7 @@ const SensorJson = struct {
     source: []const u8 = "platform sensor",
 };
 const FanJson = struct {
+    device_id: ?[]const u8 = null,
     label: []const u8 = "",
     rpm: u64 = 0,
     source: []const u8 = "platform sensor",
@@ -1531,10 +1752,16 @@ const ConnectionJson = struct {
     process_name: ?[]const u8 = null,
 };
 const MediumJson = struct {
+    connections_observation: ObservationJson = .{},
+    total_count: ?u32 = null,
+    matched_count: ?u32 = null,
+    page_offset: u32 = 0,
+    listening_count: ?u32 = null,
     active_connections: []const ConnectionJson = &.{},
     listening_ports: []const ConnectionJson = &.{},
 };
 const ConnectivityJson = struct {
+    source: []const u8 = "Provider not reported",
     reachable: bool = false,
     latency_ms: ?f64 = null,
     target: []const u8 = "Not reported",
@@ -1562,6 +1789,7 @@ const DriveHealthJson = struct {
     read_errors_total: ?u64 = null,
     write_errors_total: ?u64 = null,
     io_stats: ?DiskIoJson = null,
+    device_id: []const u8 = "",
     health_source: []const u8 = "platform storage provider",
 };
 const DiskIoJson = struct {
@@ -1585,6 +1813,13 @@ const DriverJson = struct {
     extra: []const u8 = "",
 };
 const DriversJson = struct {
+    observations: []const ObservationJson = &.{},
+    devices: []const DriverJson = &.{},
+    total_count: ?u32 = null,
+    matched_count: ?u32 = null,
+    page_offset: u32 = 0,
+    attention_count: ?u32 = null,
+    service_total_count: ?u32 = null,
     network: []const DriverJson = &.{},
     bluetooth: []const DriverJson = &.{},
     audio: []const DriverJson = &.{},
@@ -1601,6 +1836,8 @@ const ServiceJson = struct {
     name: []const u8 = "",
     display_name: []const u8 = "",
     is_running: bool = false,
+    state: []const u8 = "unavailable",
+    observation: ObservationJson = .{},
 };
 
 fn saturatedU32(value: anytype) u32 {
@@ -1716,7 +1953,7 @@ test "typed process summary preserves bounded live process parity" {
     try std.testing.expectEqual(@as(u64, 9), projection.topicMeta(1).sequence);
 }
 
-test "process values stay live while rank order reconciles every thirty samples" {
+test "process rank and values follow each captured inventory without a delayed reorder" {
     const first =
         \\{"sequence":1,"data":{"cpu":{},"memory":{},"network":{},"processes":{"list":[{"pid":7,"name":"alpha.exe","friendly_name":"Alpha","cpu_percent":10,"memory_bytes":1048576,"status":"Run"},{"pid":8,"name":"beta.exe","friendly_name":"Beta","cpu_percent":9,"memory_bytes":2097152,"status":"Run"}],"total_count":2}}}
     ;
@@ -1731,16 +1968,28 @@ test "process values stay live while rank order reconciles every thirty samples"
     try projection.applyFastJson(std.testing.allocator, first);
     try std.testing.expectEqual(@as(u32, 7), projection.processes()[0].pid);
     try std.testing.expect(!projection.process_values_warmed);
+    try projection.applyFastJson(std.testing.allocator, first);
+    try std.testing.expect(!projection.process_values_warmed);
 
     try projection.applyFastJson(std.testing.allocator, second);
     try std.testing.expect(projection.process_values_warmed);
-    try std.testing.expectEqual(@as(u32, 7), projection.processes()[0].pid);
-    try std.testing.expectEqual(@as(f64, 5), projection.processes()[0].cpu_percent);
-    try std.testing.expectEqual(@as(u32, 8), projection.processes()[1].pid);
+    try std.testing.expectEqual(@as(u32, 8), projection.processes()[0].pid);
+    try std.testing.expectEqual(@as(f64, 11), projection.processes()[0].cpu_percent);
+    try std.testing.expectEqual(@as(u32, 7), projection.processes()[1].pid);
 
     try projection.applyFastJson(std.testing.allocator, sixth);
     try std.testing.expectEqual(@as(u32, 8), projection.processes()[0].pid);
     try std.testing.expectEqual(@as(f64, 12), projection.processes()[0].cpu_percent);
+}
+
+test "available observations with omitted detail do not inherit a pending explanation" {
+    var value = Projection{};
+    try value.applySlowJson(std.testing.allocator,
+        \\{"schema_version":2,"sample":{"observation":{"status":"available","source":"GPU probe"}},"data":{"disk":{},"gpu":{"inventory_status":{"status":"available","source":"Metal"},"adapters":[{"device_id":"metal:1","name":"Apple GPU","fields":{"temperature_celsius":{"status":"available","source":"Sensor API"}}}]},"thermals":{}}}
+    );
+    try std.testing.expectEqualStrings("Metal", value.gpuInventoryObservation());
+    try std.testing.expectEqualStrings("Sensor API", value.gpu_rows[0].temperatureObservation());
+    try std.testing.expectEqualStrings("", value.topicMeta(3).detail());
 }
 
 test "static warnings and capability topics preserve explicit provenance" {
@@ -1775,7 +2024,7 @@ test "topic metadata disk reliability and driver services remain explicit" {
         \\{"schema_version":1,"target":"x86_64-windows","topic":"health","sequence":9,"captured_unix_ms":1777777777000,"freshness_ms":0,"availability":"available","provenance":"platform SMART and reliability provider","data":{"drives":[{"model":"Fixture NVMe","media_type":"nvme","health_status":"healthy","temperature_celsius":42.5,"read_errors_total":2,"write_errors_total":3,"io_stats":{"read_bytes_per_sec":1048576,"write_bytes_per_sec":2097152,"queue_depth":1.25,"avg_read_latency_ms":0.5,"avg_write_latency_ms":0.75},"health_source":"fixture"}],"health_status":{"status":"available","source":"SMART"},"reliability_status":{"status":"available","source":"MSFT_StorageReliabilityCounter"}}}
     ;
     const drivers_fixture =
-        \\{"schema_version":1,"target":"x86_64-windows","topic":"drivers","sequence":4,"captured_unix_ms":1777777778000,"availability":"available","provenance":"SetupAPI","data":{"network":[],"bluetooth":[],"audio":[],"input":[],"display":[],"storage":[],"usb":[],"system":[],"other":[],"services":[{"name":"FixtureSvc","display_name":"Fixture Service","is_running":true}],"scan_status":"success"}}
+        \\{"schema_version":1,"target":"x86_64-windows","topic":"drivers","sequence":4,"captured_unix_ms":1777777778000,"availability":"available","provenance":"SetupAPI","data":{"network":[],"bluetooth":[],"audio":[],"input":[],"display":[],"storage":[],"usb":[],"system":[],"other":[],"services":[{"name":"FixtureSvc","display_name":"Fixture Service","is_running":true,"state":"running","observation":{"status":"available","source":"fixture"}}],"scan_status":"success"}}
     ;
 
     var value = Projection{};
@@ -1802,6 +2051,30 @@ test "topic metadata disk reliability and driver services remain explicit" {
     try std.testing.expectEqualStrings("x86_64-windows", health_meta.target());
 }
 
+test "driver and service failures retain observation states without stopped placeholders" {
+    const fixture =
+        \\{"schema_version":2,"topic":"drivers","data":{"scan_status":"success","observations":[{"status":"unsupported","source":"device health","detail":"Presence is not health evidence"}],"services":[{"name":"denied","is_running":false,"observation":{"status":"permission_denied","source":"fixture","detail":"Read denied"}},{"name":"idle","is_running":false,"state":"loaded; not running (may be on demand)","observation":{"status":"available","source":"fixture"}}]}}
+    ;
+    var value = Projection{};
+    try value.applyDriversJson(std.testing.allocator, fixture);
+    try std.testing.expectEqualStrings("permission_denied", value.services()[0].state());
+    try std.testing.expect(std.mem.indexOf(u8, value.services()[0].detail(), "Read denied") != null);
+    try std.testing.expectEqualStrings("loaded; not running (may be on demand)", value.services()[1].state());
+    try std.testing.expectEqual(@as(usize, 1), value.driverObservations().len);
+    try std.testing.expectEqualStrings("unsupported", value.driverObservations()[0].state());
+}
+
+test "topic envelopes preserve null age after a clock change" {
+    const parsed = try std.json.parseFromSlice(Envelope(struct {}), std.testing.allocator,
+        \\{"schema_version":2,"sequence":3,"captured_unix_ms":10000,"freshness_ms":null,"freshness":"clock_changed","data":{}}
+    , .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var projection = Projection{};
+    projection.captureTopicMeta(0, parsed.value);
+    try std.testing.expect(projection.topicMeta(0).freshness_ms == null);
+    try std.testing.expectEqual(@as(u64, 10000), projection.topicMeta(0).captured_unix_ms);
+}
+
 test "slow observations distinguish missing telemetry from numeric zero" {
     const fixture =
         \\{"schema_version":1,"topic":"slow","sequence":3,"data":{"disk":{"partitions":[]},"gpu":{"adapters":[{"name":"Inventory GPU","dedicated_memory_mb":8192,"telemetry_available":false,"source":"fixture"}],"inventory_status":{"status":"available","source":"fixture inventory"},"telemetry_status":{"status":"unsupported","source":"vendor telemetry","detail":"No supported telemetry API"}},"thermals":{"cpu_temp":null,"gpu_temp":null,"sensors":[],"fans":[],"battery":null,"power_source":"ac","temperature_status":{"status":"unavailable","source":"sensors","detail":"No sensors returned"},"cpu_temperature_status":{"status":"permission_denied","source":"WMI","detail":"Access denied"},"gpu_temperature_status":{"status":"unsupported","source":"vendor telemetry","detail":"No API"},"fan_status":{"status":"unavailable","source":"fan provider","detail":"No fans returned"},"battery_status":{"status":"unsupported","source":"battery provider","detail":"Desktop system"}}}}
@@ -1816,4 +2089,120 @@ test "slow observations distinguish missing telemetry from numeric zero" {
     try std.testing.expectEqualStrings("permission_denied", value.cpuTemperatureStatus());
     try std.testing.expectEqualStrings("WMI · Access denied", value.cpuTemperatureObservation());
     try std.testing.expectEqualStrings("unsupported", value.batteryStatus());
+}
+
+test "fast disk counters survive slower SMART updates and preserve absent latency" {
+    var value = Projection{};
+    try value.applyFastJson(std.testing.allocator,
+        \\{"sequence":1,"data":{"cpu":{},"memory":{},"network":{},"processes":{},"activity_sample":{"sequence":2,"captured_unix_ms":123,"observation":{"status":"available","source":"fixture"}},"disk_activity":{"devices":[{"read_bytes_per_sec":1048576,"write_bytes_per_sec":0,"read_latency_ms":2.5,"write_latency_ms":null,"queue_depth":null}]}}}
+    );
+    try std.testing.expect(value.disk_io_available);
+    try std.testing.expectEqual(@as(f64, 1), value.disk_read_mib_s);
+    try std.testing.expect(value.disk_read_latency_available);
+    try std.testing.expect(!value.disk_write_latency_available);
+    try std.testing.expect(!value.disk_queue_available);
+    try value.applyHealthJson(std.testing.allocator,
+        \\{"sequence":1,"data":{"drives":[],"health_status":{},"reliability_status":{}}}
+    );
+    try std.testing.expect(value.disk_io_available);
+    try std.testing.expectEqual(@as(f64, 1), value.disk_read_mib_s);
+    try std.testing.expectEqual(@as(u64, 2), value.activity_sequence);
+}
+
+test "Metal unified memory budget is not reported as dedicated VRAM" {
+    var value = Projection{};
+    try value.applySlowJson(std.testing.allocator,
+        \\{"sequence":1,"data":{"disk":{"partitions":[]},"gpu":{"adapters":[{"device_id":"iokit:1234","name":"Apple GPU","unified_memory":true,"recommended_working_set_mb":12288}]},"thermals":{}}}
+    );
+    const row = value.gpu_rows[0];
+    try std.testing.expect(row.unified and row.recommended_available);
+    try std.testing.expectEqual(@as(u64, 12288), row.recommended_mib);
+    try std.testing.expect(!row.memory_total_available and !row.utilization_available);
+    try std.testing.expectEqualStrings("iokit:1234", row.identity());
+}
+
+test "process identity and field availability survive PID reuse" {
+    const first = processRow(.{ .pid = 42, .start_time_unix_ms = 1000, .cpu_observation = .{ .status = "available" } });
+    const reused = processRow(.{ .pid = 42, .start_time_unix_ms = 2000, .memory_observation = .{ .status = "available" } });
+    try std.testing.expect(first.id != reused.id);
+    try std.testing.expect(first.cpu_available and !first.memory_available);
+    try std.testing.expect(!reused.cpu_available and reused.memory_available);
+    var value = Projection{};
+    value.applyProcessRows(1, 1, 1, &.{first});
+    value.applyProcessRows(2, 1, 1, &.{reused});
+    try std.testing.expectEqual(reused.id, value.process_rows[0].id);
+    try std.testing.expect(!value.process_rows[0].cpu_available);
+}
+
+
+test "identical sensor labels preserve channel identity" {
+    var value = Projection{};
+    try value.applySlowJson(std.testing.allocator,
+        \\{"sequence":1,"data":{"disk":{"partitions":[]},"gpu":{},"thermals":{"sensors":[{"device_id":"hwmon:pci:1:temp1","label":"Core","temperature":42},{"device_id":"hwmon:pci:1:temp2","label":"Core","temperature":42}],"fans":[{"device_id":"hwmon:pci:1:fan1","rpm":1700}]}}}
+    );
+    try std.testing.expect(value.sensor_rows[0].id != value.sensor_rows[1].id);
+    try std.testing.expectEqualStrings("hwmon:pci:1:temp1", value.sensor_rows[0].identity());
+    try std.testing.expectEqualStrings("hwmon:pci:1:fan1", value.fan_rows[0].identity());
+}
+
+// Coverage is independent of both table capacity and the other nullable counter.
+test "storage error counters retain partial coverage and real zero" {
+    var value = Projection{};
+    try value.applyHealthJson(std.testing.allocator,
+        \\{"data":{"drives":[{"read_errors_total":0},{"write_errors_total":4}]}}
+    );
+    try std.testing.expectEqual(@as(u32, 1), value.disk_read_errors_measured_drives);
+    try std.testing.expectEqual(@as(u32, 1), value.disk_write_errors_measured_drives);
+    try std.testing.expectEqual(@as(u64, 0), value.disk_read_errors_total);
+    try std.testing.expectEqual(@as(u64, 4), value.disk_write_errors_total);
+    try std.testing.expect(value.drive_health_rows[0].read_errors_available);
+    try std.testing.expect(!value.drive_health_rows[0].write_errors_available);
+    try value.applyHealthJson(std.testing.allocator, \\{"data":{"drives":[]}}
+    );
+    try std.testing.expectEqual(@as(u32, 0), value.disk_read_errors_measured_drives);
+    try std.testing.expectEqual(@as(u32, 0), value.disk_write_errors_measured_drives);
+}
+
+test "endpoint failure remains visible beside partial inventory" {
+    var value = Projection{};
+    try value.applyMediumJson(std.testing.allocator,
+        \\{"data":{"connections_observation":{"status":"permission_denied","source":"fixture","detail":"IPv6 enumeration denied"},"active_connections":[{"protocol":"tcp","local_addr":"127.0.0.1","local_port":8080,"remote_addr":"*","remote_port":0,"state":"listening","pid":null}]}}
+    );
+    try std.testing.expect(!value.connection_observation.available);
+    try std.testing.expectEqualStrings("permission_denied", value.connection_observation.status());
+    try std.testing.expectEqualStrings("IPv6 enumeration denied", value.connection_observation.detail());
+    try std.testing.expectEqual(@as(usize, 1), value.connection_count);
+    try std.testing.expect(!value.connection_rows[0].pid_available);
+}
+
+
+test "network rows distinguish unavailable rates and addresses from measured zero" {
+    var value = Projection{};
+    try value.applyFastJson(std.testing.allocator,
+        \\{"sequence":2,"data":{"cpu":{},"memory":{},"processes":{},"network":{"aggregation":"hardware only","sample":{"observation":{"status":"available","source":"fixture"}},"interfaces":[{"name":"warming","included_in_total":true,"rate_status":{"status":"unavailable","source":"fixture","detail":"warming"},"address_status":{"status":"error","source":"fixture","detail":"denied"}},{"name":"idle","included_in_total":false,"rate_status":{"status":"available","source":"fixture"},"address_status":{"status":"available","source":"fixture"},"download_rate":0,"upload_rate":0}]}}}
+    );
+    try std.testing.expect(value.network_rate_available);
+    try std.testing.expectEqualStrings("hardware only",value.networkAggregation());
+    try std.testing.expect(!value.interface_rows[0].rate_available);
+    try std.testing.expect(!value.interface_rows[0].counters_available);
+    try std.testing.expectEqualStrings("Address unavailable",value.interface_rows[0].address());
+    try std.testing.expect(value.interface_rows[1].rate_available);
+    try std.testing.expectEqual(@as(f64,0),value.interface_rows[1].download_kib_s);
+    try std.testing.expect(!value.interface_rows[1].included_in_total);
+    try std.testing.expectEqualStrings("No assigned address",value.interface_rows[1].address());
+}
+
+test "active aggregate interfaces survive a large virtual inventory" {
+    var interfaces = [_]InterfaceJson{.{ .name = "virtual", .is_up = true }} ** 21;
+    interfaces[0].is_up = false;
+    interfaces[20] = .{ .name = "physical", .is_up = true, .included_in_total = true };
+    var indices: [max_interfaces]usize = undefined;
+    const count = selectInterfaceIndices(&interfaces, &indices);
+    try std.testing.expectEqual(max_interfaces, count);
+    try std.testing.expectEqual(@as(usize, 20), indices[0]);
+    try std.testing.expectEqual(@as(usize, 1), indices[1]);
+    try std.testing.expectEqual(@as(usize, 15), indices[count - 1]);
+    try std.testing.expectEqual(@as(usize, 0), selectInterfaceIndices(&.{}, &indices));
+    try std.testing.expectEqual(@as(usize, 1), selectInterfaceIndices(interfaces[0..1], &indices));
+    try std.testing.expectEqual(@as(usize, 0), indices[0]);
 }

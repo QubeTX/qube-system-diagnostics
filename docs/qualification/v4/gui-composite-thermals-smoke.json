@@ -1,0 +1,51 @@
+{
+  "schema": 2,
+  "binary": "C:\\Users\\hey\\git\\qube-system-diagnostics\\target\\native-gui-stage\\windows-x86_64\\app\\zig-out\\bin\\sd300-gui.exe",
+  "sha256": "af5795234f5c13f9757941c2b4b1adebb3715afb4be387d2a1111da6e23ec9dd",
+  "engine_sha256": "699ff915bc01f48a4d6fcf911cafd1c0ff10755ecd33afb9f25ec43b17b59e03",
+  "revision": "d5ad25c",
+  "collector_sha256": "4fc457a7def96d66a1d9f2c275cef18d8c1cbdec776b7d09aee5f9c802f1c3d4",
+  "build": "release",
+  "mode": "foreground",
+  "section": "Thermals",
+  "warmup_seconds": 15,
+  "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+  "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+  "collector_topics_at_start": [
+    "activity",
+    "connections",
+    "diagnostics",
+    "slow"
+  ],
+  "required_collector_topics": [
+    "activity",
+    "connections",
+    "diagnostics",
+    "slow"
+  ],
+  "measured_seconds": 30.0957408999966,
+  "samples": 120,
+  "cpu_percent_one_core": 1.401776422125058,
+  "cpu_interval_p95": 12.446152963844504,
+  "rss_mib_max": 127.71484375,
+  "private_mib_max": 236.13671875,
+  "rss_last_window_delta": 1.599609375,
+  "private_last_window_delta": 1.3206380208333428,
+  "handles_max": 1018,
+  "process_count_max": 5,
+  "processes_created": 0,
+  "process_names": [
+    "sd300-gui.exe",
+    "sd300.exe"
+  ],
+  "cpu_gate": true,
+  "rss_gate": true,
+  "private_gate": true,
+  "collector_topics_at_end": [
+    "activity",
+    "connections",
+    "diagnostics",
+    "slow"
+  ],
+  "clean_shutdown": true
+}

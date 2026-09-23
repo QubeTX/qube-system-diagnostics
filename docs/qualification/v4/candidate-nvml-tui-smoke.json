@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "binary": "sd300.exe (exact release bytes identified by sha256)",
+  "sha256": "29d2ffb9d19b0e7ffed487241f69bd08f48a4e72a67e5c8714cac038e1adbe32",
+  "revision": "aef8f2e-plus-nvml",
+  "build": "release",
+  "runtime": "Windows ConPTY",
+  "frontend": "tui",
+  "dimensions": [
+    80,
+    24
+  ],
+  "warmup_seconds": 10,
+  "measured_seconds": 30.130950200007646,
+  "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+  "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+  "cpu_percent_one_core": 1.918708159425564,
+  "cpu_interval_p95": 12.44694613636083,
+  "rss_mib_max": 137.25,
+  "private_mib_max": 53.78125,
+  "handles_max": 1581,
+  "process_count_max": 12,
+  "process_names": [
+    "PING.EXE",
+    "cmd.exe",
+    "conhost.exe",
+    "sd300.exe"
+  ],
+  "processes_created": 12,
+  "diagnostic_live_role_cost": {
+    "cmd.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 8.1796875
+    },
+    "sd300:tui": {
+      "observed_cpu_seconds": 0.34375,
+      "rss_mib_peak_per_process": 20.39453125
+    },
+    "sd300:connections": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 9.75
+    },
+    "conhost.exe": {
+      "observed_cpu_seconds": 0.015625,
+      "rss_mib_peak_per_process": 7.05859375
+    },
+    "sd300:slow": {
+      "observed_cpu_seconds": 0.0625,
+      "rss_mib_peak_per_process": 37.453125
+    },
+    "sd300:diagnostics": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 11.5
+    },
+    "sd300:activity": {
+      "observed_cpu_seconds": 0.046875,
+      "rss_mib_peak_per_process": 9.80078125
+    },
+    "ping.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 5.296875
+    }
+  },
+  "diagnostic_note": "Role CPU samples omit processes that exit between polls; the total Job Object CPU above includes them",
+  "terminal_restored": true,
+  "samples": 120,
+  "foreground_cpu_gate": true,
+  "rss_gate": true,
+  "private_gate": true
+}

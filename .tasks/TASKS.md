@@ -1,6 +1,9 @@
 # Tasks
 
 ## Backlog
+- [ ] **Restore original CPU and memory budgets after v4** - all original goals are preserved in docs/next-version-targets.md; the 4/3 percent CPU and 200 MiB RSS ceilings expire after 4.0.0 under ADR 0017 (owner codex) #r17
+- [ ] **Restore original responsiveness targets after v4** - use retained native frame/input reports to qualify focused improvements; the operator's all-platform 100 ms release limit expires after 4.0.0 under ADR 0016 (owner codex) #r16
+- [ ] **Explore formal verification in a future version** - consider a small model of collector cancellation, shutdown and latest-value delivery; operator explicitly deferred this exploration beyond v4 on 2026-09-23 #frm
 - [ ] **Run the released-bytes two-hour soak and capture frame/input percentiles** - TASK FOR CODEX; unattended, machine-quarantined two-hour Processes soak plus formal frame-p95/input-p95 evidence on the public v3 bytes, with exit-attribution awareness; replaces the pre-release soak gate the operator waived on 2026-07-22 (needs #qv3) (ms #v3n) #sok
 - [ ] **Run the extensive post-release testing and performance sweep** - TASK FOR CODEX; everything waived from the v3.0.0 release under the operator's functional-bar directive: exhaustive GUI automation across all sections/modes/keyboard/scaling/exports/unavailable states, published-v2 PTY replay on hosted targets, physical interaction regression sweep (scroll granularity, tray and minimize lifecycle), formal foreground/hidden budget re-proof, and varied-load performance regression checks; feeds patch releases (needs #qv3) (ms #v3n) #ext
 - [ ] **Run the post-release hardening sweep** - TASK FOR CODEX; deferred robustness items from the release reviews: uninstall-fix trio, engine staleness/threading/panic containment, GUI and installer polish, documented quirks (needs #qv3) (ms #v3n) #hrd
@@ -12,6 +15,18 @@
 ## To-Do
 
 ## Active
+- [ ] **Implement and qualify SD-300 v4 monitoring** - measurement, adaptive TUI, optional setup and bounded privileged reads implemented; qualifying native interaction, performance and composite lifecycle before the single public release (ms #v4m) (owner codex) #v4a
+  - [x] Correct measurement semantics, sampling metadata, and histories
+  - [x] Isolate slow probes and bound cancellation, output, and shutdown
+  - [x] Expand Windows, Linux, and macOS providers with deterministic fixtures
+  - [x] Redesign the adaptive TUI and add guided inspection and filtering
+  - [x] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup (native setup and synthetic privileged-worker checks pass; final lifecycle qualification remains)
+  - [x] Wire GUI parity, versioned exports, settings, and architecture documentation
+  - [x] Review and improve GUI layout, clarity, navigation, and diagnostic flows (Windows live review and bounded fixtures complete; native platform/performance qualification continues below)
+  - [x] Apply requested Makira/Gail Rock font pairing and verify native layouts (local tests and Windows live compact/default checks pass; all-target qualification below)
+  - [ ] Qualify performance, six native targets, and composite lifecycle
+  - [ ] Publish once and verify exact public artifacts and installation
+  - [ ] Add reviewed app screenshots to the website SD-300 page and verify deployment
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k
   - [x] Reconstruct the current artwork and Windows icon-delivery failure
     > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.

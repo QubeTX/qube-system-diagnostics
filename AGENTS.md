@@ -1,3 +1,18 @@
+## v4 implementation contract (2026-09-23)
+
+The accepted v4 plan governs the collection, terminal and compatibility contracts below.
+`presentation.rs` prepares inventory sorting, filtering, identity selection and inspection;
+`ui/dashboard.rs` renders only visible rows. `Monitor` owns independent bounded lanes in
+both frontends. Space freezes terminal presentation while collection continues; `/`,
+Enter, page navigation and optional mouse are additive. GUI and TUI settings are separate
+namespaces. Histories use capture timestamps and preserve missing time buckets. See
+[ADR 0006](docs/adr/0006-v4-sampling-and-terminal-contract.md) and
+[ADR 0007](docs/adr/0007-adaptive-presentation-and-time-buckets.md).
+Every candidate remains unpublished until its accepted gates pass. ADRs 0016/0017
+record the operator-approved 4.0.0-only performance ceilings. All original goals
+are preserved in [Next-version targets](docs/next-version-targets.md) and automatically
+apply to later versions; track responsiveness in #r16 and resources in #r17.
+
 # AGENTS.md
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
@@ -121,12 +136,13 @@ scripts/build-native-gui.ps1 -Target windows-x86_64 # Release-style GUI build
 
 The binary is named `sd300` (not `sd-300`). The crates.io package name is `tr300-tui`; use `cargo install tr300-tui` for Cargo installs. The Rust library target is `sd_300`.
 
-## v3 CLI/TUI/GUI compatibility contract
+## CLI/TUI/GUI compatibility contract
 
-- Bare `sd300` must continue to open the existing User/Technician chooser. Do
-  not replace `App::run()`, move it onto the GUI runtime, auto-launch the GUI,
-  or change established TUI commands, flags, keybindings, cadence, rendering,
-  output contracts, exit codes, or terminal behavior as part of GUI work.
+- Bare `sd300` continues to open the User/Technician chooser. Preserve lifecycle
+  commands, mode flags, nine section shortcuts, schema-1 JSON defaults, exit
+  contracts and terminal restoration. The accepted v4 plan deliberately changes
+  TUI layout, filtering, inspection, pause-view and collection scheduling; see
+  ADRs 0006 and 0007. Neither frontend launches or shares a session with the other.
 - `sd300 gui` is the only additive public launch command. It launches or focuses
   the installed app and reports a managed install/update repair instruction if
   the companion is absent.
@@ -201,25 +217,22 @@ Both consume the same Rust collector truth; neither reinterprets it.
 Processes, runtimes, mutable state, schedulers, and settings namespaces are
 deliberately separate.
 
-- **Processes and runtimes.** The TUI runs in-process: `App::run()` drives a
-  `tokio::select!` loop with the 1/3/5/15/60-second ticks (`src/app.rs`). The
-  GUI is a *separate process* that loads `sd300_engine.dll` /
-  `libsd300_engine.dylib` / `libsd300_engine.so` from an absolute
-  bundle-relative path. The engine owns its own non-cloneable `SystemSnapshot`
-  on a dedicated engine thread built from `std::thread`, `mpsc` channels, and a
-  `Condvar` wake — not a Tokio runtime (`gui-engine/src/lib.rs`). Slow probes
-  that the TUI runs via `spawn_blocking`, the engine runs on short-lived
-  `std::thread` workers joined before the library can unload.
+- **Processes and runtimes.** `App::run()` draws first and polls input plus
+  completed samples; it never performs slow collection on the render loop.
+  Each frontend creates its own `Monitor` with one bounded latest-value lane
+  per provider. Fast CPU/memory/process sampling owns its in-process state;
+  native and helper-backed probes run in owned CLI worker processes. The GUI
+  separately loads its bundle-relative engine library and uses a Rust thread
+  with a Condvar wake. Cancellation joins workers before engine unload.
 - **Mutable state and scheduling.** Neither frontend shares mutable state or a
   scheduler with the other. The engine publishes bounded, latest-only,
   versioned topic projections; the GUI consumes sequence changes and keeps its
   own bounded histories. There is no shared buffer to mutate across the two.
-- **Settings namespaces.** `src/settings.rs` splits the document into `shared`
-  (currently empty) and `gui`. The TUI deliberately does not read this document;
-  its chooser, units, and session defaults are unchanged. GUI mode, unit, tray,
-  startup, close, chart density, navigation, and motion live under `gui` and
-  must never alter a TUI launch. Only settings deliberately introduced for both
-  frontends belong under `shared`.
+- **Settings namespaces.** `src/settings.rs` separates `shared`, `tui`, and
+  `gui`. Verified ND-300 and SMART helper paths belong under `shared`. Terminal
+  mouse, ASCII, color and motion preferences belong under `tui`. GUI mode,
+  geometry, navigation, unit, chart, tray, close and startup preferences never
+  change terminal defaults. Updates preserve the namespaces they do not own.
 
 ### Recipe: adding a data field or feature to both frontends
 
@@ -229,10 +242,11 @@ Wire the change end to end, in this order.
    collector's typed struct and populate it in `collect()`. Represent absence
    with an `Observation` or a warning (using the per-source dedup pattern),
    never a silent zero.
-2. **TUI render (`src/ui/sections/X.rs`).** Each section's `render()` branches
-   into `render_user()` (plain language) and `render_tech()` (raw data). Wire
-   the field into both modes with the existing
-   `content_block`/`sub_block`/`COLOR_*` helpers.
+2. **TUI presentation and render.** Prepare both audience modes in
+   `src/presentation.rs`, including source, units, availability and inspection.
+   `src/ui/dashboard.rs` renders visible rows and prepared chart buckets using
+   the shared `content_block`/`sub_block`/`COLOR_*` helpers. Keep filtering,
+   sorting and chart preparation outside rendering.
 3. **Engine projection / ABI (`gui-engine/src/lib.rs`).** If the field already
    sits inside a topic's `Serialize` projection struct (`FastProjection`,
    `SlowProjection`, …), it crosses automatically because those borrow the live
@@ -296,7 +310,7 @@ test rather than by Computer Use.
 
 The standard deploy path is a push to the repository default branch (`main`) with a new, unreleased `Cargo.toml` version. `.github/workflows/release.yml` is intentionally customized from cargo-dist output; do not overwrite it with a generated workflow unless you preserve the main-branch deployment gate, unpublished qualification draft, native matrices, and final crates.io/latest publish gate.
 
-For v3 GUI work, keep implementation and qualification on a `codex/` feature
+For product work, keep implementation and qualification on a `codex/` feature
 branch first. Build and exercise the composite Windows MSI before merging to
 `main`; a successful compile is not installer acceptance.
 
@@ -387,55 +401,56 @@ unpinned branches, or a requirement for customer-side compilation.
 
 ### Data Flow
 
-```
-main.rs → App::run() event loop → tokio::select! {
-    fast_tick (1s):   refresh_fast()   → CPU, memory, network, processes
-    slow_tick (5s):   refresh_slow()   → disk, GPU, thermals
-    medium_tick (3s): refresh_connections() → active sockets
-    diag_tick (15s):  spawn_blocking(connectivity) → gateway, DNS, internet
-    health_tick (60s): refresh_disk_health() → SMART data
-    event_stream:     handle_event() → keyboard input
-}
+```text
+main.rs → App::run(): immediate chooser, input, completed samples, dirty redraw
+                       ↕ bounded latest values
+                    Monitor (independent for TUI and GUI)
+    Fast / Activity: 1s; Connections: 3s; Slow: 5s
+    Diagnostics: 15s; Health: 60s; Static / Drivers: 300s
+                       ↕ owned, bounded CLI worker protocol
+                    native/helper-backed providers
 ```
 
-All system data lives in `App.snapshot: SystemSnapshot`, which holds a non-Clone `sysinfo::System` internally. Collectors read from this shared System instance.
-
-The GUI loads the Rust library as `sd300_engine.dll`,
-`libsd300_engine.dylib`, or `libsd300_engine.so` from an absolute
-bundle-relative path. It owns a separate non-cloneable `SystemSnapshot` on a
-dedicated engine thread built from `std::thread`, `mpsc` channels, and a
-`Condvar` wake — not a Tokio runtime — publishes bounded/versioned topic
-projections, and never shares mutable state or scheduling with the TUI process.
+The fast lane owns its `sysinfo::System`; presentation snapshots contain only
+completed typed readings and actual capture metadata. GUI profiles subscribe to
+required lanes; hidden mode retains summaries and slower thermal sampling.
+Static, driver and health workers serialize their transient memory peaks while
+live lanes remain independent. Retry/resume invalidates counter baselines.
+Neither frontend shares mutable state or a scheduler with the other. Histories
+advance only for distinct captured samples and retain missing intervals.
 
 ### Rendering Pipeline
 
-```
+```text
+Presentation::prepare(app)          # sort/filter/inspect and chart preparation
 ui::render(frame, app)
-  → header_bar::render()           # 2-line title bar
-  → sections::render(section)      # Dispatches to active section
-      → {section}::render(mode)    # Each section has render_user() and render_tech()
-  → bottom_bar::render()           # Tab navigation
-  → help_overlay::render()         # If show_help is true (rendered on top)
+  → mode_select                    # until an audience is chosen
+  → header_bar + dashboard         # adaptive 80×24 or wider layout
+  → bottom_bar + optional overlays # keyboard, findings, consent, help
 ```
 
-Every section module has a `render(frame, app, area, mode)` function that branches into `render_user()` (plain language) and `render_tech()` (raw data). Minimum terminal size is 80x24.
+User and Technician modes consume the same central findings and observations.
+Technician inspection adds source, units, identity, age and provider failures.
+The minimum supported terminal is 80×24; smaller sizes display a resize notice.
 
 ### Module Layout
 
-- **`app.rs`** — App state, event loop, 5 refresh intervals, async driver scan polling
+- **`app.rs`** — Input, dirty redraw, latest-sample polling, pause-view and explicit actions.
+- **`monitor.rs`** — Independent provider lanes, deadlines, backoff and bounded delivery.
+- **`presentation.rs`** — Prepared rows, stable selection, filtering and inspector content.
 - **`collectors/`** — Each collector returns a typed data struct. `SystemSnapshot` owns all of them and has refresh methods that delegate to individual collectors.
 - **`collectors/drivers/platform/`** — Platform-dispatched driver scanning: Windows uses Setup API (`SetupDi*`), Linux uses sysfs, macOS uses IOKit. Selected at compile time via `#[cfg(target_os)]`.
 - **`collectors/thermals.rs`** — Cross-platform component sensors plus Windows Libre/Open Hardware Monitor WMI bridges, guarded read-only Dell AWCC enumeration, ACPI fallback, and independent GPU-temperature merging. Dell control methods must never be called by the collector.
 - **`ui/common.rs`** — Color palette, `content_block()`/`sub_block()` panel helpers, `gauge_bar()`, `format_bytes()`, sparkline bar sets. All UI constants (colors, sparkline colors) are defined here.
-- **`ui/sections/`** — One file per section (9 sections), each rendering User and Tech mode independently.
+- **`ui/dashboard.rs`** — Adaptive dashboard for all nine sections and both audience modes.
 - **`types.rs`** — Core enums: `DiagnosticMode`, `Section` (1-9), `HealthStatus`, `ProcessSortKey`, `TempUnit`, `DeviceCategory` (9 variants), `DriverScanStatus` (4 variants).
-- **`history.rs`** — `HistoryBuffer`: fixed-capacity ring buffer (VecDeque) for sparkline data (60 samples default).
+- **`history.rs`** — Bounded timestamped optional samples and truthful gap buckets.
 - **`gui-engine/`** — `cdylib` C ABI over the shared Rust collectors; no Rust
   panic, allocation, reference, or borrowed buffer may cross the ABI.
 - **`gui/src/main.zig`** — Native GUI `Model`, tagged `Msg`, update effects,
   engine bridge, settings, and bounded view histories.
 - **`gui/src/app.native`** — Declarative Native SDK view hierarchy and bindings.
-- **`gui/src/fonts/`** — embedded Makira and IBM Plex Mono font binaries;
+- **`gui/src/fonts/`** — embedded Makira, Gail Rock and IBM Plex Mono font binaries;
   license notices and retained evidence live under `gui/assets/fonts/`.
 
 ### Platform Patterns
@@ -447,7 +462,7 @@ In source code, use `#[cfg(target_os = "windows")]` / `#[cfg(target_os = "linux"
 ### Key Constraints
 
 - **`SystemSnapshot` is not Clone** — it owns `sysinfo::System` which has no Clone impl. Don't try to derive Clone on types containing it.
-- **Async driver scanning** — Driver collection is slow (Setup API/sysfs enumeration). It runs via `tokio::task::spawn_blocking` and the result is polled via `JoinHandle::is_finished()` before each draw cycle. Never call `drivers::collect()` on the main thread.
+- **Bounded driver scanning** — Setup API/sysfs/IOKit discovery runs in the isolated Drivers lane. Never invoke `drivers::collect()` on the input/render loop or place an uninterruptible native call in a thread that prevents engine unload.
 - **Warning deduplication** — Warnings are cleared per-source before re-collecting: `warnings.retain(|w| w.source != "SourceName")`. Always follow this pattern when adding new warning sources.
 - **UI helpers** — Use `content_block(title)` for outer section panels and `sub_block(title)` for nested subsections. Use the existing `COLOR_*` and `SPARK_*` constants from `common.rs` — don't hardcode RGB values.
 - **Sparkline rendering** — Windows uses `THREE_LEVELS` bar set, Unix uses `NINE_LEVELS`. The `sparkline_bar_set()` function handles this automatically.
@@ -474,7 +489,14 @@ In source code, use `#[cfg(target_os = "windows")]` / `#[cfg(target_os = "linux"
 The Ratatui TUI retains its warm earth palette and existing helpers unchanged.
 The native GUI uses the Warm Carbon identity: near-black/charcoal surfaces,
 controlled orange/amber status energy, restrained gradients, and a subtle
-opacity-faded grid rather than generic purple “AI” styling. Makira is primary
-for body copy, headings, and major numerals; IBM Plex Mono is secondary for
-technical labels and compact values. Do not silently substitute or redistribute
+opacity-faded grid rather than generic purple “AI” styling. Makira serves
+headings and major numerals, Gail Rock serves body copy, navigation and controls,
+and IBM Plex Mono serves technical labels and compact values. Do not silently substitute or redistribute
 fonts without preserving the applicable embedding-license evidence.
+
+
+V4 optional setup contract: `sd300 tools nd300` is read-only; installation requires
+`--install --accept` or the separate frontend confirmation. Official archives are
+pinned for all six targets. Preserve existing ND-300 owners, leave its standalone
+directory outside SD-300 uninstall ownership, and never infer diagnostic or M-Lab
+consent from setup. Shared provider paths survive older GUI settings writes.

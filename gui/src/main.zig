@@ -1,3 +1,4 @@
+const companion_model = @import("companion.zig");
 const std = @import("std");
 const builtin = @import("builtin");
 const runner = @import("runner");
@@ -5,6 +6,7 @@ const native_sdk = @import("native_sdk");
 const engine = @import("engine.zig");
 const projection = @import("projection.zig");
 const settings = @import("settings.zig");
+const settings_writer = @import("settings_writer.zig");
 const window_visibility = @import("platform/window_visibility.zig");
 
 pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
@@ -25,11 +27,12 @@ const export_timer_key: u64 = 301;
 const visible_refresh_ms: u64 = 1000;
 const hidden_refresh_ms: u64 = 30000;
 const fast_summary_stale_after_ms: u64 = 2500;
-const history_sample_count: usize = 60;
-const primary_process_row_count: usize = 8;
+const history_model = @import("history.zig");
+const history_sample_count: usize = history_model.count;
 const tray_supported = builtin.os.tag == .windows or builtin.os.tag == .macos;
 const makira_font_id: canvas.FontId = canvas.min_registered_font_id;
 const plex_mono_font_id: canvas.FontId = canvas.min_registered_font_id + 1;
+const gail_rock_font_id: canvas.FontId = canvas.min_registered_font_id + 2;
 
 pub const ProcessSort = enum(u32) {
     cpu = 0,
@@ -43,6 +46,7 @@ const shell_views = [_]native_sdk.ShellView{
     .{ .label = canvas_label, .kind = .gpu_surface, .fill = true, .role = "SD-300 system monitor", .accessibility_label = "Live SD-300 system diagnostics", .gpu_backend = .metal, .gpu_pixel_format = .bgra8_unorm, .gpu_present_mode = .timer, .gpu_alpha_mode = .@"opaque", .gpu_color_space = .srgb, .gpu_vsync = true },
 };
 var active_engine: ?*engine.Runtime = null;
+var active_settings_writer: ?*settings_writer.Writer = null;
 var active_app_state: ?*NativeApp = null;
 var external_open_pending = std.atomic.Value(bool).init(false);
 var startup_should_show = true;
@@ -59,11 +63,33 @@ pub const Msg = union(enum) {
     select_processes,
     show_cpu_processes,
     show_memory_processes,
+    storage_previous,
+    storage_next,
+    storage_prepare,
+    storage_confirm,
+    storage_cancel,
+    companion_smart_setup,
+    companion_setup,
+    companion_confirm_setup,
+    companion_dismiss_setup,
+    companion_standard,
+    companion_deep,
+    companion_speed_quick,
+    companion_speed_deep,
+    companion_toggle_mlab,
+    companion_confirm_speed,
+    companion_dismiss_speed,
+    companion_cancel,
     process_filter_edit: canvas.TextInputEvent,
+    process_previous_page,
+    process_next_page,
+    connection_previous_page,
+    connection_next_page,
+    driver_previous_page,
+    driver_next_page,
     connection_filter_edit: canvas.TextInputEvent,
     driver_filter_edit: canvas.TextInputEvent,
     toggle_driver_attention,
-    toggle_process_rows,
     sort_process_cpu,
     sort_process_memory,
     sort_process_pid,
@@ -106,20 +132,29 @@ pub const Model = struct {
     logical_processors: u32 = 0,
     warning_count: u32 = 0,
     overview_topic_meta: projection.TopicMeta = .{},
-    cpu_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    memory_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    swap_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    network_download_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    network_upload_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    gpu_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    temperature_history_celsius: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    temperature_history_fahrenheit: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    disk_read_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    disk_write_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
+    histories: [10]history_model.Timeline = [_]history_model.Timeline{.{}} ** 10,
+    cpu_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    memory_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    swap_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    network_download_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    network_upload_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    gpu_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    temperature_history_celsius: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    temperature_history_fahrenheit: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    disk_read_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    disk_write_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
     clock: native_sdk.Clock = .system,
     active_section: u8 = 0,
-    show_all_processes: bool = false,
     process_sort: ProcessSort = .cpu,
+    process_page_offset: u32 = 0,
+    process_matches: u32 = 0,
+    process_query_active: bool = false,
+    storage_choice: canvas.TextBuffer(128) = .{},
+    companion_ui: companion_model.Projection = .{},
+    companion_setup_smart: bool = false,
+    companion_setup_confirmation: bool = false,
+    companion_confirmation: u32 = 0,
+    companion_mlab_consent: bool = false,
     process_filter_buffer: canvas.TextBuffer(64) = .{},
     filtered_process_rows: [projection.max_processes]projection.ProcessRow = [_]projection.ProcessRow{.{}} ** projection.max_processes,
     filtered_process_count: usize = 0,
@@ -161,6 +196,8 @@ pub const Model = struct {
     chart_density: settings.ChartDensity = .balanced,
     last_monitor_section: u8 = 0,
     settings_restart_required: bool = false,
+    settings_requested: u64 = 0,
+    settings_completed: u64 = 0,
     export_pending: bool = false,
     status_buffer: canvas.TextBuffer(384) = canvas.TextBuffer(384).init("Loading the SD-300 engine…"),
     tray_cpu_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("CPU · waiting for live data"),
@@ -171,10 +208,23 @@ pub const Model = struct {
     tray_tooltip_buffer: canvas.TextBuffer(192) = canvas.TextBuffer(192).init("SD-300 — hardware summary is starting"),
 
     pub const view_unbound = .{
+        "settings_requested", "settings_completed",
         "window_visible",
         "tray_session_active",
-        "show_all_processes",
+        "sequence",
         "process_sort",
+        "process_page_offset",
+        "process_matches",
+        "process_query_active",
+        "storage_choice",
+        "companion_ui",
+        "companion_setup_smart",
+        "companion_setup_confirmation",
+        "companionSetupConfirming",
+        "companion_confirmation",
+        "companion_mlab_consent",
+        "processHasPrevious",
+        "processHasNext",
         "process_filter_buffer",
         "filtered_process_rows",
         "filtered_process_count",
@@ -196,6 +246,7 @@ pub const Model = struct {
         "tray_tooltip_buffer",
         "last_monitor_section",
         "clock",
+        "histories",
         "engine_ready",
         "fast_summary_failed",
         "fast_summary_stale",
@@ -240,6 +291,9 @@ pub const Model = struct {
     pub fn services(model: *const Model) []const projection.ServiceRow {
         return model.detail.services();
     }
+    pub fn driverObservations(model: *const Model) []const projection.DriverObservationRow {
+        return model.detail.driverObservations();
+    }
     pub fn osName(model: *const Model) []const u8 {
         return model.detail.osName();
     }
@@ -277,32 +331,44 @@ pub const Model = struct {
         return model.detail.interfaces();
     }
     pub fn connections(model: *const Model) []const projection.ConnectionRow {
+        if (model.detail.connection_paged) return model.detail.connections();
         return if (model.connection_filter_buffer.text().len == 0)
             model.detail.connections()
         else
             model.filtered_connection_rows[0..model.filtered_connection_count];
     }
+    pub fn connectionEmpty(model: *const Model) bool { return model.connectionMatchCount() == 0; }
+    pub fn driverEmpty(model: *const Model) bool { return model.driverMatchCount() == 0; }
+    pub fn connectionPreviousDisabled(model: *const Model) bool { return model.detail.connection_page_offset == 0; }
+    pub fn connectionNextDisabled(model: *const Model) bool { return model.detail.connection_page_offset +| projection.max_connections >= model.detail.connection_matched_count; }
+    pub fn connectionPageNumber(model: *const Model) usize { return model.detail.connection_page_offset / projection.max_connections + 1; }
+    pub fn connectionPageCount(model: *const Model) usize { return @max(1, (model.detail.connection_matched_count +| (projection.max_connections - 1)) / projection.max_connections); }
+    pub fn driverPreviousDisabled(model: *const Model) bool { return model.detail.driver_page_offset == 0; }
+    pub fn driverNextDisabled(model: *const Model) bool { return model.detail.driver_page_offset +| projection.max_drivers >= model.detail.driver_matched_count; }
+    pub fn driverPageNumber(model: *const Model) usize { return model.detail.driver_page_offset / projection.max_drivers + 1; }
+    pub fn driverPageCount(model: *const Model) usize { return @max(1, (model.detail.driver_matched_count +| (projection.max_drivers - 1)) / projection.max_drivers); }
     pub fn connectionFilter(model: *const Model) []const u8 {
         return model.connection_filter_buffer.text();
     }
     pub fn connectionMatchCount(model: *const Model) usize {
+        if (model.detail.connection_paged) return model.detail.connection_matched_count;
         return if (model.connection_filter_buffer.text().len == 0)
             model.detail.connection_count
         else
             model.filtered_connection_count;
     }
     pub fn processes(model: *const Model) []const projection.ProcessRow {
-        const rows = if (model.process_filter_buffer.text().len == 0)
+        const rows = if (model.process_query_active or model.process_filter_buffer.text().len == 0)
             model.detail.processes()
         else
             model.filtered_process_rows[0..model.filtered_process_count];
-        if (model.show_all_processes) return rows;
-        return rows[0..@min(rows.len, primary_process_row_count)];
+        return rows;
     }
     pub fn processFilter(model: *const Model) []const u8 {
         return model.process_filter_buffer.text();
     }
     pub fn processMatchCount(model: *const Model) usize {
+        if (model.process_query_active) return model.process_matches;
         return if (model.process_filter_buffer.text().len == 0)
             model.detail.process_count
         else
@@ -311,15 +377,114 @@ pub const Model = struct {
     pub fn visibleProcessCount(model: *const Model) usize {
         return model.processes().len;
     }
-    pub fn processToggleLabel(model: *const Model) []const u8 {
-        return if (model.show_all_processes) "Show primary 8" else "Show all matches";
+    pub fn processSortDescription(model: *const Model) []const u8 {
+        return switch (model.process_sort) {
+            .cpu => "Highest CPU use first",
+            .memory => "Highest memory use first",
+            .pid => "Lowest process ID first",
+            .name => "Process names A to Z",
+        };
     }
+    pub fn processPreviousDisabled(model: *const Model) bool { return !model.processHasPrevious(); }
+    pub fn processNextDisabled(model: *const Model) bool { return !model.processHasNext(); }
+    pub fn processObservationVisible(model: *const Model) bool { return model.technicianMode() or !model.detail.process_observation.available; }
+    pub fn storageDevice(model: *const Model) []const u8 {
+        if (model.storage_choice.text().len > 0) return model.storage_choice.text();
+        const drives = model.detail.driveHealth();
+        return if (drives.len > 0) drives[0].device() else "No physical drive available";
+    }
+    pub fn storagePrepareDisabled(model: *const Model) bool {
+        if (model.companion_ui.storage_running) return true;
+        for (model.detail.driveHealth()) |drive| { if (std.mem.eql(u8, drive.device(), model.storageDevice())) return false; }
+        return true;
+    }
+    pub fn storageRunning(model: *const Model) bool { return model.companion_ui.storage_running; }
+    pub fn storageConfirming(model: *const Model) bool { return model.companion_ui.storage_confirming; }
+    pub fn storageNotice(model: *const Model) []const u8 { return model.companion_ui.storage_notice.text(); }
+    pub fn storageLines(model: *const Model) []const companion_model.Line { return model.companion_ui.storageLines(); }
+    pub fn companionSetupNotice(model: *const Model) []const u8 { return if (model.companion_setup_smart) model.companion_ui.setup_smart_notice.text() else model.companion_ui.setup_network_notice.text(); }
+    pub fn companionSetupUnavailable(model: *const Model) bool { return model.companionRunning() or model.companionSetupNotice().len == 0; }
+    pub fn companionSetupConfirming(model: *const Model) bool { return model.companion_setup_confirmation; }
+    pub fn networkSetupConfirming(model: *const Model) bool { return model.companion_setup_confirmation and !model.companion_setup_smart; }
+    pub fn smartSetupConfirming(model: *const Model) bool { return model.companion_setup_confirmation and model.companion_setup_smart; }
+    pub fn companionSetupMessage(model: *const Model) []const u8 { return model.companion_ui.setup_message.text(); }
+    pub fn companionLines(model: *const Model) []const companion_model.Line { return model.companion_ui.lines(); }
+    pub fn companionDetails(model: *const Model) []const companion_model.DetailLine { return model.companion_ui.details(); }
+    pub fn companionRunning(model: *const Model) bool { return model.companion_ui.running; }
+    pub fn companionConfirming(model: *const Model) bool { return model.companion_confirmation != 0; }
+    pub fn companionBudget(model: *const Model) []const u8 { return if (model.companion_confirmation == 4) "Deep: up to 300 seconds / 20 GB synthetic payload" else "Quick: up to 90 seconds / 5 GB synthetic payload"; }
+    pub fn companionMlabLabel(model: *const Model) []const u8 { return if(model.companion_mlab_consent) "M-Lab consent: enabled" else "M-Lab consent: off"; }
+    pub fn processPageNumber(model: *const Model) u32 { return model.process_page_offset / 16 + 1; }
+    pub fn processPageCount(model: *const Model) u32 { return @max(1, (model.process_matches +| 15) / 16); }
+    pub fn processHasPrevious(model: *const Model) bool { return model.process_page_offset > 0; }
+    pub fn processHasNext(model: *const Model) bool { return model.process_page_offset +| 16 < model.process_matches; }
     /// Sidebar build identity. Sourced from the engine's expected product
     /// version so it can never drift from the shipped version or carry a
     /// stale build-state word into a public release.
     pub fn productVersionLabel(model: *const Model) []const u8 {
         _ = model;
         return "v" ++ engine.expected_product_version;
+    }
+    pub fn findings(model: *const Model) []const projection.FindingRow { return model.detail.findings(); }
+    fn activeCollector(model: *const Model) *const projection.TopicMeta {
+        return switch (model.active_section) {
+            0, 1, 2 => &model.overview_topic_meta,
+            3, 4, 7 => model.detail.topicMeta(3),
+            5, 6 => model.detail.topicMeta(1),
+            8 => model.detail.topicMeta(6),
+            else => model.detail.topicMeta(0),
+        };
+    }
+    fn collectorAgeMs(model: *const Model) ?u64 {
+        const wall = model.clock.wallMs();
+        const now: u64 = if (wall > 0) @intCast(wall) else 0;
+        const meta = model.activeCollector();
+        return if (meta.captured_unix_ms == 0 or now < meta.captured_unix_ms) null else now - meta.captured_unix_ms;
+    }
+    pub fn collectorAgeAvailable(model: *const Model) bool {
+        return model.collectorAgeMs() != null;
+    }
+    pub fn collectorAgeSeconds(model: *const Model) u64 {
+        return (model.collectorAgeMs() orelse 0) / 1000;
+    }
+    pub fn collectorSequence(model: *const Model) u64 {
+        return model.activeCollector().sequence;
+    }
+    pub fn collectorState(model: *const Model) []const u8 {
+        const meta = model.activeCollector();
+        if (!meta.ready) return "Waiting for collector";
+        if (!std.mem.eql(u8, meta.availability(), "available")) return meta.availability();
+        const age = model.collectorAgeMs() orelse return "Capture age unavailable";
+        if (age > @max(3000, meta.expected_interval_ms *| 3)) return "Stale sample";
+        return "Available";
+    }
+    pub fn collectorSource(model: *const Model) []const u8 {
+        const meta = model.activeCollector();
+        return if (meta.detail().len > 0) meta.detail() else meta.provenance();
+    }
+    pub fn collectorNoticeVisible(model: *const Model) bool {
+        return model.technicianMode() or !std.mem.eql(u8, model.collectorState(), "Available");
+    }
+    pub fn diagnosticsState(model: *const Model) []const u8 {
+        const meta = model.detail.topicMeta(4);
+        if (!meta.ready) return "Waiting for checks";
+        if (!std.mem.eql(u8, meta.availability(), "available")) return "Checks unavailable";
+        const wall = model.clock.wallMs();
+        if (wall <= 0 or meta.captured_unix_ms == 0) return "Capture age unavailable";
+        const now: u64 = @intCast(wall);
+        if (now < meta.captured_unix_ms) return "Capture age unavailable";
+        if (now - meta.captured_unix_ms > @max(3000, meta.expected_interval_ms *| 3)) return "Checks delayed";
+        return "Current";
+    }
+    pub fn diskReadErrorsAvailable(model: *const Model) bool { return model.detail.disk_read_errors_measured_drives > 0; }
+    pub fn diskWriteErrorsAvailable(model: *const Model) bool { return model.detail.disk_write_errors_measured_drives > 0; }
+    pub fn diskIoAvailable(model: *const Model) bool {
+        const wall = model.clock.wallMs();
+        const now: u64 = if (wall > 0) @intCast(wall) else 0;
+        return model.detail.disk_io_available and model.detail.activity_observation.available
+            and model.detail.activity_captured_unix_ms > 0
+            and now >= model.detail.activity_captured_unix_ms
+            and now - model.detail.activity_captured_unix_ms <= 3000;
     }
     pub fn processCpuSort(model: *const Model) bool {
         return model.process_sort == .cpu;
@@ -338,10 +503,10 @@ pub const Model = struct {
         return if (model.detail.hypervisor_present) "present" else "not detected";
     }
     pub fn primaryGpuTelemetryAvailable(model: *const Model) bool {
-        return model.detail.gpu_count > 0 and model.detail.gpu_rows[0].telemetry_available;
+        return model.detail.gpu_count > 0 and model.detail.gpu_rows[0].utilization_available;
     }
     pub fn thermalHistoryAvailable(model: *const Model) bool {
-        return model.detail.cpu_temperature_available or model.detail.gpu_temperature_available;
+        return model.detail.cpu_temperature_available;
     }
     pub fn summaryLive(model: *const Model) bool {
         return model.fast_summary_seen and model.engine_ready and !model.fast_summary_failed and !model.fast_summary_stale;
@@ -353,13 +518,17 @@ pub const Model = struct {
         return model.fast_summary_failed;
     }
     pub fn cpuAssessment(model: *const Model) []const u8 {
-        if (model.cpu_percent >= 90) return "CPU demand is critical right now; open Processes to identify sustained consumers.";
+        if (!model.fast_summary_seen) return "Waiting for the first CPU reading.";
+        if (!model.summaryLive()) return "The CPU reading is older. Wait for collection to recover before assessing current load.";
+        if (model.cpu_percent >= 90) return "CPU demand is very high. Check Processes if the system feels slow.";
         if (model.cpu_percent >= 70) return "CPU demand is high. Short bursts are normal; sustained load can reduce responsiveness.";
         if (model.cpu_percent >= 35) return "CPU demand is moderate and leaves working headroom.";
         return "CPU demand is light; the processor has substantial headroom.";
     }
     pub fn memoryAssessment(model: *const Model) []const u8 {
-        if (model.memory_percent >= 90) return "Physical memory pressure is critical; paging and application slowdown are likely.";
+        if (!model.fast_summary_seen) return "Waiting for the first memory reading.";
+        if (!model.summaryLive()) return "The memory reading is older. Wait for collection to recover before assessing current use.";
+        if (model.memory_percent >= 90) return "Most physical memory is in use. Check Processes and swap activity if apps feel slow.";
         if (model.memory_percent >= 75) return "Memory pressure is elevated. Processes and swap usage can explain where capacity went.";
         if (model.memory_percent >= 50) return "Memory use is moderate with usable capacity remaining.";
         return "Memory pressure is low and physical capacity is readily available.";
@@ -371,6 +540,7 @@ pub const Model = struct {
         return model.detail.fans();
     }
     pub fn drivers(model: *const Model) []const projection.DriverRow {
+        if (model.detail.driver_paged) return model.detail.drivers();
         return if (model.driver_filter_buffer.text().len == 0 and !model.driver_attention_only)
             model.detail.drivers()
         else
@@ -380,6 +550,7 @@ pub const Model = struct {
         return model.driver_filter_buffer.text();
     }
     pub fn driverMatchCount(model: *const Model) usize {
+        if (model.detail.driver_paged) return model.detail.driver_matched_count;
         return if (model.driver_filter_buffer.text().len == 0 and !model.driver_attention_only)
             model.detail.driver_count
         else
@@ -440,7 +611,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 // core) while minimized, which is acceptable for a transient
                 // state; a genuine tray-hidden window stays policy-hidden and
                 // keeps the cheaper 30 s cadence.
-                const visibility_changed = applyWindowVisibility(model, !window_visibility.mainWindowPolicyHidden());
+                const visibility_changed = applyWindowVisibility(model, window_visibility.mainWindowPresentationActive());
                 sampleEngine(model);
                 if (visibility_changed) scheduleRefresh(fx, model.window_visible);
             }
@@ -460,24 +631,63 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             selectSection(model, 6);
             setProcessSort(model, .memory);
         },
+        .storage_previous => selectStorageDevice(model, false),
+        .storage_next => selectStorageDevice(model, true),
+        .storage_prepare => { if (!model.storagePrepareDisabled()) requestStorageProbe(model, 1); },
+        .storage_confirm => { if (model.storageConfirming()) requestStorageProbe(model, 2); },
+        .storage_cancel => requestStorageProbe(model, 0),
+        .companion_smart_setup => { model.companion_setup_smart = true; model.companion_setup_confirmation = true; model.companion_confirmation = 0; model.companion_mlab_consent = false; },
+        .companion_setup => { model.companion_setup_smart = false; model.companion_setup_confirmation = true; model.companion_confirmation = 0; model.companion_mlab_consent = false; },
+        .companion_dismiss_setup => { model.companion_setup_confirmation = false; },
+        .companion_confirm_setup => { if (model.companion_setup_confirmation and !model.companionSetupUnavailable()) requestCompanion(model, if (model.companion_setup_smart) 6 else 5, false); model.companion_setup_confirmation = false; },
+        .companion_standard => requestCompanion(model, 1, false),
+        .companion_deep => requestCompanion(model, 2, false),
+        .companion_cancel => requestCompanion(model, 0, false),
+        .companion_speed_quick => { model.companion_confirmation = 3; model.companion_mlab_consent = false; },
+        .companion_speed_deep => { model.companion_confirmation = 4; model.companion_mlab_consent = false; },
+        .companion_toggle_mlab => { if (model.companion_confirmation != 0) model.companion_mlab_consent = !model.companion_mlab_consent; },
+        .companion_dismiss_speed => { model.companion_confirmation = 0; model.companion_mlab_consent = false; },
+        .companion_confirm_speed => {
+            if (model.companion_confirmation >= 3 and model.companion_confirmation <= 4) requestCompanion(model, model.companion_confirmation, model.companion_mlab_consent);
+            model.companion_confirmation = 0;
+            model.companion_mlab_consent = false;
+        },
         .process_filter_edit => |edit| {
             model.process_filter_buffer.apply(edit);
-            model.show_all_processes = true;
+            model.process_page_offset = 0;
+            requestProcessQuery(model);
             rebuildProcessFilter(model);
         },
+        .process_previous_page => {
+            model.process_page_offset -|= 16;
+            requestProcessQuery(model);
+        },
+        .process_next_page => {
+            if (model.processHasNext()) model.process_page_offset +|= 16;
+            requestProcessQuery(model);
+        },
+        .connection_previous_page => { model.detail.connection_page_offset -|= projection.max_connections; requestInventoryQuery(model, .medium); },
+        .connection_next_page => { if (!model.connectionNextDisabled()) model.detail.connection_page_offset +|= projection.max_connections; requestInventoryQuery(model, .medium); },
+        .driver_previous_page => { model.detail.driver_page_offset -|= projection.max_drivers; requestInventoryQuery(model, .drivers); },
+        .driver_next_page => { if (!model.driverNextDisabled()) model.detail.driver_page_offset +|= projection.max_drivers; requestInventoryQuery(model, .drivers); },
         .connection_filter_edit => |edit| {
             model.connection_filter_buffer.apply(edit);
+            model.detail.connection_page_offset = 0;
+            requestInventoryQuery(model, .medium);
             rebuildConnectionFilter(model);
         },
         .driver_filter_edit => |edit| {
             model.driver_filter_buffer.apply(edit);
+            model.detail.driver_page_offset = 0;
+            requestInventoryQuery(model, .drivers);
             rebuildDriverFilter(model);
         },
         .toggle_driver_attention => {
             model.driver_attention_only = !model.driver_attention_only;
+            model.detail.driver_page_offset = 0;
+            requestInventoryQuery(model, .drivers);
             rebuildDriverFilter(model);
         },
-        .toggle_process_rows => model.show_all_processes = !model.show_all_processes,
         .sort_process_cpu => setProcessSort(model, .cpu),
         .sort_process_memory => setProcessSort(model, .memory),
         .sort_process_pid => setProcessSort(model, .pid),
@@ -602,7 +812,9 @@ pub fn initEffects(model: *Model, fx: *Effects) void {
     // window is freshly shown or freshly policy-hidden and never iconic, so both
     // predicates agree here; using policy-hidden keeps the field's meaning
     // singular across every site that reads it.
-    _ = applyWindowVisibility(model, !window_visibility.mainWindowPolicyHidden());
+    // macOS queues orderOut on its main queue. Choose the hidden collection
+    // profile now; the first visible frame or a timer is not guaranteed after it.
+    _ = applyWindowVisibility(model, startupPresentationActive(startup_should_show, window_visibility.mainWindowPresentationActive()));
     if (active_engine) |runtime| runtime.setView(model.window_visible, model.active_section) catch {};
     sampleEngine(model);
     scheduleRefresh(fx, model.window_visible);
@@ -620,6 +832,35 @@ pub export fn sd300_model_open() callconv(.c) void {
     } else {
         external_open_pending.store(true, .release);
     }
+}
+
+/// AppKit can terminate without returning from its run loop. Stop and join the
+/// engine before that exit; ordinary main cleanup still owns library unloading.
+pub export fn sd300_model_shutdown() callconv(.c) void {
+    if (active_settings_writer) |writer| {
+        active_settings_writer = null;
+        writer.stop();
+    }
+    if (active_engine) |runtime| {
+        active_engine = null;
+        runtime.stopCollection();
+    }
+}
+
+/// GTK mapping notifications run on the UI thread, including restoration while
+/// the slow hidden timer is pending. They never imply a close/quit request.
+pub export fn sd300_model_visibility_changed() callconv(.c) void {
+    if (active_app_state) |app_state| {
+        const visible = window_visibility.mainWindowPresentationActive();
+        if (applyWindowVisibility(&app_state.model, visible)) {
+            scheduleRefresh(&app_state.effects, visible);
+            if (visible) sampleEngine(&app_state.model);
+        }
+    }
+}
+
+pub fn startupPresentationActive(show_requested: bool, observed_active: bool) bool {
+    return show_requested and observed_active;
 }
 
 pub fn refreshIntervalMs(visible: bool) u64 {
@@ -681,7 +922,9 @@ fn selectSection(model: *Model, section: u8) void {
 
 fn setProcessSort(model: *Model, process_sort: ProcessSort) void {
     model.process_sort = process_sort;
+    model.process_page_offset = 0;
     sortProcesses(model);
+    requestProcessQuery(model);
     const runtime = active_engine orelse {
         model.status_buffer.set("Current process rows were sorted locally; the engine is unavailable for a full-inventory refresh.");
         return;
@@ -691,6 +934,45 @@ fn setProcessSort(model: *Model, process_sort: ProcessSort) void {
         return;
     };
     model.status_buffer.set("Process ranking changed · full inventory refresh requested");
+}
+
+fn selectStorageDevice(model: *Model, next: bool) void {
+    const drives = model.detail.driveHealth();
+    if (drives.len == 0) return;
+    var index: usize = 0;
+    for (drives, 0..) |drive, i| { if (std.mem.eql(u8, drive.device(), model.storageDevice())) { index = i; break; } }
+    index = if (next) (index + 1) % drives.len else (index + drives.len - 1) % drives.len;
+    model.storage_choice.set(drives[index].device());
+}
+fn requestStorageProbe(model: *Model, action: u32) void {
+    const runtime = active_engine orelse return;
+    runtime.requestStorageProbe(action, if (action == 1) model.storageDevice() else "") catch { model.status_buffer.set("Storage action is busy or unavailable; monitoring continues."); return; };
+    model.status_buffer.set(if (action == 1) "Preparing the exact storage operation for review…" else if (action == 2) "Requesting authorization for the confirmed device read…" else "Cancelling the storage action…");
+}
+
+fn requestCompanion(model: *Model, action: u32, consent: bool) void {
+    const runtime = active_engine orelse { model.status_buffer.set("The diagnostic engine is unavailable. Monitoring will reconnect independently."); return; };
+    runtime.requestCompanion(action, consent) catch {
+        model.status_buffer.set("The companion is already running or could not accept this request. Cancel or wait for the current action.");
+        return;
+    };
+    model.status_buffer.set(if (action == 0) "Cancelling the requested optional action…" else if (action >= 5) "Starting the explicitly confirmed optional tool setup…" else "Starting the requested companion diagnostic…");
+}
+
+fn requestInventoryQuery(model: *Model, topic: engine.Topic) void {
+    const runtime = active_engine orelse return;
+    const devices = topic == .drivers;
+    runtime.setInventoryQuery(topic, if (devices) model.driver_filter_buffer.text() else model.connection_filter_buffer.text(),
+        if (devices) model.detail.driver_page_offset else model.detail.connection_page_offset, devices and model.driver_attention_only)
+        catch { model.status_buffer.set("The inventory search could not be updated; the previous captured page remains visible."); };
+}
+
+fn requestProcessQuery(model: *Model) void {
+    const runtime = active_engine orelse return;
+    runtime.setProcessQuery(model.process_filter_buffer.text(), model.process_page_offset) catch {
+        model.status_buffer.set("The process search could not be updated; the previous captured page remains visible.");
+        return;
+    };
 }
 
 fn sortProcesses(model: *Model) void {
@@ -784,14 +1066,28 @@ fn settingsDocument(model: *const Model) settings.Document {
 }
 
 fn persistSettings(model: *Model) void {
-    const runtime = active_engine orelse {
-        model.status_buffer.set("Settings could not be saved because the GUI engine is unavailable.");
+    const writer = active_settings_writer orelse {
+        model.status_buffer.set("Settings could not be saved because the preference writer is unavailable.");
         return;
     };
-    settings.save(runtime, std.heap.page_allocator, settingsDocument(model)) catch {
+    model.settings_requested = writer.request(settingsDocument(model));
+    model.status_buffer.set("Saving GUI preferences…");
+}
+
+fn writeSettings(context: *anyopaque, document: settings.Document) !void {
+    const runtime: *engine.Runtime = @ptrCast(@alignCast(context));
+    try settings.save(runtime, std.heap.page_allocator, document);
+}
+
+fn pollSettings(model: *Model) void {
+    const writer = active_settings_writer orelse return;
+    const result = writer.status();
+    if (result.sequence == 0 or result.sequence <= model.settings_completed or result.sequence != model.settings_requested) return;
+    model.settings_completed = result.sequence;
+    if (result.failed) {
         model.status_buffer.set("Settings could not be saved; the previous document remains intact.");
         return;
-    };
+    }
     if (model.settings_restart_required) {
         model.status_buffer.set("Settings saved · restart SD-300 to apply tray availability.");
     } else {
@@ -895,6 +1191,8 @@ fn pollExport(model: *Model, fx: *Effects) void {
 }
 
 fn sampleEngine(model: *Model) void {
+    pollSettings(model);
+    defer projectHistories(model);
     const runtime = active_engine orelse {
         markFastSummaryFailed(model);
         model.status_buffer.set("Engine unavailable — run sd300 update to repair the GUI companion.");
@@ -936,8 +1234,10 @@ fn sampleDetailedTopics(runtime: *engine.Runtime, model: *Model) void {
         },
         2 => sampleTopic(runtime, model, allocator, .fast),
         3 => {
+            sampleTopic(runtime, model, allocator, .fast);
             sampleTopic(runtime, model, allocator, .slow);
             sampleTopic(runtime, model, allocator, .health);
+            sampleTopic(runtime, model, allocator, .diagnostics);
         },
         4 => sampleTopic(runtime, model, allocator, .slow),
         5 => {
@@ -957,6 +1257,9 @@ fn sampleProcessSummary(runtime: *engine.Runtime, model: *Model) void {
         return;
     } orelse return;
     model.detail.applyProcessSummary(summary);
+    model.process_query_active = true;
+    model.process_matches = summary.matched_count;
+    model.process_page_offset = summary.page_offset;
     if (model.process_sort != .cpu) {
         sortProcesses(model);
     } else {
@@ -965,6 +1268,7 @@ fn sampleProcessSummary(runtime: *engine.Runtime, model: *Model) void {
 }
 
 fn sampleTopic(runtime: *engine.Runtime, model: *Model, allocator: std.mem.Allocator, topic: engine.Topic) void {
+    const previous_activity = model.detail.activity_sequence;
     const payload = runtime.readTopicAlloc(allocator, topic) catch {
         model.status_buffer.set("A detailed collector topic could not be read; other live topics remain available.");
         return;
@@ -988,33 +1292,27 @@ fn sampleTopic(runtime: *engine.Runtime, model: *Model, allocator: std.mem.Alloc
     };
     switch (topic) {
         .fast => {
-            const swap_percent = if (model.detail.swap_total_gib > 0)
-                model.detail.swap_used_gib / model.detail.swap_total_gib * 100
-            else
-                0;
-            pushHistory(&model.swap_history, swap_percent);
-            pushHistoryRaw(&model.network_download_history, model.detail.total_download_kib_s);
-            pushHistoryRaw(&model.network_upload_history, model.detail.total_upload_kib_s);
+            const meta = model.detail.topicMeta(1);
+            const valid = std.mem.eql(u8,meta.availability(),"available");
+            if (model.detail.activity_sequence != previous_activity) {
+                const at = model.detail.activity_captured_unix_ms;
+                model.histories[8].observe(at, if (model.detail.disk_io_available) model.detail.disk_read_mib_s else null);
+                model.histories[9].observe(at, if (model.detail.disk_io_available) model.detail.disk_write_mib_s else null);
+            }
+            const swap: ?f64 = if (valid and model.detail.swap_total_gib > 0) model.detail.swap_used_gib / model.detail.swap_total_gib * 100 else null;
+            model.histories[2].observe(meta.captured_unix_ms,swap);
+            model.histories[3].observe(meta.captured_unix_ms,if(valid and model.detail.network_rate_available) model.detail.total_download_kib_s else null);
+            model.histories[4].observe(meta.captured_unix_ms,if(valid and model.detail.network_rate_available) model.detail.total_upload_kib_s else null);
         },
         .slow => {
-            if (model.detail.gpu_count > 0 and model.detail.gpu_rows[0].telemetry_available) {
-                pushHistory(&model.gpu_history, model.detail.gpu_rows[0].utilization_percent);
-            }
-            const temperature = if (model.detail.cpu_temperature_available)
-                model.detail.cpu_temperature_celsius
-            else if (model.detail.gpu_temperature_available)
-                model.detail.gpu_temperature_celsius
-            else
-                -1;
-            if (temperature >= 0) {
-                pushHistoryRaw(&model.temperature_history_celsius, temperature);
-                pushHistoryRaw(&model.temperature_history_fahrenheit, (temperature * 9 / 5) + 32);
-            }
+            const meta = model.detail.topicMeta(3);
+            const valid = std.mem.eql(u8,meta.availability(),"available");
+            model.histories[5].observe(meta.captured_unix_ms,if(valid and model.primaryGpuTelemetryAvailable()) model.detail.gpu_rows[0].utilization_percent else null);
+            const temperature: ?f64 = if (valid and model.detail.cpu_temperature_available) model.detail.cpu_temperature_celsius else null;
+            model.histories[6].observe(meta.captured_unix_ms,temperature);
+            model.histories[7].observe(meta.captured_unix_ms,if(temperature) |t| (t * 9 / 5) + 32 else null);
         },
-        .health => if (model.detail.disk_io_available) {
-            pushHistoryRaw(&model.disk_read_history, model.detail.disk_read_mib_s);
-            pushHistoryRaw(&model.disk_write_history, model.detail.disk_write_mib_s);
-        },
+        .diagnostics => model.companion_ui.apply(allocator, payload.bytes) catch { model.status_buffer.set("The companion result could not be decoded."); },
         .medium => rebuildConnectionFilter(model),
         .drivers => rebuildDriverFilter(model),
         else => {},
@@ -1037,7 +1335,7 @@ pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     const sequence_advanced = summary.sequence != model.sequence;
     const capture_advanced = summary.captured_unix_ms == 0 or
         model.overview_topic_meta.captured_unix_ms == 0 or
-        summary.captured_unix_ms > model.overview_topic_meta.captured_unix_ms;
+        summary.captured_unix_ms != model.overview_topic_meta.captured_unix_ms;
     const sample_advanced = !model.fast_summary_seen or (sequence_advanced and capture_advanced);
     model.engine_ready = true;
     model.fast_summary_seen = true;
@@ -1052,20 +1350,21 @@ pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     model.warning_count = summary.warning_count;
     var overview_meta = model.overview_topic_meta;
     overview_meta.ready = true;
-    overview_meta.schema_version = 1;
+    overview_meta.schema_version = engine.expected_schema_version;
     overview_meta.sequence = summary.sequence;
     overview_meta.captured_unix_ms = summary.captured_unix_ms;
-    overview_meta.freshness_ms = 0;
+    overview_meta.freshness_ms = null; // Recomputed from the current presentation clock.
     overview_meta.topic_buffer.set("fast-summary");
     overview_meta.availability_buffer.set("available");
     overview_meta.provenance_buffer.set("SD-300 platform CPU and memory collectors");
     const static_meta = model.detail.topicMeta(0);
     overview_meta.target_buffer.set(if (static_meta.ready) static_meta.target() else "active target");
     model.overview_topic_meta = overview_meta;
-    if (sequence_advanced) {
-        pushHistory(&model.cpu_history, model.cpu_percent);
-        pushHistory(&model.memory_history, model.memory_percent);
+    if (sample_advanced) {
+        model.histories[0].observe(summary.captured_unix_ms, model.cpu_percent);
+        model.histories[1].observe(summary.captured_unix_ms, if(summary.memory_total_bytes > 0) model.memory_percent else null);
     }
+    projectHistories(model);
     var cpu_text: [64]u8 = undefined;
     const cpu_label = std.fmt.bufPrint(&cpu_text, "CPU · {d:.1}%", .{model.cpu_percent}) catch "CPU · live";
     model.tray_cpu_buffer.set(cpu_label);
@@ -1090,8 +1389,9 @@ pub fn updateFastSummaryFreshness(model: *Model) void {
     const wall_ms = model.clock.wallMs();
     const now: u64 = if (wall_ms <= 0) 0 else @intCast(wall_ms);
     const captured = model.overview_topic_meta.captured_unix_ms;
-    const capture_age = if (captured == 0 or now == 0) 0 else now -| captured;
-    model.fast_summary_stale = monotonic_age > fast_summary_stale_after_ms or capture_age > fast_summary_stale_after_ms;
+    const capture_invalid = captured == 0 or now < captured;
+    const capture_age = now -| captured;
+    model.fast_summary_stale = capture_invalid or monotonic_age > fast_summary_stale_after_ms or capture_age > fast_summary_stale_after_ms;
 }
 
 pub fn markFastSummaryFailed(model: *Model) void {
@@ -1139,14 +1439,11 @@ fn updateTrayTooltip(model: *Model) void {
     model.tray_tooltip_buffer.set(tooltip);
 }
 
-fn pushHistory(history: *[history_sample_count]f64, sample: f64) void {
-    std.mem.copyForwards(f64, history[0 .. history.len - 1], history[1..]);
-    history[history.len - 1] = std.math.clamp(sample, 0, 100);
-}
-
-fn pushHistoryRaw(history: *[history_sample_count]f64, sample: f64) void {
-    std.mem.copyForwards(f64, history[0 .. history.len - 1], history[1..]);
-    history[history.len - 1] = @max(sample, 0);
+fn projectHistories(model: *Model) void {
+    const wall = model.clock.wallMs();
+    const now: u64 = if(wall > 0) @intCast(wall) else model.overview_topic_meta.captured_unix_ms;
+    const outputs = .{ &model.cpu_history, &model.memory_history, &model.swap_history, &model.network_download_history, &model.network_upload_history, &model.gpu_history, &model.temperature_history_celsius, &model.temperature_history_fahrenheit, &model.disk_read_history, &model.disk_write_history };
+    inline for (outputs,0..) |output,i| model.histories[i].project(now,if(i>=5 and i<=7) 5000 else 1000,output);
 }
 
 pub const AppUi = canvas.Ui(Msg);
@@ -1189,9 +1486,10 @@ pub fn qubeTokens(model: *const Model) canvas.DesignTokens {
     tokens.colors.accent_text = canvas.Color.rgb8(9, 9, 9);
     tokens.colors.info = canvas.Color.rgb8(255, 94, 26);
     tokens.colors.focus_ring = canvas.Color.rgb8(255, 94, 26);
-    tokens.typography.font_id = makira_font_id;
+    tokens.typography.font_id = gail_rock_font_id;
+    tokens.typography.heading_font_id = makira_font_id;
     tokens.typography.mono_font_id = plex_mono_font_id;
-    tokens.typography.button_font_id = makira_font_id;
+    tokens.typography.button_font_id = gail_rock_font_id;
     tokens.typography.body_size = 15;
     tokens.typography.label_size = 13;
     tokens.typography.title_size = 21;
@@ -1318,7 +1616,7 @@ pub fn warmCarbonChrome(model: *const Model, builder: *canvas.Builder, size: geo
         } },
     });
 
-    const content_left = @min(size.width, 220);
+    const content_left = @min(size.width, 196);
     const content_top = @min(size.height, 88);
     const content_bottom = @max(content_top, size.height - 32);
     const content_width = @max(0, size.width - content_left);
@@ -1356,6 +1654,11 @@ const app_features: native_sdk.UiAppFeatures = .{ .runtime_markup = builtin.mode
 pub const NativeApp = native_sdk.UiAppWithFeatures(Model, Msg, app_features);
 
 const app_fonts = [_]NativeApp.FontRegistration{
+    .{
+        .id = gail_rock_font_id,
+        .name = "Gail-Rock-Regular.ttf",
+        .ttf = @embedFile("fonts/Gail-Rock-Regular.ttf"),
+    },
     .{
         .id = makira_font_id,
         .name = "Makira-Regular.ttf",
@@ -1513,6 +1816,8 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     if (isSelfTest(args)) std.process.exit(runSelfTest(init));
 
+    window_visibility.configureRendering();
+
     if (!window_visibility.claimSingleInstanceOrNotify()) return;
     defer window_visibility.releaseSingleInstance();
 
@@ -1525,6 +1830,19 @@ pub fn main(init: std.process.Init) !void {
         active_engine = null;
         if (engine_runtime) |*runtime| runtime.deinit();
     }
+    var preference_writer: ?settings_writer.Writer = null;
+    if (engine_runtime) |*runtime| {
+        preference_writer = .{ .io = init.io, .context = runtime, .save_fn = writeSettings };
+        if (preference_writer.?.start()) |_| {
+            active_settings_writer = &preference_writer.?;
+        } else |_| {}
+    }
+    defer {
+        active_settings_writer = null;
+        if (preference_writer) |*writer| writer.stop();
+    }
+    window_visibility.installTerminationCleanup();
+    defer window_visibility.uninstallTerminationCleanup();
 
     const settings_document = if (engine_runtime) |*runtime|
         settings.load(runtime, std.heap.page_allocator) catch settings.Document{}

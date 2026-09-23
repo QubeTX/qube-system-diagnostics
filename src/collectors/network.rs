@@ -1,19 +1,37 @@
 use serde::Serialize;
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 use sysinfo::Networks;
+
+use super::sampling::{CounterRate, SampleMeta};
 
 use crate::observation::Observation;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct NetworkData {
+    #[serde(default)]
+    pub sample: SampleMeta,
     pub interfaces: Vec<InterfaceInfo>,
     pub total_download_rate: u64,
     pub total_upload_rate: u64,
     pub adapters: Vec<NetworkAdapterInfo>,
     pub adapter_status: Observation,
+    #[serde(default)]
+    pub aggregation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct InterfaceInfo {
+    #[serde(default)]
+    pub counter_status: Observation,
+    #[serde(default)]
+    pub rate_status: Observation,
+    #[serde(default)]
+    pub address_status: Observation,
+    #[serde(default)]
+    pub included_in_total: bool,
     pub name: String,
     pub ip_addresses: Vec<String>,
     pub mac_address: String,
@@ -25,7 +43,7 @@ pub struct InterfaceInfo {
     pub operational_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct NetworkAdapterInfo {
     pub name: String,
     pub description: Option<String>,
@@ -35,48 +53,155 @@ pub struct NetworkAdapterInfo {
     pub hardware_interface: Option<bool>,
 }
 
-pub fn collect(networks: &mut Networks) -> NetworkData {
-    networks.refresh(true);
+#[derive(Debug, Default)]
+pub struct NetworkSampler {
+    counters: HashMap<String, (CounterRate, CounterRate)>,
+    last_sample: Option<Instant>,
+    sample: SampleMeta,
+}
 
-    let interfaces: Vec<InterfaceInfo> = networks
-        .iter()
-        .map(|(name, data)| {
-            let operational_state = data.operational_state().to_string();
-            let normalized_state = operational_state.to_ascii_lowercase();
-            let is_up = matches!(
-                normalized_state.as_str(),
-                "up" | "unknown" | "dormant" | "lowerlayerdown"
-            );
-
-            let ip_addresses: Vec<String> = data
-                .ip_networks()
+impl NetworkSampler {
+    pub fn collect(&mut self, networks: &mut Networks) -> NetworkData {
+        #[cfg(windows)]
+        let (rows, source, aggregation) = {
+            let _ = networks;
+            (
+                super::windows_network::collect(),
+                super::windows_network::SOURCE,
+                super::windows_network::AGGREGATION,
+            )
+        };
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        let (rows, source, aggregation) = {
+            let _ = networks;
+            (
+                super::unix_network::collect(),
+                super::unix_network::SOURCE,
+                super::unix_network::AGGREGATION,
+            )
+        };
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+        let (rows, source, aggregation) = {
+            networks.refresh(true);
+            let rows = networks
                 .iter()
-                .map(|ip| ip.addr.to_string())
+                .map(|(name, data)| {
+                    let mac = data.mac_address().to_string();
+                    let operational_state = data.operational_state().to_string();
+                    (
+                        format!("{name}:{mac}"),
+                        InterfaceInfo {
+                            counter_status: Observation::available("sysinfo interface counters"),
+                            name: name.clone(),
+                            ip_addresses: data
+                                .ip_networks()
+                                .iter()
+                                .map(|ip| ip.addr.to_string())
+                                .collect(),
+                            mac_address: mac,
+                            received_bytes: data.total_received(),
+                            transmitted_bytes: data.total_transmitted(),
+                            is_up: operational_state.eq_ignore_ascii_case("up"),
+                            operational_state,
+                            included_in_total: true,
+                            address_status: Observation::available("platform interface addresses"),
+                            ..Default::default()
+                        },
+                    )
+                })
                 .collect();
-
-            InterfaceInfo {
-                name: name.clone(),
-                ip_addresses,
-                mac_address: data.mac_address().to_string(),
-                received_bytes: data.total_received(),
-                transmitted_bytes: data.total_transmitted(),
-                download_rate: data.received(),
-                upload_rate: data.transmitted(),
-                is_up,
-                operational_state,
+            (Ok(rows), "interface counters / monotonic elapsed time", "Sum of reported interface rates; traffic traversing multiple interfaces may appear more than once")
+        };
+        self.sample(rows, source, aggregation, Instant::now())
+    }
+    fn sample(
+        &mut self,
+        rows: Result<Vec<(String, InterfaceInfo)>, Observation>,
+        source: &str,
+        aggregation: &str,
+        now: Instant,
+    ) -> NetworkData {
+        let mut rows = match rows {
+            Ok(rows) => rows,
+            Err(observation) => {
+                // Do not stamp cached counter values as a new successful capture.
+                // Recovery requires a new baseline; a failed read is never zero traffic.
+                self.counters.clear();
+                self.last_sample = None;
+                self.sample.observation = observation;
+                return NetworkData {
+                    sample: self.sample.clone(),
+                    aggregation: aggregation.into(),
+                    ..Default::default()
+                };
             }
-        })
-        .collect();
-
-    let total_download_rate = interfaces.iter().map(|iface| iface.download_rate).sum();
-    let total_upload_rate = interfaces.iter().map(|iface| iface.upload_rate).sum();
-
-    NetworkData {
-        interfaces,
-        total_download_rate,
-        total_upload_rate,
-        adapters: Vec::new(),
-        adapter_status: Observation::default(),
+        };
+        let interval = self
+            .last_sample
+            .replace(now)
+            .map(|last| now.saturating_duration_since(last))
+            .unwrap_or_default();
+        let present: std::collections::HashSet<_> =
+            rows.iter().map(|(id, _)| id.as_str()).collect();
+        self.counters
+            .retain(|key, _| present.contains(key.as_str()));
+        for (identity, info) in &mut rows {
+            if !info.counter_status.is_available() {
+                self.counters.remove(identity);
+                info.rate_status = info.counter_status.clone();
+                continue;
+            }
+            let counters = self.counters.entry(identity.clone()).or_default();
+            let down = counters
+                .0
+                .sample(info.received_bytes, now, Duration::from_secs(10));
+            let up = counters
+                .1
+                .sample(info.transmitted_bytes, now, Duration::from_secs(10));
+            info.rate_status = if down.is_some() && up.is_some() {
+                Observation::available(source)
+            } else {
+                Observation::unavailable(
+                    source,
+                    "Warming up after first sample, counter reset, or collection gap",
+                )
+            };
+            info.download_rate = down.unwrap_or_default().round() as u64;
+            info.upload_rate = up.unwrap_or_default().round() as u64;
+        }
+        rows.sort_by(|a, b| a.1.name.cmp(&b.1.name).then_with(|| a.0.cmp(&b.0)));
+        let interfaces: Vec<_> = rows.into_iter().map(|(_, info)| info).collect();
+        let included: Vec<_> = interfaces.iter().filter(|i| i.included_in_total).collect();
+        let total_download_rate = included
+            .iter()
+            .fold(0u64, |sum, iface| sum.saturating_add(iface.download_rate));
+        let total_upload_rate = included
+            .iter()
+            .fold(0u64, |sum, iface| sum.saturating_add(iface.upload_rate));
+        let observation = if !included.is_empty()
+            && included.iter().all(|i| i.rate_status.is_available())
+        {
+            Observation::available(source)
+        } else {
+            Observation::unavailable(
+                source,
+                if included.is_empty() {
+                    "No interfaces are eligible for this aggregate; inspect individual interfaces"
+                } else {
+                    "One or more included interfaces are warming up or unavailable"
+                },
+            )
+        };
+        self.sample
+            .record(interval, Duration::from_secs(1), observation);
+        NetworkData {
+            sample: self.sample.clone(),
+            interfaces,
+            total_download_rate,
+            total_upload_rate,
+            aggregation: aggregation.into(),
+            ..Default::default()
+        }
     }
 }
 
@@ -88,12 +213,139 @@ pub fn refresh_hardware(data: &mut NetworkData) {
         data.adapter_status = status;
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let (adapters, status) =
+            super::linux_inventory::adapters(std::path::Path::new("/sys/class/net"));
+        data.adapters = adapters;
+        data.adapter_status = status;
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         data.adapter_status = Observation::unsupported(
             "platform network adapter provider",
             "Static adapter capabilities are not implemented on this platform",
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn rows(id: &str, count: u64) -> Vec<(String, InterfaceInfo)> {
+        vec![(
+            id.into(),
+            InterfaceInfo {
+                counter_status: Observation::available("fixture"),
+                name: "identical alias".into(),
+                received_bytes: count,
+                transmitted_bytes: count,
+                included_in_total: true,
+                address_status: Observation::available("fixture"),
+                ..Default::default()
+            },
+        )]
+    }
+    #[test]
+    fn a_denied_interface_keeps_other_rates_and_recovers_with_a_new_baseline() {
+        let start = Instant::now();
+        let mut sampler = NetworkSampler::default();
+        let frame = |count| {
+            let mut value = rows("one", count);
+            value.extend(rows("two", count));
+            value
+        };
+        sampler.sample(Ok(frame(100)), "fixture", "fixture", start);
+        let mut partial = frame(200);
+        partial[1].1.counter_status = Observation::permission_denied("fixture", "denied");
+        let result = sampler.sample(
+            Ok(partial),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(1),
+        );
+        assert!(result.interfaces[0].rate_status.is_available());
+        assert_eq!(result.interfaces[0].download_rate, 100);
+        assert_eq!(
+            result.interfaces[1].rate_status.status,
+            crate::observation::ObservationStatus::PermissionDenied
+        );
+        assert!(!result.sample.observation.is_available());
+        let recovered = sampler.sample(
+            Ok(frame(300)),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(2),
+        );
+        assert!(recovered.interfaces[0].rate_status.is_available());
+        assert!(!recovered.interfaces[1].rate_status.is_available());
+        let ready = sampler.sample(
+            Ok(frame(450)),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(3),
+        );
+        assert_eq!(ready.total_download_rate, 300);
+        assert!(ready.sample.observation.is_available());
+    }
+    #[test]
+    fn irregular_intervals_identity_replacement_and_failures_preserve_truth() {
+        let mut sampler = NetworkSampler::default();
+        let start = Instant::now();
+        let first = sampler.sample(Ok(rows("one", 100)), "fixture", "fixture", start);
+        assert!(!first.interfaces[0].rate_status.is_available());
+        let second = sampler.sample(
+            Ok(rows("one", 1100)),
+            "fixture",
+            "fixture",
+            start + Duration::from_millis(2500),
+        );
+        assert_eq!(second.total_download_rate, 400);
+        assert!(second.sample.observation.is_available());
+        let failure = sampler.sample(
+            Err(Observation::permission_denied("fixture", "denied")),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(3),
+        );
+        assert_eq!(failure.sample.sequence, second.sample.sequence);
+        assert_eq!(
+            failure.sample.captured_unix_ms,
+            second.sample.captured_unix_ms
+        );
+        assert!(failure.interfaces.is_empty());
+        assert_eq!(
+            failure.sample.observation.status,
+            crate::observation::ObservationStatus::PermissionDenied
+        );
+        let recovery = sampler.sample(
+            Ok(rows("one", 1500)),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(4),
+        );
+        assert!(!recovery.interfaces[0].rate_status.is_available());
+        let mut mixed = rows("one", 1700);
+        let mut virtual_interface = rows("virtual", 1000).remove(0);
+        virtual_interface.1.included_in_total = false;
+        mixed.push(virtual_interface);
+        let mixed = sampler.sample(
+            Ok(mixed),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(5),
+        );
+        assert_eq!(mixed.interfaces.len(), 2);
+        assert_eq!(mixed.total_download_rate, 200);
+        assert!(mixed.sample.observation.is_available()); // warming virtual row is excluded
+        let replaced = sampler.sample(
+            Ok(rows("two", 5000)),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(6),
+        );
+        assert!(!replaced.interfaces[0].rate_status.is_available());
+        assert_eq!(sampler.counters.len(), 1);
     }
 }
 

@@ -1,15 +1,15 @@
 use super::DiagnosticWarning;
-use crate::observation::Observation;
+use crate::observation::{Observation, ObservationStatus};
 use serde::Serialize;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct DiskHealthData {
     pub drives: Vec<DriveHealth>,
     pub health_status: Observation,
     pub reliability_status: Observation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct DriveHealth {
     pub device_id: String,
     pub model: String,
@@ -26,7 +26,7 @@ pub struct DriveHealth {
     pub health_source: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct DiskIoStats {
     pub read_bytes_per_sec: u64,
     pub write_bytes_per_sec: u64,
@@ -35,7 +35,7 @@ pub struct DiskIoStats {
     pub avg_write_latency_ms: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaType {
     Ssd,
@@ -57,7 +57,7 @@ impl std::fmt::Display for MediaType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiskHealthStatus {
     Healthy,
@@ -79,6 +79,29 @@ impl DiskHealthStatus {
 }
 
 pub fn collect() -> (DiskHealthData, Vec<DiagnosticWarning>) {
+    let (mut data, warnings) = collect_platform();
+    for drive in &mut data.drives {
+        if let Some(observation) = collect_smart(drive) {
+            if observation.status == ObservationStatus::Contradictory {
+                data.health_status = observation.clone();
+            }
+            if observation.is_available() || !data.reliability_status.is_available() {
+                data.reliability_status = observation;
+            }
+        }
+    }
+    if data.health_status.status != ObservationStatus::Contradictory
+        && data.drives.iter().any(|drive| {
+            drive.health_source.contains("smartctl JSON")
+                && drive.health_status != DiskHealthStatus::Unknown
+        })
+    {
+        data.health_status = Observation::available("smartctl JSON and platform storage health");
+    }
+    (data, warnings)
+}
+
+fn collect_platform() -> (DiskHealthData, Vec<DiagnosticWarning>) {
     #[cfg(windows)]
     {
         collect_windows()
@@ -109,6 +132,8 @@ use serde::Deserialize;
 struct WmiDiskDrive {
     #[serde(rename = "DeviceID")]
     device_id: Option<String>,
+    #[serde(rename = "PNPDeviceID")]
+    pnp_device_id: Option<String>,
     model: Option<String>,
     serial_number: Option<String>,
     firmware_revision: Option<String>,
@@ -127,22 +152,10 @@ struct WmiFailurePrediction {
 #[cfg(windows)]
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
-struct WmiDiskPerf {
-    name: Option<String>,
-    disk_read_bytes_per_sec: Option<u64>,
-    disk_write_bytes_per_sec: Option<u64>,
-    current_disk_queue_length: Option<u32>,
-    avg_disk_sec_per_read: Option<u32>,
-    avg_disk_sec_per_write: Option<u32>,
-}
-
-#[cfg(windows)]
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "PascalCase")]
 struct WmiPhysicalDisk {
-    #[serde(rename = "DeviceId")]
-    device_id: Option<String>,
-    friendly_name: Option<String>,
+    #[serde(rename = "__Path")]
+    path: String,
+    serial_number: Option<String>,
     health_status: Option<u16>,
     media_type: Option<u16>,
     bus_type: Option<u16>,
@@ -151,16 +164,19 @@ struct WmiPhysicalDisk {
 
 #[cfg(windows)]
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename = "MSFT_StorageReliabilityCounter", rename_all = "PascalCase")]
 struct WmiStorageReliabilityCounter {
-    #[serde(rename = "DeviceId")]
-    device_id: Option<String>,
     temperature: Option<u64>,
     power_on_hours: Option<u64>,
     wear: Option<u8>,
     read_errors_total: Option<u64>,
     write_errors_total: Option<u64>,
 }
+
+#[cfg(windows)]
+#[derive(Deserialize)]
+#[serde(rename = "MSFT_PhysicalDiskToStorageReliabilityCounter")]
+struct PhysicalDiskReliabilityAssociation {}
 
 #[cfg(windows)]
 fn collect_windows() -> (DiskHealthData, Vec<DiagnosticWarning>) {
@@ -187,11 +203,13 @@ fn collect_windows() -> (DiskHealthData, Vec<DiagnosticWarning>) {
         Err(_) => return (data, warnings),
     };
 
+    let mut pnp_ids = Vec::new();
     // Query physical drives
     if let Ok(drives) = wmi.raw_query::<WmiDiskDrive>(
-        "SELECT DeviceID, Model, SerialNumber, FirmwareRevision, MediaType, Status FROM Win32_DiskDrive"
+        "SELECT DeviceID, PNPDeviceID, Model, SerialNumber, FirmwareRevision, MediaType, Status FROM Win32_DiskDrive"
     ) {
         for drive in drives {
+            pnp_ids.push(drive.pnp_device_id.unwrap_or_default());
             let model = drive.model.unwrap_or_default();
             let media_type_str = drive.media_type.as_deref().unwrap_or("");
             let status_str = drive.status.as_deref().unwrap_or("Unknown");
@@ -244,54 +262,34 @@ fn collect_windows() -> (DiskHealthData, Vec<DiagnosticWarning>) {
             if let Ok(predictions) = wmi_root.raw_query::<WmiFailurePrediction>(
                 "SELECT PredictFailure, InstanceName FROM MSStorageDriver_FailurePredictStatus",
             ) {
-                let had_predictions = !predictions.is_empty();
                 for pred in predictions {
-                    if pred.predict_failure == Some(true) {
-                        // Find matching drive and upgrade to Critical
-                        if let Some(ref instance) = pred.instance_name {
-                            for drive in &mut data.drives {
-                                if instance.contains(&drive.device_id)
-                                    && drive.health_status != DiskHealthStatus::Critical
-                                {
-                                    drive.health_status = DiskHealthStatus::Critical;
-                                }
-                            }
-                        }
-                    }
-                }
-                if had_predictions && !data.health_status.is_available() {
-                    data.health_status =
-                        Observation::available("MSStorageDriver_FailurePredictStatus");
-                }
-            }
-        }
-    }
-
-    // I/O performance from root\cimv2
-    if let Ok(com3) = COMLibrary::new() {
-        if let Ok(wmi3) = WMIConnection::new(com3) {
-            if let Ok(perfs) = wmi3.raw_query::<WmiDiskPerf>(
-                "SELECT Name, DiskReadBytesPerSec, DiskWriteBytesPerSec, CurrentDiskQueueLength, AvgDiskSecPerRead, AvgDiskSecPerWrite FROM Win32_PerfFormattedData_PerfDisk_PhysicalDisk"
-            ) {
-                for perf in perfs {
-                    let name = perf.name.as_deref().unwrap_or("");
-                    // Name format: "0 C:" or "1 D:" — match by disk index
-                    if name == "_Total" {
+                    let Some((index, predicted)) = pred
+                        .instance_name
+                        .as_deref()
+                        .and_then(|name| matching_prediction(name, &pnp_ids))
+                        .zip(pred.predict_failure)
+                    else {
                         continue;
-                    }
-                    let disk_index = name.split_whitespace().next()
-                        .and_then(|s| s.parse::<usize>().ok());
-
-                    if let Some(idx) = disk_index {
-                        if let Some(drive) = data.drives.get_mut(idx) {
-                            drive.io_stats = Some(DiskIoStats {
-                                read_bytes_per_sec: perf.disk_read_bytes_per_sec.unwrap_or(0),
-                                write_bytes_per_sec: perf.disk_write_bytes_per_sec.unwrap_or(0),
-                                queue_depth: perf.current_disk_queue_length.unwrap_or(0) as f64,
-                                avg_read_latency_ms: perf.avg_disk_sec_per_read.unwrap_or(0) as f64,
-                                avg_write_latency_ms: perf.avg_disk_sec_per_write.unwrap_or(0) as f64,
-                            });
-                        }
+                    };
+                    let status = if predicted {
+                        DiskHealthStatus::Critical
+                    } else {
+                        DiskHealthStatus::Healthy
+                    };
+                    let conflict = merge_health(
+                        &mut data.drives[index],
+                        status,
+                        "MSStorageDriver_FailurePredictStatus",
+                    );
+                    if conflict {
+                        data.health_status = Observation::contradictory(
+                            "Windows storage providers",
+                            "Providers disagree on disk health; the reported fault is retained",
+                        );
+                    } else if data.health_status.status != ObservationStatus::Contradictory {
+                        data.health_status = Observation::available(
+                            "Windows storage providers; uniquely matched device identity",
+                        );
                     }
                 }
             }
@@ -321,114 +319,177 @@ fn collect_windows_storage_details(data: &mut DiskHealthData) -> (Observation, O
             }
         };
 
-    let health_status = match connection.raw_query::<WmiPhysicalDisk>(
-        "SELECT DeviceId, FriendlyName, HealthStatus, MediaType, BusType, FirmwareVersion FROM MSFT_PhysicalDisk",
+    let rows = match connection.raw_query::<WmiPhysicalDisk>(
+        "SELECT __Path, SerialNumber, HealthStatus, MediaType, BusType, FirmwareVersion FROM MSFT_PhysicalDisk",
     ) {
-        Ok(rows) if rows.is_empty() => Observation::unavailable(
-            "MSFT_PhysicalDisk",
-            "The provider returned no physical disks",
-        ),
-        Ok(rows) => {
-            let mut usable_health = false;
-            for row in rows {
-                let index = row
-                    .device_id
-                    .as_deref()
-                    .and_then(|value| value.parse::<usize>().ok());
-                let matched_index = index.filter(|index| *index < data.drives.len()).or_else(|| {
-                    row.friendly_name.as_deref().and_then(|name| {
-                        data.drives
-                            .iter()
-                            .position(|drive| drive.model.eq_ignore_ascii_case(name))
-                    })
-                });
-                let Some(drive) = matched_index.and_then(|index| data.drives.get_mut(index)) else {
-                    continue;
-                };
-
-                if let Some(status) = row.health_status {
-                    usable_health = true;
-                    drive.health_status = match status {
-                        0 => DiskHealthStatus::Healthy,
-                        1 => DiskHealthStatus::Warning,
-                        2 => DiskHealthStatus::Critical,
-                        _ => DiskHealthStatus::Unknown,
-                    };
-                    drive.health_source = "MSFT_PhysicalDisk.HealthStatus".into();
-                }
-                if row.bus_type == Some(17) {
-                    drive.media_type = MediaType::NVMe;
-                } else {
-                    drive.media_type = match row.media_type {
-                        Some(3) => MediaType::Hdd,
-                        Some(4) => MediaType::Ssd,
-                        _ => drive.media_type.clone(),
-                    };
-                }
-                if let Some(firmware) = row.firmware_version.filter(|value| !value.trim().is_empty())
-                {
-                    drive.firmware = Some(firmware.trim().to_string());
-                }
-            }
-            if usable_health {
-                Observation::available("MSFT_PhysicalDisk.HealthStatus")
-            } else {
-                Observation::unavailable(
-                    "MSFT_PhysicalDisk.HealthStatus",
-                    "Physical disks were listed without health values",
-                )
+        Ok(rows) => rows,
+        Err(error) => {
+            let status = windows_storage_error("MSFT_PhysicalDisk", &error.to_string());
+            return (status.clone(), status);
+        }
+    };
+    let serials: Vec<_> = rows
+        .iter()
+        .map(|row| row.serial_number.as_deref())
+        .collect();
+    let mut health_status = Observation::unavailable(
+        "MSFT_PhysicalDisk.HealthStatus",
+        "No health value could be uniquely matched to the disk inventory",
+    );
+    let mut reliability_status = Observation::unavailable(
+        "MSFT_StorageReliabilityCounter",
+        "No associated reliability fields were returned for an identified disk",
+    );
+    for row in &rows {
+        let Some(index) = matching_serial(&data.drives, row.serial_number.as_deref(), &serials)
+        else {
+            continue;
+        };
+        let drive = &mut data.drives[index];
+        let status = match row.health_status {
+            Some(0) => DiskHealthStatus::Healthy,
+            Some(1) => DiskHealthStatus::Warning,
+            Some(2) => DiskHealthStatus::Critical,
+            _ => DiskHealthStatus::Unknown,
+        };
+        if status != DiskHealthStatus::Unknown {
+            if merge_health(drive, status, "MSFT_PhysicalDisk.HealthStatus") {
+                health_status = Observation::contradictory(
+                    "Windows storage providers",
+                    "Providers disagree on disk health; the reported fault is retained",
+                );
+            } else if health_status.status != ObservationStatus::Contradictory {
+                health_status = Observation::available(
+                    "MSFT_PhysicalDisk.HealthStatus; unique serial identity",
+                );
             }
         }
-        Err(error) => windows_storage_error("MSFT_PhysicalDisk", &error.to_string()),
-    };
-
-    let reliability_status = match connection.raw_query::<WmiStorageReliabilityCounter>(
-        "SELECT DeviceId, Temperature, PowerOnHours, Wear, ReadErrorsTotal, WriteErrorsTotal FROM MSFT_StorageReliabilityCounter",
-    ) {
-        Ok(rows) if rows.is_empty() => Observation::unavailable(
-            "MSFT_StorageReliabilityCounter",
-            "The provider returned no reliability counters for these drives",
-        ),
-        Ok(rows) => {
-            let mut usable = false;
-            for row in rows {
-                let Some(index) = row
-                    .device_id
-                    .as_deref()
-                    .and_then(|value| value.parse::<usize>().ok())
-                else {
-                    continue;
-                };
-                let Some(drive) = data.drives.get_mut(index) else {
-                    continue;
-                };
-                drive.temperature_celsius = row.temperature.map(|value| value as f64);
-                drive.power_on_hours = row.power_on_hours;
-                drive.wear_percent = row.wear;
-                drive.read_errors_total = row.read_errors_total;
-                drive.write_errors_total = row.write_errors_total;
-                usable |= drive.temperature_celsius.is_some()
+        if row.bus_type == Some(17) {
+            drive.media_type = MediaType::NVMe;
+        } else {
+            drive.media_type = match row.media_type {
+                Some(3) => MediaType::Hdd,
+                Some(4) => MediaType::Ssd,
+                _ => drive.media_type.clone(),
+            };
+        }
+        if let Some(firmware) = row
+            .firmware_version
+            .as_deref()
+            .filter(|v| !v.trim().is_empty())
+        {
+            drive.firmware = Some(firmware.trim().to_owned());
+        }
+        // DeviceId may name a subsystem disk or an OS disk number. Only the
+        // documented physical-disk association establishes which one it is.
+        match connection
+            .associators::<WmiStorageReliabilityCounter, PhysicalDiskReliabilityAssociation>(
+                &row.path,
+            ) {
+            Ok(counters) if counters.len() == 1 => {
+                let counter = &counters[0];
+                drive.temperature_celsius = counter.temperature.map(|v| v as f64);
+                drive.power_on_hours = counter.power_on_hours;
+                drive.wear_percent = counter.wear;
+                drive.read_errors_total = counter.read_errors_total;
+                drive.write_errors_total = counter.write_errors_total;
+                if drive.temperature_celsius.is_some()
                     || drive.power_on_hours.is_some()
                     || drive.wear_percent.is_some()
                     || drive.read_errors_total.is_some()
-                    || drive.write_errors_total.is_some();
+                    || drive.write_errors_total.is_some()
+                {
+                    reliability_status =
+                        Observation::available("MSFT_PhysicalDiskToStorageReliabilityCounter");
+                }
             }
-            if usable {
-                Observation::available("MSFT_StorageReliabilityCounter")
-            } else {
-                Observation::unavailable(
-                    "MSFT_StorageReliabilityCounter",
-                    "Reliability rows contained no usable counters",
-                )
+            Ok(_) => {}
+            Err(error) if !reliability_status.is_available() => {
+                reliability_status = windows_storage_error(
+                    "MSFT_PhysicalDiskToStorageReliabilityCounter",
+                    &error.to_string(),
+                );
             }
+            Err(_) => {}
         }
-        Err(error) => windows_storage_error(
-            "MSFT_StorageReliabilityCounter",
-            &error.to_string(),
-        ),
-    };
+    }
 
     (health_status, reliability_status)
+}
+
+#[cfg(any(windows, test))]
+fn matching_serial(
+    drives: &[DriveHealth],
+    serial: Option<&str>,
+    provider_serials: &[Option<&str>],
+) -> Option<usize> {
+    let serial = serial?.trim();
+    if serial.is_empty()
+        || provider_serials
+            .iter()
+            .filter(|s| s.is_some_and(|s| s.trim() == serial))
+            .count()
+            != 1
+    {
+        return None;
+    }
+    let mut matches = drives
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| d.serial.as_deref().is_some_and(|s| s.trim() == serial));
+    let index = matches.next()?.0;
+    matches.next().is_none().then_some(index)
+}
+
+#[cfg(any(windows, test))]
+fn matching_prediction(instance: &str, pnp_ids: &[String]) -> Option<usize> {
+    // Storage WMI uses the device instance path, optionally followed by an
+    // instance counter. Never search for a PhysicalDrive substring or match an
+    // empty identifier. More than one candidate is an incomplete observation.
+    let instance = instance.to_ascii_lowercase();
+    let mut matches = pnp_ids.iter().enumerate().filter(|(_, id)| {
+        if id.is_empty() {
+            return false;
+        }
+        let id = id.to_ascii_lowercase();
+        instance == id
+            || instance
+                .strip_prefix(&id)
+                .and_then(|s| s.strip_prefix('_'))
+                .is_some_and(|suffix| {
+                    !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
+                })
+    });
+    let index = matches.next()?.0;
+    matches.next().is_none().then_some(index)
+}
+
+/// Merge fresh provider observations without allowing a healthy response to
+/// erase another provider's fault. Unknown never overwrites measured health.
+fn merge_health(drive: &mut DriveHealth, incoming: DiskHealthStatus, source: &str) -> bool {
+    let rank = |s: &DiskHealthStatus| match s {
+        DiskHealthStatus::Unknown => 0,
+        DiskHealthStatus::Healthy => 1,
+        DiskHealthStatus::Warning => 2,
+        DiskHealthStatus::Critical => 3,
+    };
+    if incoming == DiskHealthStatus::Unknown {
+        return false;
+    }
+    let conflict = (drive.health_status == DiskHealthStatus::Healthy && rank(&incoming) >= 2)
+        || (incoming == DiskHealthStatus::Healthy && rank(&drive.health_status) >= 2);
+    if conflict {
+        drive.health_source = format!(
+            "{}; {source} (conflicting health observations)",
+            drive.health_source
+        );
+    } else if rank(&incoming) >= rank(&drive.health_status) {
+        drive.health_source = source.into();
+    }
+    if rank(&incoming) > rank(&drive.health_status) {
+        drive.health_status = incoming;
+    }
+    conflict
 }
 
 #[cfg(windows)]
@@ -443,204 +504,385 @@ fn windows_storage_error(source: &str, error: &str) -> Observation {
     }
 }
 
-// --- Linux implementation ---
+#[cfg(any(windows, test))]
+fn physical_drive_number(id: &str) -> Option<usize> {
+    id.to_ascii_lowercase()
+        .strip_prefix(r"\\.\physicaldrive")?
+        .parse()
+        .ok()
+}
+
+pub(crate) fn empty_drive(device_id: String, model: String, media_type: MediaType) -> DriveHealth {
+    DriveHealth {
+        device_id,
+        model,
+        media_type,
+        serial: None,
+        firmware: None,
+        health_status: DiskHealthStatus::Unknown,
+        temperature_celsius: None,
+        power_on_hours: None,
+        wear_percent: None,
+        read_errors_total: None,
+        write_errors_total: None,
+        io_stats: None,
+        health_source: "inventory only".into(),
+    }
+}
 
 #[cfg(target_os = "linux")]
 fn collect_linux() -> (DiskHealthData, Vec<DiagnosticWarning>) {
-    use super::command::{run_output, CommandTimeout};
-    use std::fs;
-
     let mut data = DiskHealthData::default();
-    let warnings = Vec::new();
-
-    // Read block devices from /sys/block/
-    if let Ok(entries) = fs::read_dir("/sys/block") {
+    if let Ok(entries) = std::fs::read_dir("/sys/block") {
         for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            // Skip loop, ram, and dm devices
-            if name.starts_with("loop") || name.starts_with("ram") || name.starts_with("dm-") {
+            let path = entry.path();
+            if !path.join("device").exists() {
                 continue;
             }
-
-            let model_path = format!("/sys/block/{}/device/model", name);
-            let model = fs::read_to_string(&model_path)
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-
-            let rotational_path = format!("/sys/block/{}/queue/rotational", name);
-            let is_rotational = fs::read_to_string(&rotational_path)
-                .unwrap_or_default()
-                .trim()
-                == "1";
-
-            let media_type = if model.to_lowercase().contains("nvme") || name.starts_with("nvme") {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let read = |suffix| {
+                std::fs::read_to_string(path.join(suffix))
+                    .ok()
+                    .map(|s| s.trim().to_owned())
+            };
+            let media = if name.starts_with("nvme") {
                 MediaType::NVMe
-            } else if is_rotational {
-                MediaType::Hdd
             } else {
-                MediaType::Ssd
-            };
-
-            // Try smartctl for health
-            let health_status = if let Some(output) = run_output(
-                "smartctl",
-                ["-H", &format!("/dev/{}", name)],
-                CommandTimeout::Normal,
-            ) {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if stdout.contains("PASSED") || stdout.contains("OK") {
-                    DiskHealthStatus::Healthy
-                } else if stdout.contains("FAILED") {
-                    DiskHealthStatus::Critical
-                } else {
-                    DiskHealthStatus::Unknown
+                match read("queue/rotational").as_deref() {
+                    Some("1") => MediaType::Hdd,
+                    Some("0") => MediaType::Ssd,
+                    _ => MediaType::Unknown,
                 }
-            } else {
-                DiskHealthStatus::Unknown
             };
-
-            data.drives.push(DriveHealth {
-                device_id: format!("/dev/{}", name),
-                model,
-                serial: None,
-                firmware: None,
-                media_type,
-                health_status,
-                temperature_celsius: None,
-                power_on_hours: None,
-                wear_percent: None,
-                read_errors_total: None,
-                write_errors_total: None,
-                io_stats: None,
-                health_source: "smartctl".into(),
-            });
+            let mut drive = empty_drive(
+                format!("/dev/{name}"),
+                read("device/model").unwrap_or_else(|| name.clone()),
+                media,
+            );
+            drive.serial = read("device/serial");
+            drive.firmware = read("device/firmware_rev");
+            data.drives.push(drive);
         }
     }
-
-    data.health_status = if data
-        .drives
-        .iter()
-        .any(|drive| drive.health_status != DiskHealthStatus::Unknown)
-    {
-        Observation::available("smartctl -H")
-    } else {
-        Observation::unavailable(
-            "smartctl -H",
-            "No supported drive returned an authoritative health result",
-        )
-    };
+    data.health_status = Observation::unavailable(
+        "sysfs inventory",
+        "Detailed health needs a supported readable SMART provider",
+    );
     data.reliability_status = Observation::unavailable(
         "smartctl",
-        "Detailed reliability counters are not collected by this implementation",
+        "Install smartmontools explicitly to enable supported read-only storage health",
     );
-    (data, warnings)
+    (data, Vec::new())
 }
-
-// --- macOS implementation ---
 
 #[cfg(target_os = "macos")]
 fn collect_macos() -> (DiskHealthData, Vec<DiagnosticWarning>) {
-    use super::command::{run_output, CommandTimeout};
-
     let mut data = DiskHealthData::default();
-    let warnings = Vec::new();
-
-    // Use diskutil to list drives
-    if let Some(output) = run_output("diskutil", ["list", "-plist"], CommandTimeout::Normal) {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        // Basic parsing — look for physical drives
-        // macOS diskutil output varies, use simple info
-        if let Some(info_output) = run_output("diskutil", ["info", "disk0"], CommandTimeout::Normal)
+    let list =
+        match super::macos::command_plist("/usr/sbin/diskutil", &["list", "-plist", "physical"]) {
+            Ok(list) => list,
+            Err(error) => {
+                data.health_status = Observation::error("diskutil", error);
+                return (data, Vec::new());
+            }
+        };
+    for id in super::macos::physical_disks(&list) {
+        if let Ok(info) =
+            super::macos::command_plist("/usr/sbin/diskutil", &["info", "-plist", &id])
         {
-            let info = String::from_utf8_lossy(&info_output.stdout);
-            let (model, media_type) = parse_diskutil_info(&info);
-
-            data.drives.push(DriveHealth {
-                device_id: "disk0".into(),
-                model,
-                serial: None,
-                firmware: None,
-                media_type,
-                health_status: DiskHealthStatus::Unknown,
-                temperature_celsius: None,
-                power_on_hours: None,
-                wear_percent: None,
-                read_errors_total: None,
-                write_errors_total: None,
-                io_stats: None,
-                health_source: "diskutil inventory only".into(),
-            });
-        }
-
-        // Suppress unused variable warning
-        let _ = stdout;
-    }
-
-    data.health_status = Observation::unavailable(
-        "diskutil inventory",
-        "The current macOS collector does not parse an authoritative health result",
-    );
-    data.reliability_status = Observation::unsupported(
-        "diskutil inventory",
-        "Native NVMe reliability telemetry is not implemented yet",
-    );
-    (data, warnings)
-}
-
-#[cfg(target_os = "macos")]
-fn parse_diskutil_info(info: &str) -> (String, MediaType) {
-    let mut model = String::new();
-    let mut media_type = MediaType::Unknown;
-
-    for line in info.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("Device / Media Name:") {
-            model = rest.trim().to_string();
-        }
-        if let Some(rest) = trimmed.strip_prefix("Solid State:") {
-            if rest.trim() == "Yes" {
-                media_type = MediaType::Ssd;
-            } else {
-                media_type = MediaType::Hdd;
+            if let Some(drive) = parse_diskutil_info(&id, &info) {
+                data.drives.push(drive);
             }
         }
     }
-
-    if model.to_lowercase().contains("nvme") {
-        media_type = MediaType::NVMe;
-    }
-
-    (model, media_type)
+    data.health_status = if data
+        .drives
+        .iter()
+        .any(|d| d.health_status != DiskHealthStatus::Unknown)
+    {
+        Observation::available("diskutil SMARTStatus")
+    } else {
+        Observation::unavailable("diskutil SMARTStatus", "The storage driver exposes no SMART status; a supported smartctl helper may add detail")
+    };
+    data.reliability_status = Observation::unavailable(
+        "smartctl",
+        "Optional detailed reliability counters require a supported readable device",
+    );
+    (data, Vec::new())
 }
 
-#[cfg(all(test, target_os = "macos"))]
-mod macos_tests {
-    use super::{parse_diskutil_info, MediaType};
+#[cfg(any(target_os = "macos", test))]
+fn parse_diskutil_info(id: &str, info: &plist::Value) -> Option<DriveHealth> {
+    if !super::macos::valid_disk_id(id) {
+        return None;
+    }
+    let dict = info.as_dictionary()?;
+    let string = |key| dict.get(key).and_then(plist::Value::as_string);
+    let media = if string("BusProtocol") == Some("PCI-Express")
+        && string("DeviceModel").is_some_and(|s| s.contains("NVMe"))
+    {
+        MediaType::NVMe
+    } else {
+        match dict.get("SolidState").and_then(plist::Value::as_boolean) {
+            Some(true) => MediaType::Ssd,
+            Some(false) => MediaType::Hdd,
+            None => MediaType::Unknown,
+        }
+    };
+    let mut drive = empty_drive(
+        format!("/dev/{id}"),
+        string("MediaName")
+            .or_else(|| string("DeviceModel"))
+            .unwrap_or(id)
+            .into(),
+        media,
+    );
+    drive.health_status = match string("SMARTStatus") {
+        Some("Verified") => DiskHealthStatus::Healthy,
+        Some("Failing") => DiskHealthStatus::Critical,
+        _ => DiskHealthStatus::Unknown,
+    };
+    drive.health_source = "diskutil SMARTStatus".into();
+    Some(drive)
+}
 
+fn collect_smart(drive: &mut DriveHealth) -> Option<Observation> {
+    use super::command::{run_checked, CommandError, CommandTimeout};
+    let device = drive.device_id.clone();
+    #[cfg(windows)]
+    let device = physical_drive_number(&device)
+        .map(|i| format!("/dev/pd{i}"))
+        .unwrap_or(device);
+    let executable = crate::optional_tools::detect("smartctl")?;
+    match run_checked(
+        executable,
+        ["--json", "--all", "--nocheck=standby,3", &device],
+        CommandTimeout::Slow,
+        &std::sync::atomic::AtomicBool::new(false),
+    ) {
+        Ok(output) => Some(apply_smart_json(
+            drive,
+            &output.stdout,
+            output.status.code().unwrap_or(255),
+        )),
+        Err(CommandError::NotFound) => None,
+        Err(CommandError::PermissionDenied) => Some(Observation::permission_denied(
+            "smartctl",
+            "This read-only probe requires device access permission",
+        )),
+        Err(error) => Some(Observation::error("smartctl", error.to_string())),
+    }
+}
+
+/// smartctl exits are a bitmask, not a success boolean. Preserve measured
+/// attributes from partial responses without turning command failures into a
+/// hardware failure (or declaring a device healthy from exit 0 alone).
+pub(crate) fn apply_smart_json(drive: &mut DriveHealth, bytes: &[u8], exit: i32) -> Observation {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return Observation::error("smartctl JSON", "Malformed or missing structured output");
+    };
+    let reported = value
+        .pointer("/smartctl/exit_status")
+        .and_then(|v| v.as_i64());
+    if reported != Some(i64::from(exit)) || !(0..=255).contains(&exit) {
+        return Observation::error(
+            "smartctl JSON",
+            "Exit-status metadata does not match the helper outcome",
+        );
+    }
+    let has = |path: &str| value.pointer(path).and_then(|v| v.as_u64());
+    let text = |path: &str| {
+        value
+            .pointer(path)
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+    };
+    let passed = value
+        .pointer("/smart_status/passed")
+        .and_then(|v| v.as_bool());
+    if let (Some(expected), Some(actual)) = (
+        drive.serial.as_deref().filter(|s| !s.trim().is_empty()),
+        text("/serial_number"),
+    ) {
+        if expected.trim() != actual.trim() {
+            return Observation::contradictory("smartctl JSON", "The helper device identity does not match the inventory; readings were not attached to that device");
+        }
+    }
+    let status = if passed == Some(false) || exit & 0x18 != 0 {
+        DiskHealthStatus::Critical
+    } else if exit & 0xe0 != 0 {
+        DiskHealthStatus::Warning
+    } else if passed == Some(true) && exit & 7 == 0 {
+        DiskHealthStatus::Healthy
+    } else {
+        DiskHealthStatus::Unknown
+    };
+    let conflict = merge_health(drive, status, "smartctl JSON");
+    drive.serial = text("/serial_number").or(drive.serial.take());
+    drive.firmware = text("/firmware_version").or(drive.firmware.take());
+    drive.temperature_celsius = value
+        .pointer("/temperature/current")
+        .and_then(|v| v.as_f64())
+        .filter(|t| t.is_finite() && *t >= -273.15)
+        .or(drive.temperature_celsius);
+    drive.power_on_hours = has("/power_on_time/hours").or(drive.power_on_hours);
+    drive.wear_percent = has("/nvme_smart_health_information_log/percentage_used")
+        .map(|v| v.min(255) as u8)
+        .or(drive.wear_percent);
+    // NVMe media_errors is combined; do not falsely attribute it to reads or writes.
+    drive.read_errors_total =
+        has("/scsi_error_counter_log/read/total_uncorrected_errors").or(drive.read_errors_total);
+    drive.write_errors_total =
+        has("/scsi_error_counter_log/write/total_uncorrected_errors").or(drive.write_errors_total);
+    if conflict {
+        return Observation::contradictory("smartctl JSON and platform storage health", "Providers disagree on disk health; the reported fault and available measurements are retained");
+    }
+    if exit & 7 != 0 {
+        let denied = value
+            .pointer("/smartctl/messages")
+            .and_then(|v| v.as_array())
+            .is_some_and(|messages| {
+                messages
+                    .iter()
+                    .filter_map(|v| v.get("string").and_then(|v| v.as_str()))
+                    .any(|s| {
+                        s.to_ascii_lowercase().contains("permission denied")
+                            || s.to_ascii_lowercase().contains("access is denied")
+                    })
+            });
+        if denied {
+            Observation::permission_denied(
+                "smartctl JSON",
+                "Device access was denied; unprivileged inventory remains available",
+            )
+        } else {
+            Observation::unavailable("smartctl JSON", "The read was incomplete, unsupported, or the device is sleeping; available fields are retained")
+        }
+    } else if passed.is_some()
+        || drive.temperature_celsius.is_some()
+        || drive.power_on_hours.is_some()
+    {
+        Observation::available("smartctl JSON")
+    } else {
+        Observation::unavailable(
+            "smartctl JSON",
+            "No supported health or reliability fields were returned",
+        )
+    }
+}
+
+#[cfg(test)]
+mod storage_tests {
+    use super::*;
     #[test]
-    fn parses_diskutil_info_fixture() {
-        let fixture = r#"
-            Device Identifier:         disk0
-            Device / Media Name:       APPLE SSD AP1024N
-            Solid State:               Yes
-        "#;
-
-        let (model, media_type) = parse_diskutil_info(fixture);
-
-        assert_eq!(model, "APPLE SSD AP1024N");
-        assert_eq!(media_type, MediaType::Ssd);
+    fn device_numbers_do_not_depend_on_provider_order() {
+        assert_eq!(physical_drive_number(r"\\.\PHYSICALDRIVE12"), Some(12));
+        assert_eq!(physical_drive_number("12"), None);
+    }
+    #[test]
+    fn smart_exit_bits_preserve_partial_data_and_distinguish_faults() {
+        let mut drive = empty_drive("fixture".into(), "fixture".into(), MediaType::Unknown);
+        let result = apply_smart_json(&mut drive, br#"{"smartctl":{"exit_status":4},"temperature":{"current":41},"smart_status":{"passed":true}}"#, 4);
+        assert!(!result.is_available());
+        assert_eq!(drive.temperature_celsius, Some(41.0));
+        assert_eq!(drive.health_status, DiskHealthStatus::Unknown);
+        apply_smart_json(
+            &mut drive,
+            br#"{"smartctl":{"exit_status":8},"smart_status":{"passed":false}}"#,
+            8,
+        );
+        assert_eq!(drive.health_status, DiskHealthStatus::Critical);
+        let bad = apply_smart_json(&mut drive, br#"{"smartctl":{"exit_status":0}}"#, 1);
+        assert_eq!(bad.status, crate::observation::ObservationStatus::Error);
+    }
+    #[test]
+    fn provider_serials_must_be_unique_in_both_inventories() {
+        let mut drives = vec![
+            empty_drive("disk9".into(), "Identical model".into(), MediaType::Ssd),
+            empty_drive("disk0".into(), "Identical model".into(), MediaType::Ssd),
+        ];
+        drives[0].serial = Some(" A ".into());
+        drives[1].serial = Some("B".into());
+        assert_eq!(
+            matching_serial(&drives, Some("B"), &[Some("B"), Some("A")]),
+            Some(1)
+        );
+        assert_eq!(
+            matching_serial(&drives, Some("A"), &[Some("A"), Some("A")]),
+            None
+        );
+        assert_eq!(matching_serial(&drives, Some(" "), &[Some(" ")]), None);
+        assert_eq!(matching_serial(&drives, None, &[None]), None);
+        drives[1].serial = Some("A".into());
+        assert_eq!(matching_serial(&drives, Some("A"), &[Some("A")]), None);
     }
 
     #[test]
-    fn diskutil_nvme_model_overrides_solid_state_label() {
-        let fixture = r#"
-            Device / Media Name:       Example NVMe Media
-            Solid State:               Yes
-        "#;
+    fn failure_prediction_uses_unique_pnp_identity_and_counter_boundaries() {
+        let ids = vec![
+            String::new(),
+            r"SCSI\DISK&VEN_FIXTURE\4&ABC".into(),
+            r"SCSI\DISK&VEN_FIXTURE\4&ABCD".into(),
+        ];
+        assert_eq!(
+            matching_prediction(r"scsi\disk&ven_fixture\4&abc_0", &ids),
+            Some(1)
+        );
+        assert_eq!(
+            matching_prediction(r"SCSI\DISK&VEN_FIXTURE\4&ABCD_12", &ids),
+            Some(2)
+        );
+        assert_eq!(matching_prediction(r"\\.\PHYSICALDRIVE0", &ids), None);
+        assert_eq!(
+            matching_prediction(r"SCSI\DISK&VEN_FIXTURE\4&ABC_other", &ids),
+            None
+        );
+        assert_eq!(matching_prediction("", &ids), None);
+        assert_eq!(
+            matching_prediction("disk_0", &["disk".into(), "disk".into()]),
+            None
+        );
+        assert_eq!(
+            matching_prediction("disk_0", &["disk".into(), "disk_0".into()]),
+            None
+        );
+    }
 
-        let (_, media_type) = parse_diskutil_info(fixture);
+    #[test]
+    fn healthy_smart_does_not_erase_another_providers_fault() {
+        let mut drive = empty_drive("fixture".into(), "fixture".into(), MediaType::Unknown);
+        merge_health(&mut drive, DiskHealthStatus::Critical, "platform provider");
+        let result = apply_smart_json(&mut drive, br#"{"smartctl":{"exit_status":0},"temperature":{"current":41},"smart_status":{"passed":true}}"#, 0);
+        assert_eq!(result.status, ObservationStatus::Contradictory);
+        assert_eq!(drive.health_status, DiskHealthStatus::Critical);
+        assert_eq!(drive.temperature_celsius, Some(41.0));
+        assert!(drive.health_source.contains("platform provider"));
+        assert!(drive.health_source.contains("smartctl JSON"));
+        assert!(!merge_health(
+            &mut drive,
+            DiskHealthStatus::Unknown,
+            "unavailable provider"
+        ));
+        assert_eq!(drive.health_status, DiskHealthStatus::Critical);
+    }
 
-        assert_eq!(media_type, MediaType::NVMe);
+    #[test]
+    fn replaced_device_smart_result_is_not_attached_to_old_identity() {
+        let mut drive = empty_drive("fixture".into(), "fixture".into(), MediaType::Unknown);
+        drive.serial = Some("old device".into());
+        let result = apply_smart_json(&mut drive, br#"{"smartctl":{"exit_status":8},"serial_number":"replacement","temperature":{"current":41},"smart_status":{"passed":false}}"#, 8);
+        assert_eq!(result.status, ObservationStatus::Contradictory);
+        assert_eq!(drive.serial.as_deref(), Some("old device"));
+        assert_eq!(drive.health_status, DiskHealthStatus::Unknown);
+        assert_eq!(drive.temperature_celsius, None);
+    }
+
+    #[test]
+    fn diskutil_structured_health_does_not_guess_missing_media() {
+        let info = super::super::macos::parse_plist(br#"<plist version="1.0"><dict><key>MediaName</key><string>External Disk</string><key>SMARTStatus</key><string>Verified</string></dict></plist>"#).unwrap();
+        let drive = parse_diskutil_info("disk4", &info).unwrap();
+        assert_eq!(drive.device_id, "/dev/disk4");
+        assert_eq!(drive.health_status, DiskHealthStatus::Healthy);
+        assert_eq!(drive.media_type, MediaType::Unknown);
     }
 }

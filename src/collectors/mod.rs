@@ -1,24 +1,47 @@
+#[cfg(target_os = "macos")]
+pub mod apple_inventory;
 pub mod command;
 pub mod cpu;
 pub mod disk;
+pub mod disk_activity;
 pub mod disk_health;
 pub mod display;
 pub mod drivers;
 pub mod gpu;
+#[cfg(any(target_os = "linux", test))]
+pub mod gpu_linux;
+#[cfg(windows)]
+mod gpu_windows;
+#[cfg(any(target_os = "linux", test))]
+mod linux_connections;
+#[cfg(any(target_os = "linux", test))]
+pub mod linux_inventory;
+pub mod macos;
 pub mod memory;
 pub mod network;
 pub mod network_diag;
 pub mod platform;
+pub mod probe;
 pub mod processes;
+pub mod provider_cache;
+pub mod sampling;
 pub mod system_info;
 pub mod thermals;
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+mod unix_network;
+#[cfg(windows)]
+mod windows_connections;
+#[cfg(windows)]
+mod windows_connectivity;
+#[cfg(windows)]
+mod windows_network;
 
 use serde::Serialize;
-#[cfg(not(target_os = "windows"))]
-use sysinfo::ProcessRefreshKind;
-use sysinfo::{Components, Disks, Networks, ProcessesToUpdate, System};
+use sysinfo::{Components, Disks, Networks, System};
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct DiagnosticWarning {
     pub source: String,
     pub message: String,
@@ -33,6 +56,9 @@ mod command_tests {
 
     #[test]
     fn command_helper_returns_successful_output() {
+        let _guard = super::command::TEST_PROCESS_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         #[cfg(unix)]
         let output = run_output("sh", ["-c", "printf ok"], CommandTimeout::Normal)
             .expect("command should produce output");
@@ -47,56 +73,40 @@ mod command_tests {
 
     #[test]
     fn command_helper_times_out_and_kills_child() {
+        let _guard = super::command::TEST_PROCESS_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let started = Instant::now();
 
-        #[cfg(unix)]
+        let (program, args) = super::command::test_fixture("fixture_hung");
         let output = run_output(
-            "sh",
-            ["-c", "sleep 2; printf late"],
+            program,
+            args,
             CommandTimeout::Custom(Duration::from_millis(75)),
         );
-
-        #[cfg(windows)]
-        let output = run_output(
-            "powershell",
-            [
-                "-NoProfile",
-                "-Command",
-                "Start-Sleep -Seconds 2; Write-Output late",
-            ],
-            CommandTimeout::Custom(Duration::from_millis(75)),
+        assert!(matches!(output, Err(super::command::CommandError::Timeout)));
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "owned timeout cleanup took {:?}",
+            started.elapsed()
         );
-
-        assert!(output.is_none());
-        assert!(started.elapsed() < Duration::from_secs(1));
     }
 
     #[test]
     fn command_helper_drains_output_larger_than_a_pipe_buffer() {
+        let _guard = super::command::TEST_PROCESS_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         const OUTPUT_SIZE: usize = 1024 * 1024;
 
-        #[cfg(unix)]
-        let output = run_output(
-            "sh",
-            ["-c", "head -c 1048576 /dev/zero"],
-            CommandTimeout::Slow,
-        )
-        .expect("large-output command should complete");
-
-        #[cfg(windows)]
-        let output = run_output(
-            "powershell",
-            [
-                "-NoProfile",
-                "-Command",
-                "[Console]::OpenStandardOutput().Write((New-Object byte[] 1048576), 0, 1048576)",
-            ],
-            CommandTimeout::Slow,
-        )
-        .expect("large-output command should complete");
-
+        let (program, args) = super::command::test_fixture("fixture_one_mebibyte");
+        let output = run_output(program, args, CommandTimeout::Slow)
+            .expect("native output fixture should complete");
         assert!(output.status.success());
-        assert_eq!(output.stdout.len(), OUTPUT_SIZE);
+        assert_eq!(
+            output.stdout.iter().filter(|&&byte| byte == 0).count(),
+            OUTPUT_SIZE
+        );
     }
 
     #[cfg(windows)]
@@ -112,6 +122,9 @@ mod command_tests {
     #[cfg(windows)]
     #[test]
     fn command_helper_does_not_create_a_windows_console() {
+        let _guard = super::command::TEST_PROCESS_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let executable = std::env::current_exe().expect("test executable path");
         let output = run_output(
             executable.as_os_str(),
@@ -133,7 +146,7 @@ mod command_tests {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WarningSeverity {
     Info,
@@ -147,21 +160,29 @@ pub struct SystemSnapshot {
     pub cpu: cpu::CpuData,
     pub memory: memory::MemoryData,
     pub disk: disk::DiskData,
+    pub disk_activity: disk_activity::DiskActivity,
     pub disk_health: disk_health::DiskHealthData,
     pub displays: display::DisplayData,
     pub gpu: gpu::GpuData,
     pub network: network::NetworkData,
     pub network_diag: network_diag::NetworkDiagData,
+    pub companion: crate::companion::State,
+    pub optional_setup: crate::optional_tools::State,
+    pub storage_probe: crate::storage_probe::State,
     pub processes: processes::ProcessData,
     pub thermals: thermals::ThermalData,
     pub drivers: drivers::DriverData,
     pub warnings: Vec<DiagnosticWarning>,
+    pub samples: std::collections::BTreeMap<String, sampling::SampleMeta>,
     /// Internal sysinfo handle
     sys: System,
     networks: Networks,
+    network_sampler: network::NetworkSampler,
     disks: Disks,
     components: Components,
-    #[cfg(target_os = "windows")]
+    #[cfg(not(any(windows, target_os = "macos")))]
+    process_instances: std::collections::HashSet<(u32, u64)>,
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     gui_process_sampler: processes::GuiProcessSampler,
 }
 
@@ -172,28 +193,75 @@ impl Default for SystemSnapshot {
             cpu: cpu::CpuData::default(),
             memory: memory::MemoryData::default(),
             disk: disk::DiskData::default(),
+            disk_activity: disk_activity::DiskActivity::default(),
             disk_health: disk_health::DiskHealthData::default(),
             displays: display::DisplayData::default(),
             gpu: gpu::GpuData::default(),
             network: network::NetworkData::default(),
             network_diag: network_diag::NetworkDiagData::default(),
+            companion: Default::default(),
+            optional_setup: Default::default(),
+            storage_probe: Default::default(),
             processes: processes::ProcessData::default(),
             thermals: thermals::ThermalData::default(),
             drivers: drivers::DriverData::default(),
             warnings: Vec::new(),
-            sys: System::new_all(),
-            networks: Networks::new_with_refreshed_list(),
-            disks: Disks::new_with_refreshed_list(),
-            components: Components::new_with_refreshed_list(),
-            #[cfg(target_os = "windows")]
+            samples: std::collections::BTreeMap::new(),
+            sys: System::new(),
+            networks: Networks::new(),
+            network_sampler: network::NetworkSampler::default(),
+            disks: Disks::new(),
+            components: Components::new(),
+            #[cfg(not(any(windows, target_os = "macos")))]
+            process_instances: Default::default(),
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             gui_process_sampler: processes::GuiProcessSampler::default(),
         }
     }
 }
 
 impl SystemSnapshot {
+    pub fn invalidate_rate_baselines(&mut self) {
+        self.network_sampler = network::NetworkSampler::default();
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            self.gui_process_sampler = processes::GuiProcessSampler::default();
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
+        {
+            self.process_instances.clear();
+        }
+    }
+
+    /// Copy presentation values only. Collector handles and rate baselines are never cloned.
+    pub fn presentation_copy(&self) -> Self {
+        Self {
+            system: self.system.clone(),
+            cpu: self.cpu.clone(),
+            memory: self.memory.clone(),
+            disk: self.disk.clone(),
+            disk_activity: self.disk_activity.clone(),
+            disk_health: self.disk_health.clone(),
+            displays: self.displays.clone(),
+            gpu: self.gpu.clone(),
+            network: self.network.clone(),
+            network_diag: self.network_diag.clone(),
+            companion: self.companion.clone(),
+            optional_setup: self.optional_setup.clone(),
+            storage_probe: self.storage_probe.clone(),
+            processes: self.processes.clone(),
+            thermals: self.thermals.clone(),
+            drivers: self.drivers.clone(),
+            warnings: self.warnings.clone(),
+            samples: self.samples.clone(),
+            ..Self::default()
+        }
+    }
+
     /// Refresh static info (once at startup)
     pub fn refresh_static(&mut self) {
+        self.sys.refresh_cpu_all();
+        self.sys.refresh_memory();
         self.system = system_info::collect(&self.sys);
         memory::refresh_hardware(&mut self.memory);
         self.displays = display::collect();
@@ -204,7 +272,14 @@ impl SystemSnapshot {
     pub fn refresh_fast(&mut self) {
         self.sys.refresh_cpu_all();
         self.sys.refresh_memory();
-        self.sys.refresh_processes(ProcessesToUpdate::All, true);
+        #[cfg(not(any(windows, target_os = "macos")))]
+        self.sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            sysinfo::ProcessRefreshKind::nothing()
+                .with_cpu()
+                .with_memory(),
+        );
 
         self.cpu = cpu::collect(&self.sys);
         let modules = std::mem::take(&mut self.memory.modules);
@@ -214,10 +289,22 @@ impl SystemSnapshot {
         self.memory.module_status = module_status;
         let adapters = std::mem::take(&mut self.network.adapters);
         let adapter_status = self.network.adapter_status.clone();
-        self.network = network::collect(&mut self.networks);
+        self.network = self.network_sampler.collect(&mut self.networks);
         self.network.adapters = adapters;
         self.network.adapter_status = adapter_status;
-        self.processes = processes::collect(&self.sys);
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            self.processes = self.gui_process_sampler.collect(
+                self.memory.total_bytes,
+                usize::MAX,
+                crate::types::ProcessSortKey::Cpu,
+            );
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
+        {
+            self.processes = processes::collect(&self.sys);
+            self.mark_process_baselines();
+        }
     }
 
     /// Refresh the same fast values consumed by the native GUI without asking
@@ -246,27 +333,28 @@ impl SystemSnapshot {
         self.memory.module_status = module_status;
         let adapters = std::mem::take(&mut self.network.adapters);
         let adapter_status = self.network.adapter_status.clone();
-        self.network = network::collect(&mut self.networks);
+        self.network = self.network_sampler.collect(&mut self.networks);
         self.network.adapters = adapters;
         self.network.adapter_status = adapter_status;
     }
 
     /// Refresh the one-second process projection only while its GUI page is
-    /// subscribed. The platform sampler supplies both ranked process rows and
-    /// total CPU load from the same system-time sample; memory is refreshed so
+    /// subscribed. Aggregate CPU uses the same provider as every other page;
+    /// per-process CPU uses capture intervals. Memory is refreshed so
     /// the persistent header/tray never freezes while Processes is selected.
     /// Unrelated network and command-backed collectors stay dormant as before.
     pub fn refresh_processes_gui(&mut self, sort: crate::types::ProcessSortKey) {
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         {
+            self.sys.refresh_cpu_usage();
+            self.cpu.total_usage = self.sys.global_cpu_usage();
             self.sys.refresh_memory();
             memory::refresh_usage(&mut self.memory, &self.sys);
-            self.processes = self
-                .gui_process_sampler
-                .collect(self.memory.total_bytes, 16, sort);
-            self.cpu.total_usage = self.gui_process_sampler.total_cpu_percent();
+            self.processes =
+                self.gui_process_sampler
+                    .collect(self.memory.total_bytes, usize::MAX, sort);
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
             self.sys.refresh_cpu_usage();
             self.sys.refresh_memory();
@@ -277,8 +365,27 @@ impl SystemSnapshot {
                 true,
                 ProcessRefreshKind::nothing().with_cpu().with_memory(),
             );
-            self.processes = processes::collect_limited(&self.sys, 16, sort);
+            self.processes = processes::collect_limited(&self.sys, usize::MAX, sort);
+            self.mark_process_baselines();
         }
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    fn mark_process_baselines(&mut self) {
+        let mut observed = std::collections::HashSet::new();
+        for process in &mut self.processes.list {
+            let identity = process.start_time_unix_ms.map(|start| (process.pid, start));
+            if !identity.is_some_and(|id| self.process_instances.contains(&id)) {
+                process.cpu_observation = crate::observation::Observation::unavailable(
+                    "sysinfo",
+                    "Waiting for a second readable sample from the same process instance",
+                );
+            }
+            if let Some(identity) = identity {
+                observed.insert(identity);
+            }
+        }
+        self.process_instances = observed;
     }
 
     /// Refresh only the CPU and memory values used by the native Overview.
@@ -348,3 +455,6 @@ impl SystemSnapshot {
         self.warnings.extend(health_warnings);
     }
 }
+
+#[cfg(any(windows, target_os = "linux"))]
+mod nvml;

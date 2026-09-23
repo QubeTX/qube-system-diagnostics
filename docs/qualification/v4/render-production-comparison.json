@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "platform": "windows-x86_64",
+  "baseline_source": "09b46a3",
+  "candidate_patch_sha256": "90059fd2ec71b69cb37aab16cadcd266d4916dd4c9031062450d5962483fee60",
+  "build": "ReleaseFast x86_64-windows -Dcpu=baseline -Dtrace=off",
+  "surface": [
+    1180,
+    760
+  ],
+  "path": "renderPassDamageWithStaticPrefix",
+  "scroll_samples_per_section": 128,
+  "observer": "none; standalone after compiler processes exited",
+  "limitations": [
+    "Raster time only; not complete frame or input latency.",
+    "Baseline production pixels fail equivalence; only its isolated benchmark copy logs that failure instead of aborting, to retain diagnostic before timings.",
+    "Candidate retains fatal byte-equivalence checks.",
+    "A transient Zig analysis-file read error occurred on the baseline diagnostic rebuild; benchmark executable compiled and ran. The preceding unchanged-target baseline strict build passed."
+  ],
+  "before": {
+    "binary_sha256": "524692579d83ac57e0596f0f34b29abf7193c0eecc2a5a73cdb96200f499aea6",
+    "scroll": [
+      {
+        "section": 5,
+        "count": 128,
+        "avg_ms": 10.46,
+        "p50_ms": 10.556,
+        "p95_ms": 13.441,
+        "max_ms": 15.836
+      },
+      {
+        "section": 6,
+        "count": 128,
+        "avg_ms": 7.561,
+        "p50_ms": 8.344,
+        "p95_ms": 10.192,
+        "max_ms": 13.18
+      },
+      {
+        "section": 8,
+        "count": 128,
+        "avg_ms": 6.617,
+        "p50_ms": 7.393,
+        "p95_ms": 9.259,
+        "max_ms": 10.641
+      }
+    ],
+    "pixel_equivalence": false,
+    "legacy_mismatch_count": 15,
+    "cache_reports": [
+      "MEMO_BYTES sec5 tick cold scroll=  0 commands=4833084 glyph_pixels=192192 glyph_masks=213788 prefix=3587200 images=0",
+      "MEMO_BYTES sec5 tick warm scroll=  0 commands=5817488 glyph_pixels=192192 glyph_masks=213788 prefix=3587200 images=0",
+      "MEMO_BYTES sec5 tick cold scroll=420 commands=5499376 glyph_pixels=143720 glyph_masks=161624 prefix=3587200 images=0",
+      "MEMO_BYTES sec5 tick warm scroll=420 commands=7203308 glyph_pixels=143720 glyph_masks=161624 prefix=3587200 images=0",
+      "MEMO_BYTES sec6 tick cold scroll=  0 commands=4827988 glyph_pixels=199316 glyph_masks=248556 prefix=3587200 images=0",
+      "MEMO_BYTES sec6 tick warm scroll=  0 commands=4827988 glyph_pixels=199316 glyph_masks=248556 prefix=3587200 images=0",
+      "MEMO_BYTES sec6 tick cold scroll=420 commands=4480740 glyph_pixels=181368 glyph_masks=212356 prefix=3587200 images=0",
+      "MEMO_BYTES sec6 tick warm scroll=420 commands=4480740 glyph_pixels=181368 glyph_masks=212356 prefix=3587200 images=0",
+      "MEMO_BYTES sec8 tick cold scroll=  0 commands=4366728 glyph_pixels=149008 glyph_masks=178560 prefix=3587200 images=0",
+      "MEMO_BYTES sec8 tick warm scroll=  0 commands=4366728 glyph_pixels=149008 glyph_masks=178560 prefix=3587200 images=0",
+      "MEMO_BYTES sec8 tick cold scroll=420 commands=5374128 glyph_pixels=100176 glyph_masks=101808 prefix=3587200 images=0",
+      "MEMO_BYTES sec8 tick warm scroll=420 commands=5374128 glyph_pixels=100176 glyph_masks=101808 prefix=3587200 images=0"
+    ]
+  },
+  "after": {
+    "binary_sha256": "3155c999edbb5ff7f6192327850584cc293dc0598cf93388c68678787a02f7cb",
+    "scroll": [
+      {
+        "section": 5,
+        "count": 128,
+        "avg_ms": 7.356,
+        "p50_ms": 7.882,
+        "p95_ms": 9.743,
+        "max_ms": 11.574
+      },
+      {
+        "section": 6,
+        "count": 128,
+        "avg_ms": 5.463,
+        "p50_ms": 5.483,
+        "p95_ms": 7.381,
+        "max_ms": 8.318
+      },
+      {
+        "section": 8,
+        "count": 128,
+        "avg_ms": 4.302,
+        "p50_ms": 4.288,
+        "p95_ms": 6.112,
+        "max_ms": 7.383
+      }
+    ],
+    "pixel_equivalence": true,
+    "legacy_mismatch_count": 0,
+    "cache_reports": [
+      "MEMO_BYTES sec5 tick cold scroll=  0 commands=570132 glyph_pixels=197344 glyph_masks=217948 prefix=3587200 images=0",
+      "MEMO_BYTES sec5 tick warm scroll=  0 commands=737860 glyph_pixels=197344 glyph_masks=217948 prefix=3587200 images=0",
+      "MEMO_BYTES sec5 tick cold scroll=420 commands=798016 glyph_pixels=145928 glyph_masks=162496 prefix=3587200 images=0",
+      "MEMO_BYTES sec5 tick warm scroll=420 commands=969280 glyph_pixels=145928 glyph_masks=162496 prefix=3587200 images=0",
+      "MEMO_BYTES sec6 tick cold scroll=  0 commands=216500 glyph_pixels=196756 glyph_masks=243904 prefix=3587200 images=0",
+      "MEMO_BYTES sec6 tick warm scroll=  0 commands=216500 glyph_pixels=196756 glyph_masks=243904 prefix=3587200 images=0",
+      "MEMO_BYTES sec6 tick cold scroll=420 commands=264668 glyph_pixels=182104 glyph_masks=214192 prefix=3587200 images=0",
+      "MEMO_BYTES sec6 tick warm scroll=420 commands=264668 glyph_pixels=182104 glyph_masks=214192 prefix=3587200 images=0",
+      "MEMO_BYTES sec8 tick cold scroll=  0 commands=386696 glyph_pixels=150716 glyph_masks=176352 prefix=3587200 images=0",
+      "MEMO_BYTES sec8 tick warm scroll=  0 commands=386696 glyph_pixels=150716 glyph_masks=176352 prefix=3587200 images=0",
+      "MEMO_BYTES sec8 tick cold scroll=420 commands=173192 glyph_pixels=104000 glyph_masks=103624 prefix=3587200 images=0",
+      "MEMO_BYTES sec8 tick warm scroll=420 commands=173192 glyph_pixels=104000 glyph_masks=103624 prefix=3587200 images=0"
+    ]
+  }
+}
