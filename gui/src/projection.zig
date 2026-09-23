@@ -377,6 +377,7 @@ pub const ConnectionRow = struct {
     local_port: u16 = 0,
     remote_port: u16 = 0,
     pid: u32 = 0,
+    pid_available: bool = false,
     protocol_buffer: canvas.TextBuffer(12) = canvas.TextBuffer(12).init("tcp"),
     local_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("*"),
     remote_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("*"),
@@ -598,9 +599,15 @@ pub const Projection = struct {
     connection_rows: [max_connections]ConnectionRow = [_]ConnectionRow{.{}} ** max_connections,
     connection_count: usize = 0,
     connection_total_count: u32 = 0,
+    connection_matched_count: u32 = 0,
+    connection_page_offset: u32 = 0,
+    connection_paged: bool = false,
     listening_count: u32 = 0,
     driver_rows: [max_drivers]DriverRow = [_]DriverRow{.{}} ** max_drivers,
     driver_count: usize = 0,
+    driver_matched_count: u32 = 0,
+    driver_page_offset: u32 = 0,
+    driver_paged: bool = false,
     drive_health_rows: [max_drive_health]DriveHealthRow = [_]DriveHealthRow{.{}} ** max_drive_health,
     drive_health_count: usize = 0,
     drive_health_total_count: u32 = 0,
@@ -1253,11 +1260,14 @@ pub const Projection = struct {
         self.captureTopicMeta(2, parsed.value);
         self.medium_ready = true;
         const data = parsed.value.data;
-        self.listening_count = saturatedU32(data.listening_ports.len);
-        self.connection_total_count = saturatedU32(data.active_connections.len);
+        self.listening_count = data.listening_count orelse saturatedU32(data.listening_ports.len);
+        self.connection_total_count = data.total_count orelse saturatedU32(data.active_connections.len);
+        self.connection_paged = data.matched_count != null;
+        self.connection_matched_count = data.matched_count orelse self.connection_total_count;
+        self.connection_page_offset = data.page_offset;
         self.connection_count = @min(data.active_connections.len, max_connections);
         for (data.active_connections[0..self.connection_count], 0..) |item, index| {
-            var row = ConnectionRow{ .id = @intCast(index), .local_port = item.local_port, .remote_port = item.remote_port, .pid = item.pid orelse 0 };
+            var row = ConnectionRow{ .id = @intCast(index), .local_port = item.local_port, .remote_port = item.remote_port, .pid = item.pid orelse 0, .pid_available = item.pid != null };
             row.protocol_buffer.set(item.protocol);
             row.local_buffer.set(item.local_addr);
             row.remote_buffer.set(item.remote_addr);
@@ -1371,7 +1381,7 @@ pub const Projection = struct {
         setValueLabel(&self.driver_scan_buffer, data.scan_status);
         const groups = [_][]const DriverJson{
             data.network, data.bluetooth, data.audio,  data.input, data.display,
-            data.storage, data.usb,       data.system, data.other,
+            data.storage, data.usb,       data.system, data.other, data.devices,
         };
         var total: usize = 0;
         var attention: usize = 0;
@@ -1381,8 +1391,11 @@ pub const Projection = struct {
                 attention += 1;
             };
         }
-        self.driver_total_count = saturatedU32(total);
-        self.driver_attention_count = saturatedU32(attention);
+        self.driver_total_count = data.total_count orelse saturatedU32(total);
+        self.driver_attention_count = data.attention_count orelse saturatedU32(attention);
+        self.driver_paged = data.matched_count != null;
+        self.driver_matched_count = data.matched_count orelse self.driver_total_count;
+        self.driver_page_offset = data.page_offset;
         self.driver_count = 0;
         for ([_]bool{ true, false }) |attention_pass| {
             for (groups) |group| {
@@ -1401,7 +1414,7 @@ pub const Projection = struct {
                 }
             }
         }
-        self.service_total_count = saturatedU32(data.services.len);
+        self.service_total_count = data.service_total_count orelse saturatedU32(data.services.len);
         self.service_count = @min(data.services.len, max_services);
         for (data.services[0..self.service_count], 0..) |service, index| {
             var row = ServiceRow{ .id = @intCast(index), .running = service.is_running };
@@ -1669,6 +1682,10 @@ const ConnectionJson = struct {
     process_name: ?[]const u8 = null,
 };
 const MediumJson = struct {
+    total_count: ?u32 = null,
+    matched_count: ?u32 = null,
+    page_offset: u32 = 0,
+    listening_count: ?u32 = null,
     active_connections: []const ConnectionJson = &.{},
     listening_ports: []const ConnectionJson = &.{},
 };
@@ -1724,6 +1741,12 @@ const DriverJson = struct {
     extra: []const u8 = "",
 };
 const DriversJson = struct {
+    devices: []const DriverJson = &.{},
+    total_count: ?u32 = null,
+    matched_count: ?u32 = null,
+    page_offset: u32 = 0,
+    attention_count: ?u32 = null,
+    service_total_count: ?u32 = null,
     network: []const DriverJson = &.{},
     bluetooth: []const DriverJson = &.{},
     audio: []const DriverJson = &.{},

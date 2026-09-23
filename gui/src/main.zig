@@ -81,6 +81,10 @@ pub const Msg = union(enum) {
     process_filter_edit: canvas.TextInputEvent,
     process_previous_page,
     process_next_page,
+    connection_previous_page,
+    connection_next_page,
+    driver_previous_page,
+    driver_next_page,
     connection_filter_edit: canvas.TextInputEvent,
     driver_filter_edit: canvas.TextInputEvent,
     toggle_driver_attention,
@@ -320,15 +324,27 @@ pub const Model = struct {
         return model.detail.interfaces();
     }
     pub fn connections(model: *const Model) []const projection.ConnectionRow {
+        if (model.detail.connection_paged) return model.detail.connections();
         return if (model.connection_filter_buffer.text().len == 0)
             model.detail.connections()
         else
             model.filtered_connection_rows[0..model.filtered_connection_count];
     }
+    pub fn connectionEmpty(model: *const Model) bool { return model.connectionMatchCount() == 0; }
+    pub fn driverEmpty(model: *const Model) bool { return model.driverMatchCount() == 0; }
+    pub fn connectionPreviousDisabled(model: *const Model) bool { return model.detail.connection_page_offset == 0; }
+    pub fn connectionNextDisabled(model: *const Model) bool { return model.detail.connection_page_offset +| projection.max_connections >= model.detail.connection_matched_count; }
+    pub fn connectionPageNumber(model: *const Model) usize { return model.detail.connection_page_offset / projection.max_connections + 1; }
+    pub fn connectionPageCount(model: *const Model) usize { return @max(1, (model.detail.connection_matched_count +| (projection.max_connections - 1)) / projection.max_connections); }
+    pub fn driverPreviousDisabled(model: *const Model) bool { return model.detail.driver_page_offset == 0; }
+    pub fn driverNextDisabled(model: *const Model) bool { return model.detail.driver_page_offset +| projection.max_drivers >= model.detail.driver_matched_count; }
+    pub fn driverPageNumber(model: *const Model) usize { return model.detail.driver_page_offset / projection.max_drivers + 1; }
+    pub fn driverPageCount(model: *const Model) usize { return @max(1, (model.detail.driver_matched_count +| (projection.max_drivers - 1)) / projection.max_drivers); }
     pub fn connectionFilter(model: *const Model) []const u8 {
         return model.connection_filter_buffer.text();
     }
     pub fn connectionMatchCount(model: *const Model) usize {
+        if (model.detail.connection_paged) return model.detail.connection_matched_count;
         return if (model.connection_filter_buffer.text().len == 0)
             model.detail.connection_count
         else
@@ -481,6 +497,7 @@ pub const Model = struct {
         return model.detail.fans();
     }
     pub fn drivers(model: *const Model) []const projection.DriverRow {
+        if (model.detail.driver_paged) return model.detail.drivers();
         return if (model.driver_filter_buffer.text().len == 0 and !model.driver_attention_only)
             model.detail.drivers()
         else
@@ -490,6 +507,7 @@ pub const Model = struct {
         return model.driver_filter_buffer.text();
     }
     pub fn driverMatchCount(model: *const Model) usize {
+        if (model.detail.driver_paged) return model.detail.driver_matched_count;
         return if (model.driver_filter_buffer.text().len == 0 and !model.driver_attention_only)
             model.detail.driver_count
         else
@@ -608,16 +626,26 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             model.show_all_processes = true;
             requestProcessQuery(model);
         },
+        .connection_previous_page => { model.detail.connection_page_offset -|= projection.max_connections; requestInventoryQuery(model, .medium); },
+        .connection_next_page => { if (!model.connectionNextDisabled()) model.detail.connection_page_offset +|= projection.max_connections; requestInventoryQuery(model, .medium); },
+        .driver_previous_page => { model.detail.driver_page_offset -|= projection.max_drivers; requestInventoryQuery(model, .drivers); },
+        .driver_next_page => { if (!model.driverNextDisabled()) model.detail.driver_page_offset +|= projection.max_drivers; requestInventoryQuery(model, .drivers); },
         .connection_filter_edit => |edit| {
             model.connection_filter_buffer.apply(edit);
+            model.detail.connection_page_offset = 0;
+            requestInventoryQuery(model, .medium);
             rebuildConnectionFilter(model);
         },
         .driver_filter_edit => |edit| {
             model.driver_filter_buffer.apply(edit);
+            model.detail.driver_page_offset = 0;
+            requestInventoryQuery(model, .drivers);
             rebuildDriverFilter(model);
         },
         .toggle_driver_attention => {
             model.driver_attention_only = !model.driver_attention_only;
+            model.detail.driver_page_offset = 0;
+            requestInventoryQuery(model, .drivers);
             rebuildDriverFilter(model);
         },
         .toggle_process_rows => model.show_all_processes = !model.show_all_processes,
@@ -859,6 +887,14 @@ fn requestCompanion(model: *Model, action: u32, consent: bool) void {
         return;
     };
     model.status_buffer.set(if (action == 0) "Cancelling the requested optional action…" else if (action >= 5) "Starting the explicitly confirmed optional tool setup…" else "Starting the requested companion diagnostic…");
+}
+
+fn requestInventoryQuery(model: *Model, topic: engine.Topic) void {
+    const runtime = active_engine orelse return;
+    const devices = topic == .drivers;
+    runtime.setInventoryQuery(topic, if (devices) model.driver_filter_buffer.text() else model.connection_filter_buffer.text(),
+        if (devices) model.detail.driver_page_offset else model.detail.connection_page_offset, devices and model.driver_attention_only)
+        catch { model.status_buffer.set("The inventory search could not be updated; the previous captured page remains visible."); };
 }
 
 fn requestProcessQuery(model: *Model) void {

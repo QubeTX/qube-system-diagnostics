@@ -291,3 +291,12 @@ Linux needs PolicyKit and a registered graphical authentication agent; a
 headless session retains ordinary unprivileged monitoring. No repair, self-test,
 service or disk-setting change is performed. Captured results remain in memory
 and appear in explicit schema-2 exports with identifier redaction.
+
+### Complete captured inventory queries
+
+Process, connection and device searches run against the engine's complete captured
+inventory before creating bounded pages. Query changes retain the sample capture time;
+clear or failed providers retain their availability state. Connections use twenty rows
+per page and devices use thirty-two, with exact total/matched counts and previous/next
+controls. Device attention filtering is applied before paging. Offline fixture projections
+can still use local filtering; shipped clients use the engine query interface.

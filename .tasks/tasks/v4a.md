@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: 36c07d8 privileged worker qualification passes both Macs, Windows, both GNU Linux architectures and musl in CI 35844134568; final Windows/Intel-Mac GUI packaging still running. Full GUI inventory query candidate passes 15 engine and 49 native GUI tests (two platform skips), strict bindings, a 250-row lookup/page fixture and unchanged capture-time assertions. Next: final native composite check and release-build performance measurements with the entire owned process tree included.
+
 - 2026-09-23 — codex: session-export/availability candidate passes 182 library, 13 engine, 8 CLI compatibility and 48 native GUI tests (two platform skips), strict bindings and root clippy. Shared exports retain diagnostic results and cannot overwrite files; storage counters preserve independent availability/coverage and SpeedQX partial qualification. Native socket normalization is separately under qualification at 36c07d8. Next: native export/privacy checks, complete-inventory GUI paging and measured performance.
 
 - 2026-09-23 — codex: ec52420 native CI 35843038445 passes GNU Linux x86/ARM but the storage-worker callback fails immediately with WouldBlock on both Macs and Windows (jobs 107122442837/107122442855/107122442966). Accepted sockets inherit the listener nonblocking flag there; Linux does not. Normalize accepted sockets before timed framing in both product and qualification fixture. Next oracle: unchanged synthetic worker on those native runtimes; no authorization or device-read changes in this cycle.

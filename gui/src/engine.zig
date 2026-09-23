@@ -116,6 +116,7 @@ const RequestCompanionFn = *const fn (?*anyopaque, u32, u32) callconv(.c) i32;
 const RequestExportFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
 const ReadExportStatusFn = *const fn (?*anyopaque, ?[*]u8, usize, *usize) callconv(.c) i32;
 const SetProfileFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
+const SetInventoryQueryFn = *const fn (?*anyopaque, u32, [*]const u8, usize, u32, u32) callconv(.c) i32;
 const SetProcessQueryFn = *const fn (?*anyopaque, [*]const u8, usize, u32) callconv(.c) i32;
 const SetProcessSortFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
 const ReadFastSummaryFn = *const fn (?*anyopaque, *FastSummary) callconv(.c) i32;
@@ -192,6 +193,7 @@ pub const Runtime = struct {
     set_profile_fn: SetProfileFn,
     set_process_sort_fn: SetProcessSortFn,
     set_process_query_fn: SetProcessQueryFn,
+    set_inventory_query_fn: SetInventoryQueryFn,
     request_driver_scan_fn: HandleFn,
     request_companion_fn: RequestCompanionFn,
     request_storage_probe_fn: RequestStorageProbeFn,
@@ -225,6 +227,7 @@ pub const Runtime = struct {
         const start_fn = try library.lookup(HandleFn, "sd300_engine_start");
         const set_profile_fn = try library.lookup(SetProfileFn, "sd300_engine_set_profile");
         const set_process_sort_fn = try library.lookup(SetProcessSortFn, "sd300_engine_set_process_sort");
+        const set_inventory_query_fn = try library.lookup(SetInventoryQueryFn, "sd300_engine_set_inventory_query");
         const set_process_query_fn = try library.lookup(SetProcessQueryFn, "sd300_engine_set_process_query");
         const request_storage_probe_fn = try library.lookup(RequestStorageProbeFn, "sd300_engine_request_storage_probe");
         const request_companion_fn = try library.lookup(RequestCompanionFn, "sd300_engine_request_companion");
@@ -269,6 +272,7 @@ pub const Runtime = struct {
             .set_profile_fn = set_profile_fn,
             .set_process_sort_fn = set_process_sort_fn,
             .set_process_query_fn = set_process_query_fn,
+            .set_inventory_query_fn = set_inventory_query_fn,
             .request_driver_scan_fn = request_driver_scan_fn,
             .request_companion_fn = request_companion_fn,
             .request_storage_probe_fn = request_storage_probe_fn,
@@ -387,6 +391,10 @@ pub const Runtime = struct {
         if (self.set_process_sort_fn(self.handle, sort) != status_ok) {
             return error.EngineProcessSortFailed;
         }
+    }
+
+    pub fn setInventoryQuery(self: *Runtime, topic: Topic, filter: []const u8, offset: u32, attention: bool) !void {
+        if (self.set_inventory_query_fn(self.handle, @intFromEnum(topic), filter.ptr, filter.len, offset, @intFromBool(attention)) != status_ok) return error.EngineInventoryQueryFailed;
     }
 
     pub fn setProcessQuery(self: *Runtime, filter: []const u8, offset: u32) !void {

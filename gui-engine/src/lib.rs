@@ -1,3 +1,4 @@
+mod inventory;
 use std::ffi::{c_char, c_void};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
@@ -212,6 +213,8 @@ struct Shared {
     process_sort: AtomicU8,
     process_query: Mutex<ProcessQuery>,
     process_query_dirty: AtomicBool,
+    inventory_queries: Mutex<[inventory::Query; 2]>,
+    inventory_dirty: AtomicU8,
     storage_request: Mutex<Option<(u8, String)>>,
     storage_cancel: AtomicBool,
     storage_busy: AtomicBool,
@@ -239,6 +242,8 @@ impl Default for Shared {
             process_sort: AtomicU8::new(PROCESS_SORT_CPU),
             process_query: Mutex::new(ProcessQuery::default()),
             process_query_dirty: AtomicBool::new(false),
+            inventory_queries: Mutex::new(std::array::from_fn(|_| inventory::Query::default())),
+            inventory_dirty: AtomicU8::new(0),
             storage_request: Mutex::new(None),
             storage_cancel: AtomicBool::new(false),
             storage_busy: AtomicBool::new(false),
@@ -349,12 +354,6 @@ struct SlowProjection<'a> {
     disk: &'a collectors::disk::DiskData,
     gpu: &'a collectors::gpu::GpuData,
     thermals: &'a collectors::thermals::ThermalData,
-}
-
-#[derive(Serialize)]
-struct MediumProjection<'a> {
-    active_connections: &'a [collectors::network_diag::ConnectionInfo],
-    listening_ports: &'a [collectors::network_diag::ConnectionInfo],
 }
 
 #[derive(Serialize)]
@@ -718,28 +717,54 @@ fn collect_loop(shared: &Shared) {
     let mut exporter = sd_300::export::Controller::default();
     let mut snapshot = SystemSnapshot::default();
     while !shared.stop.load(Ordering::Acquire) {
-        let storage_request = shared.storage_request.lock().unwrap_or_else(|p| p.into_inner()).take();
+        let storage_request = shared
+            .storage_request
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
         let storage_cancelled = shared.storage_cancel.swap(false, Ordering::AcqRel);
-        if storage_cancelled { storage_probe.cancel(); }
+        if storage_cancelled {
+            storage_probe.cancel();
+        }
         if let Some((action, device)) = &storage_request {
             if !storage_cancelled {
                 match action {
                     1 => {
                         storage_probe.cancel();
-                        if snapshot.samples.get("health").is_some_and(|m| m.observation.is_available() && !m.is_stale()) {
-                            if let Some(drive) = snapshot.disk_health.drives.iter().find(|d| d.device_id == *device) { storage_probe.prepare(drive); }
-                            else { storage_probe.state.message = "The selected drive is no longer in the current inventory".into(); }
-                        } else { storage_probe.state.message = "Wait for a current storage inventory before requesting a privileged read".into(); }
-                    },
-                    2 => { storage_probe.confirm(true); },
-                    _ => {},
+                        if snapshot
+                            .samples
+                            .get("health")
+                            .is_some_and(|m| m.observation.is_available() && !m.is_stale())
+                        {
+                            if let Some(drive) = snapshot
+                                .disk_health
+                                .drives
+                                .iter()
+                                .find(|d| d.device_id == *device)
+                            {
+                                storage_probe.prepare(drive);
+                            } else {
+                                storage_probe.state.message =
+                                    "The selected drive is no longer in the current inventory"
+                                        .into();
+                            }
+                        } else {
+                            storage_probe.state.message = "Wait for a current storage inventory before requesting a privileged read".into();
+                        }
+                    }
+                    2 => {
+                        storage_probe.confirm(true);
+                    }
+                    _ => {}
                 }
             }
         }
         let storage_changed = storage_probe.poll();
         if storage_request.is_some() || storage_cancelled || storage_changed {
             snapshot.storage_probe = storage_probe.state.clone();
-            if !storage_probe.state.running { shared.storage_busy.store(false, Ordering::Release); }
+            if !storage_probe.state.running {
+                shared.storage_busy.store(false, Ordering::Release);
+            }
             publish_diagnostics(shared, &snapshot);
         }
         let request = shared.companion_request.swap(0, Ordering::AcqRel);
@@ -792,6 +817,13 @@ fn collect_loop(shared: &Shared) {
         {
             update_process_summary(shared, &snapshot);
         }
+        let inventory_dirty = shared.inventory_dirty.swap(0, Ordering::AcqRel);
+        if inventory_dirty & 1 != 0 && !changed.contains(&Lane::Connections) {
+            inventory::publish(shared, &snapshot, 0);
+        }
+        if inventory_dirty & 2 != 0 && !changed.contains(&Lane::Drivers) {
+            inventory::publish(shared, &snapshot, 1);
+        }
         for lane in &changed {
             let sample = snapshot.samples.get(lane.name());
             match lane {
@@ -827,16 +859,7 @@ fn collect_loop(shared: &Shared) {
                     &snapshot.warnings,
                     sample,
                 ),
-                Lane::Connections => publish_sample(
-                    shared,
-                    Topic::Medium,
-                    &MediumProjection {
-                        active_connections: &snapshot.network_diag.active_connections,
-                        listening_ports: &snapshot.network_diag.listening_ports,
-                    },
-                    &snapshot.warnings,
-                    sample,
-                ),
+                Lane::Connections => inventory::publish(shared, &snapshot, 0),
                 Lane::Diagnostics => publish_diagnostics(shared, &snapshot),
                 Lane::Health => publish_sample(
                     shared,
@@ -845,13 +868,7 @@ fn collect_loop(shared: &Shared) {
                     &snapshot.warnings,
                     sample,
                 ),
-                Lane::Drivers => publish_sample(
-                    shared,
-                    Topic::Drivers,
-                    &snapshot.drivers,
-                    &snapshot.warnings,
-                    sample,
-                ),
+                Lane::Drivers => inventory::publish(shared, &snapshot, 1),
             }
         }
         if !changed.is_empty() {
@@ -882,24 +899,42 @@ fn collect_loop(shared: &Shared) {
     // Monitor Drop cancels process groups and joins every worker before the
     // engine can unload. No uninterruptible native probe runs in this DLL.
 }
-fn service_export_request(shared: &Shared, snapshot: &SystemSnapshot, exporter: &mut sd_300::export::Controller) {
+fn service_export_request(
+    shared: &Shared,
+    snapshot: &SystemSnapshot,
+    exporter: &mut sd_300::export::Controller,
+) {
     use sd_300::export::Kind;
     let request = shared.export_request.load(Ordering::Acquire);
-    if request == EXPORT_NONE { return; }
+    if request == EXPORT_NONE {
+        return;
+    }
     if !exporter.running() {
-        let kind = if request == EXPORT_SNAPSHOT { Kind::Snapshot } else { Kind::Capabilities };
+        let kind = if request == EXPORT_SNAPSHOT {
+            Kind::Snapshot
+        } else {
+            Kind::Capabilities
+        };
         exporter.start(snapshot, kind);
     }
-    if !exporter.poll() { return; }
+    if !exporter.poll() {
+        return;
+    }
     let status = match exporter.result.as_ref() {
-        Some(Ok(path)) => json!({"state":"complete", "kind":exporter.kind.label(), "path":path.to_string_lossy()}),
+        Some(Ok(path)) => {
+            json!({"state":"complete", "kind":exporter.kind.label(), "path":path.to_string_lossy()})
+        }
         Some(Err(error)) => {
             set_error(shared, error);
             json!({"state":"error", "kind":exporter.kind.label(), "error":error})
-        },
+        }
         None => return,
     };
-    if let (Ok(bytes), Ok(mut destination)) = (serde_json::to_vec(&status), shared.export_status.lock()) { *destination = bytes; }
+    if let (Ok(bytes), Ok(mut destination)) =
+        (serde_json::to_vec(&status), shared.export_status.lock())
+    {
+        *destination = bytes;
+    }
     shared.export_request.store(EXPORT_NONE, Ordering::Release);
 }
 
@@ -1169,6 +1204,57 @@ pub extern "C" fn sd300_engine_set_process_query(
     .unwrap_or(STATUS_PANIC)
 }
 
+/// Full captured inventory query; bounded UTF-8 input and one replaceable request per table.
+#[no_mangle]
+pub extern "C" fn sd300_engine_set_inventory_query(
+    handle: *mut c_void,
+    topic: u32,
+    filter: *const u8,
+    length: usize,
+    offset: u32,
+    attention_only: u32,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        let Some(engine) = engine_from_handle(handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let index = match topic {
+            2 => 0,
+            6 => 1,
+            _ => return STATUS_INVALID_TOPIC,
+        };
+        if length > 256 || (length != 0 && filter.is_null()) || attention_only > 1 {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let bytes = if length == 0 {
+            &[][..]
+        } else {
+            std::slice::from_raw_parts(filter, length)
+        };
+        let Ok(filter) = std::str::from_utf8(bytes) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if filter.chars().any(char::is_control) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let Ok(mut queries) = engine.shared.inventory_queries.lock() else {
+            return STATUS_PANIC;
+        };
+        queries[index] = inventory::Query {
+            filter: filter.trim().to_lowercase(),
+            offset: offset as usize,
+            attention_only: attention_only == 1,
+        };
+        engine
+            .shared
+            .inventory_dirty
+            .fetch_or(1 << index, Ordering::Release);
+        engine.shared.wake.notify_all();
+        STATUS_OK
+    }))
+    .unwrap_or(STATUS_PANIC)
+}
+
 /// 0 cancels; 1/2 diagnostics; 3/4 confirmed bandwidth tests; 5/6 confirmed ND/SMART setup.
 /// M-Lab consent is session-only and never inferred from another action.
 #[no_mangle]
@@ -1207,24 +1293,51 @@ pub extern "C" fn sd300_engine_request_companion(
 /// Actions: 0 cancel/decline, 1 prepare a current device, 2 confirm the prepared
 /// operation. A confirm without preparation cannot launch an elevated process.
 #[no_mangle]
-pub extern "C" fn sd300_engine_request_storage_probe(handle: *mut c_void, action: u32, device: *const u8, len: usize) -> i32 {
+pub extern "C" fn sd300_engine_request_storage_probe(
+    handle: *mut c_void,
+    action: u32,
+    device: *const u8,
+    len: usize,
+) -> i32 {
     catch_unwind(AssertUnwindSafe(|| unsafe {
-        let Some(engine) = engine_from_handle(handle) else { return STATUS_INVALID_ARGUMENT; };
-        if action > 2 || len > 128 || (len > 0 && device.is_null()) || (action != 1 && len != 0) || (action == 1 && len == 0) { return STATUS_INVALID_ARGUMENT; }
+        let Some(engine) = engine_from_handle(handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if action > 2
+            || len > 128
+            || (len > 0 && device.is_null())
+            || (action != 1 && len != 0)
+            || (action == 1 && len == 0)
+        {
+            return STATUS_INVALID_ARGUMENT;
+        }
         if action == 0 {
             engine.shared.storage_cancel.store(true, Ordering::Release);
         } else {
-            let value = if len == 0 { "" } else {
-                let Ok(value) = std::str::from_utf8(std::slice::from_raw_parts(device, len)) else { return STATUS_INVALID_ARGUMENT; };
-                if value.chars().any(char::is_control) { return STATUS_INVALID_ARGUMENT; }
+            let value = if len == 0 {
+                ""
+            } else {
+                let Ok(value) = std::str::from_utf8(std::slice::from_raw_parts(device, len)) else {
+                    return STATUS_INVALID_ARGUMENT;
+                };
+                if value.chars().any(char::is_control) {
+                    return STATUS_INVALID_ARGUMENT;
+                }
                 value
             };
-            if engine.shared.storage_busy.swap(true, Ordering::AcqRel) { return STATUS_ALREADY_RUNNING; }
-            *engine.shared.storage_request.lock().unwrap_or_else(|p| p.into_inner()) = Some((action as u8, value.into()));
+            if engine.shared.storage_busy.swap(true, Ordering::AcqRel) {
+                return STATUS_ALREADY_RUNNING;
+            }
+            *engine
+                .shared
+                .storage_request
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = Some((action as u8, value.into()));
         }
         engine.shared.wake.notify_all();
         STATUS_OK
-    })).unwrap_or(STATUS_PANIC)
+    }))
+    .unwrap_or(STATUS_PANIC)
 }
 
 #[no_mangle]
@@ -1732,14 +1845,38 @@ mod tests {
     fn storage_probe_requests_are_bounded_and_cannot_smuggle_an_operation() {
         let engine = Engine::new();
         let handle = (&engine as *const Engine).cast_mut().cast::<c_void>();
-        assert_eq!(sd300_engine_request_storage_probe(handle, 3, ptr::null(), 0), STATUS_INVALID_ARGUMENT);
-        assert_eq!(sd300_engine_request_storage_probe(handle, 1, ptr::null(), 1), STATUS_INVALID_ARGUMENT);
-        assert_eq!(sd300_engine_request_storage_probe(handle, 1, ptr::null(), 129), STATUS_INVALID_ARGUMENT);
-        assert_eq!(sd300_engine_request_storage_probe(handle, 2, b"x".as_ptr(), 1), STATUS_INVALID_ARGUMENT);
-        assert_eq!(sd300_engine_request_storage_probe(handle, 1, b"bad\n".as_ptr(), 4), STATUS_INVALID_ARGUMENT);
-        assert_eq!(sd300_engine_request_storage_probe(handle, 1, b"/dev/sda".as_ptr(), 8), STATUS_OK);
-        assert_eq!(sd300_engine_request_storage_probe(handle, 2, ptr::null(), 0), STATUS_ALREADY_RUNNING);
-        assert_eq!(sd300_engine_request_storage_probe(handle, 0, ptr::null(), 0), STATUS_OK);
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 3, ptr::null(), 0),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 1, ptr::null(), 1),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 1, ptr::null(), 129),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 2, b"x".as_ptr(), 1),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 1, b"bad\n".as_ptr(), 4),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 1, b"/dev/sda".as_ptr(), 8),
+            STATUS_OK
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 2, ptr::null(), 0),
+            STATUS_ALREADY_RUNNING
+        );
+        assert_eq!(
+            sd300_engine_request_storage_probe(handle, 0, ptr::null(), 0),
+            STATUS_OK
+        );
         assert!(engine.shared.storage_cancel.load(Ordering::Acquire));
         assert!(!engine.shared.running.load(Ordering::Acquire));
     }
@@ -1772,5 +1909,4 @@ mod tests {
         );
         assert_eq!(sd300_engine_request_export(handle, 1), STATUS_NOT_RUNNING);
     }
-
 }

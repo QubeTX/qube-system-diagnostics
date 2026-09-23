@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Search and page full connection/device inventories in the GUI engine before bounded projection. Preserve capture metadata, whole-inventory totals and attention filtering; show missing connection PIDs explicitly. Add guarded query ABI loading and fixtures beyond the former row limits.
+
 - Add explicit TUI session exports through the shared schema-2 redaction path, with one background writer per frontend, private report files and atomic no-clobber persistence. Preserve frozen samples and completed companion results; move GUI file writes off its collection loop.
 - Track storage read/write error availability and whole-inventory coverage independently in the GUI. Mark early or unqualified SpeedQX measurements partial and ignore inherited TAR_OPTIONS during verified companion extraction.
 

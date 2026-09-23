@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Desktop searches now reach every collected connection and device, with pages for longer lists and clear empty results. Missing process identities stay visibly unavailable. Searching older readings does not make them appear freshly measured.
+
 - Save a private, redacted report of your terminal session, including completed optional diagnostics. Saving keeps monitoring responsive and preserves earlier reports; a paused view saves the readings you froze.
 - Missing storage error readings stay visibly missing, and the desktop shows how many drives supplied each counter. An unfinished bandwidth test stays marked incomplete. Behind the scenes, optional downloads unpack with consistent settings.
 

@@ -1569,3 +1569,25 @@ test "storage selection retains device identity and consent comes from prepared 
     try testing.expectEqual(@as(usize, 1), model.storageLines().len);
     try testing.expect(!model.storageRunning());
 }
+
+test "full inventory pages preserve counts and missing process identity" {
+    var model = main.initialModel();
+    try model.detail.applyMediumJson(testing.allocator,
+        \\{"sequence":7,"captured_unix_ms":42,"data":{"active_connections":[{"local_port":249,"state":"established"}],"matched_count":1,"total_count":250,"listening_count":5,"page_offset":0}}
+    );
+    model.connection_filter_buffer.set("249");
+    main.rebuildConnectionFilter(&model);
+    try testing.expectEqual(@as(usize, 1), model.connectionMatchCount());
+    try testing.expectEqual(@as(u32, 250), model.detail.connection_total_count);
+    try testing.expect(!model.connections()[0].pid_available);
+    try testing.expect(model.connectionNextDisabled());
+    try testing.expectEqual(@as(u64, 42), model.detail.topicMeta(2).captured_unix_ms);
+    try model.detail.applyDriversJson(testing.allocator,
+        \\{"sequence":8,"captured_unix_ms":42,"data":{"devices":[{"name":"Device-249","status":"disabled"}],"matched_count":250,"total_count":250,"attention_count":1,"page_offset":224,"scan_status":"success"}}
+    );
+    model.driver_filter_buffer.set("249");
+    try testing.expectEqualStrings("Device-249", model.drivers()[0].name());
+    try testing.expectEqual(@as(usize, 8), model.driverPageNumber());
+    try testing.expect(model.driverNextDisabled());
+    try testing.expect(!model.driverPreviousDisabled());
+}
