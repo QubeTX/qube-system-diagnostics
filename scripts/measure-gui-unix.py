@@ -20,6 +20,7 @@ import time
 
 import psutil
 from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_report
+from shutdown_trace import ShutdownTrace
 
 SECTIONS = ["Overview", "CPU", "Memory", "Storage", "GPU", "Network", "Processes", "Thermals", "Drivers"]
 
@@ -105,7 +106,10 @@ def main():
     parser.add_argument("--hidden", action="store_true")
     parser.add_argument("--legacy-in-process", action="store_true", help="Qualify the pre-v4 in-process collector topology")
     parser.add_argument("--enforce-gates", action="store_true")
+    parser.add_argument("--trace-shutdown", action="store_true", help="Linux-only crash diagnostic; never resource qualification")
     args = parser.parse_args()
+    if args.trace_shutdown and (sys.platform != "linux" or args.enforce_gates):
+        parser.error("Shutdown tracing requires Linux and cannot enforce resource gates")
     if not 20 <= args.seconds <= 7200:
         parser.error("Duration must be 20..7200 seconds")
     if args.hidden:
@@ -123,6 +127,7 @@ def main():
     process, result, known = None, None, {}
     stderr_tail = [b""]
     reader = None
+    debugger = None
     try:
         with tempfile.TemporaryDirectory(prefix="sd300-gui-resource-") as directory:
             home = Path(directory)
@@ -196,6 +201,9 @@ def main():
             report["collector_topics_at_end"] = sorted(seen)
             if not required <= seen:
                 raise RuntimeError(f"Collectors missing at completion: {sorted(required-seen)}")
+            if args.trace_shutdown:
+                report["diagnostic_only"] = True
+                debugger = ShutdownTrace(process.pid)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                 connection.settimeout(2)
                 connection.connect(str(endpoint))
@@ -208,6 +216,8 @@ def main():
                     result = usage
                     break
                 time.sleep(.05)
+            if debugger:
+                report["shutdown_trace"] = debugger.finish()
             if result is None or process.returncode != 0:
                 raise RuntimeError(f"GUI did not shut down cleanly: {process.returncode}")
             if any(p.is_running() for p in known.values()):
@@ -221,11 +231,15 @@ def main():
                           **descriptor_summary(samples), process_count_max=max(r[2] for r in samples),
                           observed_process_identities=len(known), clean_shutdown=True,
                           rss_last_window_delta=sum(r[0] for r in samples[-window:])/window-sum(r[0] for r in samples[:window])/window)
+            if args.trace_shutdown:
+                report["cpu_gate"] = report["rss_gate"] = None
     except BaseException as error:
         report.update(passed=False, failure_type=type(error).__name__, failure=str(error))
         report["stderr_tail"] = stderr_tail[0].decode("utf-8", "replace")
         raise
     finally:
+        if debugger:
+            debugger.close()
         for child in reversed(list(known.values())):
             try:
                 if child.is_running():

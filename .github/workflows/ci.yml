@@ -305,7 +305,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir output
-          docker run --rm \
+          # Only the isolated test container may attach its shutdown debugger.
+          docker run --rm --cap-add=SYS_PTRACE \
             -e HOME=/tmp/sd300-home -e RUNNER_TEMP=/tmp \
             -e SD300_RESOURCE_SECONDS='${{ inputs.resource_seconds || '0' }}' \
             -v "$PWD:/work" -w /work alpine:3.20 \

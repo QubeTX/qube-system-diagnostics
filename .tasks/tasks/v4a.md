@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: run 35874747086 reaches native Alpine GUI monitoring, then the owned quit request exits with SIGSEGV (job 107227650151). Missing graphics drivers explain fallback messages but do not identify the crash. Add an opt-in bounded GDB backtrace only after a failed smoke, repeat unchanged bytes, and retain the failure. Debugger runs cannot qualify resources. Shared opaque-panel allocation candidate remains separate and awaits pixel/performance tests after the local measurement window.
+
 - 2026-09-23 — codex: 9dc7575 hosted TUI windows pass Windows (0.87 percent, 86.3 MiB) and GNU x86-64 (0.93 percent, 34.3 MiB); both Macs remain above CPU (2.73/3.00 percent). A premature follow-up dispatch cancelled the prior workflow's unfinished GUI windows; retain completed reports as partial evidence and change manual concurrency to queue subsequent runs. Render benchmark exposes obsolete unavailable process fixtures and scroll p95 above frame budget; fix the fixture and add retained-cache/first-last role allocation evidence before selecting a renderer change. No release gate is relaxed.
 
 - 2026-09-23 — codex: 9dc7575 GNU x86-64 completes the 330-second TUI gate at 0.93 percent CPU with low RSS; GUI qualification stops on protected helper exe lookup. Job 107210415278 traceback identifies topics(), not RSS collection. Filter the command shape before exe lookup, ignore unproven helpers and continue requiring exact owned collector identity. Add a denied-helper/missing-worker fixture. Next oracle: native GUI long run; normal-renderer memory remains an independent product gate.
