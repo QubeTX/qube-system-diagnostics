@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: long test runs keep their original app build until they finish. Memory reports now identify growth by component, and rendering tests exercise changing process readings as well as scrolling.
+
 - Behind the scenes: a protected network helper no longer interrupts Linux app testing when the monitor's own collectors can still be verified.
 
 - Behind the scenes: Linux memory testing now separates graphics-library memory from app allocations and compares rendering paths without changing the app's defaults or recording private file paths.

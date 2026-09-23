@@ -22,7 +22,9 @@ env:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Qualification windows keep their exact artifact until they finish.
+  # A later manual run waits; ordinary PR updates still replace old checks.
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   test:

@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Preserve in-progress manually dispatched qualification windows, record first/last Windows GUI memory by role, and report retained raster-cache bytes outside render timings. Correct the render fixture's process field availability so process ticks exercise visible numeric changes.
+
 - Restrict GUI collector-presence inspection to collector-shaped processes and retain required-worker verification when protected helpers deny executable lookup. Native GNU long runs exposed a harness AccessDenied on a ping helper after the TUI resource gate passed.
 
 - Attribute Linux GUI RSS to fixed mapping categories after the measurement window and compare the unchanged binary with GTK's diagnostic Cairo renderer. Keep default-renderer acceptance independent and redact mapping paths/addresses from evidence.

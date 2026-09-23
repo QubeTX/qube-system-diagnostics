@@ -255,6 +255,9 @@ def main():
                     except psutil.NoSuchProcess:
                         pass
                 samples.append(((cpu-previous_cpu)/(now-previous_time)*100, rss/2**20, private/2**20, handles, len(live)))
+                if len(samples) == 1:
+                    report["memory_roles_first"] = roles
+                report["memory_roles_last"] = roles
                 if rss > peak_bytes:
                     peak_bytes, peak_roles = rss, roles
                     report["rss_peak_elapsed_seconds"] = now-begin

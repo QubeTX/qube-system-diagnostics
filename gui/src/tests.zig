@@ -1137,6 +1137,8 @@ fn warmPopulate(model: *main.Model, section: u8) void {
             model.show_all_processes = true;
             for (0..16) |i| {
                 const r = &d.process_rows[i];
+                r.cpu_available = true;
+                r.memory_available = true;
                 r.id = @intCast(i);
                 r.pid = @intCast(1000 + i * 7);
                 warmSetName(&r.friendly_buffer, "Process {d}", .{i});
@@ -1345,6 +1347,12 @@ fn warmRunTick(
     const dmaskhit: u64 = @intCast(memo.glyph_mask_hits - base_mask_hits);
     const dmaskmiss: u64 = @intCast(memo.glyph_mask_misses - base_mask_misses);
     warmSummarize(name, samples[0..sample_count], dhits, dmiss, dmaskhit, dmaskmiss);
+    // Report retained raster allocation separately from measured render time.
+    var glyph_bytes: usize = 0;
+    for (memo.glyph_entries) |entry| glyph_bytes += entry.pixels.len;
+    std.debug.print("MEMO_BYTES {s} commands={d} glyph_pixels={d} glyph_masks={d} prefix={d} images={d}\n", .{
+        name, memo.entry_total_bytes, glyph_bytes, memo.glyph_mask_total_bytes, memo.static_prefix_pixels.len, memo.image_scale_total_bytes,
+    });
 }
 
 fn warmRunBurst(
