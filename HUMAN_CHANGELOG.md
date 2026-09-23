@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Background readings pass directly to the monitor without writing temporary reports. Broken or stuck checks still stop cleanly, and a noisy helper cannot make cancellation unresponsive.
+
 - Behind the scenes: real terminal checks now exercise navigation, search, resizing, paused views and clean exit on every supported operating system. Timing measurements help identify slow work, and failed performance checks stay visible in the release evidence.
 
 - Process CPU readings keep the same meaning when Windows limits which processors the monitor can use. A busy thread counts as one processor, and missing readings or a reused process number start with a clear warmup.

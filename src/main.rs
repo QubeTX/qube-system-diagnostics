@@ -25,8 +25,8 @@ fn main() -> Result<()> {
     if let Some(Command::CollectWorker { topic }) = &cli.command {
         return sd_300::collectors::probe::print_worker(*topic);
     }
-    if let Some(Command::CollectServer { topic, response }) = &cli.command {
-        return sd_300::collectors::probe::serve(*topic, response);
+    if let Some(Command::CollectServer { topic }) = &cli.command {
+        return sd_300::collectors::probe::serve(*topic);
     }
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -53,8 +53,8 @@ async fn run(cli: Cli) -> Result<()> {
             | Command::StorageProbeElevate { .. } => {
                 unreachable!("private probe handled before runtime startup")
             }
-            Command::CollectServer { topic, response } => {
-                sd_300::collectors::probe::serve(topic, &response)?;
+            Command::CollectServer { topic } => {
+                sd_300::collectors::probe::serve(topic)?;
                 return Ok(());
             }
             Command::CollectWorker { topic } => {

@@ -43,6 +43,8 @@ pub enum CommandError {
     Cancelled,
     #[error("provider output exceeded the capture limit")]
     OutputLimit,
+    #[error("provider response did not match the bounded worker protocol")]
+    Protocol,
     #[error("provider process failed: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -326,42 +328,31 @@ pub fn run_memory_command(
 }
 
 /// One reusable owned process, with one bounded request outstanding. Requests are
-/// smaller than a pipe's minimum capacity; responses use atomic files, never a
-/// draining thread or an inherited stdout pipe.
+/// smaller than a pipe's minimum capacity; length-framed responses stay in memory.
+/// Only already-readable pipe bytes are consumed, never waiting for inherited EOF.
 pub struct WorkerProcess {
     child: Child,
     owned: OwnedProcess,
-    directory: tempfile::TempDir,
-    stdout: std::fs::File,
-    stderr: std::fs::File,
+    stdout: std::process::ChildStdout,
+    stderr: std::process::ChildStderr,
 }
 impl WorkerProcess {
     pub fn spawn(program: &OsStr, topic: &str) -> Result<Self, CommandError> {
-        Self::spawn_configured(program, |response| {
-            vec![
-                "collect-server".into(),
-                topic.into(),
-                "--response".into(),
-                response.as_os_str().to_owned(),
-            ]
-        })
+        Self::spawn_configured(program, || vec!["collect-server".into(), topic.into()])
     }
     pub fn process_id(&self) -> u32 {
         self.child.id()
     }
     fn spawn_configured(
         program: &OsStr,
-        args: impl FnOnce(&std::path::Path) -> Vec<std::ffi::OsString>,
+        args: impl FnOnce() -> Vec<std::ffi::OsString>,
     ) -> Result<Self, CommandError> {
-        let directory = tempfile::tempdir()?;
-        let stdout = tempfile::tempfile()?;
-        let stderr = tempfile::tempfile()?;
         let mut command = Command::new(program);
         command
-            .args(args(&directory.path().join("response.json")))
+            .args(args())
             .stdin(Stdio::piped())
-            .stdout(stdout.try_clone()?)
-            .stderr(stderr.try_clone()?);
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
@@ -381,15 +372,29 @@ impl WorkerProcess {
                 return Err(error.into());
             }
         };
+        let stdout = child.stdout.take().expect("piped worker stdout");
+        let stderr = child.stderr.take().expect("piped worker stderr");
         Ok(Self {
             child,
             owned,
-            directory,
             stdout,
             stderr,
         })
     }
     pub fn request(
+        &mut self,
+        reset: bool,
+        timeout: Duration,
+        cancelled: &AtomicBool,
+    ) -> Result<Vec<u8>, CommandError> {
+        let result = self.read_response(reset, timeout, cancelled);
+        if result.is_err() {
+            self.owned.terminate();
+            let _ = self.child.wait();
+        }
+        result
+    }
+    fn read_response(
         &mut self,
         reset: bool,
         timeout: Duration,
@@ -405,51 +410,59 @@ impl WorkerProcess {
             .as_mut()
             .ok_or_else(|| std::io::Error::other("worker input closed"))?
             .write_all(if reset { b"r\n" } else { b"s\n" })?;
-        let response = self.directory.path().join("response.json");
+        let mut frame = WorkerFrame::default();
+        let mut errors = Vec::new();
+        let mut error_bytes = 0usize;
+        let mut buffer = [0u8; 16 * 1024];
         loop {
-            if cancelled.load(Ordering::Relaxed) {
+            // Bounded work per iteration leaves cancellation/deadline observable
+            // even when native code writes continuously or inherits output pipes.
+            let mut progressed = false;
+            for _ in 0..4 {
+                let out = ready_bytes(&self.stdout)?.min(buffer.len());
+                let err = ready_bytes(&self.stderr)?.min(buffer.len());
+                if out == 0 && err == 0 {
+                    break;
+                }
+                progressed = true;
+                if out > 0 {
+                    let n = self.stdout.read(&mut buffer[..out])?;
+                    frame.feed(&buffer[..n])?;
+                }
+                if err > 0 {
+                    let n = self.stderr.read(&mut buffer[..err])?;
+                    error_bytes = error_bytes.saturating_add(n);
+                    let keep = n.min(2048usize.saturating_sub(errors.len()));
+                    errors.extend_from_slice(&buffer[..keep]);
+                }
+                if frame.payload.len().saturating_add(error_bytes) > MAX_OUTPUT_BYTES as usize {
+                    return Err(CommandError::OutputLimit);
+                }
+            }
+            if cancelled.load(Ordering::Acquire) {
                 return Err(CommandError::Cancelled);
             }
             if Instant::now() >= deadline {
                 return Err(CommandError::Timeout);
             }
-            if self
-                .stdout
-                .metadata()?
-                .len()
-                .saturating_add(self.stderr.metadata()?.len())
-                > MAX_OUTPUT_BYTES
-            {
-                return Err(CommandError::OutputLimit);
-            }
-            match std::fs::File::open(&response) {
-                Ok(file) => {
-                    if file.metadata()?.len() > MAX_OUTPUT_BYTES {
-                        return Err(CommandError::OutputLimit);
-                    }
-                    let mut bytes = Vec::new();
-                    file.take(MAX_OUTPUT_BYTES + 1).read_to_end(&mut bytes)?;
-                    if bytes.len() as u64 > MAX_OUTPUT_BYTES {
-                        return Err(CommandError::OutputLimit);
-                    }
-                    std::fs::remove_file(&response)?;
-                    return Ok(bytes);
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e.into()),
+            if frame.complete() {
+                return Ok(frame.payload);
             }
             if let Some(status) = self.child.try_wait()? {
-                self.stderr.seek(SeekFrom::Start(0))?;
-                let mut error = String::new();
-                Read::by_ref(&mut self.stderr)
-                    .take(2048)
-                    .read_to_string(&mut error)?;
+                // A reaped child may leave queued bytes or a descendant holding
+                // stdout. Drain only queued data, then fail; never wait for EOF.
+                if ready_bytes(&self.stdout)? > 0 || ready_bytes(&self.stderr)? > 0 {
+                    continue;
+                }
                 return Err(std::io::Error::other(format!(
-                    "collector worker exited with {status}: {error}"
+                    "collector worker exited before a complete response ({status}): {}",
+                    String::from_utf8_lossy(&errors)
                 ))
                 .into());
             }
-            std::thread::sleep(Duration::from_millis(10));
+            if !progressed {
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
     }
 }
@@ -457,6 +470,48 @@ impl Drop for WorkerProcess {
     fn drop(&mut self) {
         self.owned.terminate();
         let _ = self.child.wait();
+    }
+}
+
+#[derive(Default)]
+struct WorkerFrame {
+    header: [u8; 8],
+    header_len: usize,
+    expected: Option<usize>,
+    payload: Vec<u8>,
+}
+impl WorkerFrame {
+    fn feed(&mut self, mut bytes: &[u8]) -> Result<(), CommandError> {
+        if self.header_len < self.header.len() {
+            let count = bytes.len().min(self.header.len() - self.header_len);
+            self.header[self.header_len..self.header_len + count].copy_from_slice(&bytes[..count]);
+            self.header_len += count;
+            bytes = &bytes[count..];
+            if self.header_len < self.header.len() {
+                return Ok(());
+            }
+            if &self.header[..4] != b"SD4\0" {
+                return Err(CommandError::Protocol);
+            }
+            let length = u32::from_le_bytes(self.header[4..].try_into().unwrap()) as usize;
+            if length == 0 {
+                return Err(CommandError::Protocol);
+            }
+            if length > MAX_OUTPUT_BYTES as usize {
+                return Err(CommandError::OutputLimit);
+            }
+            self.expected = Some(length);
+            self.payload.reserve_exact(length);
+        }
+        let expected = self.expected.ok_or(CommandError::Protocol)?;
+        if self.payload.len().saturating_add(bytes.len()) > expected {
+            return Err(CommandError::Protocol);
+        }
+        self.payload.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn complete(&self) -> bool {
+        self.expected == Some(self.payload.len())
     }
 }
 
@@ -677,6 +732,99 @@ pub(crate) fn test_fixture(name: &str) -> (std::path::PathBuf, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn worker_framing_handles_fragmentation_and_rejects_invalid_lengths() {
+        let bytes = [b"SD4\0".as_slice(), &3u32.to_le_bytes(), b"abc"].concat();
+        for split in 0..bytes.len() {
+            let mut frame = WorkerFrame::default();
+            frame.feed(&bytes[..split]).unwrap();
+            assert!(!frame.complete());
+            frame.feed(&bytes[split..]).unwrap();
+            assert!(frame.complete());
+            assert_eq!(frame.payload, b"abc");
+            assert!(matches!(
+                frame.feed(b"trailing"),
+                Err(CommandError::Protocol)
+            ));
+        }
+        for length in [0, MAX_OUTPUT_BYTES as u32 + 1, u32::MAX] {
+            let mut frame = WorkerFrame::default();
+            assert!(frame
+                .feed(&[b"SD4\0".as_slice(), &length.to_le_bytes()].concat())
+                .is_err());
+            assert_eq!(
+                frame.payload.capacity(),
+                0,
+                "invalid length must not allocate"
+            );
+        }
+        assert!(matches!(
+            WorkerFrame::default().feed(b"bad frame"),
+            Err(CommandError::Protocol)
+        ));
+    }
+
+    #[test]
+    fn native_worker_pipes_bound_large_partial_noisy_and_inherited_output() {
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
+        let temp = tempfile::tempdir().unwrap();
+        let helper = temp.path().join(if cfg!(windows) {
+            "pipe-fixture.exe"
+        } else {
+            "pipe-fixture"
+        });
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/collector_pipe.rs");
+        let output = run_checked(
+            "rustc",
+            [
+                OsStr::new("--edition=2021"),
+                OsStr::new("-O"),
+                fixture.as_os_str(),
+                OsStr::new("-o"),
+                helper.as_os_str(),
+            ],
+            CommandTimeout::Custom(Duration::from_secs(30)),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let mut worker = WorkerProcess::spawn(helper.as_os_str(), "large").unwrap();
+        let pid = worker.process_id();
+        for _ in 0..3 {
+            let bytes = worker
+                .request(false, Duration::from_secs(5), &AtomicBool::new(false))
+                .unwrap();
+            assert_eq!(bytes.len(), 1024 * 1024);
+            assert!(bytes.iter().all(|&b| b == b'a'));
+            assert_eq!(worker.process_id(), pid);
+        }
+        drop(worker);
+        for topic in ["invalid", "oversized", "noisy", "inherited", "timeout"] {
+            let mut worker = WorkerProcess::spawn(helper.as_os_str(), topic).unwrap();
+            let start = Instant::now();
+            let timeout = if topic == "timeout" {
+                Duration::from_millis(150)
+            } else {
+                Duration::from_secs(5)
+            };
+            let error = worker
+                .request(false, timeout, &AtomicBool::new(false))
+                .unwrap_err();
+            match topic {
+                "invalid" => assert!(matches!(error, CommandError::Protocol)),
+                "oversized" | "noisy" => assert!(matches!(error, CommandError::OutputLimit)),
+                "inherited" => assert!(matches!(error, CommandError::Io(_))),
+                "timeout" => assert!(matches!(error, CommandError::Timeout)),
+                _ => unreachable!(),
+            }
+            assert!(
+                worker.child.try_wait().unwrap().is_some(),
+                "failed requests must reap their owner"
+            );
+            assert!(start.elapsed() < Duration::from_secs(5), "{topic}: {error}");
+        }
+    }
     #[cfg(windows)]
     #[test]
     #[ignore = "child-only console and redirected handle probe"]
@@ -850,7 +998,7 @@ mod tests {
         let program = OsStr::new("powershell");
         #[cfg(unix)]
         let program = OsStr::new("sh");
-        let mut worker = WorkerProcess::spawn_configured(program, |_| {
+        let mut worker = WorkerProcess::spawn_configured(program, || {
             #[cfg(windows)]
             let args = [
                 "-NoProfile",

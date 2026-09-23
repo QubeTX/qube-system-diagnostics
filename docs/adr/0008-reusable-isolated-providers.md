@@ -6,8 +6,8 @@ Status: Accepted, 2026-09-23. Extends ADR 0006 without moving native probes into
 
 Each enabled non-fast lane owns at most one subprocess. The child accepts only a two-byte
 sample/reset message for its fixed read-only topic. One request can be outstanding; no
-input, output or reader-thread queue grows with time. Responses are atomically installed
-in the parent's private temporary directory, size-checked and removed after consumption.
+input, output or reader-thread queue grows with time. Responses use a length-framed
+in-memory pipe with an eight-mebibyte limit checked before payload allocation.
 The parent owns the process group/job, deadline and cancellation; an error destroys the
 worker before recovery. Child stderr/stdout remain bounded by the existing output monitor.
 
@@ -22,7 +22,7 @@ discovery, and a long fast-sample gap resets rates and discovery after resume.
 Fixtures prove negative caching, recovery and identity invalidation. A real collector
 protocol test sends multiple requests to one PID, requests cache reset and verifies bounded
 cancellation/shutdown. A hung-helper fixture exercises timeout without requiring native
-return or pipe EOF. Hosted native runs validate each OS's process ownership and atomic-file
+return or pipe EOF. Hosted native runs validate each OS's process ownership and framed-pipe
 behavior. Release CPU/memory/handle and two-hour soak gates remain separate from these tests.
 
 ## Windows startup cost, 2026-09-23
@@ -62,3 +62,18 @@ job, deadlines, output limits or cancellation. The flags follow Microsoft's
 [process creation contract](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags).
 Native fixtures verify no attached console and valid stdout/stderr through both
 capture paths; the real persistent-worker protocol exercises redirected stdin.
+
+## In-memory responses, 2026-09-23
+
+This supersedes the original atomic temporary-file response transport. Each response
+starts with `SD4\0` and a little-endian 32-bit length. The parent reads only bytes
+already queued in the sole-reader pipe, accepts arbitrary header/payload fragmentation,
+and bounds draining per iteration so output cannot starve cancellation. Stderr shares
+the output budget and retains only a small diagnostic prefix. Invalid, oversized,
+partial, timed-out or cancelled responses terminate and reap the owned process family.
+An inherited pipe never requires waiting for EOF. Native fixtures cover these cases
+and repeated large responses from the same worker on each supported platform.
+
+This removes per-sample filesystem traffic and private payload files. It does not
+change capture timestamps, cadences, provider isolation or the public CLI contract.
+Performance acceptance still requires measurements of the complete process family.

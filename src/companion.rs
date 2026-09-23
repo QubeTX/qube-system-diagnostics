@@ -106,6 +106,7 @@ impl From<CommandError> for Failure {
             CommandError::Timeout => Self::Timeout,
             CommandError::Cancelled => Self::Cancelled,
             CommandError::OutputLimit => Self::OutputLimit,
+            CommandError::Protocol => Self::MalformedOutput,
             CommandError::Io(_) => Self::ProcessFailed,
         }
     }

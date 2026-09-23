@@ -135,12 +135,10 @@ pub fn print_worker(topic: crate::cli::CollectorTopic) -> crate::error::Result<(
 
 /// Requests are a single byte plus newline, with no paths or commands supplied
 /// through the protocol. Parent ownership and timeout cover every native call.
-pub fn serve(
-    topic: crate::cli::CollectorTopic,
-    response: &std::path::Path,
-) -> crate::error::Result<()> {
+pub fn serve(topic: crate::cli::CollectorTopic) -> crate::error::Result<()> {
     use std::io::{BufRead, Read, Write};
     let mut input = std::io::stdin().lock();
+    let mut output = std::io::stdout().lock();
     let mut sampler = WorkerSampler::default();
     loop {
         let mut request = String::new();
@@ -166,14 +164,10 @@ pub fn serve(
                 "Collector response exceeds limit",
             ));
         }
-        let mut temp = tempfile::NamedTempFile::new_in(
-            response
-                .parent()
-                .ok_or_else(|| crate::error::AppError::platform("Missing response directory"))?,
-        )?;
-        temp.write_all(&bytes)?;
-        temp.persist(response)
-            .map_err(|e| crate::error::AppError::platform(e.to_string()))?;
+        output.write_all(b"SD4\0")?;
+        output.write_all(&(bytes.len() as u32).to_le_bytes())?;
+        output.write_all(&bytes)?;
+        output.flush()?;
     }
 }
 
