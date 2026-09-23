@@ -352,10 +352,10 @@ diff --git a/src/platform/macos/appkit_host.m b/src/platform/macos/appkit_host.m
  - (BOOL)emitSetTextAccessibilityValue:(id)value;
  - (BOOL)emitSetSelectionAccessibilityValue:(id)value;
  @end
-@@ -1263,6 +1264,13 @@
-  * success-without-actuation dishonesty the press path had. Route the
-  * write to the runtime's focus dispatch; the next semantics publish
-  * reports the app's actual focus back. */
+@@ -1256,6 +1257,13 @@
+     return [self.surfaceView emitWidgetAccessibilityActionWithId:self.widgetId action:NATIVE_SDK_APPKIT_WIDGET_ACCESSIBILITY_ACTION_DISMISS];
+ }
+ 
 +// Publishing the app's semantic state is not an assistive-client action.
 +// Do not echo it into the runtime: that clears keyboard-visible focus
 +// and creates a second input/redraw for each focused publication.
@@ -363,10 +363,36 @@ diff --git a/src/platform/macos/appkit_host.m b/src/platform/macos/appkit_host.m
 +    [super setAccessibilityFocused:focused];
 +}
 +
- - (void)setAccessibilityFocused:(BOOL)focused {
-     [super setAccessibilityFocused:focused];
-     if (!focused || !self.accessibilityEnabled) return;
-@@ -5356,7 +5364,7 @@
+ /* An assistive client focuses a widget by WRITING AXFocused (the
+  * platform idiom for moving keyboard focus into a text field). The
+  * inherited setter only stores the flag on this snapshot element —
+@@ -1279,7 +1287,13 @@
+          [attribute isEqualToString:NSAccessibilitySelectedTextRangesAttribute])) {
+         return (self.actionFlags & NATIVE_SDK_APPKIT_WIDGET_ACTION_SET_SELECTION) != 0;
+     }
+-    return [super accessibilityIsAttributeSettable:attribute];
++    // This legacy informal-protocol hook is not implemented by
++    // NSAccessibilityElement on current AppKit. Sending it unconditionally
++    // throws during ordinary property publication (caught inside AppKit).
++    if ([NSAccessibilityElement instancesRespondToSelector:_cmd]) {
++        return [super accessibilityIsAttributeSettable:attribute];
++    }
++    return NO;
+ }
+ 
+ - (void)accessibilitySetValue:(id)value forAttribute:(NSAccessibilityAttributeName)attribute {
+@@ -1292,7 +1306,9 @@
+         [self emitSetSelectionAccessibilityValue:value];
+         return;
+     }
+-    [super accessibilitySetValue:value forAttribute:attribute];
++    if ([NSAccessibilityElement instancesRespondToSelector:_cmd]) {
++        [super accessibilitySetValue:value forAttribute:attribute];
++    }
+ }
+ 
+ - (BOOL)emitSetTextAccessibilityValue:(id)value {
+@@ -5356,7 +5372,7 @@
              }
          }
          element.accessibilityEnabled = (node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_ENABLED) != 0;
@@ -375,7 +401,7 @@ diff --git a/src/platform/macos/appkit_host.m b/src/platform/macos/appkit_host.m
          element.accessibilitySelected = (node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_SELECTED) != 0;
          if ((node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_EXPANDED) != 0) {
              element.accessibilityExpanded = YES;
-@@ -9926,6 +9934,9 @@
+@@ -9926,6 +9942,9 @@
  
  - (void)emitEventNamed:(NSString *)name detailJSON:(NSString *)detailJSON windowId:(uint64_t)windowId {
      WKWebView *webView = [self webViewForWindowId:windowId];
@@ -385,7 +411,7 @@ diff --git a/src/platform/macos/appkit_host.m b/src/platform/macos/appkit_host.m
      NSData *nameData = [NSJSONSerialization dataWithJSONObject:name ?: @"" options:NSJSONWritingFragmentsAllowed error:nil];
      NSString *nameJSON = nameData ? [[NSString alloc] initWithData:nameData encoding:NSUTF8StringEncoding] : @"\"\"";
      NSString *detail = detailJSON.length > 0 ? detailJSON : @"null";
-@@ -11021,6 +11032,16 @@
+@@ -11021,6 +11040,16 @@
      }
  }
  

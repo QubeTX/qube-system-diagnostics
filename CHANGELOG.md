@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Guard legacy AppKit accessibility superclass dispatch when NSAccessibilityElement does not implement the requested selector. Native stack attribution found exception unwinding during ordinary semantic publication. Preserve supported text/selection actions and extend the real-host fixture to reject unsupported queries without exceptions.
+
 - Retain the complete native before/after resource matrix with exact artifact identities, measured deltas and all failed limits. Run further GTK graphics-allocation and Mac hidden-frame diagnostics on a separate branch using unchanged application artifacts, without treating observer-attached diagnostics as acceptance.
 
 - Separate macOS accessibility snapshot publication from assistive-client focus actions. Previously each focused publication called the action setter, clearing keyboard-visible focus and producing duplicate input/redraw events. Add an actual AppKit-host regression fixture on both native Mac runners; preserve external accessibility focus requests.
