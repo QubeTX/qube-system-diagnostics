@@ -4,6 +4,17 @@ These initial measurements are diagnostic runs, not release acceptance. The
 foreground/hidden/soak matrix, native comparisons and installer qualification
 remain open. Do not infer hardware accuracy from parser fixtures or builds.
 
+The 0069088 Windows automation candidate passes the full synchronous work,
+input and refresh-stall gates across 1180×760 and 950×760 viewports in both
+audience modes. Worst cohort p95 is 14.503 ms for work and 40.591 ms for input;
+the largest ordinary Processes refresh is 9.816 ms. The retained report names
+all three executable hashes. These are runtime event receipt-to-present timings,
+not physical input-device or display-scanout measurements. Automation is compiled
+only into a separate qualification stage and is never attached to resource runs.
+The following instrumentation fix also closes no-damage cycles; it prevents
+unrelated idle updates accumulating into an invented long frame. Requalify the
+coordinated 4.0.0 candidate before publication.
+
 The 2c3a2ad font candidate passes the local 15-minute foreground and 30-minute
 hidden Windows windows. Hidden mode measures 0.280 percent of one core,
 112.40 MiB peak summed working set and 234.76 MiB private memory, with required

@@ -285,6 +285,38 @@ jobs:
             target/native-gui-packages/sd300-gui-${{ matrix.target }}.zip*
             output/sd300-gui-${{ matrix.target }}.tar.xz*
 
+      - name: Build the separate Windows interaction qualification app
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          scripts\build-native-gui.ps1 -Target '${{ matrix.target }}' -SkipNpmCi -SkipTests -QualificationAutomation
+          Copy-Item target/release/sd300.exe 'target/native-gui-stage/${{ matrix.target }}-automation/app/zig-out/bin/sd300.exe'
+      - name: Build the separate Unix interaction qualification app
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          SD300_SKIP_NPM_CI=1 SD300_SKIP_NATIVE_TESTS=1 SD300_GUI_QUALIFICATION_AUTOMATION=1 bash scripts/build-native-gui.sh '${{ matrix.target }}'
+          cp target/release/sd300 'target/native-gui-stage/${{ matrix.target }}-automation/app/zig-out/bin/sd300'
+      - name: Qualify native GUI navigation, keyboard and refresh timing
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          executable=sd300-gui
+          [[ '${{ runner.os }}' != Windows ]] || executable=sd300-gui.exe
+          command=(python scripts/qualify-gui-interaction.py "target/native-gui-stage/${{ matrix.target }}-automation/app/zig-out/bin/$executable" --output 'target/gui-interaction/${{ matrix.target }}.json' --revision '${{ github.sha }}')
+          if [[ '${{ runner.os }}' == Linux ]]; then
+            GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- "${command[@]}"
+          else
+            "${command[@]}"
+          fi
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: sd300-gui-interaction-${{ matrix.target }}
+          if-no-files-found: warn
+          path: target/gui-interaction/${{ matrix.target }}.json
+
       - name: Measure native release resources before and after
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.resource_seconds != '0' }}
         timeout-minutes: 120
@@ -366,6 +398,12 @@ jobs:
           name: sd300-resources-linux-musl-x86_64
           if-no-files-found: error
           path: output/resource-qualification/*.json
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: sd300-gui-interaction-linux-musl-x86_64
+          if-no-files-found: warn
+          path: output/gui-interaction.json
 
   audit:
     name: Security audit

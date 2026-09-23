@@ -75,7 +75,7 @@ cat > "$app_stage/build.zig.zon" <<'ZON'
 .{
     .name = .gui,
     .fingerprint = 0xd4ff50f85a707070,
-    .version = "3.1.3",
+    .version = "4.0.0",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{ .native_sdk = .{ .path = "../sdk" } },
     .paths = .{ "build.zig", "build.zig.zon", "src", "assets", "platform", "tools", "app.zon", "README.md" },

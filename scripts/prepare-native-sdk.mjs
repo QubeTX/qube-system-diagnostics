@@ -17,12 +17,12 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "057701c635aad45e48065905ff6ee5b58f08c52b0cb8b269a8e8b4716df0d837",
+  patchHash: "5f3b903a26f8f1284996724392a24913538d2b2a9a7900a84eaeeeb9eea83781",
 };
 
 const files = new Map([
   ["src/runtime/frame_profile.zig", ["d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528", "d719316514e4976b0d48b8b7e8a2549ac6c606428815cb2a05585768f0e210f7"]],
-  ["src/runtime/flow.zig", ["e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78", "4123abc991f5172ff368191033123e6a19f8936f0a8736ed7c72cdba18de0295"]],
+  ["src/runtime/flow.zig", ["e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78", "04846249519d3f8fd6cd5f8d0f17e64501247dadedc6a4e264d1eb0ba7051488"]],
   ["src/runtime/gpu_surface_events.zig", ["9ed40fbfb87ec9ad5011815e9d5ab760b8aff270516a2f77eec32e2a66acc439", "f2d4aa53e0e7b9672b2a3d555c59845b09cf5cc93ba34bdb82614ce792da43af"]],
   ["src/runtime/automation_snapshot.zig", ["5112c477f7032f19f3f2e0ee118215d394271d1fdb9780163ad599c7ee6be0e6", "848029310701f43626f5acbb34973f9d9439f0dde537c68a235e17405029727c"]],
   ["src/automation/snapshot.zig", ["f1e5adaaa62857a7f1411184f9e57413eddb085f201497e37927fc4da0b98a24", "3f128e758dfcd6fad5cdc1fc929d0a3fdd8cbc7b413dcca3afcaf71eca948f53"]],

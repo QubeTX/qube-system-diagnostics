@@ -3261,10 +3261,10 @@ index 5de5195..a820aa8 100644
                      .count = stats.total,
                  };
 diff --git a/src/runtime/flow.zig b/src/runtime/flow.zig
-index 2a38484..b36cbe3 100644
+index 2a38484..bacb38c 100644
 --- a/src/runtime/flow.zig
 +++ b/src/runtime/flow.zig
-@@ -195,6 +195,11 @@ pub fn RuntimeFlow(comptime Runtime: type) type {
+@@ -195,6 +195,29 @@ pub fn RuntimeFlow(comptime Runtime: type) type {
          }
  
          pub fn dispatchPlatformEvent(self: *Runtime, app: App, event_value: platform.Event) anyerror!void {
@@ -3272,7 +3272,25 @@ index 2a38484..b36cbe3 100644
 +            // excluded. Its nested input/frame events are measured separately.
 +            const profile_work = event_value != .frame_requested;
 +            if (profile_work) self.frame_profile.beginWork();
-+            defer if (profile_work) self.frame_profile.endWork();
++            defer if (profile_work) {
++                if (self.frame_profile.enabled) {
++                    // A no-damage completion is still the end of this cycle.
++                    // Likewise an unchanged timer update with no pending frame
++                    // must not accumulate across seconds into a fabricated stall.
++                    var completed_cycle = event_value == .gpu_surface_frame;
++                    if (event_value == .timer) {
++                        completed_cycle = true;
++                        for (self.views[0..self.view_count]) |view| {
++                            if (view.gpu_canvas_frame_requested) {
++                                completed_cycle = false;
++                                break;
++                            }
++                        }
++                    }
++                    if (completed_cycle) self.frame_profile.work_presented = true;
++                }
++                self.frame_profile.endWork();
++            };
              // Session recording: stage the event on entry, commit it on
              // exit — so effect results drained DURING dispatch precede
              // the event record in the journal (replay feeds them before

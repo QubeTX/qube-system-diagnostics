@@ -119,6 +119,13 @@ if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
 fi
 bash "$script_root/package-native-gui-linux.sh" \
   linux-musl-x86_64 "$output_dir" "$version"
+if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
+  SD300_SKIP_NPM_CI=1 SD300_SKIP_NATIVE_TESTS=1 SD300_GUI_QUALIFICATION_AUTOMATION=1 bash "$script_root/build-native-gui.sh" linux-musl-x86_64
+  interaction_bundle=target/native-gui-stage/linux-musl-x86_64-automation/app/zig-out/bin
+  cp target/release/sd300 "$interaction_bundle/sd300"
+  GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- /tmp/sd300-qualification-python/bin/python scripts/qualify-gui-interaction.py \
+    "$interaction_bundle/sd300-gui" --output "$output_dir/gui-interaction.json" --revision "$(git -c safe.directory="$repo_root" rev-parse HEAD)"
+fi
 if [[ ${SD300_RESOURCE_SECONDS:-0} != 0 ]]; then
   /tmp/sd300-qualification-python/bin/python scripts/qualify-native-resources.py \
     "$output_dir/resource-qualification" --seconds "$SD300_RESOURCE_SECONDS" --target linux-musl-x86_64

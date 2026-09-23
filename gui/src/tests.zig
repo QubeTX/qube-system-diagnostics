@@ -42,6 +42,20 @@ test "profile keeps percentile coverage and lifetime stalls explicit" {
     try testing.expectEqual(native_sdk.runtime.max_frame_profile_samples + 1, stats.total);
 }
 
+test "no-damage update cycles do not accumulate into a fabricated long frame" {
+    var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
+    for (0..20) |index| {
+        const start = (index + 1) * std.time.ns_per_s;
+        profile.beginWorkAt(start);
+        profile.work_presented = true; // Timer with no pending paint, or a no-damage completion.
+        profile.endWorkAt(start + std.time.ns_per_ms);
+    }
+    const stats = profile.stats(.frame_work);
+    try testing.expectEqual(@as(u64, 20), stats.total);
+    try testing.expectEqual(@as(u64, 1000), stats.p95_us);
+    try testing.expectEqual(@as(u64, 1000), stats.total_max_us);
+}
+
 fn buildTree(arena: std.mem.Allocator, model: *const main.Model) !main.AppUi.Tree {
     var view = try AppMarkup.init(arena, main.app_markup);
     var ui = main.AppUi.init(arena);

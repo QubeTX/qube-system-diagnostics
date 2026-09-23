@@ -142,7 +142,7 @@ function nativeMarkupVersions(repoRoot) {
 
 function stagedZonVersion(repoRoot, relativePath) {
   const text = readSource(repoRoot, relativePath);
-  const stageBlock = requiredMatch(
+  const stageBlock = relativePath.endsWith(".mjs") ? text : requiredMatch(
     text,
     /(?:\$stageZon\s*=\s*@'|cat\s+>\s+"\$app_stage\/build\.zig\.zon"\s+<<'ZON')([\s\S]*?)(?:'@|\nZON)/,
     `${relativePath} staged build.zig.zon template`,
@@ -206,6 +206,7 @@ function collectVersionSurfaces(repoRoot) {
         stagedZonVersion(repoRoot, "scripts/build-native-gui.sh"),
       ],
       ["scripts/package-native-gui-linux.sh default", linuxPackageDefaultVersion(repoRoot)],
+      ["scripts/test-native-gui.mjs staged build.zig.zon", stagedZonVersion(repoRoot, "scripts/test-native-gui.mjs")],
     ],
   };
 }

@@ -46,9 +46,11 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 
 ## Status
 
-ACTIVE on codex/sd300-v4-monitoring. Measurement, bounded workers, provider fixtures, adaptive TUI, optional companion/actions, GUI parity and the expanded GUI design/interaction review are implemented. Remaining work is native performance/shutdown qualification, composite lifecycle and final release preparation. Product remains 3.1.3 until the coordinated version update. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
+ACTIVE on codex/sd300-v4-monitoring. Measurement, bounded workers, provider fixtures, adaptive TUI, optional companion/actions, GUI parity and the expanded GUI design/interaction review are implemented. Remaining work is native performance/shutdown qualification, composite lifecycle and publication. Product metadata is coordinated at 4.0.0, verified unused at 2026-09-23 19:25 UTC; the candidate remains unpublished. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: 0069088 Windows interaction qualification passes both modes and compact/wide viewports: maximum cohort frame p95 14.503 ms, input p95 40.591 ms and ordinary refresh maximum 9.816 ms. Retain exact hashes and aggregate evidence. Fix no-damage timing-cycle closure found by the Thermals fixture; all six native lanes now run the bounded interaction harness using separate automation builds. Coordinate unused product version 4.0.0 across manifests and test templates. Next oracle: complete native v4 candidate, long resource results, Windows soak and composite lifecycle before merge/publication.
 
 - 2026-09-23 — codex: the first complete Windows interaction run passes input latency but fails some navigation frame cohorts. An unchanged repeat confirms the cost; a separate atomic-settings probe measures 5.51 ms median / 11.26 ms p95 on the input thread. Introduce one owned latest-value settings writer, with pending/error feedback and joined shutdown. Local native suite passes 71 tests with two intentional skips, including slow-write contention, coalescing, failure and recovery. Next oracle: the same live interaction harness against the updated release-shaped build; native resource comparison 35906954674 remains independent.
 

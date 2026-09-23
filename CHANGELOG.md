@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Coordinate the unpublished 4.0.0 candidate across CLI, engine, native manifests, packaging and all staged build templates. Extend version reconciliation to the test-stage template. Add native interaction qualification for all six targets using independent automation builds, bounded snapshots, publisher identity, complete percentile coverage and owned cleanup. Correct timing cycles that finish without repainting so idle updates cannot accumulate into an invented long frame.
+
 - Move GUI preference commits off the input/render thread into one joined writer with one replaceable pending document. Preserve atomic namespace-aware writes, report pending/success/failure honestly, and flush the newest request before engine unload, including AppKit termination. Tests cover coalescing, failure, requests during slow I/O and recovery. Local timing attributed 5.5 ms median and 11.3 ms p95 navigation cost to synchronous preference commits.
 
 - Stop macOS native-only event delivery from arming the JavaScript bridge's ten-second, 60 Hz frame keepalive when no WebView exists. Hosted thread counters and stacks attribute the hidden-window cost to this main-thread timer churn; native functional and long-window resource verification remain required.
