@@ -270,6 +270,14 @@ impl DiagnosticReport {
             }
         }
         let primary = self.gpu.primary();
+        if let Some(services) = value["drivers"]["services"].as_array_mut() {
+            for (service, original) in services.iter_mut().zip(&self.drivers.services) {
+                if !original.observation.is_available() || !valid("drivers") {
+                    service["is_running"] = serde_json::Value::Null;
+                    service["state"] = serde_json::Value::Null;
+                }
+            }
+        }
         value["gpu"]["utilization_percent"] = json!(primary.and_then(|a| a.utilization_percent));
         value["gpu"]["memory_used_mb"] = json!(primary.and_then(|a| a.memory_used_mb));
         value["gpu"]["memory_total_mb"] = json!(primary.and_then(|a| a.dedicated_memory_mb));
@@ -540,6 +548,54 @@ pub fn print_capabilities(report: &DiagnosticReport, json: bool, schema_version:
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn service_query_failure_is_null_in_schema_two_and_legacy_keys_stay_frozen() {
+        use crate::collectors::drivers::ServiceInfo;
+        let mut snapshot = SystemSnapshot::default();
+        let mut sample = crate::collectors::sampling::SampleMeta::default();
+        sample.record(
+            std::time::Duration::from_secs(300),
+            std::time::Duration::from_secs(300),
+            Observation::available("fixture"),
+        );
+        snapshot.samples.insert("drivers".into(), sample);
+        snapshot.drivers.services = vec![
+            ServiceInfo {
+                name: "denied".into(),
+                display_name: "Denied".into(),
+                is_running: false,
+                state: String::new(),
+                observation: Observation::permission_denied("fixture", "Denied"),
+            },
+            ServiceInfo {
+                name: "idle".into(),
+                display_name: "Idle".into(),
+                is_running: false,
+                state: "inactive/dead".into(),
+                observation: Observation::available("fixture"),
+            },
+        ];
+        let report = DiagnosticReport::from_snapshot(&snapshot, false);
+        let rich = report.as_schema(2);
+        assert!(rich["drivers"]["services"][0]["is_running"].is_null());
+        assert_eq!(
+            rich["drivers"]["services"][0]["observation"]["status"],
+            "permission_denied"
+        );
+        assert_eq!(rich["drivers"]["services"][1]["is_running"], false);
+        assert_eq!(rich["drivers"]["services"][1]["state"], "inactive/dead");
+        let legacy = report.as_schema(1);
+        assert_eq!(legacy["drivers"]["services"][0]["is_running"], false);
+        assert!(legacy["drivers"]["services"][0]
+            .get("observation")
+            .is_none());
+        assert!(legacy["drivers"].get("observations").is_none());
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.id == "observation:device-inventory"
+                && f.kind == crate::findings::FindingKind::IncompleteObservation));
+    }
 
     #[test]
     fn schema_two_preserves_missing_measurements_while_default_remains_schema_one() {

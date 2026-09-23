@@ -287,6 +287,9 @@ pub const Model = struct {
     pub fn services(model: *const Model) []const projection.ServiceRow {
         return model.detail.services();
     }
+    pub fn driverObservations(model: *const Model) []const projection.DriverObservationRow {
+        return model.detail.driverObservations();
+    }
     pub fn osName(model: *const Model) []const u8 {
         return model.detail.osName();
     }

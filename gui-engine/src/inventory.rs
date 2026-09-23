@@ -28,6 +28,7 @@ struct Devices<'a> {
     services: &'a [ServiceInfo],
     service_total_count: usize,
     scan_status: &'a DriverScanStatus,
+    observations: &'a [sd_300::observation::Observation],
     total_count: usize,
     attention_count: usize,
     matched_count: usize,
@@ -122,6 +123,7 @@ fn devices<'a>(snapshot: &'a SystemSnapshot, query: &Query) -> Devices<'a> {
         services: &snapshot.drivers.services[..snapshot.drivers.services.len().min(32)],
         service_total_count: snapshot.drivers.services.len(),
         scan_status: &snapshot.drivers.scan_status,
+        observations: &snapshot.drivers.observations[..snapshot.drivers.observations.len().min(32)],
         total_count: snapshot.drivers.devices().count(),
         attention_count: snapshot.drivers.attention_devices().count(),
         matched_count,
@@ -191,6 +193,11 @@ mod tests {
     #[test]
     fn search_and_pages_reach_the_full_inventory_and_retain_capture_time() {
         let mut snapshot = SystemSnapshot::default();
+        snapshot.drivers.observations =
+            vec![sd_300::observation::Observation::permission_denied("fixture", "Denied"); 40];
+        assert_eq!(devices(&snapshot, &Query::default()).observations.len(), 32);
+        let projected = serde_json::to_value(devices(&snapshot, &Query::default())).unwrap();
+        assert_eq!(projected["observations"][0]["status"], "permission_denied");
         snapshot.network_diag.active_connections = (0..250)
             .map(|i| ConnectionInfo {
                 protocol: collectors::network_diag::Protocol::Tcp,

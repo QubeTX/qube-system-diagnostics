@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Device checks report what the operating system actually detected. A missing keyboard query, unplugged cable or optional service no longer becomes an invented healthy or failed device. Both views explain limited access and distinguish services that are running, idle, absent or unreadable.
+
 - Failed network and installation checks explain whether a helper was missing, denied access, took too long or returned unusable text. Behind the scenes, callers receive distinct failures instead of an ambiguous empty result.
 
 - Linux terminal navigation receives the same resize protection verified on Mac. Behind the scenes, longer resource checks remain release requirements even when shorter checks look healthy.

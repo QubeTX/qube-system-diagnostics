@@ -109,6 +109,45 @@ pub fn for_snapshot(snapshot: &SystemSnapshot) -> Vec<Finding> {
             source: "network".into(),
         });
     }
+    let driver_limits: Vec<_> = snapshot
+        .drivers
+        .observations
+        .iter()
+        .chain(
+            snapshot
+                .drivers
+                .services
+                .iter()
+                .map(|s| &s.observation)
+                .filter(|o| {
+                    matches!(
+                        o.status,
+                        crate::observation::ObservationStatus::PermissionDenied
+                            | crate::observation::ObservationStatus::Error
+                            | crate::observation::ObservationStatus::Contradictory
+                    )
+                }),
+        )
+        .filter(|o| !o.is_available())
+        .take(16)
+        .map(|o| {
+            format!(
+                "{}: {:?}; {}",
+                o.source,
+                o.status,
+                o.detail.as_deref().unwrap_or("No provider detail")
+            )
+        })
+        .collect();
+    if !driver_limits.is_empty() {
+        findings.push(Finding {
+            id: "observation:device-inventory".into(), kind: FindingKind::IncompleteObservation,
+            severity: "info".into(), title: "Device inventory has observation limits".into(),
+            evidence: format!("{}; {}", driver_limits.join(" | "), capture_context(snapshot.samples.get("drivers"), now)),
+            next_step: "Inspect Drivers for per-provider and service states; discovery alone does not establish hardware health".into(),
+            source: "drivers".into(),
+        });
+    }
     if let Some(result) = &snapshot.storage_probe.result {
         let fault = matches!(
             result.drive.health_status,

@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: driver/service truth now distinguishes discovery from health on all platforms. Structured Mac HID inventory replaces fabricated keyboard/trackpad rows; Linux link-down and missing inventories no longer invent disabled/failed devices. Per-provider observations, service states and nullable exports pass 212 local core tests (six child fixtures), 15 engine tests and 52 GUI tests (two skips), strict bindings and clippy. Mac ARM/musl cross-checks pass; next oracle runs native registry/kernel fixtures and all-six terminal/build lanes. 448d5c2 native PTYs already pass Apple Silicon and both GNU architectures after the Unix polling fix.
+
 - 2026-09-23 — codex: command adapters now return explicit failures instead of Option; gateway, ICMP and installed-product verification retain the reason. Fourteen command tests pass (five child fixtures), including distinct missing/nonzero/invalid-text cases and bounded termination; Mac ARM and musl test cross-checks pass. Next: carry the same distinctions into native driver/service inventory and verify native fixtures.
 
 - 2026-09-23 — codex: 0379797 native Apple Silicon passes complete Unicode/ASCII PTY interaction; both GNU architectures fail the new immediate resize/key pair while ordinary navigation passes. Extend the same polling backend to all Unix targets; next oracle is the unchanged six-target native matrix. The 5fa678f 330-second Windows whole-job run records 2.07 percent CPU and 116.5 MiB RSS, preserving the open CPU gate.

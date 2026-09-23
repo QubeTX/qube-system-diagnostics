@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Replace invented macOS input devices with structured IOHIDDevice inventory; stop treating device presence or Linux link-down as driver-health evidence. Preserve per-provider discovery failures, service-manager scope and actual runtime states across Windows, macOS and Linux. Project bounded observations and service details into both frontends, shared findings and nullable schema-2 exports while retaining schema-1 keys.
+
 - Replace remaining optional-result command adapters with explicit execution errors, preserving nonzero exit status separately from timeout, missing executable, denied access and invalid text. Propagate failure reasons through gateway/ping and install verification paths; retain bounded ownership and output handling.
 
 - Extend the verified macOS terminal polling path to Linux after the same resize/input test exposes lost readiness on both GNU architectures. Retain the unchanged Windows backend and record the long-window native-network resource result, which still exceeds the CPU gate.

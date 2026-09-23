@@ -48,6 +48,7 @@ pub enum Target {
     Battery,
     Device(usize),
     Service(usize),
+    DriverObservation(usize),
     Finding(usize),
     System,
     Displays,
@@ -553,9 +554,21 @@ impl Presentation {
                     add(
                         format!("service:{}", d.name),
                         d.display_name.clone(),
-                        if d.is_running { "Running" } else { "Stopped" }.into(),
+                        d.display_state().into(),
                         d.name.clone(),
                         Target::Service(i),
+                    );
+                }
+                for (i, observation) in s.drivers.observations.iter().enumerate() {
+                    add(
+                        format!("driver-provider:{}", observation.source),
+                        observation.source.clone(),
+                        format!("{:?}", observation.status),
+                        observation
+                            .detail
+                            .clone()
+                            .unwrap_or_else(|| "Inventory query completed".into()),
+                        Target::DriverObservation(i),
                     );
                 }
                 "drivers"
@@ -618,6 +631,7 @@ impl Presentation {
                     Target::Battery => json!(s.thermals.battery),
                     Target::Device(i) => json!(s.drivers.devices().nth(i)),
                     Target::Service(i) => json!(s.drivers.services[i]),
+                    Target::DriverObservation(i) => json!(s.drivers.observations[i]),
                     Target::Finding(i) => json!(app.findings[i]),
                     Target::System => json!(s.system),
                     Target::Displays => json!(s.displays),
@@ -634,8 +648,24 @@ impl Presentation {
                     Target::Diagnostics=>"These lightweight checks provide limited connectivity evidence. ICMP can be filtered even when internet access works. DNS duration is separate from network round-trip time.",
                     Target::NetworkTotal=>"The scope above explains which interface rates contribute to the total. Inspect individual interfaces for virtual or tunnel traffic; this is not a bandwidth test.",
                     Target::Sensor(_)|Target::Fan(_)=>"This reading belongs to a specific provider channel. Temperature and fan speed availability depend on the hardware and its driver.",
+                    Target::Device(_)=>"Detection establishes that the operating system lists a device. Unknown health is not a fault; inspect the discovery details below.",
+                    Target::Service(_)=>"Optional services can be absent or run only when needed. An unreadable service state is not a measured stopped service.",
+                    Target::DriverObservation(_)=>"This describes what a discovery provider could observe. Other available readings remain useful when one provider is limited.",
                     _=>"Press m and choose Technician for units, provider identifiers and detailed observations."
                 }.into());
+                match row.target {
+                    Target::Device(i) => {
+                        if let Some(device) = s.drivers.devices().nth(i) {
+                            v.inspector.push(device.extra.clone());
+                        }
+                    }
+                    Target::Service(i) => {
+                        if let Some(detail) = &s.drivers.services[i].observation.detail {
+                            v.inspector.push(detail.clone());
+                        }
+                    }
+                    _ => {}
+                }
             }
             if let Target::Finding(i) = row.target {
                 let f = &app.findings[i];

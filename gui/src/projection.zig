@@ -489,6 +489,8 @@ pub const ServiceRow = struct {
     running: bool = false,
     name_buffer: canvas.TextBuffer(96) = canvas.TextBuffer(96).init("Service"),
     display_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("Service"),
+    state_buffer: canvas.TextBuffer(96) = canvas.TextBuffer(96).init("unavailable"),
+    observation: ObservationView = .{},
 
     pub fn name(row: *const ServiceRow) []const u8 {
         return row.name_buffer.text();
@@ -497,8 +499,17 @@ pub const ServiceRow = struct {
         return row.display_buffer.text();
     }
     pub fn state(row: *const ServiceRow) []const u8 {
-        return if (row.running) "running" else "not running";
+        return row.state_buffer.text();
     }
+    pub fn detail(row: *const ServiceRow) []const u8 { return row.observation.summary(); }
+};
+
+pub const DriverObservationRow = struct {
+    id: u32 = 0,
+    observation: ObservationView = .{},
+    pub fn source(row: *const DriverObservationRow) []const u8 { return row.observation.source(); }
+    pub fn state(row: *const DriverObservationRow) []const u8 { return row.observation.status(); }
+    pub fn detail(row: *const DriverObservationRow) []const u8 { return row.observation.detail(); }
 };
 
 pub const Projection = struct {
@@ -662,6 +673,8 @@ pub const Projection = struct {
     service_rows: [max_services]ServiceRow = [_]ServiceRow{.{}} ** max_services,
     service_count: usize = 0,
     service_total_count: u32 = 0,
+    driver_observation_rows: [32]DriverObservationRow = [_]DriverObservationRow{.{}} ** 32,
+    driver_observation_count: usize = 0,
 
     pub fn osName(self: *const Projection) []const u8 {
         return self.os_name_buffer.text();
@@ -860,6 +873,9 @@ pub const Projection = struct {
     }
     pub fn services(self: *const Projection) []const ServiceRow {
         return self.service_rows[0..self.service_count];
+    }
+    pub fn driverObservations(self: *const Projection) []const DriverObservationRow {
+        return self.driver_observation_rows[0..self.driver_observation_count];
     }
     pub fn topicMeta(self: *const Projection, index: usize) *const TopicMeta {
         return &self.topic_meta[@min(index, topic_count - 1)];
@@ -1452,7 +1468,15 @@ pub const Projection = struct {
             var row = ServiceRow{ .id = @intCast(index), .running = service.is_running };
             row.name_buffer.set(service.name);
             row.display_buffer.set(service.display_name);
+            setObservation(&row.observation, service.observation);
+            row.state_buffer.set(if (row.observation.available) service.state else row.observation.status());
             self.service_rows[index] = row;
+        }
+        self.driver_observation_count = @min(data.observations.len, self.driver_observation_rows.len);
+        for (data.observations[0..self.driver_observation_count], 0..) |observation, index| {
+            var row = DriverObservationRow{ .id = @intCast(index) };
+            setObservation(&row.observation, observation);
+            self.driver_observation_rows[index] = row;
         }
     }
 };
@@ -1782,6 +1806,7 @@ const DriverJson = struct {
     extra: []const u8 = "",
 };
 const DriversJson = struct {
+    observations: []const ObservationJson = &.{},
     devices: []const DriverJson = &.{},
     total_count: ?u32 = null,
     matched_count: ?u32 = null,
@@ -1804,6 +1829,8 @@ const ServiceJson = struct {
     name: []const u8 = "",
     display_name: []const u8 = "",
     is_running: bool = false,
+    state: []const u8 = "unavailable",
+    observation: ObservationJson = .{},
 };
 
 fn saturatedU32(value: anytype) u32 {
@@ -1978,7 +2005,7 @@ test "topic metadata disk reliability and driver services remain explicit" {
         \\{"schema_version":1,"target":"x86_64-windows","topic":"health","sequence":9,"captured_unix_ms":1777777777000,"freshness_ms":0,"availability":"available","provenance":"platform SMART and reliability provider","data":{"drives":[{"model":"Fixture NVMe","media_type":"nvme","health_status":"healthy","temperature_celsius":42.5,"read_errors_total":2,"write_errors_total":3,"io_stats":{"read_bytes_per_sec":1048576,"write_bytes_per_sec":2097152,"queue_depth":1.25,"avg_read_latency_ms":0.5,"avg_write_latency_ms":0.75},"health_source":"fixture"}],"health_status":{"status":"available","source":"SMART"},"reliability_status":{"status":"available","source":"MSFT_StorageReliabilityCounter"}}}
     ;
     const drivers_fixture =
-        \\{"schema_version":1,"target":"x86_64-windows","topic":"drivers","sequence":4,"captured_unix_ms":1777777778000,"availability":"available","provenance":"SetupAPI","data":{"network":[],"bluetooth":[],"audio":[],"input":[],"display":[],"storage":[],"usb":[],"system":[],"other":[],"services":[{"name":"FixtureSvc","display_name":"Fixture Service","is_running":true}],"scan_status":"success"}}
+        \\{"schema_version":1,"target":"x86_64-windows","topic":"drivers","sequence":4,"captured_unix_ms":1777777778000,"availability":"available","provenance":"SetupAPI","data":{"network":[],"bluetooth":[],"audio":[],"input":[],"display":[],"storage":[],"usb":[],"system":[],"other":[],"services":[{"name":"FixtureSvc","display_name":"Fixture Service","is_running":true,"state":"running","observation":{"status":"available","source":"fixture"}}],"scan_status":"success"}}
     ;
 
     var value = Projection{};
@@ -2003,6 +2030,19 @@ test "topic metadata disk reliability and driver services remain explicit" {
     try std.testing.expectEqualStrings("health", health_meta.topic());
     try std.testing.expectEqualStrings("platform SMART and reliability provider", health_meta.provenance());
     try std.testing.expectEqualStrings("x86_64-windows", health_meta.target());
+}
+
+test "driver and service failures retain observation states without stopped placeholders" {
+    const fixture =
+        \\{"schema_version":2,"topic":"drivers","data":{"scan_status":"success","observations":[{"status":"unsupported","source":"device health","detail":"Presence is not health evidence"}],"services":[{"name":"denied","is_running":false,"observation":{"status":"permission_denied","source":"fixture","detail":"Read denied"}},{"name":"idle","is_running":false,"state":"loaded; not running (may be on demand)","observation":{"status":"available","source":"fixture"}}]}}
+    ;
+    var value = Projection{};
+    try value.applyDriversJson(std.testing.allocator, fixture);
+    try std.testing.expectEqualStrings("permission_denied", value.services()[0].state());
+    try std.testing.expect(std.mem.indexOf(u8, value.services()[0].detail(), "Read denied") != null);
+    try std.testing.expectEqualStrings("loaded; not running (may be on demand)", value.services()[1].state());
+    try std.testing.expectEqual(@as(usize, 1), value.driverObservations().len);
+    try std.testing.expectEqualStrings("unsupported", value.driverObservations()[0].state());
 }
 
 test "slow observations distinguish missing telemetry from numeric zero" {

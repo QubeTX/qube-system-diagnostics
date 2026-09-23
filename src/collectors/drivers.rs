@@ -1,5 +1,6 @@
 pub mod platform;
 
+use crate::observation::Observation;
 use serde::Serialize;
 
 /// Driver/device health data
@@ -16,6 +17,8 @@ pub struct DriverData {
     pub other: Vec<DeviceInfo>,
     pub services: Vec<ServiceInfo>,
     pub scan_status: DriverScanStatus,
+    #[serde(default)]
+    pub observations: Vec<Observation>,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
@@ -84,6 +87,24 @@ impl DeviceStatus {
 }
 
 impl DriverData {
+    /// Completion describes discovery, not a blanket hardware-health verdict.
+    #[cfg(any(test, not(windows)))]
+    pub(super) fn finish_discovery(&mut self) {
+        self.scan_status = if self.observations.iter().any(Observation::is_available) {
+            DriverScanStatus::Success
+        } else {
+            DriverScanStatus::ScanFailed(
+                "No device inventory provider completed; inspect provider observations".into(),
+            )
+        };
+        if self.devices().any(|d| d.status == DeviceStatus::Unknown) {
+            self.observations.push(Observation::unsupported(
+                "device health",
+                "Enumerated devices are present; these inventory interfaces do not establish hardware or driver health",
+            ));
+        }
+    }
+
     pub fn devices(&self) -> impl Iterator<Item = &DeviceInfo> {
         self.network
             .iter()
@@ -148,6 +169,23 @@ pub struct ServiceInfo {
     pub name: String,
     pub display_name: String,
     pub is_running: bool,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub observation: Observation,
+}
+
+impl ServiceInfo {
+    pub fn display_state(&self) -> &str {
+        use crate::observation::ObservationStatus;
+        match self.observation.status {
+            ObservationStatus::Available => &self.state,
+            ObservationStatus::PermissionDenied => "Permission denied",
+            ObservationStatus::Unsupported => "Unsupported",
+            ObservationStatus::Error | ObservationStatus::Contradictory => "Query failed",
+            ObservationStatus::Unavailable => "Unavailable",
+        }
+    }
 }
 
 pub fn collect() -> DriverData {

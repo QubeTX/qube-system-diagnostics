@@ -1,194 +1,327 @@
-use crate::collectors::command::{run_status, CommandTimeout};
+use crate::collectors::command::{run_stdout, CommandTimeout};
 use crate::collectors::drivers::{
     DeviceCategory, DeviceInfo, DeviceStatus, DriverData, ServiceInfo,
 };
-use std::fs;
+use crate::observation::Observation;
+use std::{fs, io::Read, path::Path};
 
 pub fn collect() -> DriverData {
-    let mut data = DriverData::default();
-
-    // Network adapters
-    collect_network_devices(&mut data);
-
-    // Bluetooth
-    collect_bluetooth_devices(&mut data);
-
-    // Audio
-    collect_audio_devices(&mut data);
-
-    // Input devices
-    collect_input_devices(&mut data);
-
-    // Services
-    collect_services(&mut data);
-
+    let mut data = device_inventory(Path::new("/sys"), Path::new("/proc"));
+    for (name, display, user) in [
+        ("NetworkManager.service", "Network Manager", false),
+        ("wpa_supplicant.service", "WPA Supplicant", false),
+        ("bluetooth.service", "Bluetooth (BlueZ)", false),
+        ("pipewire.service", "PipeWire", true),
+        ("pulseaudio.service", "PulseAudio", true),
+    ] {
+        let scope = if user { "--user" } else { "--system" };
+        let source = format!("systemctl show ({scope})");
+        let result = run_stdout(
+            "systemctl",
+            [
+                scope,
+                "show",
+                "--no-pager",
+                "--property=LoadState,ActiveState,SubState,MainPID",
+                name,
+            ],
+            CommandTimeout::Quick,
+        );
+        let (running, state, observation) = match result {
+            Ok(text) => systemd_state(&text, &source),
+            Err(error) => (false, String::new(), error.observation(&source)),
+        };
+        data.services.push(ServiceInfo {
+            name: name.into(),
+            display_name: display.into(),
+            is_running: running,
+            state,
+            observation,
+        });
+    }
     data
 }
 
-fn collect_network_devices(data: &mut DriverData) {
-    // Read network interfaces from /sys/class/net/
-    if let Ok(entries) = fs::read_dir("/sys/class/net") {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name == "lo" {
-                continue; // Skip loopback
+fn io_observation(source: &str, error: std::io::Error) -> Observation {
+    match error.kind() {
+        std::io::ErrorKind::PermissionDenied => {
+            Observation::permission_denied(source, "Inventory read was denied")
+        }
+        std::io::ErrorKind::NotFound => {
+            Observation::unavailable(source, "This kernel inventory interface is not present")
+        }
+        _ => Observation::error(source, format!("Inventory read failed: {error}")),
+    }
+}
+
+fn read_text(path: &Path) -> std::io::Result<String> {
+    let mut text = String::new();
+    fs::File::open(path)?
+        .take(1_048_577)
+        .read_to_string(&mut text)?;
+    if text.len() > 1_048_576 {
+        return Err(std::io::Error::other("Inventory exceeds its text limit"));
+    }
+    Ok(text)
+}
+
+fn present(name: String, category: DeviceCategory, extra: String) -> DeviceInfo {
+    DeviceInfo {
+        name,
+        category,
+        extra,
+        driver_version: String::new(),
+        driver_date: String::new(),
+        status: DeviceStatus::Unknown,
+    }
+}
+
+fn device_inventory(sys: &Path, proc: &Path) -> DriverData {
+    let mut data = DriverData::default();
+    for (relative, category) in [
+        ("class/net", DeviceCategory::Network),
+        ("class/bluetooth", DeviceCategory::Bluetooth),
+    ] {
+        let source = format!("sysfs {relative}");
+        let mut observation = Observation::available(&source);
+        match fs::read_dir(sys.join(relative)) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = match entry {
+                        Ok(entry) => entry,
+                        Err(error) => {
+                            observation = io_observation(&source, error);
+                            continue;
+                        }
+                    };
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if category == DeviceCategory::Network && name == "lo" {
+                        continue;
+                    }
+                    let mut device = present(
+                        name,
+                        category.clone(),
+                        "Kernel inventory; hardware health not reported".into(),
+                    );
+                    if category == DeviceCategory::Network {
+                        // IF_OPER_DOWN can mean an unplugged cable. It does not
+                        // establish administrative disablement or driver failure.
+                        device.extra = match read_text(&entry.path().join("operstate")) {
+                            Ok(state) => format!("Operational link state: {}; hardware health not reported", state.trim()),
+                            Err(error) => format!("Operational link state unavailable: {error}; hardware health not reported"),
+                        };
+                        if let Ok(driver) = fs::read_link(entry.path().join("device/driver")) {
+                            if let Some(driver) = driver.file_name() {
+                                device.extra.push_str(&format!(
+                                    "; driver module {} (version not reported)",
+                                    driver.to_string_lossy()
+                                ));
+                            }
+                        }
+                        data.network.push(device);
+                    } else {
+                        data.bluetooth.push(device);
+                    }
+                }
             }
-
-            // Read driver info
-            let driver_path = format!("/sys/class/net/{}/device/driver", name);
-            let driver = fs::read_link(&driver_path)
-                .ok()
-                .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()))
-                .unwrap_or_else(|| "unknown".into());
-
-            // Read operstate
-            let state_path = format!("/sys/class/net/{}/operstate", name);
-            let operstate = fs::read_to_string(&state_path)
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-
-            let status = match operstate.as_str() {
-                "up" => DeviceStatus::Ok,
-                "down" => DeviceStatus::Disabled,
-                _ => DeviceStatus::Unknown,
-            };
-
-            data.network.push(DeviceInfo {
-                name,
-                driver_version: driver,
-                driver_date: String::new(),
-                status,
-                category: DeviceCategory::Network,
-                extra: operstate,
-            });
+            Err(error) => observation = io_observation(&source, error),
+        }
+        data.observations.push(observation);
+    }
+    for (relative, category) in [
+        ("asound/cards", DeviceCategory::Audio),
+        ("bus/input/devices", DeviceCategory::Input),
+    ] {
+        let source = format!("procfs {relative}");
+        match read_text(&proc.join(relative)) {
+            Ok(text) => {
+                if category == DeviceCategory::Audio {
+                    data.audio = audio_devices(&text);
+                } else {
+                    data.input = input_devices(&text);
+                }
+                data.observations.push(Observation::available(source));
+            }
+            Err(error) => data.observations.push(io_observation(&source, error)),
         }
     }
+    data.finish_discovery();
+    data
 }
 
-fn collect_bluetooth_devices(data: &mut DriverData) {
-    // Check /sys/class/bluetooth/
-    if let Ok(entries) = fs::read_dir("/sys/class/bluetooth") {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            data.bluetooth.push(DeviceInfo {
-                name,
-                driver_version: String::new(),
-                driver_date: String::new(),
-                status: DeviceStatus::Ok,
-                category: DeviceCategory::Bluetooth,
-                extra: String::new(),
-            });
-        }
-    }
-
-    if data.bluetooth.is_empty() {
-        data.bluetooth.push(DeviceInfo {
-            name: "Bluetooth".into(),
-            driver_version: String::new(),
-            driver_date: String::new(),
-            status: DeviceStatus::NotFound,
-            category: DeviceCategory::Bluetooth,
-            extra: String::new(),
-        });
-    }
-}
-
-fn collect_audio_devices(data: &mut DriverData) {
-    // Check /proc/asound/cards
-    if let Ok(content) = fs::read_to_string("/proc/asound/cards") {
-        for line in content.lines() {
+fn audio_devices(text: &str) -> Vec<DeviceInfo> {
+    text.lines()
+        .filter_map(|line| {
             let line = line.trim();
-            // Lines like " 0 [PCH            ]: HDA-Intel - HDA Intel PCH"
-            if line.starts_with(|c: char| c.is_ascii_digit()) && line.contains(':') {
-                if let Some(desc) = line.split(':').nth(1) {
-                    data.audio.push(DeviceInfo {
-                        name: desc.trim().to_string(),
-                        driver_version: String::new(),
-                        driver_date: String::new(),
-                        status: DeviceStatus::Ok,
-                        category: DeviceCategory::Audio,
-                        extra: String::new(),
-                    });
-                }
+            if !line.starts_with(|c: char| c.is_ascii_digit()) {
+                return None;
             }
-        }
-    }
-
-    if data.audio.is_empty() {
-        data.audio.push(DeviceInfo {
-            name: "Audio".into(),
-            driver_version: String::new(),
-            driver_date: String::new(),
-            status: DeviceStatus::NotFound,
-            category: DeviceCategory::Audio,
-            extra: String::new(),
-        });
-    }
+            let (_, description) = line.split_once(':')?;
+            Some(present(
+                description.trim().into(),
+                DeviceCategory::Audio,
+                "ALSA card inventory; hardware health not reported".into(),
+            ))
+        })
+        .collect()
 }
 
-fn collect_input_devices(data: &mut DriverData) {
-    // Check /proc/bus/input/devices
-    if let Ok(content) = fs::read_to_string("/proc/bus/input/devices") {
-        let mut current_name = String::new();
-        for line in content.lines() {
-            if let Some(rest) = line.strip_prefix("N: Name=\"") {
-                current_name = rest.trim_end_matches('"').to_string();
-            }
-            if line.starts_with("H: Handlers=") && !current_name.is_empty() {
-                let name_lower = current_name.to_lowercase();
-                if name_lower.contains("keyboard")
-                    || name_lower.contains("mouse")
-                    || name_lower.contains("touchpad")
-                    || name_lower.contains("trackpad")
-                {
-                    data.input.push(DeviceInfo {
-                        name: current_name.clone(),
-                        driver_version: String::new(),
-                        driver_date: String::new(),
-                        status: DeviceStatus::Ok,
-                        category: DeviceCategory::Input,
-                        extra: String::new(),
-                    });
-                }
-                current_name.clear();
-            }
-        }
-    }
-
-    if data.input.is_empty() {
-        data.input.push(DeviceInfo {
-            name: "Input Devices".into(),
-            driver_version: String::new(),
-            driver_date: String::new(),
-            status: DeviceStatus::Unknown,
-            category: DeviceCategory::Input,
-            extra: String::new(),
-        });
-    }
+fn input_devices(text: &str) -> Vec<DeviceInfo> {
+    text.split("\n\n")
+        .filter_map(|block| {
+            let name = block.lines().find_map(|line| {
+                line.strip_prefix("N: Name=\"")
+                    .and_then(|name| name.strip_suffix('"'))
+            })?;
+            let handlers = block
+                .lines()
+                .find_map(|line| line.strip_prefix("H: Handlers="))
+                .unwrap_or("not reported");
+            Some(present(
+                name.into(),
+                DeviceCategory::Input,
+                format!(
+                    "Kernel input inventory; handlers {handlers}; hardware health not reported"
+                ),
+            ))
+        })
+        .collect()
 }
 
-fn collect_services(data: &mut DriverData) {
-    let services = [
-        ("NetworkManager", "Network Manager"),
-        ("wpa_supplicant", "WPA Supplicant"),
-        ("bluetooth", "Bluetooth (BlueZ)"),
-        ("pipewire", "PipeWire"),
-        ("pulseaudio", "PulseAudio"),
-    ];
+fn systemd_state(text: &str, source: &str) -> (bool, String, Observation) {
+    let property = |key: &str| {
+        text.lines().find_map(|line| {
+            line.split_once('=')
+                .filter(|(name, _)| *name == key)
+                .map(|(_, value)| value)
+        })
+    };
+    let Some(load) = property("LoadState") else {
+        return (
+            false,
+            String::new(),
+            Observation::error(source, "Service query omitted LoadState"),
+        );
+    };
+    if load == "not-found" {
+        return (
+            false,
+            String::new(),
+            Observation::unavailable(
+                source,
+                "The unit is not installed in this service-manager scope",
+            ),
+        );
+    }
+    if load != "loaded" {
+        return (
+            false,
+            String::new(),
+            Observation::unavailable(source, format!("Service configuration state: {load}")),
+        );
+    }
+    let Some((active, sub, pid)) = property("ActiveState")
+        .zip(property("SubState"))
+        .zip(property("MainPID").and_then(|p| p.parse::<u32>().ok()))
+        .map(|((a, s), p)| (a, s, p))
+    else {
+        return (
+            false,
+            String::new(),
+            Observation::error(
+                source,
+                "Service query omitted a valid ActiveState, SubState or MainPID",
+            ),
+        );
+    };
+    if active.is_empty() || sub.is_empty() {
+        return (
+            false,
+            String::new(),
+            Observation::error(source, "Service state was empty"),
+        );
+    }
+    (
+        pid > 0,
+        format!("{active}/{sub}"),
+        Observation::available(source),
+    )
+}
 
-    for (name, display) in &services {
-        let is_running = run_status(
-            "systemctl",
-            ["is-active", "--quiet", name],
-            CommandTimeout::Quick,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn native_kernel_inventory_reports_provider_availability() {
+        let data = device_inventory(Path::new("/sys"), Path::new("/proc"));
+        let net = data
+            .observations
+            .iter()
+            .find(|o| o.source == "sysfs class/net")
+            .unwrap();
+        assert!(net.is_available(), "Native network inventory: {net:?}");
+        assert_eq!(data.attention_devices().count(), 0);
+        assert!(data.devices().all(|d| d.status == DeviceStatus::Unknown));
+    }
+    #[test]
+    fn missing_inventory_and_link_down_never_invent_failed_devices() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut data = device_inventory(temp.path(), temp.path());
+        assert_eq!(data.devices().count(), 0);
+        assert_eq!(data.attention_devices().count(), 0);
+        assert!(data.observations.iter().all(|o| !o.is_available()));
+        fs::create_dir_all(temp.path().join("class/net/eth0")).unwrap();
+        fs::write(temp.path().join("class/net/eth0/operstate"), "down\n").unwrap();
+        data = device_inventory(temp.path(), temp.path());
+        assert_eq!(data.network[0].status, DeviceStatus::Unknown);
+        assert!(data.network[0].extra.contains("down"));
+        assert_eq!(data.attention_devices().count(), 0);
+    }
+    #[test]
+    fn inventories_preserve_real_devices_without_name_guesses() {
+        assert!(audio_devices("--- no soundcards ---").is_empty());
+        assert_eq!(
+            audio_devices(" 0 [USB]: USB-Audio - Interface\n   detail").len(),
+            1
+        );
+        let input = input_devices("N: Name=\"Vendor 123\"\nH: Handlers=kbd event0\n\nN: Name=\"Vendor 123\"\nH: Handlers=mouse0 event1\n");
+        assert_eq!(input.len(), 2);
+        assert!(input.iter().all(|d| d.status == DeviceStatus::Unknown));
+    }
+    #[test]
+    fn service_availability_is_distinct_from_inactive_failed_and_oneshot() {
+        for (active, sub, pid) in [
+            ("active", "running", 45),
+            ("inactive", "dead", 0),
+            ("active", "exited", 0),
+            ("failed", "failed", 0),
+        ] {
+            let (running, state, observation) = systemd_state(
+                &format!("LoadState=loaded\nActiveState={active}\nSubState={sub}\nMainPID={pid}\n"),
+                "fixture",
+            );
+            assert_eq!(running, pid > 0);
+            assert_eq!(state, format!("{active}/{sub}"));
+            assert!(observation.is_available());
+        }
+        assert!(!systemd_state("LoadState=not-found\n", "fixture")
+            .2
+            .is_available());
+        assert!(!systemd_state("not properties", "fixture").2.is_available());
+        assert!(!systemd_state(
+            "LoadState=loaded\nActiveState=active\nSubState=running\nMainPID=no\n",
+            "fixture"
         )
-        .unwrap_or(false);
-
-        data.services.push(ServiceInfo {
-            name: name.to_string(),
-            display_name: display.to_string(),
-            is_running,
-        });
+        .2
+        .is_available());
+        assert_eq!(
+            io_observation(
+                "fixture",
+                std::io::Error::from(std::io::ErrorKind::PermissionDenied)
+            )
+            .status,
+            crate::observation::ObservationStatus::PermissionDenied
+        );
     }
 }

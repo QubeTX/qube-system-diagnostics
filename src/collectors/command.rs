@@ -60,6 +60,17 @@ fn classify(error: std::io::Error) -> CommandError {
     }
 }
 
+impl CommandError {
+    pub fn observation(&self, source: impl Into<String>) -> crate::observation::Observation {
+        use crate::observation::Observation;
+        match self {
+            Self::NotFound => Observation::unavailable(source, self.to_string()),
+            Self::PermissionDenied => Observation::permission_denied(source, self.to_string()),
+            _ => Observation::error(source, self.to_string()),
+        }
+    }
+}
+
 pub fn run_checked<P, I, S>(
     program: P,
     args: I,
