@@ -86,6 +86,28 @@ ConPTY startup delay. The retained PTY results use the corrected emulator.
 
 ## Endpoint inventory qualification
 
+### Windows interface counter qualification
+
+The interface sampler uses [GetIfTable2](https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-getiftable2)
+at its normal statistics level, with the full GUID and LUID as baseline identity.
+It does not substitute raw counters below filter modules or a statistics-free table.
+The [row flags](https://learn.microsoft.com/en-us/windows/win32/api/netioapi/ns-netioapi-mib_if_row2)
+exclude duplicate filter-module and loopback rows. Hardware interfaces contribute
+to the aggregate; other virtual/tunnel interfaces retain their own rates. This
+scope is visible, including on hosts with no eligible aggregate interfaces.
+[Unicast addresses](https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-getunicastipaddresstable)
+join by LUID, with network byte order and IPv6 scope preserved. Address-query
+failure is independent of counter availability. Allocated tables are released.
+
+Shared fixtures cover irregular intervals, identity replacement, denied reads,
+recovery warmup, measured zero and aggregate exclusion. The native Windows fixture
+brackets a separate GetIfEntry2 read between table captures and requires its byte
+counter to lie inside that exact interval, skipping identities reset or removed
+during the bracket. This is OS API/units consistency, not independent wire-level
+measurement. Existing Linux/macOS providers continue through the shared sampler;
+their aggregate explicitly describes the sum of reported interfaces and possible
+duplicate traffic across layers.
+
 Windows uses [GetExtendedTcpTable](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedtcptable)
 and its UDP counterpart. Ports and IPv6 scope IDs follow the documented network
 byte order; a TCP listener's undefined remote endpoint is not treated as measured.

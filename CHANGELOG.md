@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Read Windows interface octets and addresses through bounded native tables using full GUID/LUID identities. Remove repeated address enumeration and partial-GUID grouping; preserve native failures and recovery warmup. Define hardware-only aggregate scope while retaining virtual/tunnel rows, and expose per-interface rate/address availability in both frontends and schema-2 exports.
+
 - Report the native pipe fixture's actual failure category and elapsed time before asserting its expected outcome, so hosted failures distinguish output limits from deadlines and I/O errors.
 
 - Attach the successful capture time, age and latest provider state to retained storage-fault and incomplete-observation findings. Keep hardware fault evidence after refresh failure, explicitly mark stale or clock-discontinuous ages, and replace obsolete GUI ABI copy with useful findings guidance.

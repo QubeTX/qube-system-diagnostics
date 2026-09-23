@@ -264,6 +264,9 @@ impl DiagnosticReport {
                     interface["download_rate"] = serde_json::Value::Null;
                     interface["upload_rate"] = serde_json::Value::Null;
                 }
+                if !original.address_status.is_available() {
+                    interface["ip_addresses"] = serde_json::Value::Null;
+                }
             }
         }
         let primary = self.gpu.primary();
@@ -674,6 +677,8 @@ mod tests {
                 is_up: true,
                 operational_state: "up".into(),
                 rate_status: Observation::available("fixture"),
+                address_status: Observation::available("fixture"),
+                included_in_total: true,
             });
         snapshot
             .disk_health

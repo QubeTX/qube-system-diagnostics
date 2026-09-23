@@ -968,11 +968,11 @@ mod compatibility_tests {
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Char('j'));
         assert_eq!(
-            app.connection_scroll, 2,
-            "connectivity evidence is an additive row"
+            app.connection_scroll, 3,
+            "connectivity evidence and aggregate scope are additive rows"
         );
         press(&mut app, KeyCode::Up);
-        assert_eq!(app.connection_scroll, 1);
+        assert_eq!(app.connection_scroll, 2);
 
         app.current_section = Section::Drivers;
         press(&mut app, KeyCode::Down);

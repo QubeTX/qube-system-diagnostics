@@ -290,6 +290,10 @@ pub const GpuRow = struct {
 
 pub const InterfaceRow = struct {
     id: u32 = 0,
+    rate_available: bool = false,
+    included_in_total: bool = false,
+    rate_observation: ObservationView = .{},
+    address_observation: ObservationView = .{},
     download_kib_s: f64 = 0,
     upload_kib_s: f64 = 0,
     received_gib: f64 = 0,
@@ -311,6 +315,12 @@ pub const InterfaceRow = struct {
     }
     pub fn mac(row: *const InterfaceRow) []const u8 {
         return row.mac_buffer.text();
+    }
+    pub fn rateObservation(row: *const InterfaceRow) []const u8 {
+        return row.rate_observation.summary();
+    }
+    pub fn addressObservation(row: *const InterfaceRow) []const u8 {
+        return row.address_observation.summary();
     }
 };
 
@@ -522,6 +532,8 @@ pub const Projection = struct {
     swap_used_gib: f64 = 0,
     swap_total_gib: f64 = 0,
     total_download_kib_s: f64 = 0,
+    network_aggregation_buffer: canvas.TextBuffer(192) = .{},
+    network_rate_observation: ObservationView = .{},
     total_upload_kib_s: f64 = 0,
     process_total_count: u32 = 0,
     process_total_threads: u32 = 0,
@@ -693,6 +705,12 @@ pub const Projection = struct {
     }
     pub fn networkAdapterStatus(self: *const Projection) []const u8 {
         return self.network_adapter_observation.status();
+    }
+    pub fn networkAggregation(self: *const Projection) []const u8 {
+        return self.network_aggregation_buffer.text();
+    }
+    pub fn networkRateObservation(self: *const Projection) []const u8 {
+        return self.network_rate_observation.summary();
     }
     pub fn networkAdapterObservation(self: *const Projection) []const u8 {
         return self.network_adapter_observation.summary();
@@ -1028,16 +1046,22 @@ pub const Projection = struct {
 
         setObservation(&self.network_adapter_observation, data.network.adapter_status);
         self.network_rate_available = std.mem.eql(u8, data.network.sample.observation.status, "available");
+        self.network_aggregation_buffer.set(data.network.aggregation);
+        setObservation(&self.network_rate_observation, data.network.sample.observation);
         self.total_download_kib_s = @as(f64, @floatFromInt(data.network.total_download_rate)) / 1024.0;
         self.total_upload_kib_s = @as(f64, @floatFromInt(data.network.total_upload_rate)) / 1024.0;
         self.interface_total_count = saturatedU32(data.network.interfaces.len);
         self.interface_count = @min(data.network.interfaces.len, max_interfaces);
         for (data.network.interfaces[0..self.interface_count], 0..) |item, index| {
             var row = InterfaceRow{ .id = @intCast(index) };
+            row.rate_available = std.mem.eql(u8, item.rate_status.status, "available");
+            row.included_in_total = item.included_in_total;
+            setObservation(&row.rate_observation, item.rate_status);
+            setObservation(&row.address_observation, item.address_status);
             row.name_buffer.set(item.name);
             row.state_buffer.set(item.operational_state);
             row.mac_buffer.set(item.mac_address);
-            row.address_buffer.set(if (item.ip_addresses.len > 0) item.ip_addresses[0] else "No address");
+            row.address_buffer.set(if (!row.address_observation.available) "Address unavailable" else if (item.ip_addresses.len > 0) item.ip_addresses[0] else "No assigned address");
             row.download_kib_s = @as(f64, @floatFromInt(item.download_rate)) / 1024.0;
             row.upload_kib_s = @as(f64, @floatFromInt(item.upload_rate)) / 1024.0;
             row.received_gib = @as(f64, @floatFromInt(item.received_bytes)) / gib;
@@ -1554,6 +1578,9 @@ const MemoryJson = struct {
     module_status: ObservationJson = .{},
 };
 const InterfaceJson = struct {
+    rate_status: ObservationJson = .{},
+    address_status: ObservationJson = .{},
+    included_in_total: bool = false,
     name: []const u8 = "",
     ip_addresses: []const []const u8 = &.{},
     mac_address: []const u8 = "",
@@ -1565,6 +1592,7 @@ const InterfaceJson = struct {
     operational_state: []const u8 = "unknown",
 };
 const NetworkJson = struct {
+    aggregation: []const u8 = "",
     sample: struct { observation: ObservationJson = .{} } = .{},
     interfaces: []const InterfaceJson = &.{},
     total_download_rate: u64 = 0,
@@ -2075,4 +2103,20 @@ test "endpoint failure remains visible beside partial inventory" {
     try std.testing.expectEqualStrings("IPv6 enumeration denied", value.connection_observation.detail());
     try std.testing.expectEqual(@as(usize, 1), value.connection_count);
     try std.testing.expect(!value.connection_rows[0].pid_available);
+}
+
+
+test "network rows distinguish unavailable rates and addresses from measured zero" {
+    var value = Projection{};
+    try value.applyFastJson(std.testing.allocator,
+        \\{"sequence":2,"data":{"cpu":{},"memory":{},"processes":{},"network":{"aggregation":"hardware only","sample":{"observation":{"status":"available","source":"fixture"}},"interfaces":[{"name":"warming","included_in_total":true,"rate_status":{"status":"unavailable","source":"fixture","detail":"warming"},"address_status":{"status":"error","source":"fixture","detail":"denied"}},{"name":"idle","included_in_total":false,"rate_status":{"status":"available","source":"fixture"},"address_status":{"status":"available","source":"fixture"},"download_rate":0,"upload_rate":0}]}}}
+    );
+    try std.testing.expect(value.network_rate_available);
+    try std.testing.expectEqualStrings("hardware only",value.networkAggregation());
+    try std.testing.expect(!value.interface_rows[0].rate_available);
+    try std.testing.expectEqualStrings("Address unavailable",value.interface_rows[0].address());
+    try std.testing.expect(value.interface_rows[1].rate_available);
+    try std.testing.expectEqual(@as(f64,0),value.interface_rows[1].download_kib_s);
+    try std.testing.expect(!value.interface_rows[1].included_in_total);
+    try std.testing.expectEqualStrings("No assigned address",value.interface_rows[1].address());
 }

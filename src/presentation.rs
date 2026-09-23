@@ -41,6 +41,7 @@ pub enum Target {
     Activity(usize),
     Gpu(usize),
     Interface(usize),
+    NetworkTotal,
     Connection(usize),
     Sensor(usize),
     Fan(usize),
@@ -333,6 +334,17 @@ impl Presentation {
                 if let Some(detail) = &s.network_diag.connections_observation.detail {
                     v.summary.push(detail.clone());
                 }
+                if let Some(detail) = &s.network.sample.observation.detail {
+                    v.summary.push(detail.clone());
+                }
+                v.summary.push(s.network.aggregation.clone());
+                add(
+                    "network-total".into(),
+                    "Aggregate scope".into(),
+                    observation(&s.network.sample.observation),
+                    s.network.aggregation.clone(),
+                    Target::NetworkTotal,
+                );
                 add(
                     "diagnostics".into(),
                     "Connectivity evidence".into(),
@@ -356,7 +368,10 @@ impl Presentation {
                         format!(
                             "{} · upload {}",
                             n.operational_state,
-                            rate(n.rate_status.is_available().then_some(n.upload_rate as f64))
+                            rate(
+                                (fast && n.rate_status.is_available())
+                                    .then_some(n.upload_rate as f64)
+                            )
                         ),
                         Target::Interface(i),
                     );
@@ -594,6 +609,9 @@ impl Presentation {
                     Target::Interface(i) => {
                         json!({"interface":s.network.interfaces[i],"adapter_capabilities":s.network.adapters})
                     }
+                    Target::NetworkTotal => {
+                        json!({"scope":s.network.aggregation,"sample":s.network.sample})
+                    }
                     Target::Connection(i) => json!(s.network_diag.active_connections[i]),
                     Target::Sensor(i) => json!(s.thermals.sensors[i]),
                     Target::Fan(i) => json!(s.thermals.fans[i]),
@@ -614,6 +632,7 @@ impl Presentation {
                     Target::Gpu(_)=>"Temperature, load and memory are separate readings. A missing field does not mean the graphics adapter is idle. Shared memory belongs to the system.",
                     Target::Drive(_)=>"Health comes from the drive or operating-system provider. Inspect reported warnings and verify backups before further testing.",
                     Target::Diagnostics=>"These lightweight checks provide limited connectivity evidence. ICMP can be filtered even when internet access works. DNS duration is separate from network round-trip time.",
+                    Target::NetworkTotal=>"The scope above explains which interface rates contribute to the total. Inspect individual interfaces for virtual or tunnel traffic; this is not a bandwidth test.",
                     Target::Sensor(_)|Target::Fan(_)=>"This reading belongs to a specific provider channel. Temperature and fan speed availability depend on the hardware and its driver.",
                     _=>"Press m and choose Technician for units, provider identifiers and detailed observations."
                 }.into());

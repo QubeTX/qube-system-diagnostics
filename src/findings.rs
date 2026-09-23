@@ -84,6 +84,31 @@ pub fn for_snapshot(snapshot: &SystemSnapshot) -> Vec<Finding> {
             });
         }
     }
+    if snapshot.network.sample.observation.source != "not_collected"
+        && !snapshot.network.sample.observation.is_available()
+    {
+        findings.push(Finding {
+            id: "observation:network-rates".into(),
+            kind: FindingKind::IncompleteObservation,
+            severity: "info".into(),
+            title: "Network rate observation is incomplete".into(),
+            evidence: format!(
+                "{}; {}",
+                snapshot
+                    .network
+                    .sample
+                    .observation
+                    .detail
+                    .as_deref()
+                    .unwrap_or("No available interface aggregate"),
+                capture_context(Some(&snapshot.network.sample), now)
+            ),
+            next_step:
+                "Inspect Network for individual interfaces, aggregate scope and provider details"
+                    .into(),
+            source: "network".into(),
+        });
+    }
     if let Some(result) = &snapshot.storage_probe.result {
         let fault = matches!(
             result.drive.health_status,

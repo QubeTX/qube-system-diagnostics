@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Windows network readings use less repeated discovery and keep similarly named adapters separate. The total explains which interfaces it includes, virtual connections remain inspectable, and unavailable speeds or addresses no longer look like idle traffic or a missing address.
+
 - Behind the scenes: background-check tests explain the failure they encountered, making platform-specific fixes easier to verify.
 
 - A failed refresh keeps a previously reported drive warning visible and explains how old its evidence is. Missing timestamps and clock changes remain explicit, so older results do not appear freshly measured.

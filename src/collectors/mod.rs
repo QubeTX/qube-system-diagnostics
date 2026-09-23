@@ -29,6 +29,8 @@ pub mod system_info;
 pub mod thermals;
 #[cfg(windows)]
 mod windows_connections;
+#[cfg(windows)]
+mod windows_network;
 
 use serde::Serialize;
 use sysinfo::{Components, Disks, Networks, System};

@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: qualify measured performance using exact release artifacts and the entire owned process tree. Windows CPU and memory exceed the accepted gates; improve one measured cause per cycle. Remaining work includes native performance, full PTY coverage and unpublished composite lifecycle qualification.
+Current cycle: qualify measured performance using exact release artifacts and the entire owned process tree. Windows CPU remains above its gate; the last cadence window passes memory but full foreground/hidden/soak acceptance remains open. Improve one measured cause per cycle. Native performance, full PTY coverage and unpublished composite lifecycle qualification remain required.
 
 ## Impact
 
@@ -49,6 +49,8 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations implemented; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: direct Windows interface tables pass native counter bracketing, complete identity/address/unit fixtures, shared interval/replacement/failure tests, 204 root library tests (six child fixtures), eight CLI contracts, two worker tests, all 15 engine tests and 51 GUI tests (two skips). Strict bindings, clippy and Mac/musl test cross-checks pass. Next: unchanged native matrix and release-stage/resource measurements. Mac PTY failure now proves key input stalls immediately after resize while collection and rendering continue; test the documented alternative terminal polling backend as a separate candidate.
 
 - 2026-09-23 — codex: 9dbdec6 Apple Silicon job 107159226591 fails before PTY qualification in the new noisy/oversized pipe fixture. The assertion omitted the actual error and topic, so this cycle adds those plus elapsed time without changing product behavior or deadlines. Next oracle: distinguish an early output-limit error, native I/O failure and a finite deadline on the same Mac runtime.
 
