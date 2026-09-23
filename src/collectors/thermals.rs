@@ -386,6 +386,32 @@ fn collect_wmi_thermals() -> (
     Observation,
     Vec<DiagnosticWarning>,
 ) {
+    use super::provider_cache::OptionalCache;
+    use std::cell::RefCell;
+    type Result = (
+        Vec<SensorInfo>,
+        Vec<FanInfo>,
+        Observation,
+        Observation,
+        Vec<DiagnosticWarning>,
+    );
+    thread_local! {static CACHE:RefCell<OptionalCache<Result>>=RefCell::new(OptionalCache::default());}
+    CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .sample(collect_wmi_thermals_uncached, |r| {
+                !r.0.is_empty() || !r.1.is_empty()
+            })
+    })
+}
+#[cfg(windows)]
+fn collect_wmi_thermals_uncached() -> (
+    Vec<SensorInfo>,
+    Vec<FanInfo>,
+    Observation,
+    Observation,
+    Vec<DiagnosticWarning>,
+) {
     use wmi::{COMLibrary, WMIConnection};
 
     let mut warnings = Vec::new();
@@ -573,6 +599,21 @@ fn collect_wmi_thermals() -> (
 
 #[cfg(windows)]
 fn collect_hardware_monitor_bridge() -> Option<WindowsThermalReadings> {
+    use super::provider_cache::OptionalCache;
+    use std::cell::RefCell;
+    thread_local! {static CACHE:RefCell<OptionalCache<Option<WindowsThermalReadings>>>=RefCell::new(OptionalCache::default());}
+    CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .sample(collect_hardware_monitor_bridge_uncached, |readings| {
+                readings
+                    .as_ref()
+                    .is_some_and(|r| !r.sensors.is_empty() || !r.fans.is_empty())
+            })
+    })
+}
+#[cfg(windows)]
+fn collect_hardware_monitor_bridge_uncached() -> Option<WindowsThermalReadings> {
     use wmi::{COMLibrary, WMIConnection};
 
     for (namespace, source) in [
@@ -669,6 +710,21 @@ fn collect_hardware_monitor_bridge() -> Option<WindowsThermalReadings> {
 
 #[cfg(windows)]
 fn collect_awcc_thermals() -> Option<WindowsThermalReadings> {
+    use super::provider_cache::OptionalCache;
+    use std::cell::RefCell;
+    thread_local! {static CACHE:RefCell<OptionalCache<Option<WindowsThermalReadings>>>=RefCell::new(OptionalCache::default());}
+    CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .sample(collect_awcc_thermals_uncached, |readings| {
+                readings
+                    .as_ref()
+                    .is_some_and(|r| !r.sensors.is_empty() || !r.fans.is_empty())
+            })
+    })
+}
+#[cfg(windows)]
+fn collect_awcc_thermals_uncached() -> Option<WindowsThermalReadings> {
     use wmi::{COMLibrary, WMIConnection};
 
     const SOURCE: &str = "Dell AWCC Thermal_Information (read-only)";

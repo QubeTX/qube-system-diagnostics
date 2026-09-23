@@ -21,6 +21,7 @@ pub mod network_diag;
 pub mod platform;
 pub mod probe;
 pub mod processes;
+pub mod provider_cache;
 pub mod sampling;
 pub mod system_info;
 pub mod thermals;
@@ -214,6 +215,18 @@ impl Default for SystemSnapshot {
 }
 
 impl SystemSnapshot {
+    pub fn invalidate_rate_baselines(&mut self) {
+        self.network_sampler = network::NetworkSampler::default();
+        #[cfg(windows)]
+        {
+            self.gui_process_sampler = processes::GuiProcessSampler::default();
+        }
+        #[cfg(not(windows))]
+        {
+            self.process_instances.clear();
+        }
+    }
+
     /// Copy presentation values only. Collector handles and rate baselines are never cloned.
     pub fn presentation_copy(&self) -> Self {
         Self {

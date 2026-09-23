@@ -1,6 +1,6 @@
 //! Bounded collector execution without reader threads or inherited-pipe EOF waits.
 use std::ffi::OsStr;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -132,6 +132,141 @@ where
     owned.terminate();
     let _ = child.wait();
     result
+}
+
+/// One reusable owned process, with one bounded request outstanding. Requests are
+/// smaller than a pipe's minimum capacity; responses use atomic files, never a
+/// draining thread or an inherited stdout pipe.
+pub struct WorkerProcess {
+    child: Child,
+    owned: OwnedProcess,
+    directory: tempfile::TempDir,
+    stdout: std::fs::File,
+    stderr: std::fs::File,
+}
+impl WorkerProcess {
+    pub fn spawn(program: &OsStr, topic: &str) -> Result<Self, CommandError> {
+        Self::spawn_configured(program, |response| {
+            vec![
+                "collect-server".into(),
+                topic.into(),
+                "--response".into(),
+                response.as_os_str().to_owned(),
+            ]
+        })
+    }
+    pub fn process_id(&self) -> u32 {
+        self.child.id()
+    }
+    fn spawn_configured(
+        program: &OsStr,
+        args: impl FnOnce(&std::path::Path) -> Vec<std::ffi::OsString>,
+    ) -> Result<Self, CommandError> {
+        let directory = tempfile::tempdir()?;
+        let stdout = tempfile::tempfile()?;
+        let stderr = tempfile::tempfile()?;
+        let mut command = Command::new(program);
+        command
+            .args(args(&directory.path().join("response.json")))
+            .stdin(Stdio::piped())
+            .stdout(stdout.try_clone()?)
+            .stderr(stderr.try_clone()?);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0).env("LC_ALL", "C").env("LANG", "C");
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000 | 0x0000_0004);
+        }
+        let mut child = command.spawn().map_err(classify)?;
+        let owned = match OwnedProcess::new(&child) {
+            Ok(owned) => owned,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.into());
+            }
+        };
+        Ok(Self {
+            child,
+            owned,
+            directory,
+            stdout,
+            stderr,
+        })
+    }
+    pub fn request(
+        &mut self,
+        reset: bool,
+        timeout: Duration,
+        cancelled: &AtomicBool,
+    ) -> Result<Vec<u8>, CommandError> {
+        let deadline = Instant::now() + timeout;
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(CommandError::Cancelled);
+        }
+        // Exactly one two-byte message can be pending. No reader/replacement threads.
+        self.child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("worker input closed"))?
+            .write_all(if reset { b"r\n" } else { b"s\n" })?;
+        let response = self.directory.path().join("response.json");
+        loop {
+            if cancelled.load(Ordering::Relaxed) {
+                return Err(CommandError::Cancelled);
+            }
+            if Instant::now() >= deadline {
+                return Err(CommandError::Timeout);
+            }
+            if self
+                .stdout
+                .metadata()?
+                .len()
+                .saturating_add(self.stderr.metadata()?.len())
+                > MAX_OUTPUT_BYTES
+            {
+                return Err(CommandError::OutputLimit);
+            }
+            match std::fs::File::open(&response) {
+                Ok(file) => {
+                    if file.metadata()?.len() > MAX_OUTPUT_BYTES {
+                        return Err(CommandError::OutputLimit);
+                    }
+                    let mut bytes = Vec::new();
+                    file.take(MAX_OUTPUT_BYTES + 1).read_to_end(&mut bytes)?;
+                    if bytes.len() as u64 > MAX_OUTPUT_BYTES {
+                        return Err(CommandError::OutputLimit);
+                    }
+                    std::fs::remove_file(&response)?;
+                    return Ok(bytes);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
+            if let Some(status) = self.child.try_wait()? {
+                self.stderr.seek(SeekFrom::Start(0))?;
+                let mut error = String::new();
+                Read::by_ref(&mut self.stderr)
+                    .take(2048)
+                    .read_to_string(&mut error)?;
+                return Err(std::io::Error::other(format!(
+                    "collector worker exited with {status}: {error}"
+                ))
+                .into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+impl Drop for WorkerProcess {
+    fn drop(&mut self) {
+        self.owned.terminate();
+        let _ = self.child.wait();
+    }
 }
 
 /// Compatibility adapter while individual providers migrate to explicit errors.
@@ -321,5 +456,31 @@ mod tests {
         .unwrap();
         assert_eq!(result.stdout, b"ok");
         assert!(start.elapsed() < Duration::from_secs(1));
+    }
+    #[test]
+    fn persistent_worker_timeout_and_cancellation_do_not_wait_for_stdin_or_native_return() {
+        #[cfg(windows)]
+        let program = OsStr::new("powershell");
+        #[cfg(unix)]
+        let program = OsStr::new("sh");
+        let mut worker = WorkerProcess::spawn_configured(program, |_| {
+            #[cfg(windows)]
+            let args = [
+                "-NoProfile",
+                "-Command",
+                "[Console]::ReadLine() | Out-Null; Start-Sleep -Seconds 30",
+            ];
+            #[cfg(unix)]
+            let args = ["-c", "read value; sleep 30"];
+            args.into_iter().map(Into::into).collect()
+        })
+        .unwrap();
+        let started = Instant::now();
+        assert!(matches!(
+            worker.request(false, Duration::from_millis(75), &AtomicBool::new(false)),
+            Err(CommandError::Timeout)
+        ));
+        drop(worker);
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

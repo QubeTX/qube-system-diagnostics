@@ -28,6 +28,8 @@ Rules:
 | [0006](0006-v4-sampling-and-terminal-contract.md) | Bounded independent collection and the v4 terminal contract | Accepted |
 | [0007](0007-adaptive-presentation-and-time-buckets.md) | Adaptive presentation and captured time buckets | Accepted |
 
+| [0008](0008-reusable-isolated-providers.md) | Reusable isolated providers and session-local caches | Accepted |
+
 ## Dual-frontend contract pointer
 
 The rules for changing SD-300 across its two frontends — what the TUI and native

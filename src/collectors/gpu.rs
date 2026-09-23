@@ -182,9 +182,52 @@ struct WmiVideoController {
 
 #[cfg(windows)]
 fn collect_windows() -> GpuData {
-    use wmi::{COMLibrary, WMIConnection};
+    use super::provider_cache::StaticCache;
+    use std::cell::RefCell;
+    thread_local! {static INVENTORY:RefCell<StaticCache<(Vec<GpuAdapter>,Observation)>>=RefCell::new(StaticCache::default());}
+    let dxgi = super::gpu_windows::inventory();
+    let fingerprint = dxgi
+        .as_ref()
+        .map(|v| {
+            v.iter()
+                .map(|a| a.device_id.as_str())
+                .collect::<Vec<_>>()
+                .join("|")
+        })
+        .unwrap_or_default();
+    let (mut adapters, mut inventory_status) = INVENTORY.with(|cache| {
+        cache
+            .borrow_mut()
+            .get(fingerprint, collect_windows_inventory)
+    });
+    if let Ok(mut dxgi) = dxgi {
+        if !dxgi.is_empty() {
+            for device in &mut dxgi {
+                if let Some(previous) = adapters
+                    .iter()
+                    .find(|a| a.pci_address.is_some() && a.pci_address == device.pci_address)
+                {
+                    device.driver_version = previous.driver_version.clone();
+                    device.current_resolution = previous.current_resolution.clone();
+                    device.refresh_rate_hz = previous.refresh_rate_hz;
+                    device.status = previous.status.clone();
+                }
+            }
+            adapters = dxgi;
+            inventory_status =
+                Observation::available("DXGI adapter identity and memory categories");
+        }
+    }
+    merge_telemetry(&mut adapters, collect_nvidia());
+    super::gpu_windows::add_engine_utilization(&mut adapters);
 
-    let (mut adapters, mut inventory_status) = match COMLibrary::new()
+    GpuData::from_adapters(adapters, inventory_status)
+}
+
+#[cfg(windows)]
+fn collect_windows_inventory() -> (Vec<GpuAdapter>, Observation) {
+    use wmi::{COMLibrary, WMIConnection};
+    match COMLibrary::new()
         .and_then(WMIConnection::new)
         .and_then(|connection| {
             connection.raw_query::<WmiVideoController>(
@@ -235,34 +278,22 @@ fn collect_windows() -> GpuData {
             Vec::new(),
             Observation::error("Win32_VideoController", format!("WMI query failed: {error}")),
         ),
-    };
-
-    if let Ok(mut dxgi) = super::gpu_windows::inventory() {
-        if !dxgi.is_empty() {
-            for device in &mut dxgi {
-                if let Some(previous) = adapters
-                    .iter()
-                    .find(|a| a.pci_address.is_some() && a.pci_address == device.pci_address)
-                {
-                    device.driver_version = previous.driver_version.clone();
-                    device.current_resolution = previous.current_resolution.clone();
-                    device.refresh_rate_hz = previous.refresh_rate_hz;
-                    device.status = previous.status.clone();
-                }
-            }
-            adapters = dxgi;
-            inventory_status =
-                Observation::available("DXGI adapter identity and memory categories");
-        }
     }
-    merge_telemetry(&mut adapters, collect_nvidia());
-    super::gpu_windows::add_engine_utilization(&mut adapters);
-
-    GpuData::from_adapters(adapters, inventory_status)
 }
 
 #[cfg(not(target_os = "macos"))]
 fn collect_nvidia() -> Vec<GpuAdapter> {
+    use super::provider_cache::OptionalCache;
+    use std::cell::RefCell;
+    thread_local! {static NVIDIA:RefCell<OptionalCache<Vec<GpuAdapter>>>=RefCell::new(OptionalCache::default());}
+    NVIDIA.with(|cache| {
+        cache
+            .borrow_mut()
+            .sample(collect_nvidia_uncached, |adapters| !adapters.is_empty())
+    })
+}
+#[cfg(not(target_os = "macos"))]
+fn collect_nvidia_uncached() -> Vec<GpuAdapter> {
     let Some(output) = run_output(
         "nvidia-smi",
         [

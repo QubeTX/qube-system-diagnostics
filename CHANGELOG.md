@@ -6,6 +6,9 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Reuse one owned subprocess per isolated collector lane with bounded atomic responses and cancellation. Cache Windows graphics topology by device identity and back off negative thermal/NVIDIA discovery without reusing stale numeric readings.
+- Invalidate discovery after interface/disk topology changes and resume; reset rate baselines after long fast-sample gaps.
+
 - Replace section-specific render-time sorting with an adaptive prepared dashboard, complete-inventory filters, identity-preserving selection, contextual inspection, paging, pause-view and opt-in mouse input. Add independent TUI preferences and terminal fallbacks.
 - Render captured time buckets with explicit gaps in both frontends, keep CPU/GPU thermal histories separate, correct IEC byte labels, and subscribe the GUI storage view to live disk activity.
 

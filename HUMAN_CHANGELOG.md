@@ -10,6 +10,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 **Fixed**
 
+- Monitoring reuses its isolated workers instead of repeatedly starting them. Hardware discovery is reused when devices are unchanged, and unavailable optional sensors are retried less aggressively. New devices, resume and explicit retry refresh discovery.
+
 - The terminal dashboard now fits smaller screens and uses extra space for charts and useful details. Search the full list, keep your place as applications update, and pause what you see while monitoring continues. Keyboard navigation remains complete; mouse support is optional.
 - Both interfaces show gaps when readings are missing instead of drawing invented continuity. Processor and graphics temperatures stay separate, and desktop storage activity updates promptly. Terminal appearance preferences remain independent of the desktop app.
 

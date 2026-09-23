@@ -8,6 +8,14 @@ pub enum Command {
         #[arg(value_enum)]
         topic: CollectorTopic,
     },
+    /// Private session-local collector process with bounded atomic responses.
+    #[command(hide = true)]
+    CollectServer {
+        #[arg(value_enum)]
+        topic: CollectorTopic,
+        #[arg(long)]
+        response: std::path::PathBuf,
+    },
     /// Check for updates and install the latest release.
     Update(UpdateActionArgs),
     /// Install the latest release through the preferred managed CLI channel.

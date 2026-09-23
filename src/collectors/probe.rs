@@ -87,6 +87,96 @@ pub fn print_worker(topic: crate::cli::CollectorTopic) -> crate::error::Result<(
     .map_err(|error| crate::error::AppError::platform(error.to_string()))
 }
 
+/// Requests are a single byte plus newline, with no paths or commands supplied
+/// through the protocol. Parent ownership and timeout cover every native call.
+pub fn serve(
+    topic: crate::cli::CollectorTopic,
+    response: &std::path::Path,
+) -> crate::error::Result<()> {
+    use std::io::{BufRead, Read, Write};
+    let mut input = std::io::stdin().lock();
+    loop {
+        let mut request = String::new();
+        if input.by_ref().take(3).read_line(&mut request)? == 0 {
+            return Ok(());
+        }
+        match request.as_str() {
+            "r\n" => super::provider_cache::invalidate(),
+            "s\n" => {}
+            _ => {
+                return Err(crate::error::AppError::platform(
+                    "Invalid collector request",
+                ))
+            }
+        }
+        let data = collect_local(topic);
+        let bytes = serde_json::to_vec(&Envelope {
+            version: env!("CARGO_PKG_VERSION").into(),
+            captured_unix_ms: sampling::unix_ms(),
+            data,
+        })
+        .map_err(|e| crate::error::AppError::platform(e.to_string()))?;
+        if bytes.len() as u64 > command::MAX_OUTPUT_BYTES {
+            return Err(crate::error::AppError::platform(
+                "Collector response exceeds limit",
+            ));
+        }
+        let mut temp = tempfile::NamedTempFile::new_in(
+            response
+                .parent()
+                .ok_or_else(|| crate::error::AppError::platform("Missing response directory"))?,
+        )?;
+        temp.write_all(&bytes)?;
+        temp.persist(response)
+            .map_err(|e| crate::error::AppError::platform(e.to_string()))?;
+    }
+}
+
+#[derive(Default)]
+pub struct Session {
+    worker: Option<command::WorkerProcess>,
+}
+impl Session {
+    pub fn collect(
+        &mut self,
+        topic: crate::cli::CollectorTopic,
+        cancelled: &AtomicBool,
+        reset: bool,
+    ) -> Result<(ProbeData, u64), String> {
+        let name = topic_name(topic);
+        if self.worker.is_none() {
+            let executable =
+                executable().ok_or("The matching SD-300 CLI collector companion is missing")?;
+            self.worker = Some(
+                command::WorkerProcess::spawn(executable.as_os_str(), name)
+                    .map_err(|e| e.to_string())?,
+            );
+        }
+        let result = self
+            .worker
+            .as_mut()
+            .unwrap()
+            .request(reset, Duration::from_secs(25), cancelled)
+            .map_err(|e| format!("{name}: {e}"))
+            .and_then(|bytes| decode(topic, &bytes));
+        if result.is_err() {
+            self.worker.take();
+        }
+        result
+    }
+}
+fn topic_name(topic: crate::cli::CollectorTopic) -> &'static str {
+    match topic {
+        crate::cli::CollectorTopic::Activity => "activity",
+        crate::cli::CollectorTopic::Static => "static",
+        crate::cli::CollectorTopic::Slow => "slow",
+        crate::cli::CollectorTopic::Connections => "connections",
+        crate::cli::CollectorTopic::Diagnostics => "diagnostics",
+        crate::cli::CollectorTopic::Health => "health",
+        crate::cli::CollectorTopic::Drivers => "drivers",
+    }
+}
+
 pub fn executable() -> Option<PathBuf> {
     let current = std::env::current_exe().ok()?;
     let name = if cfg!(windows) { "sd300.exe" } else { "sd300" };
@@ -96,33 +186,10 @@ pub fn executable() -> Option<PathBuf> {
     crate::gui::locate_update_cli()
 }
 
-pub fn collect(
-    topic: crate::cli::CollectorTopic,
-    cancelled: &AtomicBool,
-) -> Result<(ProbeData, u64), String> {
-    let executable =
-        executable().ok_or("The matching SD-300 CLI collector companion is missing")?;
-    let name = match topic {
-        crate::cli::CollectorTopic::Activity => "activity",
-        crate::cli::CollectorTopic::Static => "static",
-        crate::cli::CollectorTopic::Slow => "slow",
-        crate::cli::CollectorTopic::Connections => "connections",
-        crate::cli::CollectorTopic::Diagnostics => "diagnostics",
-        crate::cli::CollectorTopic::Health => "health",
-        crate::cli::CollectorTopic::Drivers => "drivers",
-    };
-    let output = command::run_checked(
-        executable,
-        ["collect-worker", name],
-        command::CommandTimeout::Custom(Duration::from_secs(25)),
-        cancelled,
-    )
-    .map_err(|e| e.to_string())?;
-    if !output.status.success() {
-        return Err(format!("{name} worker exited with {}", output.status));
-    }
-    let envelope: Envelope = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Invalid {name} worker result: {e}"))?;
+fn decode(topic: crate::cli::CollectorTopic, bytes: &[u8]) -> Result<(ProbeData, u64), String> {
+    let name = topic_name(topic);
+    let envelope: Envelope =
+        serde_json::from_slice(bytes).map_err(|e| format!("Invalid {name} worker result: {e}"))?;
     if envelope.version != env!("CARGO_PKG_VERSION") {
         return Err("Collector companion version does not match this monitor".into());
     }

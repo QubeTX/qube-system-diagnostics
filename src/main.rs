@@ -11,6 +11,9 @@ fn main() -> Result<()> {
     if let Some(Command::CollectWorker { topic }) = &cli.command {
         return sd_300::collectors::probe::print_worker(*topic);
     }
+    if let Some(Command::CollectServer { topic, response }) = &cli.command {
+        return sd_300::collectors::probe::serve(*topic, response);
+    }
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?
@@ -31,6 +34,10 @@ async fn run(cli: Cli) -> Result<()> {
 
     if let Some(command) = cli.command {
         match command {
+            Command::CollectServer { topic, response } => {
+                sd_300::collectors::probe::serve(topic, &response)?;
+                return Ok(());
+            }
             Command::CollectWorker { topic } => {
                 sd_300::collectors::probe::print_worker(topic)?;
                 return Ok(());

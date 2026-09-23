@@ -111,6 +111,28 @@ struct Shared {
     sort: AtomicU8,
     retry: [AtomicBool; 8],
     slots: [Mutex<Option<Update>>; 8],
+    wakers: [Mutex<Option<thread::Thread>>; 8],
+}
+
+impl Shared {
+    fn retry(&self, lane: Lane) {
+        if lane == Lane::Fast {
+            return;
+        }
+        self.retry[lane as usize].store(true, Ordering::Release);
+        if let Some(thread) = self.wakers[lane as usize]
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            thread.unpark();
+        }
+    }
+    fn topology_changed(&self) {
+        for lane in [Lane::Static, Lane::Slow, Lane::Health, Lane::Drivers] {
+            self.retry(lane);
+        }
+    }
 }
 
 pub struct Monitor {
@@ -126,6 +148,7 @@ impl Monitor {
             sort: AtomicU8::new(0),
             retry: std::array::from_fn(|_| AtomicBool::new(false)),
             slots: std::array::from_fn(|_| Mutex::new(None)),
+            wakers: std::array::from_fn(|_| Mutex::new(None)),
         });
         let workers = Lane::ALL
             .into_iter()
@@ -159,8 +182,7 @@ impl Monitor {
         if lane == Lane::Fast {
             return;
         }
-        self.shared.retry[lane as usize].store(true, Ordering::Release);
-        self.workers[lane as usize].thread().unpark();
+        self.shared.retry(lane);
     }
     fn wake(&self) {
         for worker in &self.workers {
@@ -216,10 +238,10 @@ impl Monitor {
                             captured_unix_ms: update.captured,
                             interval_ms: update.interval.as_millis() as u64,
                             expected_interval_ms: update.expected.as_millis() as u64,
-                            observation: if lane == Lane::Fast && update.sequence == 1 {
+                            observation: if lane == Lane::Fast && (update.sequence == 1 || update.interval > Duration::from_secs(10)) {
                                 Observation::unavailable(
                                     lane.name(),
-                                    "Waiting for a second CPU counter sample",
+                                    "Waiting for a second CPU counter sample after startup or resume",
                                 )
                             } else {
                                 Observation::available(lane.name())
@@ -250,8 +272,14 @@ impl Drop for Monitor {
 }
 
 fn run_lane(shared: Arc<Shared>, lane: Lane) {
+    *shared.wakers[lane as usize]
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = Some(thread::current());
+    let mut topology: Option<Vec<String>> = None;
+    let mut previous_wall: Option<u64> = None;
     let mut snapshot = SystemSnapshot::default();
     let mut activity = collectors::disk_activity::DiskSampler::default();
+    let mut session = collectors::probe::Session::default();
     let mut next = Instant::now();
     let mut previous = None;
     let mut failures = 0u32;
@@ -277,9 +305,17 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
         } else {
             lane.cadence()
         };
+        let wall = collectors::sampling::unix_ms();
+        let resumed = lane == Lane::Fast
+            && previous_wall.is_some_and(|last| wall.saturating_sub(last) > 10_000);
+        previous_wall = Some(wall);
+        if resumed {
+            snapshot.invalidate_rate_baselines();
+            shared.topology_changed();
+        }
         let result = catch_unwind(AssertUnwindSafe(|| {
             if lane != Lane::Fast {
-                return collectors::probe::collect(lane.topic(), &shared.stop).map(
+                return session.collect(lane.topic(), &shared.stop, requested).map(
                     |(data, captured)| {
                         let data = match data {
                             ProbeData::Activity(frame) => {
@@ -325,6 +361,31 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
                 lane.name()
             ))
         });
+        if let Ok((data, _)) = &result {
+            let current = match data {
+                Data::Activity(activity) if activity.observation.is_available() => Some(
+                    activity
+                        .devices
+                        .iter()
+                        .map(|d| d.identity.clone())
+                        .collect::<Vec<_>>(),
+                ),
+                Data::Fast(data) => data.network.as_ref().map(|n| {
+                    n.interfaces
+                        .iter()
+                        .map(|i| format!("{}:{}", i.name, i.mac_address))
+                        .collect::<Vec<_>>()
+                }),
+                _ => None,
+            };
+            if let Some(mut current) = current {
+                current.sort();
+                if topology.as_ref().is_some_and(|old| old != &current) {
+                    shared.topology_changed();
+                }
+                topology = Some(current);
+            }
+        }
         let captured = result.as_ref().map(|(_, captured)| *captured).unwrap_or(0);
         if result.is_ok() {
             failures = 0;
@@ -367,6 +428,7 @@ mod tests {
                 sort: AtomicU8::new(0),
                 retry: std::array::from_fn(|_| AtomicBool::new(false)),
                 slots: std::array::from_fn(|_| Mutex::new(None)),
+                wakers: std::array::from_fn(|_| Mutex::new(None)),
             }),
             workers: Vec::new(),
         }
