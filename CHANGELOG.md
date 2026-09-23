@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Detect Linux GUI mapping/minimized state through GTK/GDK so background windows use the existing reduced collection profile. Add native mapping/recovery fixtures and complete-bundle Mac/Linux foreground/hidden resource smoke checks with bounded process accounting and normal shutdown.
+
 - Add opt-in native before/after release TUI resource measurements to all six CI targets, using immutable baseline bytes, sequential measurements and retained failure reports. Validate Unix completed-child CPU accounting separately and keep visual interaction observers outside the resource window.
 
 - Reconcile the GUI engine's separately resolved Rust dependencies with the qualified CLI lockfile, including sysinfo and serialization. Check shared versions, registry sources and checksums alongside product-version validation so frontend builds cannot silently drift.

@@ -19,7 +19,7 @@ grep -Eq '^3\.20([.]|$)' /etc/alpine-release || {
 
 apk add --no-cache \
   bash build-base ca-certificates curl findutils git gtk4.0-dev nodejs npm \
-  lddtreepax patchelf pkgconf scanelf spdx-licenses-text tar xz
+  lddtreepax patchelf pkgconf scanelf spdx-licenses-text tar xz xvfb xauth xdotool dbus
 for command in lddtreepax scanelf; do
   command -v "$command" >/dev/null || {
     echo "the Alpine private-runtime packager requires $command" >&2
@@ -85,6 +85,17 @@ npm --prefix "$repo_root/gui" ci --ignore-scripts --offline --cache "$npm_cache"
 node "$script_root/prepare-native-sdk.mjs" "$repo_root/gui"
 node "$script_root/check-native-distribution.mjs" "$repo_root/gui"
 SD300_SKIP_NPM_CI=1 bash "$script_root/build-native-gui.sh" linux-musl-x86_64
+if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
+  cc -Wall -Wextra -Werror scripts/test-linux-window-visibility.c gui/src/platform/window_visibility_linux.c $(pkg-config --cflags --libs gtk4) -o target/test-linux-window-visibility
+  xvfb-run -a target/test-linux-window-visibility
+  bundle=target/native-gui-stage/linux-musl-x86_64/app/zig-out/bin
+  cp target/release/sd300 "$bundle/sd300"
+  for mode in foreground hidden; do
+    flags=(); [[ $mode != hidden ]] || flags+=(--hidden)
+    GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- /tmp/sd300-qualification-python/bin/python scripts/measure-gui-unix.py \
+      "$bundle/sd300-gui" --output "$output_dir/gui-resource-smoke/$mode.json" --revision "$(git rev-parse HEAD)" --seconds 30 "${flags[@]}"
+  done
+fi
 bash "$script_root/package-native-gui-linux.sh" \
   linux-musl-x86_64 "$output_dir" "$version"
 if [[ ${SD300_RESOURCE_SECONDS:-0} != 0 ]]; then

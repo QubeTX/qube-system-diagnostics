@@ -92,6 +92,20 @@ and owned-process accounting are in `candidate-native-pdh-tui-cadence.json`.
 
 ## Windows GUI process-family measurements
 
+The native Unix GUI smoke harness verifies complete bundle identity, expected
+workers, boundary window visibility and socket-driven normal shutdown. macOS
+counts on-screen layer-zero windows through CoreGraphics without capturing their
+contents. Linux uses a private Xvfb session and PID-scoped X11 queries; its hidden
+check unmaps only the owned window after startup, because Linux has no tray
+startup route. This is headless X11 runtime evidence, not physical-display or
+Wayland acceptance. Short startup-inclusive smoke CPU is not a long-window gate.
+
+Linux visibility now follows GTK's [mapped surface state](https://docs.gtk.org/gdk4/method.Surface.get_mapped.html)
+and [minimized flag](https://docs.gtk.org/gdk4/flags.ToplevelState.html), both
+available in the supported GTK baseline. A native GTK fixture exercises hidden
+and restored windows. An unavailable startup surface keeps foreground sampling;
+the change does not add tray support or treat minimizing as a request to quit.
+
 `scripts/measure-gui-windows.py` requires the GUI, adjacent engine, and the
 bundle-relative CLI collector. It records all three hashes and starts the GUI
 suspended, assigns its ancestor Job Object, then resumes. Native accounting

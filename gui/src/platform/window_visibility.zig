@@ -179,7 +179,7 @@ pub fn mainWindowVisible() bool {
     return switch (builtin.os.tag) {
         .windows => windowsMainWindowVisible(),
         .macos => sd300_main_window_visible() != 0,
-        .linux => true,
+        .linux => sd300_main_window_visible() != 0,
         else => @compileError("SD-300 GUI supports only Windows, macOS, and Linux"),
     };
 }

@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: Linux GUI audit finds mainWindowVisible hardcoded true. Use documented GTK surface mapping/minimized state, retaining foreground startup behavior and existing no-tray policy. Add native GTK hide/restore fixture and bounded Mac/Linux GUI smoke harness; local syntax/workflow checks precede native runtime proof. Next oracle: all five Unix target smoke reports, then long native GUI comparisons. Local Windows 866bebb foreground/hidden/soak sequence runs without visual observers or compilation.
+
 - 2026-09-23 — codex: add opt-in all-six native before/after TUI resource windows after each lane's builds and observers finish. Unix harness uses completed waited-child CPU, bounded live-family memory/fd sampling, isolated settings and terminal restoration; a native child-CPU fixture must pass before measurements. Local Python syntax and workflow validation precede hosted runtime qualification. Next oracle: explicit 330-second dispatch, preserving baseline and candidate reports; longer GUI and soak windows remain separate.
 
 - 2026-09-23 — codex: reconcile the engine lock with root-qualified Rust dependencies after finding independent sysinfo/serialization/runtime drift. Fifteen engine tests, shared-lock rejection fixtures, coordinated product validation and Mac ARM/musl engine cross-checks pass (musl cdylib remains a native-build qualification). Next oracle: rebuild the composite on all six native targets and run the longer process-family performance windows with identical library versions.
