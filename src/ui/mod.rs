@@ -78,16 +78,27 @@ fn render_content(frame: &mut Frame, app: &App) {
 
     if app.show_companion {
         let mut lines = vec![
-            "s standard scan · d deep scan · b SpeedQX Quick · B Deep · i install ND-300 · x cancel · Esc close"
+            "s standard scan · d deep scan · b SpeedQX Quick · B Deep · i install ND-300 · h SMART helper · x cancel · Esc close"
                 .into(),
         ];
         if app.setup_confirmation {
-            lines.push(crate::optional_tools::NETWORK_NOTICE.into());
+            lines.push(
+                if app.setup_smart {
+                    crate::smart_setup::notice()
+                } else {
+                    crate::optional_tools::NETWORK_NOTICE
+                }
+                .into(),
+            );
             lines.push(format!(
-                "Destination: {}",
-                crate::optional_tools::network_directory()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|e| e)
+                "Standalone directory (Homebrew uses its existing prefix): {}",
+                (if app.setup_smart {
+                    crate::smart_setup::directory()
+                } else {
+                    crate::optional_tools::network_directory()
+                })
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|e| e)
             ));
             lines.push("Y consents to this installation · Esc declines and closes".into());
         } else if let Some(action) = app.speed_confirmation {

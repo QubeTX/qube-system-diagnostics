@@ -201,12 +201,22 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
+    let mut command = Command::new(program);
+    command.args(args);
+    run_memory_command(&mut command, timeout, cancelled)
+}
+
+/// Caller may set a fixed working directory/environment, while ownership,
+/// pipes, deadlines and cancellation remain mandatory here.
+pub fn run_memory_command(
+    command: &mut Command,
+    timeout: CommandTimeout,
+    cancelled: &AtomicBool,
+) -> Result<MemoryCapture, CommandError> {
     if cancelled.load(Ordering::Acquire) {
         return Err(CommandError::Cancelled);
     }
-    let mut command = Command::new(program);
     command
-        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

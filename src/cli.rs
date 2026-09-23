@@ -60,7 +60,7 @@ pub struct OptionalToolArgs {
     /// Install the verified official distribution; requires explicit acceptance.
     #[arg(long)]
     pub install: bool,
-    /// Consent to the exact operation described by `sd300 tools nd300`.
+    /// Consent to the exact operation described by `sd300 tools TOOL`.
     #[arg(long, requires = "install")]
     pub accept: bool,
     #[arg(long)]
@@ -69,6 +69,7 @@ pub struct OptionalToolArgs {
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionalTool {
     Nd300,
+    Smartctl,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]

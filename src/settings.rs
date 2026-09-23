@@ -30,6 +30,14 @@ pub fn shared_preferences() -> SharedSettings {
         .shared
 }
 
+pub fn select_smartctl(path: PathBuf) -> Result<(), String> {
+    let settings = settings_path()?;
+    let _lock = settings_lock(&settings)?;
+    let mut document = load_from_path(&settings)?;
+    document.shared.smartctl_path = Some(path);
+    save_to_path(&settings, &document)
+}
+
 pub fn select_network_companion(path: PathBuf) -> Result<(), String> {
     let settings = settings_path()?;
     let _lock = settings_lock(&settings)?;

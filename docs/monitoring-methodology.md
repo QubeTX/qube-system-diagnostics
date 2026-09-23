@@ -104,3 +104,19 @@ The implementation follows Apple's [IOKit ownership and property APIs](https://g
 and [storage statistics definitions](https://github.com/apple-oss-distributions/IOStorageFamily/blob/main/IOBlockStorageDriver.h).
 Intel/ARM cross-checks prove Rust type correctness; native CI provides linking/runtime
 coverage. Hardware accuracy still requires the aligned-counter qualification window.
+
+
+Optional smartctl setup verifies the JSON interface (`json_format_version` major
+1, smartctl major 7, exit status zero) without accessing devices. Windows pins
+the official smartmontools 7.5 installer SHA-256 from the reviewed winget
+manifest and selects only x64, smartctl, drivedb and documentation components.
+RunAsInvoker keeps the caller's token; it grants no privilege. macOS uses the
+existing Homebrew formula without starting services. Debian/Ubuntu use apt's
+authenticated download and dpkg-deb extraction; Alpine explicitly verifies the
+package checksum/signature before extraction. Missing runtime dependencies are
+reported rather than silently modifying the host package database.
+
+Primary references: [smartmontools installer component contract](https://github.com/smartmontools/smartmontools/blob/RELEASE_7_5/smartmontools/os_win32/installer.nsi),
+[reviewed Windows checksum](https://github.com/microsoft/winget-pkgs/blob/master/manifests/s/smartmontools/smartmontools/7.5/smartmontools.smartmontools.installer.yaml),
+[Homebrew formula](https://formulae.brew.sh/formula/smartmontools),
+[Alpine package verification](https://github.com/alpinelinux/apk-tools/blob/v2.14.4/doc/apk-verify.8.scd).

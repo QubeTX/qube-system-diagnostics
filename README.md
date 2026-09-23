@@ -370,3 +370,14 @@ keeps existing installations, and verifies both executables. The independent
 per-user ND-300 directory survives SD-300 removal and carries its own standalone
 receipt. No PATH changes, elevated install, diagnostic, repair or bandwidth test
 is implied by setup. Lifecycle qualification of this candidate remains open.
+
+
+Optional SMART helper setup is available with **h** in the terminal's companion
+panel, the app's **Install optional SMART helper** action, or
+`sd300 tools smartctl --install --accept`. Inspect `sd300 tools smartctl` first
+for the platform's exact operation. Windows uses a checksum-pinned, unelevated
+component extraction; macOS uses existing Homebrew; Debian/Ubuntu and Alpine
+extract authenticated packages without running their service scripts. Missing
+runtime dependencies or unsupported package managers leave ordinary monitoring
+available with a specific setup instruction. Setup does not authorize a device
+self-test, repair, disk setting change, or privileged read.

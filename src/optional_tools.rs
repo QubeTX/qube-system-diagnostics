@@ -14,12 +14,27 @@ use std::time::Duration;
 pub const NETWORK_NOTICE: &str = "Install official ND-300 4.0.1 and SpeedQX for optional network checks. Download one checksum-pinned release archive from QubeTX on GitHub, verify both executables, then place them in an independent per-user ND-300 directory. Existing installations are preserved. No administrator access, PATH changes, network repairs, diagnostics or bandwidth tests are requested. ND-300 remains installed when SD-300 is removed.";
 
 pub fn run_cli(args: &crate::cli::OptionalToolArgs) -> i32 {
+    let (name, notice, destination) = match args.tool {
+        crate::cli::OptionalTool::Nd300 => ("nd300", NETWORK_NOTICE, network_directory()),
+        crate::cli::OptionalTool::Smartctl => (
+            "smartctl",
+            crate::smart_setup::notice(),
+            crate::smart_setup::directory(),
+        ),
+    };
     let result = if args.install {
-        install_network(args.accept, &AtomicBool::new(false))
+        match args.tool {
+            crate::cli::OptionalTool::Nd300 => {
+                install_network(args.accept, &AtomicBool::new(false))
+            }
+            crate::cli::OptionalTool::Smartctl => {
+                crate::smart_setup::install(args.accept, &AtomicBool::new(false))
+            }
+        }
     } else {
-        Ok(format!("{}\nDestination: {}\nExisting executable: {}\nTo accept: sd300 tools nd300 --install --accept", NETWORK_NOTICE,
-            network_directory().map(|p| p.display().to_string()).unwrap_or_else(|e| e),
-            detect("nd300").map(|p| p.display().to_string()).unwrap_or_else(|| "not found".into())))
+        Ok(format!("{notice}\nStandalone destination (when applicable): {}\nExisting executable: {}\nTo accept: sd300 tools {name} --install --accept",
+            destination.map(|p| p.display().to_string()).unwrap_or_else(|e| e),
+            detect(name).map(|p| p.display().to_string()).unwrap_or_else(|| "not found".into())))
     };
     let success = result.is_ok();
     let message = match result {
@@ -28,7 +43,7 @@ pub fn run_cli(args: &crate::cli::OptionalToolArgs) -> i32 {
     if args.json {
         println!(
             "{}",
-            serde_json::json!({"tool":"nd300", "success":success, "installed":success && args.install, "message":message})
+            serde_json::json!({"tool":name, "success":success, "installed":success && args.install, "message":message})
         );
     } else {
         println!("{message}");
@@ -116,6 +131,9 @@ pub fn candidates(name: &str) -> Vec<PathBuf> {
         dirs.extend([home.join(".cargo/bin"), home.join(".local/bin")]);
     }
     if let Ok(path) = network_directory() {
+        dirs.push(path);
+    }
+    if let Ok(path) = crate::smart_setup::directory() {
         dirs.push(path);
     }
     #[cfg(windows)]
@@ -259,7 +277,7 @@ fn existing_network_owner() -> Result<Option<String>, String> {
     Ok(None)
 }
 
-fn system_tool(name: &str) -> Result<PathBuf, String> {
+pub(crate) fn system_tool(name: &str) -> Result<PathBuf, String> {
     #[cfg(windows)]
     let paths = std::env::var_os("SystemRoot")
         .map(PathBuf::from)
@@ -274,7 +292,7 @@ fn system_tool(name: &str) -> Result<PathBuf, String> {
     paths.into_iter().find(|p| p.is_file()).ok_or_else(|| format!("{name} is required for optional setup; install it through your operating system and retry"))
 }
 
-fn successful(stage: &str, output: command::MemoryCapture) -> Result<Vec<u8>, String> {
+pub(crate) fn successful(stage: &str, output: command::MemoryCapture) -> Result<Vec<u8>, String> {
     if let Some(error) = output.failure {
         return Err(format!("{stage}: {error}"));
     }
@@ -292,6 +310,42 @@ fn verify_digest(bytes: &[u8], expected: &str) -> Result<(), String> {
         return Err("Release checksum mismatch; nothing was installed".into());
     }
     Ok(())
+}
+
+pub(crate) fn download_verified(
+    url: &str,
+    sha256: &str,
+    cancel: &AtomicBool,
+) -> Result<Vec<u8>, String> {
+    let bytes = successful(
+        "Official release download",
+        command::run_memory(
+            system_tool("curl")?,
+            [
+                "--disable",
+                "--proto",
+                "=https",
+                "--proto-redir",
+                "=https",
+                "--tlsv1.2",
+                "--fail",
+                "--location",
+                "--silent",
+                "--show-error",
+                "--max-time",
+                "120",
+                "--max-filesize",
+                "8388608",
+                "--",
+                url,
+            ],
+            CommandTimeout::Custom(Duration::from_secs(125)),
+            cancel,
+        )
+        .map_err(|e| e.to_string())?,
+    )?;
+    verify_digest(&bytes, sha256)?;
+    Ok(bytes)
 }
 
 /// Consent is checked before discovery, network activity or filesystem changes.
@@ -319,34 +373,7 @@ pub fn install_network(consent: bool, cancel: &AtomicBool) -> Result<String, Str
         "https://github.com/QubeTX/qube-network-diagnostics/releases/download/v4.0.1/{}",
         archive.name
     );
-    let bytes = successful(
-        "Official release download",
-        command::run_memory(
-            system_tool("curl")?,
-            [
-                "--disable",
-                "--proto",
-                "=https",
-                "--proto-redir",
-                "=https",
-                "--tlsv1.2",
-                "--fail",
-                "--location",
-                "--silent",
-                "--show-error",
-                "--max-time",
-                "120",
-                "--max-filesize",
-                "8388608",
-                "--",
-                &url,
-            ],
-            CommandTimeout::Custom(Duration::from_secs(125)),
-            cancel,
-        )
-        .map_err(|e| e.to_string())?,
-    )?;
-    verify_digest(&bytes, archive.sha256)?;
+    let bytes = download_verified(&url, archive.sha256, cancel)?;
     let staging = tempfile::tempdir().map_err(|e| e.to_string())?;
     let archive_path = staging.path().join(archive.name);
     fs::write(&archive_path, bytes).map_err(|e| e.to_string())?;
@@ -457,6 +484,8 @@ pub struct State {
     pub sequence: u64,
     pub running: bool,
     pub message: String,
+    pub succeeded: bool,
+    pub tool: String,
 }
 #[derive(Default)]
 pub struct Controller {
@@ -467,6 +496,12 @@ pub struct Controller {
 }
 impl Controller {
     pub fn start_network(&mut self, consent: bool) -> bool {
+        self.start_tool(crate::cli::OptionalTool::Nd300, consent)
+    }
+    pub fn start_smart(&mut self, consent: bool) -> bool {
+        self.start_tool(crate::cli::OptionalTool::Smartctl, consent)
+    }
+    fn start_tool(&mut self, tool: crate::cli::OptionalTool, consent: bool) -> bool {
         self.poll();
         if self.worker.is_some() {
             return false;
@@ -478,6 +513,12 @@ impl Controller {
         }
         self.cancel.store(false, Ordering::Release);
         self.state.running = true;
+        self.state.succeeded = false;
+        self.state.tool = match tool {
+            crate::cli::OptionalTool::Nd300 => "nd300",
+            crate::cli::OptionalTool::Smartctl => "smartctl",
+        }
+        .into();
         self.state.message = "Checking existing ownership, downloading and verifying the official release. Cancel is available before activation.".into();
         self.state.sequence += 1;
         let cancel = self.cancel.clone();
@@ -485,8 +526,13 @@ impl Controller {
         match std::thread::Builder::new()
             .name("sd300-optional-setup".into())
             .spawn(move || {
-                let result = std::panic::catch_unwind(|| install_network(consent, &cancel))
-                    .unwrap_or_else(|_| Err("Optional setup worker failed".into()));
+                let result = std::panic::catch_unwind(|| match tool {
+                    crate::cli::OptionalTool::Nd300 => install_network(consent, &cancel),
+                    crate::cli::OptionalTool::Smartctl => {
+                        crate::smart_setup::install(consent, &cancel)
+                    }
+                })
+                .unwrap_or_else(|_| Err("Optional setup worker failed".into()));
                 if let Ok(mut slot) = complete.lock() {
                     *slot = Some(result);
                 }
@@ -512,7 +558,14 @@ impl Controller {
         let _ = self.worker.take().unwrap().join();
         self.state.running = false;
         self.state.message = match self.complete.lock().ok().and_then(|mut s| s.take()) {
-            Some(Ok(message)) | Some(Err(message)) => message,
+            Some(Ok(message)) => {
+                self.state.succeeded = true;
+                message
+            }
+            Some(Err(message)) => {
+                self.state.succeeded = false;
+                message
+            }
             None => "Optional setup failed without a result".into(),
         };
         self.state.sequence += 1;

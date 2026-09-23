@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Add separately confirmed SMART helper setup through checksum-pinned Windows component extraction, existing macOS Homebrew, and authenticated Debian/Ubuntu or Alpine package extraction. Preserve independent ownership, verify the JSON interface, avoid package service scripts, and retry ordinary health collection after successful setup. Native qualification exercises installation without device probes.
+
 - Add separately confirmed ND-300 archive setup in both frontends and the `tools nd300` command. Pin official hashes for all six targets, preserve existing owners, verify installed executables, reserve destinations without replacement, and retain ND-300 after SD-300 removal.
 - Discover optional tools in standard platform locations and deliberately shared provider paths; preserve those choices across GUI settings writes with bounded cross-process locking.
 

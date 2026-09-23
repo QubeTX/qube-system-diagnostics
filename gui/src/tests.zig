@@ -1527,3 +1527,19 @@ test "optional setup requires a distinct confirmation and dismissal preserves mo
     try testing.expect(!model.companionSetupConfirming());
     try testing.expect(!model.companionRunning());
 }
+
+
+test "SMART setup uses the shared operation notice and never implies probe consent" {
+    var model = main.initialModel();
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    model.companion_ui.setup_smart_notice.set("A separately confirmed SMART setup operation");
+    main.update(&model, .companion_smart_setup, &fx);
+    try testing.expect(model.companionSetupConfirming());
+    try testing.expect(!model.companionSetupUnavailable());
+    try testing.expectEqualStrings("A separately confirmed SMART setup operation", model.companionSetupNotice());
+    try testing.expect(!model.companionRunning());
+    main.update(&model, .companion_dismiss_setup, &fx);
+    try testing.expect(!model.companionSetupConfirming());
+}

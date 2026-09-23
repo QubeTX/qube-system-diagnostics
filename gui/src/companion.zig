@@ -13,6 +13,8 @@ pub const DetailLine = struct {
 };
 pub const Projection = struct {
     running: bool = false,
+    setup_network_notice: canvas.TextBuffer(3072) = .{},
+    setup_smart_notice: canvas.TextBuffer(3072) = .{},
     setup_message: canvas.TextBuffer(2048) = .{},
     line_count: usize = 0,
     detail_count: usize = 0,
@@ -24,11 +26,15 @@ pub const Projection = struct {
         const Envelope = struct { data: struct {
             companion: struct { running: bool = false, result: ?struct { detail_lines: []const []const u8 = &.{} } = null } = .{},
             companion_lines: []const []const u8 = &.{},
+            setup_network_notice: []const u8 = "",
+            setup_smart_notice: []const u8 = "",
             optional_setup: struct { running: bool = false, message: []const u8 = "" } = .{},
         } };
         const parsed = try std.json.parseFromSlice(Envelope, allocator, bytes, .{ .ignore_unknown_fields = true });
         defer parsed.deinit();
         self.running = parsed.value.data.companion.running or parsed.value.data.optional_setup.running;
+        self.setup_network_notice.set(parsed.value.data.setup_network_notice);
+        self.setup_smart_notice.set(parsed.value.data.setup_smart_notice);
         self.setup_message.set(parsed.value.data.optional_setup.message);
         const captured_details = if (parsed.value.data.companion.result) |result| result.detail_lines else &.{};
         self.detail_count = @min(captured_details.len, self.detail_rows.len);

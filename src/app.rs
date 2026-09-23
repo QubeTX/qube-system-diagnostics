@@ -28,6 +28,7 @@ pub struct App {
     pub companion: crate::companion::Controller,
     pub optional_setup: crate::optional_tools::Controller,
     pub setup_confirmation: bool,
+    pub setup_smart: bool,
     pub speed_confirmation: Option<crate::companion::Action>,
     pub mlab_consent: bool,
     /// Exceptional Cargo v2-to-v3 state: the second update still needs to
@@ -108,6 +109,7 @@ impl App {
             companion: Default::default(),
             optional_setup: Default::default(),
             setup_confirmation: false,
+            setup_smart: false,
             speed_confirmation: None,
             mlab_consent: false,
             cargo_gui_completion_notice: false,
@@ -176,7 +178,12 @@ impl App {
             }
             tokio::select! {
                 _ = poll.tick() => {
-                    if self.optional_setup.poll() { dirty = true; }
+                    if self.optional_setup.poll() {
+                        dirty = true;
+                        if self.optional_setup.state.succeeded && self.optional_setup.state.tool == "smartctl" {
+                            if let Some(monitor) = &self.monitor { monitor.retry(Lane::Health); }
+                        }
+                    }
                     if self.companion.poll() {
                         self.live_while_paused.as_mut().unwrap_or(&mut self.snapshot).companion = self.companion.state.clone();
                         dirty = true;
@@ -393,10 +400,11 @@ impl App {
                     self.companion.cancel();
                     self.optional_setup.cancel();
                 }
-                KeyCode::Char('i')
+                KeyCode::Char('i' | 'h')
                     if !self.companion.state.running && !self.optional_setup.state.running =>
                 {
                     self.setup_confirmation = true;
+                    self.setup_smart = key.code == KeyCode::Char('h');
                     self.speed_confirmation = None;
                     self.mlab_consent = false;
                 }
@@ -432,7 +440,11 @@ impl App {
                 KeyCode::Char('y' | 'Y') => {
                     if self.setup_confirmation {
                         self.setup_confirmation = false;
-                        self.optional_setup.start_network(true);
+                        if self.setup_smart {
+                            self.optional_setup.start_smart(true);
+                        } else {
+                            self.optional_setup.start_network(true);
+                        }
                     } else if let Some(action) = self.speed_confirmation.take() {
                         self.companion.start(action, self.mlab_consent);
                         self.mlab_consent = false;

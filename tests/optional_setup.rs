@@ -58,3 +58,41 @@ fn official_archive_installs_independently_and_repeat_preserves_owner() {
     assert!(directory.join("LICENSE").is_file());
     println!("Qualified official ND-300 4.0.1 archive on {}-{}; refusal, installed version verification and owner preservation passed", std::env::consts::OS, std::env::consts::ARCH);
 }
+
+#[test]
+#[ignore = "qualifies optional SMART setup on a clean native runner without reading devices"]
+fn smart_helper_setup_verifies_version_and_preserves_repeat_ownership() {
+    let temp = tempfile::Builder::new()
+        .prefix("smart setup with spaces ")
+        .tempdir()
+        .unwrap();
+    let declined = run(temp.path(), &["tools", "smartctl", "--install", "--json"]);
+    assert_eq!(declined.status.code(), Some(1));
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+    let installed = run(
+        temp.path(),
+        &["tools", "smartctl", "--install", "--accept", "--json"],
+    );
+    let payload: Value = serde_json::from_slice(&installed.stdout).unwrap();
+    assert!(installed.status.success(), "SMART setup payload: {payload}");
+    assert_eq!(payload["installed"], true);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Verified smartctl 7."));
+    let repeated = run(
+        temp.path(),
+        &["tools", "smartctl", "--install", "--accept", "--json"],
+    );
+    assert_eq!(
+        repeated.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&repeated.stdout)
+    );
+    println!(
+        "Qualified SMART helper setup on {}-{} without reading a disk or starting a self-test",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+}

@@ -61,6 +61,7 @@ pub const Msg = union(enum) {
     select_processes,
     show_cpu_processes,
     show_memory_processes,
+    companion_smart_setup,
     companion_setup,
     companion_confirm_setup,
     companion_dismiss_setup,
@@ -140,6 +141,7 @@ pub const Model = struct {
     process_matches: u32 = 0,
     process_query_active: bool = false,
     companion_ui: companion_model.Projection = .{},
+    companion_setup_smart: bool = false,
     companion_setup_confirmation: bool = false,
     companion_confirmation: u32 = 0,
     companion_mlab_consent: bool = false,
@@ -202,6 +204,7 @@ pub const Model = struct {
         "process_matches",
         "process_query_active",
         "companion_ui",
+        "companion_setup_smart",
         "companion_setup_confirmation",
         "companion_confirmation",
         "companion_mlab_consent",
@@ -350,6 +353,8 @@ pub const Model = struct {
     }
     pub fn processPreviousDisabled(model: *const Model) bool { return !model.processHasPrevious(); }
     pub fn processNextDisabled(model: *const Model) bool { return !model.processHasNext(); }
+    pub fn companionSetupNotice(model: *const Model) []const u8 { return if (model.companion_setup_smart) model.companion_ui.setup_smart_notice.text() else model.companion_ui.setup_network_notice.text(); }
+    pub fn companionSetupUnavailable(model: *const Model) bool { return model.companionRunning() or model.companionSetupNotice().len == 0; }
     pub fn companionSetupConfirming(model: *const Model) bool { return model.companion_setup_confirmation; }
     pub fn companionSetupMessage(model: *const Model) []const u8 { return model.companion_ui.setup_message.text(); }
     pub fn companionLines(model: *const Model) []const companion_model.Line { return model.companion_ui.lines(); }
@@ -542,9 +547,10 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             selectSection(model, 6);
             setProcessSort(model, .memory);
         },
-        .companion_setup => { model.companion_setup_confirmation = true; model.companion_confirmation = 0; model.companion_mlab_consent = false; },
+        .companion_smart_setup => { model.companion_setup_smart = true; model.companion_setup_confirmation = true; model.companion_confirmation = 0; model.companion_mlab_consent = false; },
+        .companion_setup => { model.companion_setup_smart = false; model.companion_setup_confirmation = true; model.companion_confirmation = 0; model.companion_mlab_consent = false; },
         .companion_dismiss_setup => { model.companion_setup_confirmation = false; },
-        .companion_confirm_setup => { if (model.companion_setup_confirmation) requestCompanion(model, 5, false); model.companion_setup_confirmation = false; },
+        .companion_confirm_setup => { if (model.companion_setup_confirmation and !model.companionSetupUnavailable()) requestCompanion(model, if (model.companion_setup_smart) 6 else 5, false); model.companion_setup_confirmation = false; },
         .companion_standard => requestCompanion(model, 1, false),
         .companion_deep => requestCompanion(model, 2, false),
         .companion_cancel => requestCompanion(model, 0, false),
@@ -810,7 +816,7 @@ fn requestCompanion(model: *Model, action: u32, consent: bool) void {
         model.status_buffer.set("The companion is already running or could not accept this request. Cancel or wait for the current action.");
         return;
     };
-    model.status_buffer.set(if (action == 0) "Cancelling the companion diagnostic…" else "Starting the requested companion diagnostic…");
+    model.status_buffer.set(if (action == 0) "Cancelling the requested optional action…" else if (action >= 5) "Starting the explicitly confirmed optional tool setup…" else "Starting the requested companion diagnostic…");
 }
 
 fn requestProcessQuery(model: *Model) void {

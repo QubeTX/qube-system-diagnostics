@@ -361,6 +361,8 @@ struct DiagnosticsProjection<'a> {
     companion: &'a sd_300::companion::State,
     companion_lines: Vec<String>,
     optional_setup: &'a sd_300::optional_tools::State,
+    setup_network_notice: String,
+    setup_smart_notice: &'static str,
 }
 fn publish_diagnostics(shared: &Shared, snapshot: &SystemSnapshot) {
     publish_sample(
@@ -371,6 +373,14 @@ fn publish_diagnostics(shared: &Shared, snapshot: &SystemSnapshot) {
             companion: &snapshot.companion,
             companion_lines: snapshot.companion.lines(),
             optional_setup: &snapshot.optional_setup,
+            setup_network_notice: format!(
+                "{} Destination: {}",
+                sd_300::optional_tools::NETWORK_NOTICE,
+                sd_300::optional_tools::network_directory()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|e| e)
+            ),
+            setup_smart_notice: sd_300::smart_setup::notice(),
         },
         &snapshot.warnings,
         snapshot.samples.get("diagnostics"),
@@ -712,6 +722,9 @@ fn collect_loop(shared: &Shared) {
         if request == 5 {
             optional_setup.start_network(true);
         }
+        if request == 6 {
+            optional_setup.start_smart(true);
+        }
         if let Some(action) = action {
             companion.start(action, consent);
         }
@@ -721,6 +734,12 @@ fn collect_loop(shared: &Shared) {
         }
         let changed_companion = companion.poll();
         let changed_setup = optional_setup.poll();
+        if changed_setup
+            && optional_setup.state.succeeded
+            && optional_setup.state.tool == "smartctl"
+        {
+            monitor.retry(Lane::Health);
+        }
         if request != 0 || changed_companion || changed_setup {
             snapshot.companion = companion.state.clone();
             snapshot.optional_setup = optional_setup.state.clone();
@@ -1253,7 +1272,7 @@ pub extern "C" fn sd300_engine_set_process_query(
     .unwrap_or(STATUS_PANIC)
 }
 
-/// 0 cancels; 1/2 diagnostics; 3/4 confirmed bandwidth tests; 5 confirmed ND setup.
+/// 0 cancels; 1/2 diagnostics; 3/4 confirmed bandwidth tests; 5/6 confirmed ND/SMART setup.
 /// M-Lab consent is session-only and never inferred from another action.
 #[no_mangle]
 pub extern "C" fn sd300_engine_request_companion(
@@ -1265,7 +1284,7 @@ pub extern "C" fn sd300_engine_request_companion(
         let Some(engine) = engine_from_handle(handle) else {
             return STATUS_INVALID_ARGUMENT;
         };
-        if action > 5 || mlab_consent > 1 || (!(3..=4).contains(&action) && mlab_consent != 0) {
+        if action > 6 || mlab_consent > 1 || (!(3..=4).contains(&action) && mlab_consent != 0) {
             return STATUS_INVALID_ARGUMENT;
         }
         if action == 0 {
