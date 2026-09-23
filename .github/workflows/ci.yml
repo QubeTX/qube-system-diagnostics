@@ -187,6 +187,9 @@ jobs:
         run: |
           node --test scripts/test-shared-rust-locks.mjs
           node scripts/check-product-version-consistency.mjs --expected-target '${{ steps.product.outputs.version }}'
+      - name: Verify Linux application entry and custom icon through GIO
+        if: ${{ runner.os == 'Linux' }}
+        run: python3 scripts/test-linux-desktop-entry.py
       - name: Verify clean-cache and warmed-offline Native SDK restore
         shell: bash
         run: |

@@ -8,6 +8,10 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- The Linux application menu can find SD-300's custom logo before the app opens. Its clickable launcher also handles spaces and special characters in the installation folder. The normal installers include the desktop app alongside the terminal tool on every supported system.
+
+- Behind the scenes: document why settings save in the background and how responsiveness is measured, so future changes preserve smooth navigation and reliable saving.
+
 - Behind the scenes: the complete update is being qualified together across supported systems. Responsiveness checks exercise both viewing modes and compact and wide layouts, and distinguish a screen that needs no repaint from a stalled one.
 
 - Changing pages and preferences no longer waits for settings to reach disk. The app saves in the background, explains failures and finishes the latest save before closing.

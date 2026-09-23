@@ -24,6 +24,7 @@
   - [x] Apply requested Makira/Gail Rock font pairing and verify native layouts (local tests and Windows live compact/default checks pass; all-target qualification below)
   - [ ] Qualify performance, six native targets, and composite lifecycle
   - [ ] Publish once and verify exact public artifacts and installation
+  - [ ] Add reviewed app screenshots to the website SD-300 page and verify deployment
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k
   - [x] Reconstruct the current artwork and Windows icon-delivery failure
     > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.

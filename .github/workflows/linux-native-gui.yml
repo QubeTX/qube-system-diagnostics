@@ -239,6 +239,9 @@ jobs:
           receipt="$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
           test -x "$binary" && test -x "$gui" && test -f "$engine"
           test -f "$desktop" && test -f "$receipt"
+          grep -Fxq "Icon=$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png" "$desktop"
+          test -s "$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png"
+          grep -Fxq "Exec=\"$gui\"" "$desktop"
           cmp -s "$binary" "$expected_binary"
           jq -e --arg version '${{ needs.draft-check.outputs.version }}' '
             .provider.source == "cargo-dist" and
@@ -393,6 +396,9 @@ jobs:
               receipt="$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
               test -x "$binary" && test -x "$gui" && test -f "$engine"
               test -f "$desktop" && test -f "$receipt"
+              grep -Fxq "Icon=$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png" "$desktop"
+              test -s "$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png"
+              grep -Fxq "Exec=\"$gui\"" "$desktop"
               cmp -s "$binary" "$expected_binary"
               "$gui" --self-test --json | jq -e \
                 --arg version "${{ needs.draft-check.outputs.version }}" \

@@ -371,6 +371,9 @@ jobs:
           engine="$XDG_DATA_HOME/sd300/libexec/libsd300_engine.so"
           desktop="$XDG_DATA_HOME/applications/sd300.desktop"
           [[ -x $gui && -f $engine && -f $desktop ]]
+          grep -Fxq "Icon=$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png" "$desktop"
+          test -s "$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png"
+          grep -Fxq "Exec=\"$gui\"" "$desktop"
           self_test=$($gui --self-test --json)
           jq -e --arg version '${{ steps.meta.outputs.version }}' '
             .success == true and .product_version == $version and

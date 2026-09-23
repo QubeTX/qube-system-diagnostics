@@ -965,6 +965,30 @@ sd300_stage_gui_payload() {
     printf '%s\n' "$gui_result" | grep -Eq '"engine_schema_version"[[:space:]]*:[[:space:]]*2([[:space:],}]|$)' || sd300_fail 'staged GUI schema is incompatible'
 }
 
+sd300_configure_linux_desktop() (
+    # Desktop-entry strings and Exec quoting have separate escaping layers.
+    # An absolute icon path works before the launcher's private XDG_DATA_DIRS
+    # exists, and keeps ownership inside the removable application bundle.
+    [ -f "$1" ] && [ -x "$2" ] && [ -f "$3" ] || return 1
+    for desktop_path in "$2" "$3"; do
+        case "$desktop_path" in /*) ;; *) return 1 ;; esac
+        [ "$(printf '%s' "$desktop_path" | LC_ALL=C tr -d '[:cntrl:]')" = "$desktop_path" ] || return 1
+    done
+    case "$2" in *'='*) return 1 ;; esac
+    desktop_exec=$(printf '%s' "$2" | sed 's/\\/\\\\/g; s/["`$]/\\&/g; s/\\/\\\\/g; s/%/%%/g') || return 1
+    desktop_icon=$(printf '%s' "$3" | sed 's/\\/\\\\/g') || return 1
+    desktop_exec_seen=0
+    desktop_icon_seen=0
+    while IFS= read -r desktop_line || [ -n "$desktop_line" ]; do
+        case "$desktop_line" in
+            Exec=*) printf 'Exec="%s"\n' "$desktop_exec"; desktop_exec_seen=$((desktop_exec_seen + 1)) ;;
+            Icon=*) printf 'Icon=%s\n' "$desktop_icon"; desktop_icon_seen=$((desktop_icon_seen + 1)) ;;
+            *) printf '%s\n' "$desktop_line" ;;
+        esac
+    done < "$1"
+    [ "$desktop_exec_seen" -eq 1 ] && [ "$desktop_icon_seen" -eq 1 ]
+)
+
 sd300_install_gui_payload() {
     sd300_gui_install_started=1
     if [ -e "$sd300_gui_root" ]; then
@@ -991,7 +1015,9 @@ sd300_install_gui_payload() {
             fi
             desktop_source="$sd300_gui_root/share/applications/sd300.desktop"
             mkdir -p "$(dirname "$sd300_gui_desktop")"
-            sed "s#@SD300_GUI@#${gui_binary}#g" "$desktop_source" > "$sd300_gui_desktop" || sd300_fail 'could not install the Linux desktop entry'
+            sd300_configure_linux_desktop "$desktop_source" "$gui_binary" \
+                "$sd300_gui_root/libexec/assets/app-icon.png" > "$sd300_gui_desktop" \
+                || sd300_fail 'could not install the Linux desktop entry and application icon'
             chmod 644 "$sd300_gui_desktop"
             ;;
     esac

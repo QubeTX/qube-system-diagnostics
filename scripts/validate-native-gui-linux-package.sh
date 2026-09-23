@@ -314,9 +314,15 @@ if [[ -f $cache ]]; then
 fi
 desktop="$root/share/applications/sd300.desktop"
 grep -Fq 'Exec=@SD300_GUI@' "$desktop"
-sed "s#@SD300_GUI@#${entry}#g" "$desktop" > "$desktop.configured"
+installer_source="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/managed-installers/sd300-installer.sh"
+SD300_MANAGED_INSTALLER_TEST_ONLY=1 sh -c '
+  . "$1"
+  sd300_configure_linux_desktop "$2" "$3" "$4"
+' sh "$installer_source" "$desktop" "$entry" "$root/libexec/assets/app-icon.png" > "$desktop.configured"
 mv "$desktop.configured" "$desktop"
-grep -Fqx "Exec=$entry" "$desktop"
+grep -Fqx "Exec=\"$entry\"" "$desktop"
+grep -Fqx "Icon=$root/libexec/assets/app-icon.png" "$desktop"
+test -s "$root/libexec/assets/app-icon.png"
 grep -Fqx 'Terminal=false' "$desktop"
 
 for forbidden in \

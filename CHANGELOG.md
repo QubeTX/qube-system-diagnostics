@@ -4,6 +4,10 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Resolve the Linux application-menu icon through an absolute path inside the owned bundle, and quote desktop launch paths using the freedesktop escaping rules. Validate the real GIO parser and launch with literal special-character paths, alongside installed-entry assertions. Windows Start-menu shortcuts and macOS application bundles retain their existing custom icon delivery.
+
+- Record the bounded GUI preference writer and complete interaction timing contract in ADR 0015, including measured evidence and the remaining native qualification boundary.
+
 - Coordinate the unpublished 4.0.0 candidate across CLI, engine, native manifests, packaging and all staged build templates. Extend version reconciliation to the test-stage template. Add native interaction qualification for all six targets using independent automation builds, bounded snapshots, publisher identity, complete percentile coverage and owned cleanup. Correct timing cycles that finish without repainting so idle updates cannot accumulate into an invented long frame.
 
 - Move GUI preference commits off the input/render thread into one joined writer with one replaceable pending document. Preserve atomic namespace-aware writes, report pending/success/failure honestly, and flush the newest request before engine unload, including AppKit termination. Tests cover coalescing, failure, requests during slow I/O and recovery. Local timing attributed 5.5 ms median and 11.3 ms p95 navigation cost to synchronous preference commits.

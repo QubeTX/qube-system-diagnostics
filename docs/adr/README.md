@@ -37,6 +37,7 @@ Rules:
 | [0012](0012-linux-software-presentation.md) | Linux software presentation and ordered window cleanup | Candidate |
 | [0013](0013-gui-monitoring-hierarchy.md) | GUI monitoring hierarchy and complete process pages | Accepted |
 | [0014](0014-macos-termination-cleanup.md) | Join collectors before AppKit termination | Candidate |
+| [0015](0015-gui-preference-writes-and-interaction-timing.md) | Keep preference writes outside GUI interaction | Accepted |
 
 ## Dual-frontend contract pointer
 

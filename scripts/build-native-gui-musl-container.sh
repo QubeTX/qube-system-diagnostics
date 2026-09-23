@@ -119,6 +119,7 @@ if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
 fi
 bash "$script_root/package-native-gui-linux.sh" \
   linux-musl-x86_64 "$output_dir" "$version"
+python3 "$script_root/test-linux-desktop-entry.py"
 if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
   SD300_SKIP_NPM_CI=1 SD300_SKIP_NATIVE_TESTS=1 SD300_GUI_QUALIFICATION_AUTOMATION=1 bash "$script_root/build-native-gui.sh" linux-musl-x86_64
   interaction_bundle=target/native-gui-stage/linux-musl-x86_64-automation/app/zig-out/bin
