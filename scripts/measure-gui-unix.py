@@ -19,6 +19,7 @@ import threading
 import time
 
 import psutil
+from resource_metrics import sample_family, descriptor_summary
 
 SECTIONS = ["Overview", "CPU", "Memory", "Storage", "GPU", "Network", "Processes", "Thermals", "Drivers"]
 
@@ -155,18 +156,7 @@ def main():
                     process.returncode = os.waitstatus_to_exitcode(status)
                     result = usage
                     raise RuntimeError(f"GUI exited during measurement: {process.returncode}")
-                rss = fds = count = 0
-                for child in [root, *root.children(recursive=True)]:
-                    try:
-                        known[(child.pid, child.create_time())] = child
-                        rss += child.memory_info().rss
-                        fds += child.num_fds()
-                        count += 1
-                    except psutil.NoSuchProcess:
-                        pass
-                if len(known) > 4096:
-                    raise RuntimeError("Observed process identities exceed their bound")
-                samples.append((rss / 2**20, fds, count))
+                samples.append(sample_family(root, known))
                 if not checked and time.monotonic() - begin >= 15:
                     if args.hidden and sys.platform != "darwin":
                         # Linux intentionally has no tray startup route. Unmap
@@ -212,7 +202,7 @@ def main():
             window = max(1, len(samples)//10)
             report.update(measured_seconds=elapsed, samples=len(samples), cpu_percent_one_core=cpu,
                           cpu_gate=cpu <= (1 if args.hidden else 2), rss_gate=peak <= 150, rss_mib_max=peak,
-                          fd_count_max=max(r[1] for r in samples), process_count_max=max(r[2] for r in samples),
+                          **descriptor_summary(samples), process_count_max=max(r[2] for r in samples),
                           observed_process_identities=len(known), clean_shutdown=True,
                           rss_last_window_delta=sum(r[0] for r in samples[-window:])/window-sum(r[0] for r in samples[:window])/window)
     except BaseException as error:

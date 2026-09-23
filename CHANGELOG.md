@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Preserve explicit unavailable descriptor coverage in Unix performance reports when a protected helper denies fd enumeration. Continue independent CPU/RSS accounting, retain nullable maxima and add denied-versus-zero fixtures.
+
 - Detect Linux GUI mapping/minimized state through GTK/GDK so background windows use the existing reduced collection profile. Add native mapping/recovery fixtures and complete-bundle Mac/Linux foreground/hidden resource smoke checks with bounded process accounting and normal shutdown.
 
 - Add opt-in native before/after release TUI resource measurements to all six CI targets, using immutable baseline bytes, sequential measurements and retained failure reports. Validate Unix completed-child CPU accounting separately and keep visual interaction observers outside the resource window.

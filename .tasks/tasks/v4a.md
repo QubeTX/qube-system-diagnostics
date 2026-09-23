@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: manual native resource run 35865259681 fails both GNU baseline windows on psutil AccessDenied for a helper's /proc/PID/fd, after collector/build/PTY gates passed. Separate nullable descriptor coverage from readable RSS and final wait4 CPU; keep denied memory fatal and retain failed baseline artifacts. Denied-versus-zero fixtures validate the change. Next oracle: repeat native resource windows; this is harness correction, not a relaxed CPU/RSS gate.
+
 - 2026-09-23 — codex: Linux GUI audit finds mainWindowVisible hardcoded true. Use documented GTK surface mapping/minimized state, retaining foreground startup behavior and existing no-tray policy. Add native GTK hide/restore fixture and bounded Mac/Linux GUI smoke harness; local syntax/workflow checks precede native runtime proof. Next oracle: all five Unix target smoke reports, then long native GUI comparisons. Local Windows 866bebb foreground/hidden/soak sequence runs without visual observers or compilation.
 
 - 2026-09-23 — codex: add opt-in all-six native before/after TUI resource windows after each lane's builds and observers finish. Unix harness uses completed waited-child CPU, bounded live-family memory/fd sampling, isolated settings and terminal restoration; a native child-CPU fixture must pass before measurements. Local Python syntax and workflow validation precede hosted runtime qualification. Next oracle: explicit 330-second dispatch, preserving baseline and candidate reports; longer GUI and soak windows remain separate.

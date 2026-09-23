@@ -23,6 +23,7 @@ import threading
 import time
 
 import psutil
+from resource_metrics import sample_family, descriptor_summary
 
 
 class Terminal:
@@ -135,19 +136,7 @@ def main():
             while time.monotonic() - begin < args.seconds:
                 if terminal.poll() is not None:
                     raise RuntimeError(f"TUI exited during measurement: {terminal.result[0]}")
-                rss = fds = count = 0
-                for child in [root, *root.children(recursive=True)]:
-                    try:
-                        identity = (child.pid, child.create_time())
-                        known[identity] = child
-                        rss += child.memory_info().rss
-                        fds += child.num_fds()
-                        count += 1
-                    except psutil.NoSuchProcess:
-                        pass
-                if len(known) > 4096:
-                    raise RuntimeError("Observed process identities exceed the bounded qualification inventory")
-                samples.append((rss / 2**20, fds, count))
+                samples.append(sample_family(root, known))
                 time.sleep(.25)
             elapsed = time.monotonic() - begin
             usage = terminal.quit()
@@ -159,7 +148,7 @@ def main():
             window = max(1, len(samples)//10)
             report.update(measured_seconds=elapsed, samples=len(samples), cpu_percent_one_core=cpu,
                           cpu_gate=cpu <= 2, rss_mib_max=peak, rss_gate=peak <= 150,
-                          fd_count_max=max(row[1] for row in samples), process_count_max=max(row[2] for row in samples),
+                          **descriptor_summary(samples), process_count_max=max(row[2] for row in samples),
                           observed_process_identities=len(known), terminal_restored=True, clean_shutdown=True,
                           rss_last_window_delta=sum(r[0] for r in samples[-window:])/window-sum(r[0] for r in samples[:window])/window)
     except BaseException as error:

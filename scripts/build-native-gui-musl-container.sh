@@ -74,6 +74,7 @@ if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
   cargo build --release --locked --bin sd300 --example profile-monitor
   /tmp/sd300-qualification-python/bin/python scripts/qualify-tui-native.py "$output_dir/terminal-qualification"
   /tmp/sd300-qualification-python/bin/python scripts/test-measure-tui-unix.py
+  /tmp/sd300-qualification-python/bin/python scripts/test-resource-metrics.py
 fi
 npm_cache=${RUNNER_TEMP:-/tmp}/sd300-native-npm-cache
 rm -rf "$repo_root/gui/node_modules" "$npm_cache"
