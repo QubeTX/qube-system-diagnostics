@@ -592,6 +592,35 @@ mod tests {
     }
 
     #[test]
+    fn companion_privacy_projection_is_applied_by_both_export_versions() {
+        let mut snapshot = SystemSnapshot::default();
+        snapshot.companion.sequence = 1;
+        snapshot.companion.result = Some(
+            crate::companion::parse_results(
+                crate::companion::Action::Deep,
+                crate::companion::VERIFIED_VERSION,
+                include_bytes!("companion-fixtures/nd300-4.0.1-partial.json"),
+                Some(2),
+                None,
+            )
+            .unwrap(),
+        );
+        let report = DiagnosticReport::from_snapshot(&snapshot, false);
+        assert!(report.as_schema(1).get("companion_results").is_none());
+        let v2 = report.as_schema(2);
+        assert_eq!(
+            v2["companion_results"]["result"]["checks"][1]["state"],
+            "incomplete"
+        );
+        assert!(!v2.to_string().contains("private-host"));
+        assert!(!v2.to_string().contains("192.0.2.1"));
+        assert!(DiagnosticReport::from_snapshot(&snapshot, true)
+            .as_schema(2)
+            .to_string()
+            .contains("private-host"));
+    }
+
+    #[test]
     fn default_report_redacts_stable_identifiers() {
         let mut snapshot = SystemSnapshot::default();
         snapshot.system.hostname = "private-fixture-host".into();

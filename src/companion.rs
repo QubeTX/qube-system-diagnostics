@@ -22,6 +22,14 @@ pub enum Action {
     SpeedDeep,
 }
 impl Action {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Standard => "standard diagnostic",
+            Self::Deep => "deep diagnostic",
+            Self::SpeedQuick => "SpeedQX Quick",
+            Self::SpeedDeep => "SpeedQX Deep",
+        }
+    }
     pub fn is_speed(self) -> bool {
         matches!(self, Self::SpeedQuick | Self::SpeedDeep)
     }
@@ -496,6 +504,10 @@ pub struct State {
     pub failure: Option<Failure>,
     pub result: Option<ResultData>,
 }
+fn reading(value: Option<f64>, units: &str) -> String {
+    value.map_or_else(|| "unavailable".into(), |v| format!("{v:.1} {units}"))
+}
+
 impl State {
     pub fn export(&self, sensitive: bool) -> Value {
         if self.sequence == 0 {
@@ -514,8 +526,8 @@ impl State {
         ];
         if self.running {
             lines.push(format!(
-                "Running {:?} · {} seconds elapsed · X cancels",
-                self.action,
+                "Running {} · {} seconds elapsed · X cancels",
+                self.action.map_or("diagnostic", Action::label),
                 self.elapsed_ms / 1000
             ));
         }
@@ -540,13 +552,14 @@ impl State {
             }
             if let Some(speed) = &result.speed {
                 lines.push(format!(
-                    "Sustained download: {:?} Mbps · upload: {:?} Mbps",
-                    speed.download.sustained_mbps, speed.upload.sustained_mbps
+                    "Sustained download: {} · upload: {}",
+                    reading(speed.download.sustained_mbps, "Mbps"),
+                    reading(speed.upload.sustained_mbps, "Mbps")
                 ));
                 lines.push(format!(
-                    "HTTP idle RTT: {:?} ms · PDV jitter: {:?} ms · methodology {}",
-                    speed.http_idle_rtt_ms,
-                    speed.jitter_p95_minus_p50_ms,
+                    "HTTP idle RTT: {} · PDV jitter: {} · methodology {}",
+                    reading(speed.http_idle_rtt_ms, "ms"),
+                    reading(speed.jitter_p95_minus_p50_ms, "ms"),
                     speed.methodology_version
                 ));
                 lines.push(format!(
@@ -569,6 +582,12 @@ pub struct Controller {
 }
 impl Controller {
     pub fn start(&mut self, action: Action, mlab_consent: bool) -> bool {
+        self.start_with(action, move |cancel| run(action, mlab_consent, cancel))
+    }
+    fn start_with<F>(&mut self, action: Action, run: F) -> bool
+    where
+        F: FnOnce(&AtomicBool) -> Result<ResultData, Failure> + Send + 'static,
+    {
         self.poll();
         if self.worker.is_some() {
             return false;
@@ -582,13 +601,24 @@ impl Controller {
         self.started = Some(Instant::now());
         let cancel = self.cancel.clone();
         let complete = self.complete.clone();
-        self.worker = Some(std::thread::spawn(move || {
-            let result = std::panic::catch_unwind(|| run(action, mlab_consent, &cancel))
-                .unwrap_or(Err(Failure::Internal));
-            if let Ok(mut slot) = complete.lock() {
-                *slot = Some(result);
+        let worker = std::thread::Builder::new()
+            .name("sd300-companion".into())
+            .spawn(move || {
+                let result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&cancel)))
+                        .unwrap_or(Err(Failure::Internal));
+                if let Ok(mut slot) = complete.lock() {
+                    *slot = Some(result);
+                }
+            });
+        match worker {
+            Ok(worker) => self.worker = Some(worker),
+            Err(_) => {
+                self.state.running = false;
+                self.state.failure = Some(Failure::Internal);
+                return false;
             }
-        }));
+        }
         true
     }
     pub fn cancel(&self) {
@@ -639,6 +669,30 @@ impl Drop for Controller {
 mod tests {
     use super::*;
     const PARTIAL: &[u8] = include_bytes!("companion-fixtures/nd300-4.0.1-partial.json");
+    #[test]
+    fn worker_panic_cancel_and_retry_preserve_one_active_request() {
+        let mut controller = Controller::default();
+        assert!(controller.start_with(Action::Standard, |_| panic!("injected provider panic")));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while controller.state.running && Instant::now() < deadline {
+            controller.poll();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(!controller.state.running);
+        assert_eq!(controller.state.failure, Some(Failure::Internal));
+        assert!(controller.start_with(Action::Standard, |cancel| {
+            while !cancel.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(Failure::Cancelled)
+        }));
+        assert!(!controller.start_with(Action::Deep, |_| Err(Failure::Internal)));
+        controller.cancel();
+        let started = Instant::now();
+        drop(controller);
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
     #[test]
     fn valid_warning_failure_exits_are_results_and_timeouts_are_incomplete() {
         for exit in [0, 1, 2, 130] {

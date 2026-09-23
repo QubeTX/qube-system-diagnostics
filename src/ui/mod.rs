@@ -83,8 +83,8 @@ fn render_content(frame: &mut Frame, app: &App) {
         ];
         if let Some(action) = app.speed_confirmation {
             lines.push(format!(
-                "Confirm {:?}: up to {} seconds / {} GB payload",
-                action,
+                "Confirm {}: up to {} seconds / {} GB payload",
+                action.label(),
                 action.budget_seconds(),
                 action.budget_bytes().unwrap_or(0) / 1_000_000_000
             ));

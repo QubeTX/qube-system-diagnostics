@@ -706,12 +706,14 @@ fn collect_loop(shared: &Shared) {
             4 => Some(Action::SpeedDeep),
             _ => None,
         };
-        let started = action.is_some_and(|action| companion.start(action, consent));
+        if let Some(action) = action {
+            companion.start(action, consent);
+        }
         if shared.companion_cancel.swap(false, Ordering::AcqRel) {
             companion.cancel();
         }
         let changed_companion = companion.poll();
-        if started || changed_companion {
+        if action.is_some() || changed_companion {
             snapshot.companion = companion.state.clone();
             if !companion.state.running {
                 shared.companion_busy.store(false, Ordering::Release);

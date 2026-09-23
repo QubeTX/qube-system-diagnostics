@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Recover from companion worker panics or allocation failure, verify one-active-request cancellation, and project unavailable speed readings as missing data in both interfaces. Extend snapshot tests through the companion privacy boundary.
+
 - Add explicit ND-300 4.0.1 and separately confirmed SpeedQX actions to both frontends. Bound in-memory process output and cancellation; retain diagnostic exit outcomes, partial checks, nullable throughput and provenance. Export only validated fields in redacted companion reports.
 - Replace shell-dependent resource-test producers with native fixtures, serialize timing-sensitive subprocess tests, and use populated deterministic redaction fixtures instead of concurrent live inventories.
 
