@@ -4,6 +4,9 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Add explicit TUI session exports through the shared schema-2 redaction path, with one background writer per frontend, private report files and atomic no-clobber persistence. Preserve frozen samples and completed companion results; move GUI file writes off its collection loop.
+- Track storage read/write error availability and whole-inventory coverage independently in the GUI. Mark early or unqualified SpeedQX measurements partial and ignore inherited TAR_OPTIONS during verified companion extraction.
+
 - Normalize accepted storage callback sockets to blocking mode before applying finite read/write timeouts on Windows and macOS. Native qualification caught inherited nonblocking mode that Linux does not preserve.
 
 - Add separately prepared and confirmed, single-device SMART reads in Storage in both frontends. Isolate OS authorization, verify helper bytes and product version, bound read/callback/cancellation work, preserve prior results, and include redacted schema-2 findings. Add native synthetic privileged-worker qualification across all six targets without touching physical devices.

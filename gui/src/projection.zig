@@ -441,7 +441,8 @@ pub const DriveHealthRow = struct {
     power_on_hours_available: bool = false,
     read_errors_total: u64 = 0,
     write_errors_total: u64 = 0,
-    error_counts_available: bool = false,
+    read_errors_available: bool = false,
+    write_errors_available: bool = false,
     read_mib_s: f64 = 0,
     write_mib_s: f64 = 0,
     queue_depth: f64 = 0,
@@ -617,7 +618,8 @@ pub const Projection = struct {
     disk_write_latency_ms: f64 = 0,
     disk_read_errors_total: u64 = 0,
     disk_write_errors_total: u64 = 0,
-    disk_errors_available: bool = false,
+    disk_read_errors_measured_drives: u32 = 0,
+    disk_write_errors_measured_drives: u32 = 0,
     display_rows: [max_displays]DisplayRow = [_]DisplayRow{.{}} ** max_displays,
     display_count: usize = 0,
     display_total_count: u32 = 0,
@@ -1304,9 +1306,22 @@ pub const Projection = struct {
         }
         self.disk_read_errors_total = 0;
         self.disk_write_errors_total = 0;
-        self.disk_errors_available = false;
+        self.disk_read_errors_measured_drives = 0;
+        self.disk_write_errors_measured_drives = 0;
         setObservation(&self.disk_health_observation, parsed.value.data.health_status);
         setObservation(&self.disk_reliability_observation, parsed.value.data.reliability_status);
+        // Sum the complete inventory, independently for each nullable field.
+        // The bounded table must never truncate the aggregate or imply full coverage.
+        for (parsed.value.data.drives) |item| {
+            if (item.read_errors_total) |count| {
+                self.disk_read_errors_total +|= count;
+                self.disk_read_errors_measured_drives +|= 1;
+            }
+            if (item.write_errors_total) |count| {
+                self.disk_write_errors_total +|= count;
+                self.disk_write_errors_measured_drives +|= 1;
+            }
+        }
         self.drive_health_total_count = saturatedU32(parsed.value.data.drives.len);
         self.drive_health_count = @min(parsed.value.data.drives.len, max_drive_health);
         for (parsed.value.data.drives[0..self.drive_health_count], 0..) |item, index| {
@@ -1324,7 +1339,8 @@ pub const Projection = struct {
             row.power_on_hours_available = item.power_on_hours != null;
             row.read_errors_total = item.read_errors_total orelse 0;
             row.write_errors_total = item.write_errors_total orelse 0;
-            row.error_counts_available = item.read_errors_total != null or item.write_errors_total != null;
+            row.read_errors_available = item.read_errors_total != null;
+            row.write_errors_available = item.write_errors_total != null;
             if (item.io_stats) |io| {
                 const mib = 1024.0 * 1024.0;
                 row.io_available = true;
@@ -1341,11 +1357,6 @@ pub const Projection = struct {
                     self.disk_read_latency_ms = @max(self.disk_read_latency_ms, row.read_latency_ms);
                     self.disk_write_latency_ms = @max(self.disk_write_latency_ms, row.write_latency_ms);
                 }
-            }
-            if (row.error_counts_available) {
-                self.disk_errors_available = true;
-                self.disk_read_errors_total +|= row.read_errors_total;
-                self.disk_write_errors_total +|= row.write_errors_total;
             }
             self.drive_health_rows[index] = row;
         }
@@ -1998,4 +2009,22 @@ test "identical sensor labels preserve channel identity" {
     try std.testing.expect(value.sensor_rows[0].id != value.sensor_rows[1].id);
     try std.testing.expectEqualStrings("hwmon:pci:1:temp1", value.sensor_rows[0].identity());
     try std.testing.expectEqualStrings("hwmon:pci:1:fan1", value.fan_rows[0].identity());
+}
+
+// Coverage is independent of both table capacity and the other nullable counter.
+test "storage error counters retain partial coverage and real zero" {
+    var value = Projection{};
+    try value.applyHealthJson(std.testing.allocator,
+        \\{"data":{"drives":[{"read_errors_total":0},{"write_errors_total":4}]}}
+    );
+    try std.testing.expectEqual(@as(u32, 1), value.disk_read_errors_measured_drives);
+    try std.testing.expectEqual(@as(u32, 1), value.disk_write_errors_measured_drives);
+    try std.testing.expectEqual(@as(u64, 0), value.disk_read_errors_total);
+    try std.testing.expectEqual(@as(u64, 4), value.disk_write_errors_total);
+    try std.testing.expect(value.drive_health_rows[0].read_errors_available);
+    try std.testing.expect(!value.drive_health_rows[0].write_errors_available);
+    try value.applyHealthJson(std.testing.allocator, \\{"data":{"drives":[]}}
+    );
+    try std.testing.expectEqual(@as(u32, 0), value.disk_read_errors_measured_drives);
+    try std.testing.expectEqual(@as(u32, 0), value.disk_write_errors_measured_drives);
 }

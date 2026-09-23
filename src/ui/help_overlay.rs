@@ -43,7 +43,7 @@ pub fn render(frame: &mut Frame, area: Rect) {
         help_line("Space", "Freeze view / resume latest"),
         help_line("N", "Optional ND-300 diagnostics and SpeedQX"),
         help_line("A", "Review a privileged read of the selected drive"),
-        help_line("F", "Findings and evidence"),
+        help_line("F / E", "Findings / export this session"),
         help_line("c / M", "Process sort: CPU / memory"),
         help_line("n / p / s", "Name / PID / reverse sort"),
         help_line("f", "Toggle temperature unit"),

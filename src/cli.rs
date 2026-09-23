@@ -293,6 +293,7 @@ KEYBINDINGS:
   F            Findings, evidence and next steps
   N            Optional network diagnostics and SpeedQX
   A            Review a privileged read of the selected drive
+  E            Export this session with redaction
 
 SECTIONS:
   1 Overview    System health dashboard / identity and gauges

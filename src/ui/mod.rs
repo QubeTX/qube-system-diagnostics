@@ -76,6 +76,22 @@ fn render_content(frame: &mut Frame, app: &App) {
     // Render bottom navigation bar
     bottom_bar::render(frame, app, chunks[2]);
 
+    if app.show_export {
+        let state = if app.paused_at.is_some() {
+            "the frozen view"
+        } else {
+            "the latest displayed samples"
+        };
+        let text = format!("E save redacted snapshot · C save capabilities · Esc close\n\nReports describe {state}, with capture times, availability, findings and completed session diagnostics. Arbitrary imported detail strings are omitted. Existing reports are preserved.\n\n{}", app.exporter.message());
+        frame.render_widget(ratatui::widgets::Clear, chunks[1]);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(text)
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .block(common::content_block("Export this session")),
+            chunks[1],
+        );
+        return;
+    }
     if app.show_storage_probe {
         let mut lines =
             vec!["x cancel · Esc cancel and close · ordinary monitoring continues".into()];

@@ -62,3 +62,9 @@ Primary references:
 - [Apple command quoting](https://developer.apple.com/library/archive/documentation/LanguagesUtilities/Conceptual/MacAutomationScriptingGuide/CallCommandLineUtilities.html)
 - [Apple administrator execution](https://developer.apple.com/library/archive/technotes/tn2065/_index.html)
 - [PolicyKit authentication, environment and exit semantics](https://github.com/polkit-org/polkit/blob/master/docs/man/pkexec.xml)
+
+Accepted callback sockets explicitly switch to blocking mode before finite timeouts.
+Native qualification demonstrated inherited nonblocking flags on Windows and macOS,
+while Linux creates the accepted socket without those flags. See
+[Winsock accept](https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-accept)
+and [Linux accept notes](https://man7.org/linux/man-pages/man2/accept.2.html).

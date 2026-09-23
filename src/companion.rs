@@ -336,6 +336,13 @@ pub fn parse_results(
                 ],
             ),
         });
+        if let Some(speed) = &result.speed {
+            result.incomplete |= speed.stop_reason != "complete"
+                || speed.download.qualification != "measured"
+                || speed.upload.qualification != "measured"
+                || speed.download.sustained_mbps.is_none()
+                || speed.upload.sustained_mbps.is_none();
+        }
     } else {
         if !raw["timestamp"].is_string() {
             return Err(Failure::MalformedOutput);
@@ -762,10 +769,46 @@ mod tests {
         assert_eq!(result.failure, Some(Failure::Cancelled));
     }
     #[test]
+    fn early_stop_and_unqualified_directions_remain_partial() {
+        let mut raw: Value = serde_json::from_slice(include_bytes!(
+            "companion-fixtures/speedqx-4.0.1-partial.json"
+        ))
+        .unwrap();
+        raw["measurement"]["upload"] = raw["measurement"]["download"].clone();
+        raw["measurement"]["download"]["qualification"] = json!("measured");
+        raw["measurement"]["upload"]["qualification"] = json!("measured");
+        raw["measurement"]["stop_reason"] = json!("complete");
+        let parse = |raw: &Value| {
+            parse_results(
+                Action::SpeedQuick,
+                VERIFIED_VERSION,
+                &serde_json::to_vec(raw).unwrap(),
+                Some(0),
+                None,
+            )
+            .unwrap()
+        };
+        assert!(!parse(&raw).incomplete);
+        for reason in [
+            "cancelled",
+            "time-limit",
+            "byte-limit",
+            "network-change",
+            "unknown",
+        ] {
+            raw["measurement"]["stop_reason"] = json!(reason);
+            assert!(parse(&raw).incomplete);
+        }
+        raw["measurement"]["stop_reason"] = json!("complete");
+        raw["measurement"]["upload"]["qualification"] = json!("provisional");
+        assert!(parse(&raw).incomplete);
+    }
+    #[test]
     fn speed_uses_nullable_methodology_measurements_not_legacy_zero_aliases() {
         let bytes = include_bytes!("companion-fixtures/speedqx-4.0.1-partial.json");
         let result =
             parse_results(Action::SpeedQuick, VERIFIED_VERSION, bytes, Some(0), None).unwrap();
+        assert!(result.incomplete);
         let speed = result.speed.unwrap();
         assert_eq!(speed.download.sustained_mbps, Some(91.5));
         assert_eq!(speed.upload.sustained_mbps, None);

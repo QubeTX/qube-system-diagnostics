@@ -29,6 +29,8 @@ pub struct App {
     pub optional_setup: crate::optional_tools::Controller,
     pub storage_probe: crate::storage_probe::Controller,
     pub show_storage_probe: bool,
+    pub exporter: crate::export::Controller,
+    pub show_export: bool,
     pub setup_confirmation: bool,
     pub setup_smart: bool,
     pub speed_confirmation: Option<crate::companion::Action>,
@@ -112,6 +114,8 @@ impl App {
             optional_setup: Default::default(),
             storage_probe: Default::default(),
             show_storage_probe: false,
+            exporter: Default::default(),
+            show_export: false,
             setup_confirmation: false,
             setup_smart: false,
             speed_confirmation: None,
@@ -182,6 +186,7 @@ impl App {
             }
             tokio::select! {
                 _ = poll.tick() => {
+                    if self.exporter.poll() { dirty = true; }
                     if self.storage_probe.poll() {
                         self.live_while_paused.as_mut().unwrap_or(&mut self.snapshot).storage_probe = self.storage_probe.state.clone();
                         dirty = true;
@@ -393,6 +398,24 @@ impl App {
             self.should_quit = true;
             return;
         }
+        if self.show_export {
+            if key.kind != KeyEventKind::Press {
+                return;
+            }
+            match key.code {
+                KeyCode::Esc => self.show_export = false,
+                KeyCode::Char('E' | 'C') => {
+                    let kind = if key.code == KeyCode::Char('C') {
+                        crate::export::Kind::Capabilities
+                    } else {
+                        crate::export::Kind::Snapshot
+                    };
+                    self.exporter.start(&self.snapshot, kind);
+                }
+                _ => {}
+            }
+            return;
+        }
         if self.show_storage_probe {
             if key.kind == KeyEventKind::Repeat {
                 return;
@@ -601,6 +624,9 @@ impl App {
                     self.storage_probe.state.message = "Resume the live view and wait for a current storage inventory before requesting a privileged read".into();
                 }
             }
+            KeyCode::Char('E') => {
+                self.show_export = true;
+            }
             KeyCode::Char('N') => {
                 self.show_companion = true;
                 self.inspector_scroll = 0;
@@ -751,6 +777,18 @@ mod compatibility_tests {
             pid: None,
             process_name: None,
         }
+    }
+
+    #[test]
+    fn opening_export_is_explicit_and_does_not_start_disk_io() {
+        let mut app = App::new(Some(DiagnosticMode::User));
+        press(&mut app, KeyCode::Char('E'));
+        assert!(app.show_export);
+        assert!(!app.exporter.running());
+        assert!(app.exporter.result.is_none());
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.show_export);
+        assert!(!app.should_quit);
     }
 
     #[test]

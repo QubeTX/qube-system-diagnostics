@@ -72,6 +72,7 @@ fn strip_additive_gui_help(text: &str) -> String {
                     "F            Findings, evidence and next steps",
                     "N            Optional network diagnostics and SpeedQX",
                     "A            Review a privileged read of the selected drive",
+                    "E            Export this session with redaction",
                 ]
                 .contains(&trimmed)
         })

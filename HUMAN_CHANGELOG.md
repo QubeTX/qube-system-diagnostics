@@ -8,6 +8,9 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Save a private, redacted report of your terminal session, including completed optional diagnostics. Saving keeps monitoring responsive and preserves earlier reports; a paused view saves the readings you froze.
+- Missing storage error readings stay visibly missing, and the desktop shows how many drives supplied each counter. An unfinished bandwidth test stays marked incomplete. Behind the scenes, optional downloads unpack with consistent settings.
+
 - Optional administrator-authorized storage reads wait for their result correctly on Windows and Mac computers. Behind the scenes, native checks caught a platform difference that Linux-only testing would have missed.
 
 - Review an optional administrator-authorized storage read before allowing it. Monitoring stays responsive, cancellation keeps earlier results, and private details stay out of redacted exports. Behind the scenes, synthetic checks exercise the privileged process without opening a real drive.

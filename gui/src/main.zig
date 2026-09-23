@@ -422,6 +422,8 @@ pub const Model = struct {
         const meta = model.activeCollector();
         return if (meta.detail().len > 0) meta.detail() else meta.provenance();
     }
+    pub fn diskReadErrorsAvailable(model: *const Model) bool { return model.detail.disk_read_errors_measured_drives > 0; }
+    pub fn diskWriteErrorsAvailable(model: *const Model) bool { return model.detail.disk_write_errors_measured_drives > 0; }
     pub fn diskIoAvailable(model: *const Model) bool {
         const wall = model.clock.wallMs();
         const now: u64 = if (wall > 0) @intCast(wall) else 0;

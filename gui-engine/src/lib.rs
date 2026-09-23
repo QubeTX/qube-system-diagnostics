@@ -1,8 +1,5 @@
 use std::ffi::{c_char, c_void};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -718,6 +715,7 @@ fn collect_loop(shared: &Shared) {
     let mut companion = sd_300::companion::Controller::default();
     let mut optional_setup = sd_300::optional_tools::Controller::default();
     let mut storage_probe = sd_300::storage_probe::Controller::default();
+    let mut exporter = sd_300::export::Controller::default();
     let mut snapshot = SystemSnapshot::default();
     while !shared.stop.load(Ordering::Acquire) {
         let storage_request = shared.storage_request.lock().unwrap_or_else(|p| p.into_inner()).take();
@@ -871,7 +869,7 @@ fn collect_loop(shared: &Shared) {
                 &snapshot.warnings,
             );
         }
-        service_export_request(shared, &snapshot);
+        service_export_request(shared, &snapshot, &mut exporter);
         wait_for_wake(shared, Duration::from_millis(50));
     }
     drop(companion);
@@ -884,163 +882,25 @@ fn collect_loop(shared: &Shared) {
     // Monitor Drop cancels process groups and joins every worker before the
     // engine can unload. No uninterruptible native probe runs in this DLL.
 }
-fn service_export_request(shared: &Shared, snapshot: &SystemSnapshot) {
-    let kind = shared.export_request.swap(EXPORT_NONE, Ordering::AcqRel);
-    if kind == EXPORT_NONE {
-        return;
+fn service_export_request(shared: &Shared, snapshot: &SystemSnapshot, exporter: &mut sd_300::export::Controller) {
+    use sd_300::export::Kind;
+    let request = shared.export_request.load(Ordering::Acquire);
+    if request == EXPORT_NONE { return; }
+    if !exporter.running() {
+        let kind = if request == EXPORT_SNAPSHOT { Kind::Snapshot } else { Kind::Capabilities };
+        exporter.start(snapshot, kind);
     }
-    let result = write_export(snapshot, kind);
-    let status = match result {
-        Ok(path) => json!({
-            "state": "complete",
-            "kind": if kind == EXPORT_SNAPSHOT { "redacted_snapshot" } else { "capabilities" },
-            "path": path.to_string_lossy(),
-        }),
-        Err(error) => {
-            set_error(shared, &error);
-            json!({
-                "state": "error",
-                "kind": if kind == EXPORT_SNAPSHOT { "redacted_snapshot" } else { "capabilities" },
-                "error": error,
-            })
-        }
+    if !exporter.poll() { return; }
+    let status = match exporter.result.as_ref() {
+        Some(Ok(path)) => json!({"state":"complete", "kind":exporter.kind.label(), "path":path.to_string_lossy()}),
+        Some(Err(error)) => {
+            set_error(shared, error);
+            json!({"state":"error", "kind":exporter.kind.label(), "error":error})
+        },
+        None => return,
     };
-    if let (Ok(bytes), Ok(mut destination)) =
-        (serde_json::to_vec(&status), shared.export_status.lock())
-    {
-        *destination = bytes;
-    }
-}
-
-fn write_export(snapshot: &SystemSnapshot, kind: u8) -> Result<PathBuf, String> {
-    let directory = sd_300::settings::reports_dir()?;
-    ensure_export_directory(&directory)?;
-    let captured = unix_ms();
-    let stem = if kind == EXPORT_SNAPSHOT {
-        "sd300-redacted-snapshot"
-    } else if kind == EXPORT_CAPABILITIES {
-        "sd300-capabilities"
-    } else {
-        return Err("unknown export kind".into());
-    };
-    let report = sd_300::report::DiagnosticReport::from_snapshot(snapshot, false);
-    let bytes = if kind == EXPORT_SNAPSHOT {
-        serde_json::to_vec_pretty(&report.as_schema(2))
-    } else {
-        serde_json::to_vec_pretty(&json!({
-            "schema_version": 2,
-            "samples": report.samples,
-            "findings": report.findings,
-            "product": report.product,
-            "product_version": report.product_version,
-            "target_os": report.target_os,
-            "target_arch": report.target_arch,
-            "capabilities": report.capabilities,
-            "warnings": report.warnings,
-        }))
-    }
-    .map_err(|error| format!("could not serialize the requested export: {error}"))?;
-
-    for suffix in 0..100u8 {
-        let file_name = if suffix == 0 {
-            format!("{stem}-{captured}.json")
-        } else {
-            format!("{stem}-{captured}-{suffix}.json")
-        };
-        let destination = directory.join(file_name);
-        if destination.exists() {
-            continue;
-        }
-        write_export_atomically(&destination, &bytes)?;
-        return Ok(destination);
-    }
-    Err("could not allocate a unique report filename".into())
-}
-
-fn ensure_export_directory(directory: &Path) -> Result<(), String> {
-    match fs::symlink_metadata(directory) {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
-            return Err(format!(
-                "report destination {} is not an owned directory and was preserved",
-                directory.display()
-            ));
-        }
-        Ok(_) => return restrict_export_directory(directory),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(format!(
-                "could not inspect report destination {}: {error}",
-                directory.display()
-            ));
-        }
-    }
-    fs::create_dir_all(directory).map_err(|error| {
-        format!(
-            "could not create report destination {}: {error}",
-            directory.display()
-        )
-    })?;
-    restrict_export_directory(directory)
-}
-
-#[cfg(unix)]
-fn restrict_export_directory(directory: &Path) -> Result<(), String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-
-    let effective_uid = unsafe { libc::geteuid() };
-    for path in directory.parent().into_iter().chain([directory]) {
-        let metadata = fs::symlink_metadata(path)
-            .map_err(|error| format!("could not inspect {}: {error}", path.display()))?;
-        if !metadata.is_dir()
-            || metadata.file_type().is_symlink()
-            || metadata.uid() != effective_uid
-        {
-            return Err(format!(
-                "report destination component {} is not a same-user directory and was preserved",
-                path.display()
-            ));
-        }
-        fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-            .map_err(|error| format!("could not restrict {}: {error}", path.display()))?;
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn restrict_export_directory(_directory: &Path) -> Result<(), String> {
-    Ok(())
-}
-
-fn write_export_atomically(destination: &Path, bytes: &[u8]) -> Result<(), String> {
-    let temporary = destination.with_extension("json.tmp");
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&temporary).map_err(|error| {
-        format!(
-            "could not create temporary report {}: {error}",
-            temporary.display()
-        )
-    })?;
-    let result = (|| {
-        file.write_all(bytes)?;
-        file.write_all(b"\n")?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&temporary, destination)
-    })();
-    if let Err(error) = result {
-        let _ = fs::remove_file(&temporary);
-        return Err(format!(
-            "could not commit report {}: {error}",
-            destination.display()
-        ));
-    }
-    Ok(())
+    if let (Ok(bytes), Ok(mut destination)) = (serde_json::to_vec(&status), shared.export_status.lock()) { *destination = bytes; }
+    shared.export_request.store(EXPORT_NONE, Ordering::Release);
 }
 
 fn wait_for_wake(shared: &Shared, timeout: Duration) {
@@ -1913,46 +1773,4 @@ mod tests {
         assert_eq!(sd300_engine_request_export(handle, 1), STATUS_NOT_RUNNING);
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn export_directory_and_report_are_private_to_the_current_user() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let temporary = tempfile::tempdir().expect("temporary root");
-        let application = temporary.path().join("sd300");
-        let reports = application.join("reports");
-
-        fs::create_dir(&application).expect("application directory");
-        fs::set_permissions(&application, fs::Permissions::from_mode(0o755))
-            .expect("relax application directory before the test");
-        ensure_export_directory(&reports).expect("private reports directory");
-
-        assert_eq!(
-            fs::metadata(&application)
-                .expect("application metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o700
-        );
-        assert_eq!(
-            fs::metadata(&reports)
-                .expect("reports metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o700
-        );
-
-        let report = reports.join("snapshot.json");
-        write_export_atomically(&report, br#"{"redacted":true}"#).expect("private atomic report");
-        assert_eq!(
-            fs::metadata(report)
-                .expect("report metadata")
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
-    }
 }

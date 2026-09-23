@@ -379,16 +379,17 @@ pub fn install_network(consent: bool, cancel: &AtomicBool) -> Result<String, Str
     fs::write(&archive_path, bytes).map_err(|e| e.to_string())?;
     let extracted = staging.path().join("extracted");
     fs::create_dir(&extracted).map_err(|e| e.to_string())?;
+    let mut extract = std::process::Command::new(system_tool("tar")?);
+    extract.env_remove("TAR_OPTIONS").args([
+        std::ffi::OsStr::new("-xf"),
+        archive_path.as_os_str(),
+        std::ffi::OsStr::new("-C"),
+        extracted.as_os_str(),
+    ]);
     successful(
         "Verified archive extraction",
-        command::run_memory(
-            system_tool("tar")?,
-            [
-                std::ffi::OsStr::new("-xf"),
-                archive_path.as_os_str(),
-                std::ffi::OsStr::new("-C"),
-                extracted.as_os_str(),
-            ],
+        command::run_memory_command(
+            &mut extract,
             CommandTimeout::Custom(Duration::from_secs(20)),
             cancel,
         )

@@ -34,7 +34,11 @@ Technician inspection exposes units, availability, source, identity and capture 
 
 JSON exports retain schema 1 by default. Request `snapshot --json --schema-version 2`
 or `capabilities --json --schema-version 2` for nullable readings, sample metadata and
-shared findings. This preview is not a published release or a performance certification.
+shared findings. In a live TUI session, E opens the export panel; E there saves the
+redacted snapshot and C saves capabilities. Reports include completed companion and
+privileged-read results, preserve capture times, and never replace existing files.
+A paused view exports its frozen samples. The GUI uses the same private report writer.
+This preview is not a published release or a performance certification.
 
 ## Install
 
