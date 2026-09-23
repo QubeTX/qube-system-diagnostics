@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Resume suspended Windows helpers through a process-specific PSS thread snapshot, retaining owned-job cancellation and a Toolhelp fallback. Add a real ConPTY process-tree benchmark that includes terminated-child CPU costs.
+
 - Search and page full connection/device inventories in the GUI engine before bounded projection. Preserve capture metadata, whole-inventory totals and attention filtering; show missing connection PIDs explicitly. Add guarded query ABI loading and fixtures beyond the former row limits.
 
 - Add explicit TUI session exports through the shared schema-2 redaction path, with one background writer per frontend, private report files and atomic no-clobber persistence. Preserve frozen samples and completed companion results; move GUI file writes off its collection loop.

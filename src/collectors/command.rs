@@ -507,6 +507,67 @@ impl Drop for OwnedProcess {
 
 #[cfg(windows)]
 struct OwnedProcess(winapi::um::winnt::HANDLE);
+/// The child is still CREATE_SUSPENDED, so only its initial thread exists.
+/// Capture that process alone rather than enumerating every system thread for
+/// every helper invocation. PSS descriptors belong to this calling process.
+#[cfg(windows)]
+fn suspended_thread_id(child: &Child) -> std::io::Result<u32> {
+    use std::{mem::size_of, os::windows::io::AsRawHandle, ptr};
+    use windows_sys::Win32::System::Diagnostics::ProcessSnapshotting::*;
+    struct Snapshot(HPSS);
+    impl Drop for Snapshot {
+        fn drop(&mut self) {
+            unsafe {
+                PssFreeSnapshot(
+                    winapi::um::processthreadsapi::GetCurrentProcess().cast(),
+                    self.0,
+                );
+            }
+        }
+    }
+    struct Marker(HPSSWALK);
+    impl Drop for Marker {
+        fn drop(&mut self) {
+            unsafe {
+                PssWalkMarkerFree(self.0);
+            }
+        }
+    }
+    let check = |code: u32| {
+        if code == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::from_raw_os_error(code as i32))
+        }
+    };
+    unsafe {
+        let mut snapshot = ptr::null_mut();
+        check(PssCaptureSnapshot(
+            child.as_raw_handle(),
+            PSS_CAPTURE_THREADS,
+            0,
+            &mut snapshot,
+        ))?;
+        let snapshot = Snapshot(snapshot);
+        let mut marker = ptr::null_mut();
+        check(PssWalkMarkerCreate(ptr::null(), &mut marker))?;
+        let marker = Marker(marker);
+        let mut entry = PSS_THREAD_ENTRY::default();
+        check(PssWalkSnapshot(
+            snapshot.0,
+            PSS_WALK_THREADS,
+            marker.0,
+            (&mut entry as *mut PSS_THREAD_ENTRY).cast(),
+            size_of::<PSS_THREAD_ENTRY>() as u32,
+        ))?;
+        if entry.ProcessId != child.id() || entry.ThreadId == 0 {
+            return Err(std::io::Error::other(
+                "owned child thread identity did not match",
+            ));
+        }
+        Ok(entry.ThreadId)
+    }
+}
 #[cfg(windows)]
 impl OwnedProcess {
     fn new(child: &Child) -> std::io::Result<Self> {
@@ -534,6 +595,18 @@ impl OwnedProcess {
             {
                 return Err(std::io::Error::last_os_error());
             }
+            if let Ok(id) = suspended_thread_id(child) {
+                let thread = OpenThread(THREAD_SUSPEND_RESUME, 0, id);
+                if !thread.is_null() {
+                    let resumed = ResumeThread(thread) != u32::MAX;
+                    CloseHandle(thread);
+                    if resumed {
+                        return Ok(owned);
+                    }
+                }
+            }
+            // Compatibility fallback for restricted hosts. The job already
+            // owns the child; any failure below closes it without running it.
             let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
             if snapshot == INVALID_HANDLE_VALUE {
                 return Err(std::io::Error::last_os_error());
@@ -597,6 +670,25 @@ pub(crate) fn test_fixture(name: &str) -> (std::path::PathBuf, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn suspended_child_snapshot_finds_its_thread_without_system_enumeration() {
+        use std::os::windows::process::CommandExt;
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
+        let (program, args) = test_fixture("fixture_hung");
+        let mut child = Command::new(program)
+            .args(args)
+            .creation_flags(0x0800_0000 | 0x0000_0004)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let result = suspended_thread_id(&child);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(result.is_ok(), "{result:?}");
+    }
     #[test]
     #[ignore = "child-only deterministic producer"]
     fn fixture_one_mebibyte() {

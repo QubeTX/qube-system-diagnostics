@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: qualify the bounded privileged SMART worker on all six native targets using synthetic helper bytes. Optional ND and SMART setup now pass all six. Next: remaining frontend parity and field availability, measured performance and complete unpublished lifecycle qualification.
+Current cycle: qualify measured performance using exact release artifacts and the entire owned process tree. Windows CPU and memory exceed the accepted gates; improve one measured cause per cycle. Remaining work includes native performance, full PTY coverage and unpublished composite lifecycle qualification.
 
 ## Impact
 
@@ -49,6 +49,8 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations implemented; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: ddbe0eb repeated Windows ConPTY release measurements confirm CPU 7.52/8.08 percent of one core and summed RSS 189/185 MiB; baseline f83ae42 is 3.74 percent and 53 MiB. Process-specific PSS resume candidate reduces CPU to 4.35 percent, with five helper tests and clippy passing; memory still fails (219 MiB sampled peak including transient helpers). No observers or builds overlapped. Next hypothesis: retire idle inventory/health workers without changing collection cadence. Exact hashes and measurement method are retained under docs/qualification/v4. No gate waived.
 
 - 2026-09-23 — codex: 36c07d8 privileged worker qualification passes both Macs, Windows, both GNU Linux architectures and musl in CI 35844134568; final Windows/Intel-Mac GUI packaging still running. Full GUI inventory query candidate passes 15 engine and 49 native GUI tests (two platform skips), strict bindings, a 250-row lookup/page fixture and unchanged capture-time assertions. Next: final native composite check and release-build performance measurements with the entire owned process tree included.
 

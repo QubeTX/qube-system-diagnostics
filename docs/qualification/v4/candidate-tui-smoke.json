@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "binary": "sd300.exe (exact release bytes identified by sha256)",
+  "sha256": "eda54ec71d9a420bc0064bfca19cf1077c05fc5f45b7772d5b5d160709b71f8c",
+  "revision": "ddbe0eb",
+  "build": "release",
+  "runtime": "Windows ConPTY",
+  "frontend": "tui",
+  "dimensions": [
+    80,
+    24
+  ],
+  "warmup_seconds": 10,
+  "measured_seconds": 30.12718369999493,
+  "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+  "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+  "cpu_percent_one_core": 7.520201763832247,
+  "cpu_interval_p95": 31.121133610519994,
+  "rss_mib_max": 189.2109375,
+  "private_mib_max": 52.0546875,
+  "handles_max": 2508,
+  "process_count_max": 20,
+  "process_names": [
+    "NETSTAT.EXE",
+    "PING.EXE",
+    "ROUTE.EXE",
+    "cmd.exe",
+    "conhost.exe",
+    "nvidia-smi.exe",
+    "sd300.exe"
+  ],
+  "processes_created": 44,
+  "terminal_restored": true,
+  "samples": 120,
+  "foreground_cpu_gate": false,
+  "rss_gate": false,
+  "private_gate": true
+}

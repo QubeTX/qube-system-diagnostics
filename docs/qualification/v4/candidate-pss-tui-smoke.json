@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "binary": "sd300.exe (exact release bytes identified by sha256)",
+  "sha256": "6a69a2af870707e61c282ef010b26beae0346bf4f324296f20be672bdb76dfb8",
+  "revision": "ddbe0eb-plus-pss",
+  "build": "release",
+  "runtime": "Windows ConPTY",
+  "frontend": "tui",
+  "dimensions": [
+    80,
+    24
+  ],
+  "warmup_seconds": 10,
+  "measured_seconds": 30.153556799996295,
+  "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+  "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+  "cpu_percent_one_core": 4.352720339778163,
+  "cpu_interval_p95": 24.870256844900883,
+  "rss_mib_max": 219.09375,
+  "private_mib_max": 73.0546875,
+  "handles_max": 2728,
+  "process_count_max": 21,
+  "process_names": [
+    "NETSTAT.EXE",
+    "PING.EXE",
+    "cmd.exe",
+    "conhost.exe",
+    "nvidia-smi.exe",
+    "sd300.exe"
+  ],
+  "processes_created": 44,
+  "diagnostic_live_role_cost": {
+    "cmd.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 8.30078125
+    },
+    "sd300:tui": {
+      "observed_cpu_seconds": 0.515625,
+      "rss_mib_peak_per_process": 20.36328125
+    },
+    "sd300:connections": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 10.23046875
+    },
+    "conhost.exe": {
+      "observed_cpu_seconds": 0.03125,
+      "rss_mib_peak_per_process": 7.328125
+    },
+    "sd300:health": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 14.07421875
+    },
+    "sd300:static": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 18.0703125
+    },
+    "sd300:diagnostics": {
+      "observed_cpu_seconds": 0.046875,
+      "rss_mib_peak_per_process": 11.4296875
+    },
+    "sd300:slow": {
+      "observed_cpu_seconds": 0.171875,
+      "rss_mib_peak_per_process": 16.796875
+    },
+    "sd300:activity": {
+      "observed_cpu_seconds": 0.046875,
+      "rss_mib_peak_per_process": 9.72265625
+    },
+    "sd300:drivers": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 14.9375
+    },
+    "nvidia-smi.exe": {
+      "observed_cpu_seconds": 0.078125,
+      "rss_mib_peak_per_process": 30.61328125
+    },
+    "netstat.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 5.04296875
+    },
+    "ping.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 5.57421875
+    }
+  },
+  "diagnostic_note": "Role CPU samples omit processes that exit between polls; the total Job Object CPU above includes them",
+  "terminal_restored": true,
+  "samples": 120,
+  "foreground_cpu_gate": false,
+  "rss_gate": false,
+  "private_gate": true
+}

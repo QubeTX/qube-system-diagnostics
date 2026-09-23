@@ -24,3 +24,13 @@ protocol test sends multiple requests to one PID, requests cache reset and verif
 cancellation/shutdown. A hung-helper fixture exercises timeout without requiring native
 return or pipe EOF. Hosted native runs validate each OS's process ownership and atomic-file
 behavior. Release CPU/memory/handle and two-hour soak gates remain separate from these tests.
+
+## Windows startup cost, 2026-09-23
+
+Measured helper startup previously enumerated every system thread to resume one
+CREATE_SUSPENDED child. Use [PssCaptureSnapshot](https://learn.microsoft.com/en-us/windows/win32/api/processsnapshot/nf-processsnapshot-psscapturesnapshot)
+with only PSS_CAPTURE_THREADS to obtain that child's initial thread. The job is
+assigned before resuming; capture failure falls back to the prior Toolhelp path.
+Snapshot and walk-marker descriptors are always released in the calling process,
+following [PssFreeSnapshot](https://learn.microsoft.com/en-us/windows/win32/api/processsnapshot/nf-processsnapshot-pssfreesnapshot).
+A native fixture exercises the PSS path directly so fallback cannot conceal a regression.
