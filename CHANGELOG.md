@@ -2,7 +2,9 @@
 
 All notable changes to SD-300 will be documented in this file.
 
-## [Unreleased]
+## [4.0.0] - 2026-09-23
+
+- Record the operator-approved 4.0.0-only resource ceilings (4% foreground CPU, 3% hidden CPU, 200 MiB RSS); retain the 300 MiB private-memory limit, original failed verdicts, and all functional gates. Add version-expiring resource assessment and boundary/failure tests. Preserve every original goal for the next version in docs/next-version-targets.md and owned tasks #r16/#r17 (ADR 0017).
 
 - Retain both complete native interaction matrices and all original verdicts. The unchanged-product ce77ebf repeat passes the approved timing policy on all six targets; both Mac native accessibility fixtures and exact keyboard-completion counts pass. Retain the final native resource windows and passing Windows two-hour soak, foreground and hidden windows with exact identities; remaining CPU/RSS overruns remain explicit.
 

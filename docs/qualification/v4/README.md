@@ -3,8 +3,11 @@
 The operator's 2026-09-23 release decision is recorded in
 [ADR 0016](../../adr/0016-v4-responsiveness-release-decision.md): for 4.0.0 on
 all six targets, frame/input p95 and ordinary-refresh maximum may reach 100 ms.
-Original-target verdicts stay visible; CPU/memory and functional gates remain
-unchanged. `native-interaction-ec5635d.json` retains all six native reports and a
+Original-target verdicts stay visible. The subsequent resource decision in
+[ADR 0017](../../adr/0017-v4-resource-release-decision.md) permits 4% foreground
+CPU, 3% hidden CPU and 200 MiB RSS for 4.0.0 only; private memory and functional
+gates remain unchanged. All original goals are preserved in
+[Next-version targets](../../next-version-targets.md). `native-interaction-ec5635d.json` retains all six native reports and a
 separate assessment under that policy. Five targets meet the approved timing
 limit. Intel Mac's first navigation cohort exceeds it (151.354 ms frame p95,
 177.170 ms input p95; first refresh maximum 110.023 ms), so an unchanged-product repeat was required and is recorded below.
@@ -30,8 +33,9 @@ The final four-host resource run
 [35923985086](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/35923985086)
 is retained in `native-resources-ec5635d.json`. Each host ran independent,
 unobserved 900-second TUI, Thermals foreground and hidden windows using hashed
-normal release artifacts. All sessions shut down cleanly. Original limits are
-still active while the operator considers a separate resource-budget decision.
+normal release artifacts. All sessions shut down cleanly. The operator approved the separate v4-only resource policy.
+`release-resource-assessment.json` assesses all nineteen retained native/local
+windows against that policy and passes; original failures remain unchanged.
 
 | Target | TUI CPU / RSS | Foreground CPU / RSS | Hidden CPU / RSS |
 |---|---|---|---|

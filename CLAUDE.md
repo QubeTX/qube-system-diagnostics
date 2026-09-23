@@ -8,7 +8,10 @@ Enter, page navigation and optional mouse are additive. GUI and TUI settings are
 namespaces. Histories use capture timestamps and preserve missing time buckets. See
 [ADR 0006](docs/adr/0006-v4-sampling-and-terminal-contract.md) and
 [ADR 0007](docs/adr/0007-adaptive-presentation-and-time-buckets.md).
-The complete v4 candidate remains unpublished until all accepted gates pass.
+Every candidate remains unpublished until its accepted gates pass. ADRs 0016/0017
+record the operator-approved 4.0.0-only performance ceilings. All original goals
+are preserved in [Next-version targets](docs/next-version-targets.md) and automatically
+apply to later versions; track responsiveness in #r16 and resources in #r17.
 
 # CLAUDE.md
 

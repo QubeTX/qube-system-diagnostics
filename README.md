@@ -5,18 +5,14 @@ an additive native desktop monitor. Part of the **QubeTX 300 Series** alongside
 [TR-300](https://github.com/QubeTX/qube-machine-report) (Machine Report) and
 ND-300 (Network Diagnostic).
 
-> **Release status:** v3.0.0 shipped the native desktop monitor on all six
-> release targets with verified public artifacts — SHA-256 sidecars, an SPDX
-> SBOM, GitHub attestations, and physical Windows installer acceptance.
-> v3.1.0 adds safe in-app and tray-driven updates that run the same
-> owner-preserving CLI transaction. v3.1.2 replaces the generic/ECG identity
-> with the isometric SD/300 mark and makes GUI background monitoring explicit:
-> the tray defaults on, closing the window keeps it running by default, and a
-> live hover summary exposes basic hardware health. v3.1.3 removes the app
-> mark's black plate on Windows/Linux and gives macOS a transparent-corner,
-> softened isometric treatment while retaining the monochrome tray identity.
+SD-300 4.0.0 adds timestamped measurements, bounded background collection,
+an adaptive terminal dashboard, a refined native GUI with Makira and Gail Rock,
+and optional ND-300 diagnostics. Windows, macOS and Linux share the same Rust
+collector core. Managed installers include the terminal tool and a clickable
+app with the SD-300 icon. See the [qualification record](docs/qualification/v4/README.md)
+for measured results, platform limitations and release-specific decisions.
 
-## v4 development preview (unpublished)
+## Monitoring and inspection
 
 The monitoring dashboard adapts to an 80×24 terminal and expands into aligned charts,
 tables and an inspector on wider terminals. All nine sections work in User and Technician
@@ -38,7 +34,7 @@ shared findings. In a live TUI session, E opens the export panel; E there saves 
 redacted snapshot and C saves capabilities. Reports include completed companion and
 privileged-read results, preserve capture times, and never replace existing files.
 A paused view exports its frozen samples. The GUI uses the same private report writer.
-This preview is not a published release or a performance certification.
+Unavailable or stale measurements remain explicit in both frontends.
 
 ## Install
 
@@ -311,8 +307,11 @@ scans, and foreground/hidden/soak performance tests. The v3 budgets are at most
 2% of one logical core foreground, 1% hidden/tray, 150 MiB working set/RSS,
 300 MiB private memory/commit, 16.7 ms frame-time p95, and 50 ms input-response
 p95 outside explicit scans, with no unbounded history, event, log, or memory
-growth. These are qualification thresholds, not claims about an unpublished
-candidate.
+growth. For 4.0.0 only, the operator approved 4% foreground CPU, 3% hidden CPU,
+200 MiB RSS, and frame/input p95 up to 100 ms; private memory and the 100 ms
+ordinary-refresh maximum are unchanged. The [original goals](docs/next-version-targets.md)
+automatically return for the next version. Retained reports distinguish original
+target verdicts from the approved release policy.
 
 Qualified release assets include SHA-256 sidecars, an SPDX SBOM, and GitHub
 artifact attestations. After a public release, verify a downloaded asset with:
@@ -356,7 +355,7 @@ PolyForm Noncommercial 1.0.0 - see [LICENSE.md](LICENSE.md).
 Built by [QubeTX](https://github.com/QubeTX).
 
 
-### Optional network companion in the unpublished v4 candidate
+### Optional network companion
 
 The terminal's **N** panel and the app's **Network** section can run the installed
 public ND-300 4.0.1 companion. Standard and deep scans explicitly skip speed
@@ -373,7 +372,7 @@ Setup uses the official release archive with a platform-specific pinned checksum
 keeps existing installations, and verifies both executables. The independent
 per-user ND-300 directory survives SD-300 removal and carries its own standalone
 receipt. No PATH changes, elevated install, diagnostic, repair or bandwidth test
-is implied by setup. Lifecycle qualification of this candidate remains open.
+is implied by setup. Optional-tool ownership is independent of SD-300 removal.
 
 
 Optional SMART helper setup is available with **h** in the terminal's companion

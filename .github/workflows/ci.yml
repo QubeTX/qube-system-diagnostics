@@ -169,6 +169,7 @@ jobs:
           python scripts/test-resource-metrics.py
           python scripts/test-resource-baseline.py
           python scripts/test-gui-interaction-report.py
+          python scripts/test-resource-policy.py
           cargo build --release --locked --bin sd300 --example profile-monitor
           python scripts/qualify-tui-native.py 'target/terminal-qualification/${{ matrix.target }}'
       - uses: actions/upload-artifact@v6

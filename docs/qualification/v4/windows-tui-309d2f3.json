@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "binary": "D:\\a\\qube-system-diagnostics\\qube-system-diagnostics\\target\\release\\sd300.exe",
+  "sha256": "1937fb4f943b785bc65b9922b13bb9440b51cab336f861a0156eb0dc2000aae8",
+  "revision": "309d2f3eea27f43019d00535fed41c6b8863a42a",
+  "build": "release",
+  "runtime": "Windows ConPTY",
+  "frontend": "tui",
+  "dimensions": [
+    80,
+    24
+  ],
+  "warmup_seconds": 15,
+  "measured_seconds": 900.156,
+  "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+  "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+  "cpu_percent_one_core": 0.8175666217855572,
+  "cpu_interval_p95": 6.25,
+  "rss_mib_max": 89.5703125,
+  "private_mib_max": 40.5546875,
+  "handles_max": 1277,
+  "process_count_max": 7,
+  "process_names": [
+    "cmd.exe",
+    "sd300.exe"
+  ],
+  "processes_created": 21,
+  "diagnostic_live_role_cost": {
+    "cmd.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 5.6171875
+    },
+    "sd300:tui": {
+      "observed_cpu_seconds": 5.296875,
+      "rss_mib_peak_per_process": 19.55859375
+    },
+    "sd300:activity": {
+      "observed_cpu_seconds": 0.34375,
+      "rss_mib_peak_per_process": 9.5625
+    },
+    "sd300:connections": {
+      "observed_cpu_seconds": 0.171875,
+      "rss_mib_peak_per_process": 10.0703125
+    },
+    "sd300:slow": {
+      "observed_cpu_seconds": 0.5,
+      "rss_mib_peak_per_process": 20.26171875
+    },
+    "sd300:diagnostics": {
+      "observed_cpu_seconds": 0.09375,
+      "rss_mib_peak_per_process": 11.3515625
+    },
+    "sd300:health": {
+      "observed_cpu_seconds": 0.203125,
+      "rss_mib_peak_per_process": 14.890625
+    },
+    "sd300:static": {
+      "observed_cpu_seconds": 0.421875,
+      "rss_mib_peak_per_process": 20.37890625
+    },
+    "sd300:drivers": {
+      "observed_cpu_seconds": 0.015625,
+      "rss_mib_peak_per_process": 14.7265625
+    }
+  },
+  "diagnostic_note": "Role CPU samples omit processes that exit between polls; the total Job Object CPU above includes them",
+  "terminal_restored": true,
+  "samples": 3582,
+  "foreground_cpu_gate": true,
+  "rss_gate": true,
+  "private_gate": true
+}

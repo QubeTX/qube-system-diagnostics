@@ -8,10 +8,13 @@ import subprocess
 import shutil
 import sys
 import tarfile
+import tomllib
 import urllib.request
 import zipfile
 
 import psutil
+
+from resource_policy import resource_verdict
 
 BASELINE = "f83ae429490aecb165921037b2f9ed994327634f"
 BASELINE_GUI_SOURCE = "d4896546f190c0e5afe176f36544dca7aa806227"
@@ -146,6 +149,8 @@ def main():
     bounded(["cargo", "build", "--release", "--locked", "--manifest-path", str(baseline / "Cargo.toml")], 900)
     before_gui, before_launcher = baseline_gui(root, args.target)
     windows = os.name == "nt"
+    version = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
+    assessments = []
     harness = root / "scripts" / ("measure-tui-windows.py" if windows else "measure-tui-unix.py")
     executable = "sd300.exe" if windows else "sd300"
     for label, source, revision in [("before", baseline, BASELINE), ("after", root, candidate)]:
@@ -154,10 +159,9 @@ def main():
                    "--seconds", str(args.seconds), "--output", str(report), "--revision", revision]
         bounded(command, args.seconds + 120)
     report = json.loads((output / "after-tui.json").read_text(encoding="utf-8"))
-    gates = ["foreground_cpu_gate" if windows else "cpu_gate", "rss_gate", "terminal_restored"]
-    if windows:
-        gates.append("private_gate")
-    failures = [gate for gate in gates if report.get(gate) is not True]
+    assessment = resource_verdict(report, version, frontend="tui", windows=windows, seconds=args.seconds)
+    assessments.append({"kind": "tui", **assessment})
+    failures = ["tui:" + failure for failure in assessment["failures"]]
     gui_harness = root / "scripts" / ("measure-gui-windows.py" if windows else "measure-gui-unix.py")
     after_gui = root / "target/native-gui-stage" / args.target / "app/zig-out/bin" / ("sd300-gui.exe" if windows else "sd300-gui")
     for label, binary, launcher, source, revision in [
@@ -180,8 +184,14 @@ def main():
             measure(command, args.seconds + 120, report_path, baseline=label == "before")
             gui_report = json.loads(report_path.read_text(encoding="utf-8"))
             if label == "after":
-                gui_gates = ["cpu_gate", "rss_gate", "clean_shutdown"] + (["private_gate"] if windows else [])
-                failures += [f"gui-{'hidden' if hidden else 'foreground'}:{gate}" for gate in gui_gates if gui_report.get(gate) is not True]
+                kind = "gui-hidden" if hidden else "gui-foreground"
+                assessment = resource_verdict(gui_report, version, frontend="gui", hidden=hidden,
+                                              windows=windows, seconds=args.seconds)
+                assessments.append({"kind": kind, **assessment})
+                failures += [kind + ":" + failure for failure in assessment["failures"]]
+    (output / "release-resource-assessment.json").write_text(json.dumps({
+        "version": version, "target": args.target, "assessments": assessments,
+        "passed": not failures}, indent=2) + "\n", encoding="utf-8")
     if failures:
         raise RuntimeError("Candidate resource gates failed: " + ", ".join(failures))
 

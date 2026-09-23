@@ -8,7 +8,10 @@ Enter, page navigation and optional mouse are additive. GUI and TUI settings are
 namespaces. Histories use capture timestamps and preserve missing time buckets. See
 [ADR 0006](docs/adr/0006-v4-sampling-and-terminal-contract.md) and
 [ADR 0007](docs/adr/0007-adaptive-presentation-and-time-buckets.md).
-The complete v4 candidate remains unpublished until all accepted gates pass.
+Every candidate remains unpublished until its accepted gates pass. ADRs 0016/0017
+record the operator-approved 4.0.0-only performance ceilings. All original goals
+are preserved in [Next-version targets](docs/next-version-targets.md) and automatically
+apply to later versions; track responsiveness in #r16 and resources in #r17.
 
 # SD-300 / SD300 Project Context
 
@@ -20,9 +23,9 @@ monitor. The binary is `sd300`; the crates.io package is `tr300-tui`; the GUI
 loads a bundle-relative Rust `cdylib` that reuses the same collectors without
 sharing the TUI process or event loop.
 
-The public product remains v3.1.3. This v4 worktree is an unpublished
-qualification candidate. Release completion requires preserved v2.0.6 CLI and
-lifecycle compatibility, the complete
+SD-300 4.0.0 combines trustworthy sampling, responsive independent frontends,
+expanded providers and optional diagnostics. Release completion requires preserved
+v2.0.6 CLI and lifecycle compatibility, the complete
 composite installer/update/uninstall lifecycle, performance gates, and native or
 hosted evidence for all six release targets. Do not describe local builds as
 proof that the public release or another operating system has passed.

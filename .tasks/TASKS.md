@@ -1,6 +1,7 @@
 # Tasks
 
 ## Backlog
+- [ ] **Restore original CPU and memory budgets after v4** - all original goals are preserved in docs/next-version-targets.md; the 4/3 percent CPU and 200 MiB RSS ceilings expire after 4.0.0 under ADR 0017 (owner codex) #r17
 - [ ] **Restore original responsiveness targets after v4** - use retained native frame/input reports to qualify focused improvements; the operator's all-platform 100 ms release limit expires after 4.0.0 under ADR 0016 (owner codex) #r16
 - [ ] **Explore formal verification in a future version** - consider a small model of collector cancellation, shutdown and latest-value delivery; operator explicitly deferred this exploration beyond v4 on 2026-09-23 #frm
 - [ ] **Run the released-bytes two-hour soak and capture frame/input percentiles** - TASK FOR CODEX; unattended, machine-quarantined two-hour Processes soak plus formal frame-p95/input-p95 evidence on the public v3 bytes, with exit-attribution awareness; replaces the pre-release soak gate the operator waived on 2026-07-22 (needs #qv3) (ms #v3n) #sok

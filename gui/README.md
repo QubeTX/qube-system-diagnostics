@@ -12,9 +12,10 @@ model** section in `AGENTS.md` (identical in `CLAUDE.md`): it defines what the
 two frontends share, the step-by-step recipe for wiring a field into both, and
 the release-blocking parity invariant.
 
-The v4 candidate is unpublished and remains in qualification. A successful
-local build or strict test does not prove another target, native installer, physical interaction,
-performance soak, or public release.
+The [v4 qualification record](../docs/qualification/v4/README.md) distinguishes
+native tests, resource measurements, installer evidence and physical-device limits.
+The [original next-version goals](../docs/next-version-targets.md) remain binding
+after the operator-approved 4.0.0-only performance exceptions.
 
 ## Product contract
 
@@ -261,10 +262,10 @@ for hierarchy and professional/new-user presentation decisions.
 Histories use bounded timestamped samples. Missing captures produce empty time buckets;
 bar traces avoid connecting across gaps. CPU temperature remains its own series. The TUI
 preference namespace is preserved when the GUI saves its own preferences. These changes
-are in the unpublished v4 implementation and still require final performance qualification.
+are implemented in v4; native results and remaining physical-device limits are recorded in the qualification evidence.
 
 
-### Optional network companion in the unpublished v4 candidate
+### Optional network companion
 
 The terminal's **N** panel and the app's **Network** section can run the installed
 public ND-300 4.0.1 companion. Standard and deep scans explicitly skip speed
@@ -281,7 +282,7 @@ Setup uses the official release archive with a platform-specific pinned checksum
 keeps existing installations, and verifies both executables. The independent
 per-user ND-300 directory survives SD-300 removal and carries its own standalone
 receipt. No PATH changes, elevated install, diagnostic, repair or bandwidth test
-is implied by setup. Lifecycle qualification of this candidate remains open.
+is implied by setup. Optional-tool ownership is independent of SD-300 removal.
 
 
 Optional SMART helper setup is available with **h** in the terminal's companion

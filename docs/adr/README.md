@@ -40,6 +40,8 @@ Rules:
 | [0015](0015-gui-preference-writes-and-interaction-timing.md) | Keep preference writes outside GUI interaction | Accepted |
 | [0016](0016-v4-responsiveness-release-decision.md) | Version-scoped v4 responsiveness release decision | Accepted |
 
+| [0017](0017-v4-resource-release-decision.md) | Version-scoped v4 resource release decision | Accepted |
+
 ## Dual-frontend contract pointer
 
 The rules for changing SD-300 across its two frontends — what the TUI and native

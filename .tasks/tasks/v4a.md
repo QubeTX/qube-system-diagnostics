@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: 4.0.0 remains unpublished. All-six native CI 35926413084 on ce77ebf passes the approved 100 ms timing policy and native input/accessibility checks. Windows composite installers (35911237866), two-hour Processes soak, fifteen-minute Thermals and thirty-minute hidden windows pass. All four final hosted resource lanes completed in 35923985086: every session shuts down cleanly, but original CPU/RSS overruns remain on Apple Silicon, Intel hidden and GNU x86-64; musl's prior slight CPU overrun is retained. Operator resource-budget decision remains pending; publication itself is fully authorized. Final Mac/Linux composite lifecycle, public verification and website deployment remain open. Diagnostic-only branch codex/sd300-v4-platform-probes must never be merged wholesale.
+Current cycle: 4.0.0 remains unpublished. All-six native CI 35926413084 on ce77ebf passes the approved 100 ms timing policy and native input/accessibility checks. Windows composite installers (35911237866), two-hour Processes soak, fifteen-minute Thermals and thirty-minute hidden windows pass. All four final hosted resource lanes completed in 35923985086: every session shuts down cleanly, but original CPU/RSS overruns remain on Apple Silicon, Intel hidden and GNU x86-64; musl's prior slight CPU overrun is retained. Operator approved the v4-only resource ceilings on 2026-09-23; all nineteen retained windows pass the separate release assessment. Original targets are recorded for the next version in docs/next-version-targets.md and #r16/#r17. Publication is fully authorized. Final Mac/Linux composite lifecycle, public verification and website deployment remain open. Diagnostic-only branch codex/sd300-v4-platform-probes must never be merged wholesale.
 
 ## Impact
 
@@ -34,11 +34,11 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 
 - [x] Measurement and failure regression fixtures pass
 
-- [ ] Native Windows/macOS/Linux and musl qualification pass
+- [x] Native Windows/macOS/Linux and musl CI qualification pass
 
-- [ ] TUI and GUI behavior and parity pass, including the newly requested GUI visual and interaction review
+- [x] TUI and GUI behavior and parity pass, including the newly requested GUI visual and interaction review
 
-- [ ] Performance and soak acceptance pass
+- [x] Performance and soak acceptance pass under the approved 4.0.0-only policy; original verdicts retained
 
 - [ ] Composite install/update/repair/rollback/uninstall passes
 
@@ -49,6 +49,8 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement, bounded workers, provider fixtures, adaptive TUI, optional companion/actions, GUI parity and the expanded GUI design/interaction review are implemented. Remaining work is native performance/shutdown qualification, composite lifecycle and publication. Product metadata is coordinated at 4.0.0, verified unused at 2026-09-23 19:25 UTC; the candidate remains unpublished. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: operator approved 4.0.0-only resource ceilings and explicitly requested every original goal be recorded for the next version. Added ADR 0017, docs/next-version-targets.md, #r17 and expiring policy tests. All nineteen retained windows pass the approved policy without rewriting original verdicts. Final evidence commit 4aeaea4 passes every job in CI 35930409409. Next: final policy checks, merge and the authorized composite release chain, then public verification and website production.
 
 - 2026-09-23 — codex: all resource windows completed. Windows two-hour/foreground/hidden checks pass original limits (1.488/0.988/0.298 percent one-core CPU). Intel final TUI/foreground pass; hidden is 1.025 percent against 1 percent. Retained complete reports with identities under docs/qualification/v4; original failures are unchanged. Real GUI and ConPTY screenshots pass desktop/mobile gallery checks, keyboard switching, image dimensions, links and no overflow/errors. Website lint/build pass; publication waits for app release. Next: resource-budget decision, final composite lifecycle and authorized release.
 

@@ -2,11 +2,13 @@
 
 A plain-English companion to [CHANGELOG.md](./CHANGELOG.md). It explains what changed and why without requiring release-engineering or code knowledge.
 
-The newest section is work in progress. It is deliberately candid about what has passed and what still blocks release.
+The newest section describes the monitoring update and the evidence behind it.
 
 ---
 
-## In progress — more trustworthy monitoring
+## September 23, 2026 — More trustworthy monitoring
+
+- Behind the scenes: record the owner-approved resource headroom for this release while keeping the original goals as next-release targets. Missing measurements, input/accessibility bugs and failed shutdowns still fail qualification.
 
 - Behind the scenes: Mac checks confirm that routine updates no longer create duplicate keyboard events or trigger the unsupported accessibility calls we found. The unchanged-app repeat meets the approved responsiveness limit on every platform. Completed stability checks and remaining resource-use overruns are recorded together, including earlier failed results.
 
