@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: Linux memory testing now separates graphics-library memory from app allocations and compares rendering paths without changing the app's defaults or recording private file paths.
+
 - Mac process readings now distinguish an idle application from an unreadable one and stop carrying a previous busy reading into an idle interval. Both views explain when the process inventory cannot be read and recover when access returns.
 
 - Behind the scenes: minimal Linux testing now installs and checks its display test tools before the long build, so missing test dependencies are reported promptly.

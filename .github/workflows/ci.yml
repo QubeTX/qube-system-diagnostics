@@ -228,6 +228,9 @@ jobs:
               flags=(); [[ $mode != hidden ]] || flags+=(--hidden)
               GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/$mode.json" --revision '${{ github.sha }}' --seconds 30 "${flags[@]}"
             done
+            # Diagnostic A/B on unchanged bytes. This is not a product setting
+            # or an acceptance substitute for the normal renderer above.
+            GDK_BACKEND=x11 GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground-cairo-diagnostic.json" --revision '${{ github.sha }}' --seconds 30
           else
             python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground.json" --revision '${{ github.sha }}' --seconds 30
             python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/hidden.json" --revision '${{ github.sha }}' --seconds 30 --hidden

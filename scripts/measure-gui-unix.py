@@ -19,7 +19,7 @@ import threading
 import time
 
 import psutil
-from resource_metrics import sample_family, descriptor_summary, FamilyAttribution
+from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_report
 
 SECTIONS = ["Overview", "CPU", "Memory", "Storage", "GPU", "Network", "Processes", "Thermals", "Drivers"]
 
@@ -138,6 +138,7 @@ def main():
                 "audience_mode": "user", "last_section": SECTIONS.index(args.section), "tray_enabled": args.hidden,
                 "close_to_tray": args.hidden, "launch_at_login": False, "reduced_motion": True}}), encoding="utf-8")
             env = dict(os.environ, HOME=directory, XDG_CONFIG_HOME=str(home / "config"), XDG_RUNTIME_DIR=str(home / "runtime"))
+            report["renderer_override"] = "cairo" if env.get("GSK_RENDERER") == "cairo" else "none_or_external"
             begin = time.monotonic()
             process = subprocess.Popen([str(launcher)] + (["--startup", "--hidden"] if args.hidden and sys.platform == "darwin" else []),
                                        env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -185,6 +186,8 @@ def main():
                     checked = True
                 time.sleep(.25)
             elapsed = time.monotonic() - begin
+            if sys.platform == "linux":
+                report["root_mappings_after_window"] = linux_mapping_report(process.pid)
             if (visible_windows(process.pid) == 0) != args.hidden:
                 raise RuntimeError("GUI visibility changed during measurement")
             seen = topics(root, cli)

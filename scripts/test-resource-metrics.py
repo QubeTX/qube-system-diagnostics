@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 import psutil
-from resource_metrics import sample_family, descriptor_summary, FamilyAttribution
+from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_totals
 
 
 class Process:
@@ -25,6 +25,21 @@ class Process:
 
 
 class Metrics(unittest.TestCase):
+    def test_mapping_units_and_redaction(self):
+        report = linux_mapping_totals("""1000-2000 r-xp 000000 00:00 0 /private/user/libLLVM.so
+Rss: 2048 kB
+2000-3000 rw-p 000000 00:00 0
+Rss: 1024 kB
+3000-4000 r-xp 000000 00:00 0 /private/user/sd300-gui
+Rss: 512 kB
+""")
+        self.assertEqual(report, {"graphics_libraries": 2, "anonymous": 1, "product_files": .5})
+        self.assertNotIn("private", str(report))
+        with self.assertRaises(ValueError):
+            linux_mapping_totals("")
+        with self.assertRaises(ValueError):
+            linux_mapping_totals("Rss: 12 bytes")
+
     def test_descriptor_denial_preserves_memory_and_process_identity(self):
         known = {}
         sample = sample_family(Process(denied=True), known)

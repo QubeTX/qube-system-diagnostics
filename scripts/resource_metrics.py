@@ -1,6 +1,49 @@
 """Shared live-family sampling; optional descriptor access never fabricates zero."""
 import os
+import re
 import psutil
+
+
+def linux_mapping_totals(contents):
+    """Fixed-category RSS totals only; never retain mapping paths/addresses."""
+    totals = {}
+    category = "anonymous"
+    for line in contents.splitlines():
+        if re.match(r"^[0-9a-f]+-[0-9a-f]+ ", line):
+            fields = line.split(None, 5)
+            path = fields[5].lower() if len(fields) == 6 else ""
+            if any(name in path for name in ("libllvm", "_dri.so", "libvulkan", "libgl", "libegl", "libgallium")):
+                category = "graphics_libraries"
+            elif any(name in path for name in ("libgtk", "libgdk")):
+                category = "gtk_libraries"
+            elif "sd300" in path:
+                category = "product_files"
+            elif path.startswith("/"):
+                category = "other_files"
+            elif path.startswith("[stack"):
+                category = "stack"
+            else:
+                category = "anonymous"
+        elif line.startswith("Rss:"):
+            fields = line.split()
+            if len(fields) != 3 or fields[2] != "kB":
+                raise ValueError("Unexpected native mapping units")
+            totals[category] = totals.get(category, 0) + int(fields[1]) / 1024
+    if not totals:
+        raise ValueError("No readable mapping counters")
+    return totals
+
+
+def linux_mapping_report(pid):
+    try:
+        with open(f"/proc/{int(pid)}/smaps", "r", encoding="utf-8") as stream:
+            contents = stream.read(8 * 1024 * 1024 + 1)
+        if len(contents) > 8 * 1024 * 1024:
+            return {"available": False, "reason": "mapping inventory exceeds bound"}
+        return {"available": True, "rss_mib_by_backing": linux_mapping_totals(contents),
+                "note": "Read after the resource window; anonymous includes runtime allocations and graphics heaps"}
+    except (OSError, ValueError):
+        return {"available": False, "reason": "mapping inventory unavailable"}
 
 
 def sample_family(root, known, attribution=None):
