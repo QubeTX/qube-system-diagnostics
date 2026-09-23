@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: 0379797 native Apple Silicon passes complete Unicode/ASCII PTY interaction; both GNU architectures fail the new immediate resize/key pair while ordinary navigation passes. Extend the same polling backend to all Unix targets; next oracle is the unchanged six-target native matrix. The 5fa678f 330-second Windows whole-job run records 2.07 percent CPU and 116.5 MiB RSS, preserving the open CPU gate.
+
 - 2026-09-23 — codex: 526cf84 Apple Silicon artifact proves the Tech/compact post-resize key stalls while rendering and collection continue. The documented macOS-only crossterm polling backend cross-checks on Intel and ARM, including the engine; lock changes only add the existing filedescriptor dependency edge. Thirty immediate resize/key pairs pass locally on Windows (input p95 16 ms, restoration verified). Next oracle: unchanged native PTY on both Macs. Windows network stage timing at 5fa678f improves from 4.41 to 1.30 ms mean; the whole-process resource run remains required.
 
 - 2026-09-23 — codex: direct Windows interface tables pass native counter bracketing, complete identity/address/unit fixtures, shared interval/replacement/failure tests, 204 root library tests (six child fixtures), eight CLI contracts, two worker tests, all 15 engine tests and 51 GUI tests (two skips). Strict bindings, clippy and Mac/musl test cross-checks pass. Next: unchanged native matrix and release-stage/resource measurements. Mac PTY failure now proves key input stalls immediately after resize while collection and rendering continue; test the documented alternative terminal polling backend as a separate candidate.

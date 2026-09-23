@@ -59,6 +59,11 @@ reduces average process-family CPU to 2.09 percent and peaks at 133.5 MiB RSS.
 `candidate-pipes-tui-cadence.json` identifies its exact release bytes. CPU still
 exceeds the two-percent gate; this improvement is not full performance acceptance.
 
+The native-network candidate 5fa678f records 2.07 percent CPU and 116.5 MiB RSS
+over the same 330-second window. Its stage time improves substantially but whole
+process CPU remains above the gate. `candidate-native-network-tui-cadence.json`
+retains that result; further changes must target a measured remaining cost.
+
 ## Native terminal interaction
 
 `scripts/qualify-tui-native.py` runs `qualify-tui-pty.py` sequentially in Unicode

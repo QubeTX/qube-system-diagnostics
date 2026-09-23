@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "binary": "C:\\Users\\hey\\git\\qube-system-diagnostics\\target\\release\\sd300.exe",
+  "sha256": "3e64a33d08a364a0e8787ea1a11d22e7422d9f0043edb34fbc1c5d6833c3b8b7",
+  "revision": "5fa678f",
+  "build": "release",
+  "runtime": "Windows ConPTY",
+  "frontend": "tui",
+  "dimensions": [
+    80,
+    24
+  ],
+  "warmup_seconds": 10,
+  "measured_seconds": 330.20733380000456,
+  "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+  "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+  "cpu_percent_one_core": 2.0678296031230987,
+  "cpu_interval_p95": 12.446564409229657,
+  "rss_mib_max": 116.4921875,
+  "private_mib_max": 55.0,
+  "handles_max": 1246,
+  "process_count_max": 8,
+  "process_names": [
+    "PING.EXE",
+    "ROUTE.EXE",
+    "cmd.exe",
+    "sd300.exe"
+  ],
+  "processes_created": 73,
+  "diagnostic_live_role_cost": {
+    "cmd.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 8.265625
+    },
+    "sd300:tui": {
+      "observed_cpu_seconds": 3.921875,
+      "rss_mib_peak_per_process": 19.9140625
+    },
+    "sd300:slow": {
+      "observed_cpu_seconds": 1.3125,
+      "rss_mib_peak_per_process": 37.875
+    },
+    "sd300:connections": {
+      "observed_cpu_seconds": 0.140625,
+      "rss_mib_peak_per_process": 10.2109375
+    },
+    "sd300:diagnostics": {
+      "observed_cpu_seconds": 0.140625,
+      "rss_mib_peak_per_process": 11.4765625
+    },
+    "sd300:activity": {
+      "observed_cpu_seconds": 0.296875,
+      "rss_mib_peak_per_process": 10.0078125
+    },
+    "route.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 5.37109375
+    },
+    "ping.exe": {
+      "observed_cpu_seconds": 0.03125,
+      "rss_mib_peak_per_process": 5.296875
+    },
+    "sd300:health": {
+      "observed_cpu_seconds": 0.046875,
+      "rss_mib_peak_per_process": 14.953125
+    },
+    "sd300:drivers": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 8.17578125
+    },
+    "sd300:static": {
+      "observed_cpu_seconds": 0.234375,
+      "rss_mib_peak_per_process": 19.03515625
+    }
+  },
+  "diagnostic_note": "Role CPU samples omit processes that exit between polls; the total Job Object CPU above includes them",
+  "terminal_restored": true,
+  "samples": 1316,
+  "foreground_cpu_gate": false,
+  "rss_gate": true,
+  "private_gate": true
+}

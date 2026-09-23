@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Linux terminal navigation receives the same resize protection verified on Mac. Behind the scenes, longer resource checks remain release requirements even when shorter checks look healthy.
+
 - Mac terminal input uses a polling path that keeps pending keystrokes visible during resizing. Behind the scenes, native checks exercise rapid resizing and navigation together.
 
 - Windows network readings use less repeated discovery and keep similarly named adapters separate. The total explains which interfaces it includes, virtual connections remain inspectable, and unavailable speeds or addresses no longer look like idle traffic or a missing address.
