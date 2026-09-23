@@ -33,6 +33,18 @@ unsafe extern "C" {
 }
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
+    fn IOServiceMatching(name: *const i8) -> CfRef;
+    fn IOServiceGetMatchingServices(port: u32, matching: CfRef, iterator: *mut u32) -> i32;
+    fn IOIteratorNext(iterator: u32) -> u32;
+    fn IOObjectRelease(object: u32) -> i32;
+    fn IORegistryEntryGetRegistryEntryID(entry: u32, id: *mut u64) -> i32;
+    fn IORegistryEntryGetChildIterator(entry: u32, plane: *const i8, iterator: *mut u32) -> i32;
+    fn IORegistryEntryCreateCFProperties(
+        entry: u32,
+        properties: *mut CfRef,
+        allocator: CfRef,
+        options: u32,
+    ) -> i32;
     fn IOPSCopyPowerSourcesInfo() -> CfRef;
     fn IOPSCopyPowerSourcesList(info: CfRef) -> CfRef;
     fn IOPSGetPowerSourceDescription(info: CfRef, source: CfRef) -> CfRef;
@@ -164,6 +176,99 @@ pub fn displays() -> DisplayData {
         Observation::available("CGGetActiveDisplayList")
     };
     DisplayData { displays, inventory_status, brightness_status: Observation::unsupported("CoreGraphics", "Public CoreGraphics display enumeration does not expose brightness; no private control API is used") }
+}
+
+struct IoObject(u32);
+impl Drop for IoObject {
+    fn drop(&mut self) {
+        if self.0 != 0 {
+            unsafe {
+                IOObjectRelease(self.0);
+            }
+        }
+    }
+}
+fn property_list(value: CfRef) -> Option<plist::Value> {
+    if value.is_null() {
+        return None;
+    }
+    let data = Owned::new(unsafe {
+        CFPropertyListCreateData(ptr::null(), value, 100, 0, ptr::null_mut())
+    })?;
+    let length = unsafe { CFDataGetLength(data.0) };
+    let bytes = unsafe { CFDataGetBytePtr(data.0) };
+    if !(1..=1_048_576).contains(&length) || bytes.is_null() {
+        return None;
+    }
+    super::macos::parse_plist(unsafe { std::slice::from_raw_parts(bytes, length as usize) }).ok()
+}
+fn registry_node(entry: u32, depth: usize, remaining: &mut usize) -> Option<plist::Value> {
+    if depth > 8 || *remaining == 0 {
+        return None;
+    }
+    *remaining -= 1;
+    let mut properties = ptr::null();
+    if unsafe { IORegistryEntryCreateCFProperties(entry, &mut properties, ptr::null(), 0) } != 0 {
+        return None;
+    }
+    let owned = Owned::new(properties)?;
+    let mut value = property_list(owned.0)?;
+    let row = value.as_dictionary_mut()?;
+    let mut id = 0u64;
+    if unsafe { IORegistryEntryGetRegistryEntryID(entry, &mut id) } == 0 {
+        row.insert("IORegistryEntryID".into(), id.into());
+    }
+    // The whole medium identifies the physical driver. Do not walk logical
+    // partitions/containers below it and count their backing activity twice.
+    if row.get("Whole").and_then(plist::Value::as_boolean) == Some(true) {
+        return Some(value);
+    }
+    let mut children = 0;
+    if unsafe { IORegistryEntryGetChildIterator(entry, c"IOService".as_ptr(), &mut children) } == 0
+        && children != 0
+    {
+        let iterator = IoObject(children);
+        let mut rows = Vec::new();
+        while *remaining > 0 {
+            let child = IoObject(unsafe { IOIteratorNext(iterator.0) });
+            if child.0 == 0 {
+                break;
+            }
+            if let Some(value) = registry_node(child.0, depth + 1, remaining) {
+                rows.push(value);
+            }
+        }
+        row.insert("IORegistryEntryChildren".into(), plist::Value::Array(rows));
+    }
+    Some(value)
+}
+pub fn storage_registry() -> Result<plist::Value, String> {
+    let matching = unsafe { IOServiceMatching(c"IOBlockStorageDriver".as_ptr()) };
+    if matching.is_null() {
+        return Err("IOKit could not create a storage matching dictionary".into());
+    }
+    let mut iterator = 0;
+    // Matching consumes one CF reference on both success and failure.
+    let status = unsafe { IOServiceGetMatchingServices(0, matching, &mut iterator) };
+    if status != 0 {
+        return Err(format!("IOKit storage enumeration failed ({status})"));
+    }
+    let iterator = IoObject(iterator);
+    let mut nodes = Vec::new();
+    let mut remaining = 1024;
+    while iterator.0 != 0 && remaining > 0 {
+        let entry = IoObject(unsafe { IOIteratorNext(iterator.0) });
+        if entry.0 == 0 {
+            break;
+        }
+        if let Some(value) = registry_node(entry.0, 0, &mut remaining) {
+            nodes.push(value);
+        }
+    }
+    if remaining == 0 {
+        return Err("IOKit storage enumeration exceeded its node budget".into());
+    }
+    Ok(plist::Value::Array(nodes))
 }
 
 fn power_sources() -> Option<Vec<plist::Value>> {

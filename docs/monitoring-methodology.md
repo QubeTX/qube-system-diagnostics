@@ -91,3 +91,16 @@ Primary references: [DXGI memory categories](https://learn.microsoft.com/en-us/w
 Linux hwmon temperature channels use millidegrees Celsius and fan channels use RPM. Faulted or disabled channels are not measurements. Legacy thermistor voltage channels (`tempN_type=4`) require board calibration and are excluded. Device canonical paths, chip identifiers and channel filenames identify readings; labels never deduplicate channels. A provider that exposes no stable identity remains explicitly unidentified. [Kernel hwmon interface](https://docs.kernel.org/hwmon/sysfs-interface.html).
 
 Windows hardware-monitor and Dell read-only bridges retain provider identifiers. Each graphics adapter contributes its own identified temperature. A generic package or ACPI zone name is insufficient evidence that the reading belongs to the CPU. Technician views expose source and identity; redacted reports remove sensor identifiers. Fixture evidence covers duplicate labels, invalid channels and multiple identical graphics adapters; this does not certify untested physical sensors.
+
+
+### Native macOS counter access
+
+The reusable Activity worker reads `IOBlockStorageDriver` properties directly through
+IOKit, avoiding an `ioreg` launch each second. It releases every service/iterator and
+Create/Copy reference, bounds registry traversal and property-list sizes, and requires a
+registry ID before accepting counters. The cached structured `diskutil ... physical`
+inventory filters out virtual devices and invalidates when registry identities change.
+The implementation follows Apple's [IOKit ownership and property APIs](https://github.com/apple-oss-distributions/IOKitUser/blob/main/IOKitLib.h)
+and [storage statistics definitions](https://github.com/apple-oss-distributions/IOStorageFamily/blob/main/IOBlockStorageDriver.h).
+Intel/ARM cross-checks prove Rust type correctness; native CI provides linking/runtime
+coverage. Hardware accuracy still requires the aligned-counter qualification window.

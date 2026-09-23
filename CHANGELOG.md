@@ -6,6 +6,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Read macOS storage counters through bounded native IOKit property snapshots, release owned references, require registry identity, and filter virtual/backing layers using cached physical-disk inventory.
+
 - Reuse one owned subprocess per isolated collector lane with bounded atomic responses and cancellation. Cache Windows graphics topology by device identity and back off negative thermal/NVIDIA discovery without reusing stale numeric readings.
 - Invalidate discovery after interface/disk topology changes and resume; reset rate baselines after long fast-sample gaps.
 

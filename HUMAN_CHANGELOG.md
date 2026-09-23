@@ -10,6 +10,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 **Fixed**
 
+- Macs read storage activity directly from the operating system, avoiding a helper launch on every sample. Virtual disks are kept out of the physical-drive total so activity is not counted twice.
+
 - Monitoring reuses its isolated workers instead of repeatedly starting them. Hardware discovery is reused when devices are unchanged, and unavailable optional sensors are retried less aggressively. New devices, resume and explicit retry refresh discovery.
 
 - The terminal dashboard now fits smaller screens and uses extra space for charts and useful details. Search the full list, keep your place as applications update, and pause what you see while monitoring continues. Keyboard navigation remains complete; mouse support is optional.

@@ -124,10 +124,13 @@ pub fn parse_disk_counters(registry: &Value) -> CounterFrame {
                     if let (Some(read_bytes), Some(write_bytes)) =
                         (number("Bytes (Read)"), number("Bytes (Write)"))
                     {
-                        let registry_id = dict
+                        let Some(registry_id) = dict
                             .get("IORegistryEntryID")
                             .and_then(Value::as_unsigned_integer)
-                            .unwrap_or(0);
+                            .filter(|id| *id > 0)
+                        else {
+                            return;
+                        };
                         devices.push(DeviceCounters {
                             device_id: format!("/dev/{name}"),
                             identity: format!("iokit:{registry_id}:{name}"),
@@ -163,18 +166,48 @@ pub fn parse_disk_counters(registry: &Value) -> CounterFrame {
     }
 }
 
+pub fn retain_physical_counters(mut frame: CounterFrame, physical: &[String]) -> CounterFrame {
+    frame.devices.retain(|d| {
+        physical
+            .iter()
+            .any(|id| d.device_id.strip_prefix("/dev/") == Some(id.as_str()))
+    });
+    if frame.devices.is_empty() {
+        frame.observation = Observation::unavailable(
+            "IOKit physical storage",
+            "No identifiable counters matched the physical-disk inventory",
+        );
+    }
+    frame
+}
+
 #[cfg(target_os = "macos")]
 pub fn disk_counters() -> CounterFrame {
-    match command_plist(
-        "/usr/sbin/ioreg",
-        &["-a", "-r", "-c", "IOBlockStorageDriver"],
-    ) {
-        Ok(value) => parse_disk_counters(&value),
-        Err(error) => CounterFrame {
-            observation: Observation::error("IOKit registry", error),
-            ..Default::default()
-        },
-    }
+    use super::provider_cache::StaticCache;
+    use std::cell::RefCell;
+    thread_local! {static PHYSICAL:RefCell<StaticCache<Result<Vec<String>,String>>>=RefCell::new(StaticCache::default());}
+    let result = (|| {
+        let registry = super::apple_inventory::storage_registry()?;
+        let frame = parse_disk_counters(&registry);
+        let mut identities = frame
+            .devices
+            .iter()
+            .map(|d| d.identity.clone())
+            .collect::<Vec<_>>();
+        identities.sort();
+        let physical = PHYSICAL.with(|cache| {
+            cache.borrow_mut().get(identities.join("|"), || {
+                command_plist("/usr/sbin/diskutil", &["list", "-plist", "physical"])
+                    .map(|list| physical_disks(&list))
+            })
+        })?;
+        let frame = retain_physical_counters(frame, &physical);
+        Ok::<_, String>(frame)
+    })();
+    result.unwrap_or_else(|error| CounterFrame {
+        observation: Observation::error("IOKit registry / diskutil physical inventory", error),
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]
@@ -201,5 +234,23 @@ mod tests {
         assert_eq!(frame.devices[0].device_id, "/dev/disk4");
         assert_eq!(frame.devices[0].read_time_ns, Some(9_000_000));
         assert_eq!(frame.devices[0].writes, None);
+    }
+    #[test]
+    fn physical_inventory_excludes_virtual_storage_backing_layers() {
+        let frame = CounterFrame {
+            devices: ["disk0", "disk4"]
+                .into_iter()
+                .map(|id| DeviceCounters {
+                    device_id: format!("/dev/{id}"),
+                    identity: format!("iokit:{id}"),
+                    read_bytes: 100,
+                    ..Default::default()
+                })
+                .collect(),
+            observation: Observation::available("fixture"),
+        };
+        let physical = retain_physical_counters(frame, &["disk0".into()]);
+        assert_eq!(physical.devices.len(), 1);
+        assert_eq!(physical.devices[0].device_id, "/dev/disk0");
     }
 }
