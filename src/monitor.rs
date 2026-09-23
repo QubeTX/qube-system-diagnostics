@@ -238,7 +238,7 @@ impl Monitor {
                             captured_unix_ms: update.captured,
                             interval_ms: update.interval.as_millis() as u64,
                             expected_interval_ms: update.expected.as_millis() as u64,
-                            observation: if lane == Lane::Fast && (update.sequence == 1 || update.interval > Duration::from_secs(10)) {
+                            observation: if lane == Lane::Fast && (update.interval.is_zero() || update.interval > Duration::from_secs(10)) {
                                 Observation::unavailable(
                                     lane.name(),
                                     "Waiting for a second CPU counter sample after startup or resume",
@@ -278,7 +278,6 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
     let mut topology: Option<Vec<String>> = None;
     let mut previous_wall: Option<u64> = None;
     let mut snapshot = SystemSnapshot::default();
-    let mut activity = collectors::disk_activity::DiskSampler::default();
     let mut session = collectors::probe::Session::default();
     let mut next = Instant::now();
     let mut previous = None;
@@ -311,19 +310,18 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
         previous_wall = Some(wall);
         if resumed {
             snapshot.invalidate_rate_baselines();
+            previous = None;
             shared.topology_changed();
         }
         let result = catch_unwind(AssertUnwindSafe(|| {
             if lane != Lane::Fast {
                 return session.collect(lane.topic(), &shared.stop, requested).map(
-                    |(data, captured)| {
+                    |(data, captured, interval)| {
                         let data = match data {
-                            ProbeData::Activity(frame) => {
-                                Data::Activity(activity.sample(frame, Instant::now()))
-                            }
+                            ProbeData::Activity(data) => Data::Activity(data),
                             data => Data::Probe(Box::new(data)),
                         };
-                        (data, captured)
+                        (data, captured, interval)
                     },
                 );
             }
@@ -345,6 +343,11 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
             } else {
                 snapshot.refresh_overview();
             }
+            let captured = Instant::now();
+            let interval = previous
+                .replace(captured)
+                .map(|last| captured.saturating_duration_since(last))
+                .unwrap_or_default();
             Ok((
                 Data::Fast(Box::new(FastData {
                     cpu: snapshot.cpu.clone(),
@@ -353,6 +356,7 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
                     processes: (full || processes).then(|| snapshot.processes.clone()),
                 })),
                 collectors::sampling::unix_ms(),
+                interval,
             ))
         }))
         .unwrap_or_else(|_| {
@@ -361,7 +365,7 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
                 lane.name()
             ))
         });
-        if let Ok((data, _)) = &result {
+        if let Ok((data, _, _)) = &result {
             let current = match data {
                 Data::Activity(activity) if activity.observation.is_available() => Some(
                     activity
@@ -386,21 +390,24 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
                 topology = Some(current);
             }
         }
-        let captured = result.as_ref().map(|(_, captured)| *captured).unwrap_or(0);
+        let captured = result
+            .as_ref()
+            .map(|(_, captured, _)| *captured)
+            .unwrap_or(0);
+        let interval = result
+            .as_ref()
+            .map(|(_, _, interval)| *interval)
+            .unwrap_or_default();
         if result.is_ok() {
             failures = 0;
             sequence = sequence.saturating_add(1);
         } else {
             failures = failures.saturating_add(1);
         }
-        let interval = previous
-            .map(|last| now.saturating_duration_since(last))
-            .unwrap_or_default();
-        previous = Some(now);
         *shared.slots[lane as usize]
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(Update {
-            result: result.map(|(data, _)| data),
+            result: result.map(|(data, _, _)| data),
             captured,
             interval,
             expected,

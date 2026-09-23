@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: capture-clock correction passes 185 library tests (four child fixtures), the live persistent-worker protocol, 15 engine tests and root clippy. Deterministic fixtures cover irregular capture intervals, unchanged rates through serialization, suspend-excluding monotonic clocks, worker replacement and explicit retry warmup. The worker now computes disk rates before IPC; fast-topic intervals use completed captures. Next: native protocol oracle, remaining connection-provider cost and failure semantics.
+
 - 2026-09-23 — codex: ebf36c5 native CI 35846994223 dispatched. Retiring static/driver/health workers reduces the same 30-second Windows measurement peak from 219 to 159.5 MiB (max live processes 21 to 16); CPU remains 4.82 percent and no gate is waived. Eight CLI contracts and persistent worker/cancellation test pass. Next: profile remaining fast/command costs and correct worker capture intervals rather than treating delivery time as measurement time.
 
 - 2026-09-23 — codex: ddbe0eb repeated Windows ConPTY release measurements confirm CPU 7.52/8.08 percent of one core and summed RSS 189/185 MiB; baseline f83ae42 is 3.74 percent and 53 MiB. Process-specific PSS resume candidate reduces CPU to 4.35 percent, with five helper tests and clippy passing; memory still fails (219 MiB sampled peak including transient helpers). No observers or builds overlapped. Next hypothesis: retire idle inventory/health workers without changing collection cadence. Exact hashes and measurement method are retained under docs/qualification/v4. No gate waived.

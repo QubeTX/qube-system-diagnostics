@@ -32,7 +32,6 @@ up its owned job. No installation, speed test, repair or elevated read is reques
 | ddbe0eb, first run | 7.52% | 189.2 MiB | CPU and memory fail |
 | ddbe0eb, unchanged repeat | 8.08% | 184.9 MiB | Regression confirmed |
 | ddbe0eb + PSS-only product change | 4.35% | 219.1 MiB | Startup CPU improves; both gates remain open |
-
 | ebf36c5 + idle worker retirement | 4.82% | 159.5 MiB | Idle memory improves; both gates remain open |
 
 The last candidate's exact binary is identified in its JSON; the source change

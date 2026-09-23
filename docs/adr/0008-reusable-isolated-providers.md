@@ -42,3 +42,13 @@ Retire static inventory, drivers and SMART/reliability workers after each respon
 the parent retains their samples for the unchanged five-minute/one-minute cadence.
 These topics do not need a child-local numeric baseline between requests. Native
 checks remain isolated and cancellation still joins owned workers before unloading.
+
+## Capture clocks, 2026-09-23
+
+Disk baselines belong to the persistent activity worker, and rates are computed
+at native counter capture before serialization. The envelope carries the actual
+capture timestamp and monotonic interval. Parent IPC delivery latency cannot
+alter a measurement denominator. Worker replacement and explicit retry start
+with unavailable rates. Wall-clock discontinuities invalidate disk baselines on
+platforms whose monotonic clock excludes suspend, but wall time never divides
+counter deltas. Fast samples likewise record capture-to-capture intervals.

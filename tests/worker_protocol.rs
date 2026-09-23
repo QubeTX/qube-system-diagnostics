@@ -11,7 +11,7 @@ fn collector_session_reuses_one_process_then_cancels_cleanly() {
     )
     .unwrap();
     let pid = worker.process_id();
-    for reset in [false, false, true] {
+    for (index, reset) in [false, false, true].into_iter().enumerate() {
         let output = worker
             .request(reset, Duration::from_secs(10), &AtomicBool::new(false))
             .unwrap();
@@ -19,6 +19,13 @@ fn collector_session_reuses_one_process_then_cancels_cleanly() {
         assert_eq!(value["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(value["data"]["topic"], "activity");
         assert!(value["captured_unix_ms"].as_u64().unwrap() > 0);
+        assert!(value["interval_ms"].is_u64());
+        if index == 0 || reset {
+            assert_eq!(value["interval_ms"], 0);
+            for device in value["data"]["data"]["devices"].as_array().unwrap() {
+                assert!(device["read_bytes_per_sec"].is_null());
+            }
+        }
         assert_eq!(worker.process_id(), pid);
     }
     assert!(matches!(

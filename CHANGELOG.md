@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Compute disk activity deltas inside the isolated worker using its monotonic capture clock. Carry capture intervals across IPC, reset baselines on worker replacement/retry/resume, and record fast samples from completed captures rather than scheduled starts.
+
 - Retire isolated static, driver and health workers after each infrequent probe while retaining results and existing refresh/retry cadence in the parent session.
 
 - Resume suspended Windows helpers through a process-specific PSS thread snapshot, retaining owned-job cancellation and a Toolhelp fallback. Add a real ConPTY process-tree benchmark that includes terminated-child CPU costs.

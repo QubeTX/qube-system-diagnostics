@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Disk speeds stay accurate when a background response arrives late. Restarting a check or waking the computer shows a brief warmup instead of an artificial spike, and sample timing follows the actual readings.
+
 - Background inventory and storage-health checks release their helper processes between readings, reducing idle memory without slowing updates.
 
 - Windows background checks spend less time starting helper programs. Behind the scenes, performance measurements now include the whole monitoring process family, including helpers that have already exited.
