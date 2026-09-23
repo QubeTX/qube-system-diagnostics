@@ -450,7 +450,7 @@ pub fn capabilities_for(snapshot: &SystemSnapshot) -> Vec<CapabilityRecord> {
             "network.connectivity",
             available_or(
                 !snapshot.network_diag.internet.target.is_empty(),
-                "ping and DNS",
+                "platform ICMP, TCP fallback and DNS",
                 "Connectivity checks did not run",
             ),
         ),

@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Windows connection checks use the operating system's actual route and ping reply, with fewer background program launches. Readings below the provider's timing precision remain unavailable, and blocked pings still do not prove the internet is down.
+
 - Device checks report what the operating system actually detected. A missing keyboard query, unplugged cable or optional service no longer becomes an invented healthy or failed device. Both views explain limited access and distinguish services that are running, idle, absent or unreadable.
 
 - Failed network and installation checks explain whether a helper was missing, denied access, took too long or returned unusable text. Behind the scenes, callers receive distinct failures instead of an ambiguous empty result.

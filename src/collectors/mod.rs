@@ -30,6 +30,8 @@ pub mod thermals;
 #[cfg(windows)]
 mod windows_connections;
 #[cfg(windows)]
+mod windows_connectivity;
+#[cfg(windows)]
 mod windows_network;
 
 use serde::Serialize;

@@ -66,6 +66,18 @@ retains that result; further changes must target a measured remaining cost.
 
 ## Native terminal interaction
 
+Windows lightweight connectivity uses [IcmpSendEcho](https://learn.microsoft.com/en-us/windows/win32/api/icmpapi/nf-icmpapi-icmpsendecho)
+inside the owned diagnostic worker. It supplies a three-second native timeout,
+checks the reply's IP status and address, and reads only the common address/status/RTT
+prefix of the documented reply layouts. The fixed aligned reply buffer includes
+the required payload and error-message margin. [Reply RTT is in milliseconds](https://learn.microsoft.com/en-us/windows/win32/api/ipexport/ns-ipexport-icmp_echo_reply);
+a reported zero stays below-resolution/unavailable rather than claiming exact zero.
+[GetBestRoute](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getbestroute)
+selects the route to the lightweight IPv4 probe target; a direct route without a
+next hop does not invent a gateway. Native loopback tests validate the API call,
+while fixtures cover unreachable/TTL/timeout statuses and mismatched reply addresses.
+These tests do not establish end-to-end internet health or sub-millisecond accuracy.
+
 `scripts/qualify-tui-native.py` runs `qualify-tui-pty.py` sequentially in Unicode
 and ASCII/no-color modes, followed by the release `profile-monitor` example.
 Dependencies are pinned in CI; musl runs inside the native Alpine build container.

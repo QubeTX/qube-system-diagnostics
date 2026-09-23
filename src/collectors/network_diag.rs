@@ -3,7 +3,11 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-use super::command::{run_output, run_stdout, CommandError, CommandTimeout};
+use super::command::CommandError;
+#[cfg(any(test, not(windows)))]
+use super::command::CommandTimeout;
+#[cfg(not(windows))]
+use super::command::{run_output, run_stdout};
 use super::DiagnosticWarning;
 use crate::observation::Observation;
 
@@ -24,6 +28,10 @@ pub struct ConnectivityResult {
     pub latency_ms: Option<f64>,
     pub target: String,
     pub error: Option<String>,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub latency_resolution_ms: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
@@ -128,6 +136,8 @@ pub fn collect_connectivity() -> (NetworkDiagData, Vec<DiagnosticWarning>) {
                 Err(error) => format!("Default gateway query: {error}"),
                 _ => "No default gateway was reported by the routing provider".into(),
             }),
+            source: "OS route query".into(),
+            latency_resolution_ms: None,
         },
     };
 
@@ -147,6 +157,8 @@ pub fn collect_connectivity() -> (NetworkDiagData, Vec<DiagnosticWarning>) {
             data.internet.latency_ms = None;
             data.internet.target = "1.1.1.1:443 (TCP fallback)".into();
             data.internet.error = None;
+            data.internet.source = "TCP connect_timeout; reachability only".into();
+            data.internet.latency_resolution_ms = None;
         } else {
             data.internet.error = Some("No ICMP or TCP response from the probe target; filtering or target failure may also cause this".into());
         }
@@ -172,7 +184,7 @@ pub fn refresh_connections(data: &mut NetworkDiagData) {
 fn detect_gateway() -> Result<Option<String>, CommandError> {
     #[cfg(windows)]
     {
-        detect_gateway_windows()
+        super::windows_connectivity::gateway()
     }
     #[cfg(target_os = "linux")]
     {
@@ -188,13 +200,7 @@ fn detect_gateway() -> Result<Option<String>, CommandError> {
     }
 }
 
-#[cfg(windows)]
-fn detect_gateway_windows() -> Result<Option<String>, CommandError> {
-    let stdout = run_stdout("route", ["print", "0.0.0.0"], CommandTimeout::Normal)?;
-    Ok(parse_windows_gateway(&stdout))
-}
-
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(test)]
 fn parse_windows_gateway(stdout: &str) -> Option<String> {
     for line in stdout.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -246,6 +252,12 @@ fn parse_macos_gateway(stdout: &str) -> Option<String> {
 
 // --- Ping ---
 
+#[cfg(windows)]
+fn ping_host(host: &str) -> ConnectivityResult {
+    super::windows_connectivity::ping(host)
+}
+
+#[cfg(not(windows))]
 fn ping_host(host: &str) -> ConnectivityResult {
     let result = run_output(
         "ping",
@@ -260,6 +272,8 @@ fn ping_host(host: &str) -> ConnectivityResult {
                 reachable: output.status.success(),
                 latency_ms: if output.status.success() { rtt } else { None },
                 target: host.into(),
+                source: format!("{} ping ICMP reply", std::env::consts::OS),
+                latency_resolution_ms: None,
                 error: if !output.status.success() {
                     Some("No ICMP reply; the target or network may filter ICMP".into())
                 } else if rtt.is_none() {
@@ -274,10 +288,13 @@ fn ping_host(host: &str) -> ConnectivityResult {
             latency_ms: None,
             target: host.into(),
             error: Some(format!("ICMP provider: {error}")),
+            source: format!("{} ping ICMP reply", std::env::consts::OS),
+            latency_resolution_ms: None,
         },
     }
 }
 
+#[cfg(any(test, not(windows)))]
 fn ping_args<'a>(os: &str, host: &'a str) -> Vec<&'a str> {
     match os {
         "windows" => vec!["-n", "1", "-w", "3000", host],
@@ -288,6 +305,7 @@ fn ping_args<'a>(os: &str, host: &'a str) -> Vec<&'a str> {
 
 /// Read reply RTT, never subprocess duration or summary extrema. A reported
 /// upper bound (time<1ms) is not an exact measurement and remains unavailable.
+#[cfg(any(test, not(windows)))]
 fn parse_ping_rtt(output: &str) -> Option<f64> {
     output.lines().find_map(|line| {
         let lower = line.to_lowercase();

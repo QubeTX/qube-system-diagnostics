@@ -578,11 +578,13 @@ pub const Projection = struct {
     internet_latency_available: bool = false,
     gateway_target_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("Not reported"),
     gateway_error_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init(""),
+    gateway_source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("Not reported"),
     dns_domain_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("Not reported"),
     dns_result_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("Not reported"),
     dns_error_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init(""),
     internet_target_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("Not reported"),
     internet_error_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init(""),
+    internet_source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("Not reported"),
     driver_total_count: u32 = 0,
     driver_attention_count: u32 = 0,
     driver_scan_buffer: canvas.TextBuffer(96) = canvas.TextBuffer(96).init("not scanned"),
@@ -874,6 +876,8 @@ pub const Projection = struct {
     pub fn services(self: *const Projection) []const ServiceRow {
         return self.service_rows[0..self.service_count];
     }
+    pub fn gatewaySource(self: *const Projection) []const u8 { return self.gateway_source_buffer.text(); }
+    pub fn internetSource(self: *const Projection) []const u8 { return self.internet_source_buffer.text(); }
     pub fn driverObservations(self: *const Projection) []const DriverObservationRow {
         return self.driver_observation_rows[0..self.driver_observation_count];
     }
@@ -1336,6 +1340,7 @@ pub const Projection = struct {
         self.gateway_latency_available = data.gateway.latency_ms != null;
         self.gateway_target_buffer.set(data.gateway.target);
         self.gateway_error_buffer.set(data.gateway.@"error" orelse "");
+        self.gateway_source_buffer.set(data.gateway.source);
         self.dns_resolved = data.dns.resolved;
         self.dns_latency_ms = data.dns.resolution_ms orelse 0;
         self.dns_latency_available = data.dns.resolution_ms != null;
@@ -1347,6 +1352,7 @@ pub const Projection = struct {
         self.internet_latency_available = data.internet.latency_ms != null;
         self.internet_target_buffer.set(data.internet.target);
         self.internet_error_buffer.set(data.internet.@"error" orelse "");
+        self.internet_source_buffer.set(data.internet.source);
     }
 
     pub fn applyHealthJson(self: *Projection, allocator: std.mem.Allocator, bytes: []const u8) !void {
@@ -1755,6 +1761,7 @@ const MediumJson = struct {
     listening_ports: []const ConnectionJson = &.{},
 };
 const ConnectivityJson = struct {
+    source: []const u8 = "Provider not reported",
     reachable: bool = false,
     latency_ms: ?f64 = null,
     target: []const u8 = "Not reported",
