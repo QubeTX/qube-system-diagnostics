@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: responsiveness tests now explain which interaction was delayed without retaining private device or process names. This helps distinguish a slow response from a problem in the test's timing records.
+
 - Installer checks also accept application folders containing spaces, so verifying the installed app does not undo an otherwise valid installation.
 
 - Linux launcher checks now cover each special character separately, including percent signs, so unusual installation folders do not silently lose their application-menu entry.

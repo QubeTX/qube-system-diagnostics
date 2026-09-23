@@ -23,6 +23,27 @@ import time
 import psutil
 
 
+def numeric_observation(snapshot):
+    """Keep timing and control identity, never device/process/accessibility text."""
+    fields = ("runtime_uptime_ns", "gpu_frame", "gpu_timestamp_ns",
+              "gpu_input_timestamp_ns", "gpu_input_latency_ns",
+              "input_latency_n", "frame_work_n", "present_n")
+    result = {}
+    for key in fields:
+        match = re.search(r"\b" + key + r"=(\d+)", snapshot)
+        if match:
+            result[key] = int(match[1])
+    # Use a fixed role vocabulary, since arbitrary strings must not enter the
+    # retained diagnostic report even if a provider gives a widget private text.
+    roles = {"button", "listitem", "textbox", "checkbox", "radio", "slider",
+             "combobox", "table", "row", "cell", "link", "tab", "switch"}
+    result["focus"] = [{"id": int(identity), "role": role if role in roles else "other"}
+        for identity, role in re.findall(
+            r"^\s*widget @w1/main-canvas#(\d+) role=(\w+)[^\n]*\bfocused=true\b",
+            snapshot, re.MULTILINE)][:16]
+    return result
+
+
 def windows_helper():
     spec = importlib.util.spec_from_file_location("gui_measure", Path(__file__).with_name("measure-gui-windows.py"))
     module = importlib.util.module_from_spec(spec)
@@ -39,6 +60,8 @@ class Session:
         self.process = self.job = None
         self.closed = False
         self.sequence = 0
+        self.input_trace = []
+        self.cohort = {}
         self.win = windows_helper() if sys.platform == "win32" else None
 
     def start(self):
@@ -130,6 +153,7 @@ class Session:
 
     def input_command(self, command):
         state = self.command("profile on")
+        before = numeric_observation(state)
         previous = re.search(r"\binput_latency_n=(\d+)", state)
         prior = int(previous[1]) if previous else 0
         state = self.command(command)
@@ -139,6 +163,11 @@ class Session:
                 raise RuntimeError("Input did not reach a responding present")
             time.sleep(.02)
             state = self.command("profile on")
+        if len(self.input_trace) >= 256:
+            raise RuntimeError("Input diagnostic trace exceeds its bound")
+        self.input_trace.append({"sequence": len(self.input_trace) + 1,
+            **self.cohort, "kind": "keyboard" if command.startswith("widget-key ") else "click",
+            "before": before, "after": numeric_observation(state)})
         return state
 
     def profile(self):
@@ -216,9 +245,11 @@ def main():
             for width, height in ((1180, 760), (950, 760)):
                 session.command(f"resize {width} {height}")
                 for mode in ("User mode", "Technician mode"):
+                    session.cohort = {"width": width, "height": height, "mode": mode, "phase": "mode"}
                     if mode not in session.snapshot():
                         session.click("Technician mode" if mode == "User mode" else "User mode")
                     session.profile()
+                    session.cohort["phase"] = "navigation"
                     for _ in range(2):
                         for name in ("CPU", "Memory", "Disk", "GPU", "Network", "Processes", "Thermals", "Drivers", "Settings", "Overview"):
                             session.click(name)
@@ -226,6 +257,7 @@ def main():
                     report["cohorts"].append({"kind": "navigation", "width": width, "height": height, "mode": mode, **data})
                     session.click("Processes")
                     session.profile()
+                    session.cohort["phase"] = "keyboard"
                     # Focus traversal exercises repeated keyboard input without
                     # invoking optional diagnostics, exports, repairs or setup.
                     for _ in range(20):
@@ -249,6 +281,7 @@ def main():
     finally:
         try:
             if session:
+                report["input_trace"] = session.input_trace
                 session.close()
                 report["clean_shutdown"] = session.closed
         finally:

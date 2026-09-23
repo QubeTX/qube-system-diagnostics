@@ -76,6 +76,7 @@ if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
   /tmp/sd300-qualification-python/bin/python scripts/test-measure-tui-unix.py
   /tmp/sd300-qualification-python/bin/python scripts/test-resource-metrics.py
   /tmp/sd300-qualification-python/bin/python scripts/test-resource-baseline.py
+  /tmp/sd300-qualification-python/bin/python scripts/test-gui-interaction-report.py
 fi
 npm_cache=${RUNNER_TEMP:-/tmp}/sd300-native-npm-cache
 rm -rf "$repo_root/gui/node_modules" "$npm_cache"
