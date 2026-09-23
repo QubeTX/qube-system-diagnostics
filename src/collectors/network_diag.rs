@@ -133,8 +133,21 @@ pub fn collect_connectivity() -> (NetworkDiagData, Vec<DiagnosticWarning>) {
     data.dns = test_dns("www.google.com");
 
     // Internet ping
-    data.internet = ping_host("8.8.8.8");
-    data.internet.target = "8.8.8.8".into();
+    data.internet = ping_host("1.1.1.1");
+    // ICMP is commonly filtered independently of ordinary internet access.
+    // A successful TCP connection proves reachability, not an ICMP RTT.
+    if !data.internet.reachable {
+        let address = std::net::SocketAddr::from(([1, 1, 1, 1], 443));
+        if std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_secs(2)).is_ok()
+        {
+            data.internet.reachable = true;
+            data.internet.latency_ms = None;
+            data.internet.target = "1.1.1.1:443 (TCP fallback)".into();
+            data.internet.error = None;
+        } else {
+            data.internet.error = Some("No ICMP or TCP response from the probe target; filtering or target failure may also cause this".into());
+        }
+    }
 
     (data, warnings)
 }
@@ -230,31 +243,23 @@ fn parse_macos_gateway(stdout: &str) -> Option<String> {
 // --- Ping ---
 
 fn ping_host(host: &str) -> ConnectivityResult {
-    let start = Instant::now();
-
-    #[cfg(windows)]
     let result = run_output(
         "ping",
-        ["-n", "1", "-w", "3000", host],
+        ping_args(std::env::consts::OS, host),
         CommandTimeout::Slow,
     );
 
-    #[cfg(not(windows))]
-    let result = run_output("ping", ["-c", "1", "-W", "3", host], CommandTimeout::Slow);
-
     match result {
         Some(output) => {
-            let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+            let rtt = parse_ping_rtt(&String::from_utf8_lossy(&output.stdout));
             ConnectivityResult {
                 reachable: output.status.success(),
-                latency_ms: if output.status.success() {
-                    Some(elapsed)
-                } else {
-                    None
-                },
+                latency_ms: if output.status.success() { rtt } else { None },
                 target: host.into(),
                 error: if !output.status.success() {
-                    Some("Host unreachable".into())
+                    Some("No ICMP reply; the target or network may filter ICMP".into())
+                } else if rtt.is_none() {
+                    Some("ICMP replied; exact round-trip time was unavailable or below the provider resolution".into())
                 } else {
                     None
                 },
@@ -269,6 +274,39 @@ fn ping_host(host: &str) -> ConnectivityResult {
     }
 }
 
+fn ping_args<'a>(os: &str, host: &'a str) -> Vec<&'a str> {
+    match os {
+        "windows" => vec!["-n", "1", "-w", "3000", host],
+        "macos" => vec!["-n", "-c", "1", "-W", "3000", host],
+        _ => vec!["-n", "-c", "1", "-W", "3", host],
+    }
+}
+
+/// Read reply RTT, never subprocess duration or summary extrema. A reported
+/// upper bound (time<1ms) is not an exact measurement and remains unavailable.
+fn parse_ping_rtt(output: &str) -> Option<f64> {
+    output.lines().find_map(|line| {
+        let lower = line.to_lowercase();
+        ["time=", "temps=", "zeit=", "tiempo=", "tempo="]
+            .iter()
+            .find_map(|marker| {
+                let start = lower.find(marker)? + marker.len();
+                let rest = lower[start..].trim_start();
+                let end = rest
+                    .find(|c: char| !c.is_ascii_digit() && c != '.' && c != ',')
+                    .unwrap_or(rest.len());
+                if !rest[end..].trim_start().starts_with("ms") {
+                    return None;
+                }
+                rest[..end]
+                    .replace(',', ".")
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|value| value.is_finite() && *value >= 0.0)
+            })
+    })
+}
+
 // --- DNS test ---
 
 fn test_dns(domain: &str) -> DnsResult {
@@ -280,7 +318,7 @@ fn test_dns(domain: &str) -> DnsResult {
             let elapsed = start.elapsed().as_secs_f64() * 1000.0;
             let ip = addrs.next().map(|a| a.ip().to_string());
             DnsResult {
-                resolved: true,
+                resolved: ip.is_some(),
                 resolution_ms: Some(elapsed),
                 domain: domain.into(),
                 resolved_ip: ip,
@@ -535,6 +573,41 @@ fn parse_addr_port_unix(addr_str: &str) -> (String, u16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reply_rtt_is_not_process_runtime_or_summary() {
+        assert_eq!(
+            parse_ping_rtt("64 bytes from 1.1.1.1: icmp_seq=1 ttl=58 time=12.34 ms"),
+            Some(12.34)
+        );
+        assert_eq!(
+            parse_ping_rtt("Reply from 1.1.1.1: bytes=32 time=14ms TTL=58"),
+            Some(14.0)
+        );
+        assert_eq!(
+            parse_ping_rtt("Antwort: Bytes=32 Zeit=1,25ms TTL=58"),
+            Some(1.25)
+        );
+        assert_eq!(parse_ping_rtt("Reply: bytes=32 time<1ms TTL=58"), None);
+        assert_eq!(parse_ping_rtt("Minimum = 0ms, Maximum = 10ms"), None);
+        assert_eq!(parse_ping_rtt("time=NaN ms"), None);
+    }
+
+    #[test]
+    fn ping_timeout_units_match_each_operating_system() {
+        assert_eq!(
+            ping_args("macos", "host"),
+            ["-n", "-c", "1", "-W", "3000", "host"]
+        );
+        assert_eq!(
+            ping_args("linux", "host"),
+            ["-n", "-c", "1", "-W", "3", "host"]
+        );
+        assert_eq!(
+            ping_args("windows", "host"),
+            ["-n", "1", "-w", "3000", "host"]
+        );
+    }
 
     #[test]
     fn parses_linux_default_gateway_fixture() {

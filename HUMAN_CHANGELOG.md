@@ -8,6 +8,12 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+**Fixed**
+
+- Network traffic readings account for the time between measurements, and connection checks report the reply time rather than the time taken to start a helper.
+- Process sorting can find memory-heavy applications even when they are using little processor time.
+- A stuck or excessively noisy helper can no longer leave output-reader threads waiting indefinitely. Filtered connection checks no longer automatically label the internet offline.
+
 **Behind the scenes**
 
 - Set up tracked work and verification for the monitoring improvements. The complete update will ship together after testing.

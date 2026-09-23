@@ -76,7 +76,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
         Line::from(vec![
-            Span::styled("  Quality        ", Style::default().fg(COLOR_TEXT)),
+            Span::styled("  Activity       ", Style::default().fg(COLOR_TEXT)),
             Span::styled(speed_desc.to_string(), Style::default().fg(COLOR_DIM)),
         ]),
         Line::from(""),
@@ -125,7 +125,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     let inet_status = if diag.internet.reachable {
         HealthStatus::Good
     } else {
-        HealthStatus::Critical
+        HealthStatus::Warning
     };
     let inet_desc = if diag.internet.reachable {
         format!(
@@ -136,7 +136,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
                 .unwrap_or_else(|| "N/A".into())
         )
     } else {
-        "Offline".into()
+        "Probe inconclusive; see diagnostic details".into()
     };
     lines.push(status_line(&inet_status, "Internet", &inet_desc));
     if let Some(link_speed) = net

@@ -4,6 +4,12 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Normalize network counters by monotonic elapsed time and invalidate first/reset/resume samples; retain the full process inventory before frontend ranking.
+- Parse ICMP reply RTT instead of subprocess duration, correct macOS timeout units, and use a TCP reachability fallback without mislabelling it as ICMP latency.
+- Bound collector output and cancellation with owned Windows jobs/Unix process groups and file-backed capture, eliminating inherited-pipe EOF waits and unjoined reader threads.
+
 ### Development
 
 - Track the accepted v4 monitoring and qualification plan; refresh the task board bundle while preserving project identity and existing acceptance items.

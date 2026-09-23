@@ -1,10 +1,18 @@
 use serde::Serialize;
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 use sysinfo::Networks;
+
+use super::sampling::{CounterRate, SampleMeta};
 
 use crate::observation::Observation;
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct NetworkData {
+    #[serde(skip)]
+    pub sample: SampleMeta,
     pub interfaces: Vec<InterfaceInfo>,
     pub total_download_rate: u64,
     pub total_upload_rate: u64,
@@ -14,6 +22,8 @@ pub struct NetworkData {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct InterfaceInfo {
+    #[serde(skip)]
+    pub rate_status: Observation,
     pub name: String,
     pub ip_addresses: Vec<String>,
     pub mac_address: String,
@@ -35,48 +45,102 @@ pub struct NetworkAdapterInfo {
     pub hardware_interface: Option<bool>,
 }
 
-pub fn collect(networks: &mut Networks) -> NetworkData {
-    networks.refresh(true);
+#[derive(Debug, Default)]
+pub struct NetworkSampler {
+    counters: HashMap<(String, String), (CounterRate, CounterRate)>,
+    last_sample: Option<Instant>,
+    sample: SampleMeta,
+}
 
-    let interfaces: Vec<InterfaceInfo> = networks
-        .iter()
-        .map(|(name, data)| {
-            let operational_state = data.operational_state().to_string();
-            let normalized_state = operational_state.to_ascii_lowercase();
-            let is_up = matches!(
-                normalized_state.as_str(),
-                "up" | "unknown" | "dormant" | "lowerlayerdown"
-            );
+impl NetworkSampler {
+    pub fn collect(&mut self, networks: &mut Networks) -> NetworkData {
+        networks.refresh(true);
+        let now = Instant::now();
+        let interval = self
+            .last_sample
+            .replace(now)
+            .map(|last| now.duration_since(last))
+            .unwrap_or_default();
+        let present: std::collections::HashSet<_> = networks
+            .iter()
+            .map(|(name, data)| (name.clone(), data.mac_address().to_string()))
+            .collect();
+        self.counters.retain(|key, _| present.contains(key));
 
-            let ip_addresses: Vec<String> = data
-                .ip_networks()
+        let interfaces: Vec<InterfaceInfo> = networks
+            .iter()
+            .map(|(name, data)| {
+                let operational_state = data.operational_state().to_string();
+                let normalized_state = operational_state.to_ascii_lowercase();
+                let is_up = normalized_state == "up";
+                let counters = self
+                    .counters
+                    .entry((name.clone(), data.mac_address().to_string()))
+                    .or_default();
+                let down = counters
+                    .0
+                    .sample(data.total_received(), now, Duration::from_secs(10));
+                let up = counters
+                    .1
+                    .sample(data.total_transmitted(), now, Duration::from_secs(10));
+
+                let ip_addresses: Vec<String> = data
+                    .ip_networks()
+                    .iter()
+                    .map(|ip| ip.addr.to_string())
+                    .collect();
+
+                InterfaceInfo {
+                    rate_status: if down.is_some() && up.is_some() {
+                        Observation::available("interface counters / monotonic elapsed time")
+                    } else {
+                        Observation::unavailable(
+                            "interface counters",
+                            "Warming up after first sample, counter reset, or collection gap",
+                        )
+                    },
+                    name: name.clone(),
+                    ip_addresses,
+                    mac_address: data.mac_address().to_string(),
+                    received_bytes: data.total_received(),
+                    transmitted_bytes: data.total_transmitted(),
+                    download_rate: down.unwrap_or_default().round() as u64,
+                    upload_rate: up.unwrap_or_default().round() as u64,
+                    is_up,
+                    operational_state,
+                }
+            })
+            .collect();
+
+        let total_download_rate = interfaces
+            .iter()
+            .fold(0u64, |sum, iface| sum.saturating_add(iface.download_rate));
+        let total_upload_rate = interfaces
+            .iter()
+            .fold(0u64, |sum, iface| sum.saturating_add(iface.upload_rate));
+        let observation = if !interfaces.is_empty()
+            && interfaces
                 .iter()
-                .map(|ip| ip.addr.to_string())
-                .collect();
+                .all(|iface| iface.rate_status.is_available())
+        {
+            Observation::available("interface counters / monotonic elapsed time")
+        } else {
+            Observation::unavailable(
+                "interface counters",
+                "One or more interfaces are warming up or unavailable",
+            )
+        };
+        self.sample
+            .record(interval, Duration::from_secs(1), observation);
 
-            InterfaceInfo {
-                name: name.clone(),
-                ip_addresses,
-                mac_address: data.mac_address().to_string(),
-                received_bytes: data.total_received(),
-                transmitted_bytes: data.total_transmitted(),
-                download_rate: data.received(),
-                upload_rate: data.transmitted(),
-                is_up,
-                operational_state,
-            }
-        })
-        .collect();
-
-    let total_download_rate = interfaces.iter().map(|iface| iface.download_rate).sum();
-    let total_upload_rate = interfaces.iter().map(|iface| iface.upload_rate).sum();
-
-    NetworkData {
-        interfaces,
-        total_download_rate,
-        total_upload_rate,
-        adapters: Vec::new(),
-        adapter_status: Observation::default(),
+        NetworkData {
+            sample: self.sample.clone(),
+            interfaces,
+            total_download_rate,
+            total_upload_rate,
+            adapters: Vec::new(),
+            adapter_status: Observation::default(),
+        }
     }
 }
 

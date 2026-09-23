@@ -10,6 +10,7 @@ pub mod network;
 pub mod network_diag;
 pub mod platform;
 pub mod processes;
+pub mod sampling;
 pub mod system_info;
 pub mod thermals;
 
@@ -159,6 +160,7 @@ pub struct SystemSnapshot {
     /// Internal sysinfo handle
     sys: System,
     networks: Networks,
+    network_sampler: network::NetworkSampler,
     disks: Disks,
     components: Components,
     #[cfg(target_os = "windows")]
@@ -183,6 +185,7 @@ impl Default for SystemSnapshot {
             warnings: Vec::new(),
             sys: System::new_all(),
             networks: Networks::new_with_refreshed_list(),
+            network_sampler: network::NetworkSampler::default(),
             disks: Disks::new_with_refreshed_list(),
             components: Components::new_with_refreshed_list(),
             #[cfg(target_os = "windows")]
@@ -214,7 +217,7 @@ impl SystemSnapshot {
         self.memory.module_status = module_status;
         let adapters = std::mem::take(&mut self.network.adapters);
         let adapter_status = self.network.adapter_status.clone();
-        self.network = network::collect(&mut self.networks);
+        self.network = self.network_sampler.collect(&mut self.networks);
         self.network.adapters = adapters;
         self.network.adapter_status = adapter_status;
         self.processes = processes::collect(&self.sys);
@@ -246,7 +249,7 @@ impl SystemSnapshot {
         self.memory.module_status = module_status;
         let adapters = std::mem::take(&mut self.network.adapters);
         let adapter_status = self.network.adapter_status.clone();
-        self.network = network::collect(&mut self.networks);
+        self.network = self.network_sampler.collect(&mut self.networks);
         self.network.adapters = adapters;
         self.network.adapter_status = adapter_status;
     }

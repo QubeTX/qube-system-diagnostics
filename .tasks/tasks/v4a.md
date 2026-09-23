@@ -32,4 +32,5 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Implementation starting; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+- 2026-09-23 — codex: first measurement cycle passed 118 library tests, then 35 focused collector tests with bounded command execution (120 total discovered). Preserved pre-change release executable at target/v4-baseline/sd300.exe, SHA-256 42d0ca558626b2a20f96f770f3d7b1a8f4bbed904371ff2c5f025e324406bc51. Next oracle: full root/engine compatibility and hosted native platform compilation.
 - 2026-09-22 — codex: accepted implementation and single-release authorization; refreshed current main, created feature branch, upgraded the board bundle to installed 1.2.0 and verified its root-bound server.

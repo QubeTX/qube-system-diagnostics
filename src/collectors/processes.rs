@@ -135,8 +135,8 @@ pub fn collect(sys: &System) -> ProcessData {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Keep top 100 for display
-    processes.truncate(100);
+    // Preserve the complete inventory. Filtering and alternate sort keys must
+    // operate before a frontend applies its presentation bound.
 
     ProcessData {
         list: processes,
