@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Calculate Windows per-process CPU from process-time deltas over monotonic capture intervals, independent of monitor affinity and processor-group size. Reset unreadable/reused/rolled-back baselines and use the same aggregate CPU provider on GUI Processes as other pages. Add a native restricted-affinity comparison against GetProcessTimes.
+
 - Start redirected Windows collector helpers detached from consoles, retaining suspended-before-job ownership and bounded cancellation. Verify both file and memory output capture without console allocation; reduce transient processes and working sets without changing cadence.
 
 - Prefer a reusable read-only NVML session for NVIDIA telemetry on Windows and Linux, with bounded discovery backoff and the existing nvidia-smi fallback. Require versioned allocated-memory semantics, preserve individual permission/unsupported errors and PCI identity, and expose memory/temperature provenance in both frontends.

@@ -43,6 +43,11 @@ sampling instant overlaps a transient helper. Longer measurements must include
 the infrequent inventory/health lanes and preserve cadence and bounded shutdown. Accepted gates stay
 at 2% foreground CPU and 150 MiB working set; no waiver is implied.
 
+The 330-second cadence run of unchanged 538c538 bytes crosses health and inventory
+refreshes. Its summed working set peaks at 117.3 MiB, but average CPU is 2.65 percent
+and fails the gate. `candidate-detached-tui-cadence.json` retains this result.
+Short-run acceptance must not substitute for the longer foreground/soak windows.
+
 
 ## Endpoint inventory qualification
 
@@ -87,3 +92,20 @@ retained in nvml-windows-consistency.json with predeclared tolerances. They agre
 within one MiB and exactly in temperature. Both interfaces use the same driver;
 this establishes interface/units consistency on one GPU, not independent physical
 accuracy or proof for unavailable hardware. macOS retains its Metal provider.
+
+## Windows process CPU units
+
+[GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes)
+reports summed thread durations in 100-nanosecond units. Divide their delta by
+the monotonic interval of that process's captures, with 100 percent meaning one
+logical processor and multithreaded values allowed above 100. Do not rescale using
+the monitor's available parallelism: [GetSystemTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes)
+sums all processors on smaller hosts but only the calling thread's primary group
+above 64 processors, while affinity can independently restrict the monitor.
+
+Deterministic fixtures cover irregular intervals, counter rollback, PID reuse,
+first readings, long gaps, real zero and multithreaded work. A child-only native
+fixture restricts its own affinity, performs a bounded workload, and compares the
+batched sampler with a separate GetProcessTimes bracket. The predeclared absolute
+tolerance is ten percentage points for clock quantization and the surrounding
+inventory calls. This verifies API/unit consistency, not hardware instrumentation.

@@ -3,13 +3,14 @@ use std::{
     ffi::c_void,
     mem::{size_of, zeroed},
     ptr,
+    time::{Duration, Instant},
 };
 
 use winapi::{
     shared::minwindef::FILETIME,
     um::{
         handleapi::{CloseHandle, INVALID_HANDLE_VALUE},
-        processthreadsapi::{GetExitCodeProcess, GetProcessTimes, GetSystemTimes, OpenProcess},
+        processthreadsapi::{GetExitCodeProcess, GetProcessTimes, OpenProcess},
         psapi::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
         tlhelp32::{
             CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
@@ -31,19 +32,7 @@ use super::{
 struct ProcessTimes {
     creation: u64,
     total: u64,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct SystemCpuTimes {
-    total: u64,
-    idle: u64,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PendingSystemCpuSample {
-    current: SystemCpuTimes,
-    global_delta: u64,
-    total_cpu_percent: f32,
+    captured: Instant,
 }
 
 #[derive(Debug)]
@@ -81,8 +70,6 @@ impl Drop for ProcessHandle {
 pub struct GuiProcessSampler {
     handles: HashMap<u32, ProcessHandle>,
     previous_process_times: HashMap<u32, ProcessTimes>,
-    previous_system_times: Option<SystemCpuTimes>,
-    total_cpu_percent: f32,
     process_buffer: Vec<u8>,
     batched_rows: Vec<BatchedProcessRow>,
     ranked_rows: Vec<RankedBatchedRow>,
@@ -90,10 +77,6 @@ pub struct GuiProcessSampler {
 }
 
 impl GuiProcessSampler {
-    pub fn total_cpu_percent(&self) -> f32 {
-        self.total_cpu_percent
-    }
-
     pub fn collect(
         &mut self,
         total_memory: u64,
@@ -114,19 +97,10 @@ impl GuiProcessSampler {
         limit: usize,
         sort: ProcessSortKey,
     ) -> Option<ProcessData> {
-        let system_times = system_cpu_times()?;
-        let pending_cpu = pending_system_cpu_sample(self.previous_system_times, system_times);
-        let logical_cpus = std::thread::available_parallelism()
-            .map(|count| count.get() as f32)
-            .unwrap_or(1.0);
-
         let valid_len = query_system_processes(&mut self.process_buffer, &mut self.batched_rows)?;
-        // Commit the system-time baseline only after the batched process query
-        // succeeds. If it fails, collect_toolhelp() must compare against the
-        // last complete sample; advancing here first would leave it with a
-        // near-zero denominator and could manufacture a one-frame CPU spike.
-        self.commit_system_cpu_sample(pending_cpu);
-        let global_delta = pending_cpu.global_delta;
+        // Capture after a successful kernel snapshot, before decoding/ranking.
+        // A failed batch must not advance any fallback process baseline.
+        let captured = Instant::now();
         let process_buffer = &self.process_buffer[..valid_len];
         let total_count = self.batched_rows.len();
         let total_threads = self
@@ -141,34 +115,16 @@ impl GuiProcessSampler {
             let current = ProcessTimes {
                 creation: row.creation,
                 total: row.total_time,
+                captured,
             };
-            let cpu_available = self
-                .previous_process_times
-                .get(&row.pid)
-                .is_some_and(|old| {
-                    old.creation == current.creation
-                        && old.total <= current.total
-                        && global_delta > 0
-                });
-            let cpu_percent = self
-                .previous_process_times
-                .get(&row.pid)
-                .map(|previous| {
-                    if previous.creation != current.creation || global_delta == 0 {
-                        0.0
-                    } else {
-                        100.0 * current.total.saturating_sub(previous.total) as f32
-                            / global_delta as f32
-                            * logical_cpus
-                    }
-                })
-                .unwrap_or(0.0);
+            let measured_cpu =
+                process_cpu_percent(self.previous_process_times.get(&row.pid), current);
             self.previous_process_times.insert(row.pid, current);
             if is_ranked_consumer(row.pid) {
                 self.ranked_rows.push(RankedBatchedRow {
                     row,
-                    cpu_percent,
-                    cpu_available,
+                    cpu_percent: measured_cpu.unwrap_or(0.0),
+                    cpu_available: measured_cpu.is_some(),
                     name: None,
                     friendly_name: None,
                 });
@@ -228,14 +184,6 @@ impl GuiProcessSampler {
         limit: usize,
         sort: ProcessSortKey,
     ) -> ProcessData {
-        let Some(system_times) = system_cpu_times() else {
-            return ProcessData::default();
-        };
-        let pending_cpu = pending_system_cpu_sample(self.previous_system_times, system_times);
-        let logical_cpus = std::thread::available_parallelism()
-            .map(|count| count.get() as f32)
-            .unwrap_or(1.0);
-
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
         if snapshot == INVALID_HANDLE_VALUE {
             return ProcessData::default();
@@ -246,8 +194,6 @@ impl GuiProcessSampler {
         if unsafe { Process32FirstW(snapshot.raw(), &mut entry) } == 0 {
             return ProcessData::default();
         }
-        self.commit_system_cpu_sample(pending_cpu);
-        let global_delta = pending_cpu.global_delta;
 
         let mut seen = HashSet::new();
         let mut rows = Vec::new();
@@ -271,32 +217,17 @@ impl GuiProcessSampler {
                     .entry(pid)
                     .or_insert_with(|| ProcessHandle::open(pid).unwrap_or(ProcessHandle(0)));
                 let current = process_times(handle);
-                let cpu_available = current.is_some_and(|current| {
-                    self.previous_process_times.get(&pid).is_some_and(|old| {
-                        old.creation == current.creation
-                            && old.total <= current.total
-                            && global_delta > 0
-                    })
+                let measured_cpu = current.and_then(|current| {
+                    process_cpu_percent(self.previous_process_times.get(&pid), current)
                 });
-                let cpu_percent = current
-                    .and_then(|current| {
-                        self.previous_process_times.get(&pid).map(|previous| {
-                            if previous.creation != current.creation || global_delta == 0 {
-                                0.0
-                            } else {
-                                100.0 * current.total.saturating_sub(previous.total) as f32
-                                    / global_delta as f32
-                                    * logical_cpus
-                            }
-                        })
-                    })
-                    .unwrap_or(0.0);
                 if let Some(current) = current {
                     self.previous_process_times.insert(pid, current);
+                } else {
+                    self.previous_process_times.remove(&pid);
                 }
                 rows.push(ProcessInfo {
                     start_time_unix_ms: current.and_then(|t| windows_creation_ms(t.creation)),
-                    cpu_observation: cpu_observation(cpu_available),
+                    cpu_observation: cpu_observation(measured_cpu.is_some()),
                     memory_observation: crate::observation::Observation::unavailable(
                         "Windows process memory",
                         "Not sampled",
@@ -304,7 +235,7 @@ impl GuiProcessSampler {
                     pid,
                     friendly_name: get_friendly_name(&name),
                     name,
-                    cpu_percent,
+                    cpu_percent: measured_cpu.unwrap_or(0.0),
                     memory_bytes: 0,
                     memory_percent: 0.0,
                     status: "Run".into(),
@@ -347,11 +278,6 @@ impl GuiProcessSampler {
             total_count,
             total_threads,
         }
-    }
-
-    fn commit_system_cpu_sample(&mut self, sample: PendingSystemCpuSample) {
-        self.total_cpu_percent = sample.total_cpu_percent;
-        self.previous_system_times = Some(sample.current);
     }
 }
 
@@ -646,42 +572,20 @@ fn filetime(value: FILETIME) -> u64 {
     ((value.dwHighDateTime as u64) << 32) | value.dwLowDateTime as u64
 }
 
-fn system_cpu_times() -> Option<SystemCpuTimes> {
-    let mut idle: FILETIME = unsafe { zeroed() };
-    let mut kernel: FILETIME = unsafe { zeroed() };
-    let mut user: FILETIME = unsafe { zeroed() };
-    (unsafe { GetSystemTimes(&mut idle, &mut kernel, &mut user) } != 0).then(|| SystemCpuTimes {
-        // GetSystemTimes reports idle time as a subset of kernel time.
-        // Kernel + user is therefore the aggregate elapsed processor time;
-        // subtracting the idle delta yields 0..100% total machine load.
-        total: filetime(kernel).saturating_add(filetime(user)),
-        idle: filetime(idle),
-    })
-}
-
-fn system_cpu_percent(previous: Option<SystemCpuTimes>, current: SystemCpuTimes) -> f32 {
-    let Some(previous) = previous else {
-        return 0.0;
-    };
-    let total_delta = current.total.saturating_sub(previous.total);
-    if total_delta == 0 {
-        return 0.0;
+// Kernel process durations are summed across all its threads in 100 ns units.
+// Dividing by monotonic elapsed time directly keeps 100% = one logical CPU,
+// regardless of this monitor's affinity, job quota, or processor group.
+fn process_cpu_percent(previous: Option<&ProcessTimes>, current: ProcessTimes) -> Option<f32> {
+    let previous = previous?;
+    if current.creation == 0 || previous.creation != current.creation {
+        return None;
     }
-    let idle_delta = current.idle.saturating_sub(previous.idle).min(total_delta);
-    100.0 * total_delta.saturating_sub(idle_delta) as f32 / total_delta as f32
-}
-
-fn pending_system_cpu_sample(
-    previous: Option<SystemCpuTimes>,
-    current: SystemCpuTimes,
-) -> PendingSystemCpuSample {
-    PendingSystemCpuSample {
-        current,
-        global_delta: previous
-            .map(|previous| current.total.saturating_sub(previous.total))
-            .unwrap_or(0),
-        total_cpu_percent: system_cpu_percent(previous, current),
+    let elapsed = current.captured.checked_duration_since(previous.captured)?;
+    if elapsed.is_zero() || elapsed > Duration::from_secs(10) {
+        return None;
     }
+    let ticks = current.total.checked_sub(previous.total)?;
+    Some((ticks as f64 / 10_000_000.0 / elapsed.as_secs_f64() * 100.0) as f32)
 }
 
 fn process_times(handle: &ProcessHandle) -> Option<ProcessTimes> {
@@ -704,6 +608,7 @@ fn process_times(handle: &ProcessHandle) -> Option<ProcessTimes> {
         .then(|| ProcessTimes {
             creation: filetime(creation),
             total: filetime(kernel).saturating_add(filetime(user)),
+            captured: Instant::now(),
         })
 }
 
@@ -791,6 +696,76 @@ fn cpu_observation(available: bool) -> crate::observation::Observation {
 mod tests {
     use super::*;
 
+    #[test]
+    #[ignore = "child-only affinity probe; never changes the test runner's affinity"]
+    fn fixture_restricted_affinity() {
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, GetProcessAffinityMask, SetProcessAffinityMask,
+        };
+        let process = unsafe { GetCurrentProcess() };
+        let mut allowed = 0usize;
+        let mut system = 0usize;
+        assert_ne!(
+            unsafe { GetProcessAffinityMask(process, &mut allowed, &mut system) },
+            0
+        );
+        let one_cpu = allowed & allowed.wrapping_neg();
+        assert_ne!(one_cpu, 0);
+        assert_ne!(unsafe { SetProcessAffinityMask(process, one_cpu) }, 0);
+        let mut sampler = GuiProcessSampler::default();
+        sampler
+            .collect_batched(1, usize::MAX, ProcessSortKey::Cpu)
+            .unwrap();
+        let handle = ProcessHandle::open(std::process::id()).unwrap();
+        let before = process_times(&handle).unwrap();
+        let until = Instant::now() + Duration::from_millis(800);
+        while Instant::now() < until {
+            std::hint::spin_loop();
+        }
+        let after = process_times(&handle).unwrap();
+        let expected = process_cpu_percent(Some(&before), after).unwrap();
+        let data = sampler
+            .collect_batched(1, usize::MAX, ProcessSortKey::Cpu)
+            .unwrap();
+        let row = data
+            .list
+            .iter()
+            .find(|row| row.pid == std::process::id())
+            .unwrap();
+        assert!(row.cpu_observation.is_available());
+        // One-core units should match a separate OS process-time bracket.
+        // Allow timer quantization and the two surrounding inventory calls.
+        assert!(
+            (row.cpu_percent - expected).abs() <= 10.0,
+            "{} vs {expected}",
+            row.cpu_percent
+        );
+    }
+
+    #[test]
+    fn restricted_affinity_matches_native_process_time() {
+        let _guard = crate::collectors::command::TEST_PROCESS_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let output = crate::collectors::command::run_checked(
+            std::env::current_exe().unwrap(),
+            [
+                "--exact",
+                "collectors::processes::windows_gui::tests::fixture_restricted_affinity",
+                "--ignored",
+                "--nocapture",
+            ],
+            crate::collectors::command::CommandTimeout::Slow,
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+            "fixture was not executed"
+        );
+    }
+
     fn candidate(
         pid: u32,
         name: &str,
@@ -862,58 +837,89 @@ mod tests {
     }
 
     #[test]
-    fn system_cpu_percent_uses_idle_delta_and_stays_bounded() {
-        let previous = SystemCpuTimes {
-            total: 1_000,
-            idle: 400,
+    fn process_cpu_uses_elapsed_time_without_affinity_or_group_normalization() {
+        let start = Instant::now();
+        let previous = ProcessTimes {
+            creation: 123,
+            total: 50_000_000,
+            captured: start,
         };
+        let current = ProcessTimes {
+            total: 60_000_000,
+            captured: start + Duration::from_millis(2500),
+            ..previous
+        };
+        assert_eq!(process_cpu_percent(Some(&previous), current), Some(40.0));
+        // Multi-threaded work may exceed 100%; it is not machine-normalized.
         assert_eq!(
-            system_cpu_percent(
-                Some(previous),
-                SystemCpuTimes {
-                    total: 2_000,
-                    idle: 650,
-                },
+            process_cpu_percent(
+                Some(&previous),
+                ProcessTimes {
+                    total: 100_000_000,
+                    ..current
+                }
             ),
-            75.0
+            Some(200.0)
         );
         assert_eq!(
-            system_cpu_percent(
-                Some(previous),
-                SystemCpuTimes {
-                    total: 1_500,
-                    idle: 1_500,
-                },
+            process_cpu_percent(
+                Some(&previous),
+                ProcessTimes {
+                    total: previous.total,
+                    ..current
+                }
             ),
-            0.0
+            Some(0.0)
         );
-        assert_eq!(system_cpu_percent(None, previous), 0.0);
     }
 
     #[test]
-    fn pending_cpu_sample_does_not_advance_fallback_baseline_until_committed() {
-        let previous = SystemCpuTimes {
-            total: 10_000,
-            idle: 4_000,
+    fn process_cpu_restarts_after_reuse_counter_reset_and_long_gap() {
+        let start = Instant::now();
+        let previous = ProcessTimes {
+            creation: 123,
+            total: 50_000_000,
+            captured: start,
         };
-        let current = SystemCpuTimes {
-            total: 12_000,
-            idle: 4_500,
+        let current = ProcessTimes {
+            total: 60_000_000,
+            captured: start + Duration::from_secs(1),
+            ..previous
         };
-        let mut sampler = GuiProcessSampler {
-            previous_system_times: Some(previous),
-            total_cpu_percent: 11.0,
-            ..GuiProcessSampler::default()
+        assert_eq!(process_cpu_percent(None, current), None);
+        for invalid in [
+            ProcessTimes {
+                creation: 124,
+                ..current
+            },
+            ProcessTimes {
+                creation: 0,
+                ..current
+            },
+            ProcessTimes {
+                total: 1,
+                ..current
+            },
+            ProcessTimes {
+                captured: start,
+                ..current
+            },
+            ProcessTimes {
+                captured: start - Duration::from_millis(1),
+                ..current
+            },
+            ProcessTimes {
+                captured: start + Duration::from_secs(11),
+                ..current
+            },
+        ] {
+            assert_eq!(process_cpu_percent(Some(&previous), invalid), None);
+        }
+        // A process queried later in a fallback scan has its own denominator.
+        let late = ProcessTimes {
+            captured: start + Duration::from_secs(2),
+            ..current
         };
-
-        let pending = pending_system_cpu_sample(sampler.previous_system_times, current);
-        assert_eq!(pending.global_delta, 2_000);
-        assert_eq!(pending.total_cpu_percent, 75.0);
-        assert_eq!(sampler.previous_system_times.unwrap().total, previous.total);
-        assert_eq!(sampler.total_cpu_percent, 11.0);
-
-        sampler.commit_system_cpu_sample(pending);
-        assert_eq!(sampler.previous_system_times.unwrap().total, current.total);
-        assert_eq!(sampler.total_cpu_percent, 75.0);
+        assert_eq!(process_cpu_percent(Some(&previous), late), Some(50.0));
     }
 }

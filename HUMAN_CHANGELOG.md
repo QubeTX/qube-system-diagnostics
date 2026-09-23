@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Process CPU readings keep the same meaning when Windows limits which processors the monitor can use. A busy thread counts as one processor, and missing readings or a reused process number start with a clear warmup.
+
 - Windows monitoring uses less memory by avoiding unused console hosts for background checks. Readings keep their existing update frequency, and checks still stop cleanly when cancelled.
 
 - NVIDIA monitoring can read the installed driver directly, reducing repeated helper launches. Graphics memory keeps its allocated-memory meaning, and unsupported or denied readings stay visibly separate from real zero values. Existing helper-based readings remain available as a fallback.
