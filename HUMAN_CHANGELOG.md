@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Linux and Mac network monitoring distinguishes failed reads from idle traffic and keeps other readable interfaces useful. Totals explain their scope, missing counters stay visibly unavailable, and the detailed graphics view explains where utilization came from.
+
 - Windows graphics readings can use a lighter native counter query and retain small changes that rounded readings missed. Newly detected or reset counters warm up before displaying a value; older provider routes remain available when needed.
 
 - Behind the scenes: performance checks count background collectors as well as the app window, verify that the requested checks are running, and keep failed measurements visible. More detailed profiling helps target costly work without reducing monitoring frequency.

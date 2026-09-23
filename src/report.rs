@@ -260,6 +260,10 @@ impl DiagnosticReport {
         }
         if let Some(interfaces) = value["network"]["interfaces"].as_array_mut() {
             for (interface, original) in interfaces.iter_mut().zip(&self.network.interfaces) {
+                if !original.counter_status.is_available() || !valid("fast") {
+                    interface["received_bytes"] = serde_json::Value::Null;
+                    interface["transmitted_bytes"] = serde_json::Value::Null;
+                }
                 if !original.rate_status.is_available() || !valid("fast") {
                     interface["download_rate"] = serde_json::Value::Null;
                     interface["upload_rate"] = serde_json::Value::Null;
@@ -638,6 +642,20 @@ mod tests {
         );
         snapshot.samples.insert("fast".into(), sample);
         snapshot
+            .network
+            .interfaces
+            .push(crate::collectors::network::InterfaceInfo {
+                counter_status: Observation::permission_denied("fixture", "denied"),
+                ..Default::default()
+            });
+        snapshot
+            .network
+            .interfaces
+            .push(crate::collectors::network::InterfaceInfo {
+                counter_status: Observation::available("fixture"),
+                ..Default::default()
+            });
+        snapshot
             .processes
             .list
             .push(crate::collectors::processes::ProcessInfo {
@@ -647,6 +665,9 @@ mod tests {
             });
         let value = DiagnosticReport::from_snapshot(&snapshot, false).as_schema(2);
         assert_eq!(value["cpu"]["total_usage"], 0.0);
+        assert!(value["network"]["interfaces"][0]["received_bytes"].is_null());
+        assert!(value["network"]["interfaces"][0]["transmitted_bytes"].is_null());
+        assert_eq!(value["network"]["interfaces"][1]["received_bytes"], 0);
         assert_eq!(value["processes"]["list"][0]["cpu_percent"], 0.0);
         assert!(value["processes"]["list"][0]["memory_bytes"].is_null());
         assert_eq!(
@@ -723,6 +744,7 @@ mod tests {
             .network
             .interfaces
             .push(crate::collectors::network::InterfaceInfo {
+                counter_status: Observation::available("fixture"),
                 name: "fixture".into(),
                 ip_addresses: vec!["192.0.2.1".into()],
                 mac_address: "00:11:22:33:44:55".into(),

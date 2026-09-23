@@ -68,6 +68,12 @@ The native ICMP candidate 059c3f5 records 2.0206 percent CPU and 139.7 MiB RSS
 over the same window. Child creations fall from 73 to seven, but CPU still fails.
 `candidate-native-icmp-tui-cadence.json` retains the exact bytes and failed gate.
 
+The native PDH candidate df1a608 completes the same 330-second run at 1.59 percent
+CPU, 142.8 MiB RSS and 60.4 MiB private memory, including the five-minute inventory
+refresh. All three resource gates pass in this window; the longer prescribed
+foreground/hidden/soak qualification is still required. The exact executable hash
+and owned-process accounting are in `candidate-native-pdh-tui-cadence.json`.
+
 ## Windows GUI process-family measurements
 
 `scripts/measure-gui-windows.py` requires the GUI, adjacent engine, and the
@@ -164,9 +170,32 @@ recovery warmup, measured zero and aggregate exclusion. The native Windows fixtu
 brackets a separate GetIfEntry2 read between table captures and requires its byte
 counter to lie inside that exact interval, skipping identities reset or removed
 during the bracket. This is OS API/units consistency, not independent wire-level
-measurement. Existing Linux/macOS providers continue through the shared sampler;
-their aggregate explicitly describes the sum of reported interfaces and possible
-duplicate traffic across layers.
+measurement.
+
+### Linux and macOS interface counters
+
+Linux reads the kernel's bounded [/proc/net/dev table](https://docs.kernel.org/networking/statistics.html),
+which exposes 64-bit byte statistics; it does not use getifaddrs' narrower link
+statistics. macOS reads each interface's IFMIB_IFDATA/IFDATA_GENERAL structure
+using the published [Apple interface MIB](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/net/if_mib.h)
+and libc's typed ifmibdata/if_data64 layout. Names must still match after each
+query. This avoids cached values surviving an unreadable counter query.
+
+[getifaddrs](https://man7.org/linux/man-pages/man3/getifaddrs.3.html) supplies
+native interface indexes, link addresses and IP addresses, including IPv6 scope.
+Its allocation is released and rows are bounded. Baselines include native index,
+name and link address; Linux also uses the sysfs node identity when readable.
+Counter failures stay per-interface, reset only that baseline, and leave other
+readable interfaces available. Cumulative bytes and rates are unavailable in
+both frontends and nullable schema-2 exports when their read failed. The default
+schema-1 field contract remains unchanged.
+
+The aggregate excludes loopback and names its remaining layer-duplication limit:
+bridge/VPN/backing interfaces may account for the same traffic. Native tests on
+each Unix runtime keep loopback inspectable and send a bounded known UDP payload
+between local sockets. Byte-counter growth must cover that payload; headers and
+other traffic prevent treating it as an exact wire-byte comparison. Fixtures
+cover values above 32 bits, malformed tables, denial, partial success and recovery.
 
 Windows uses [GetExtendedTcpTable](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedtcptable)
 and its UDP counterpart. Ports and IPv6 scope IDs follow the documented network

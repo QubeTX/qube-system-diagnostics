@@ -159,6 +159,7 @@ fn project(
     Some((
         identity,
         InterfaceInfo {
+            counter_status: Observation::available(SOURCE),
             rate_status: Observation::default(),
             address_status: address_status.clone(),
             included_in_total: flags & 1 != 0 && flags & 128 == 0,

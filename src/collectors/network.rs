@@ -25,6 +25,8 @@ pub struct NetworkData {
 #[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct InterfaceInfo {
     #[serde(default)]
+    pub counter_status: Observation,
+    #[serde(default)]
     pub rate_status: Observation,
     #[serde(default)]
     pub address_status: Observation,
@@ -69,7 +71,16 @@ impl NetworkSampler {
                 super::windows_network::AGGREGATION,
             )
         };
-        #[cfg(not(windows))]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        let (rows, source, aggregation) = {
+            let _ = networks;
+            (
+                super::unix_network::collect(),
+                super::unix_network::SOURCE,
+                super::unix_network::AGGREGATION,
+            )
+        };
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
         let (rows, source, aggregation) = {
             networks.refresh(true);
             let rows = networks
@@ -80,6 +91,7 @@ impl NetworkSampler {
                     (
                         format!("{name}:{mac}"),
                         InterfaceInfo {
+                            counter_status: Observation::available("sysinfo interface counters"),
                             name: name.clone(),
                             ip_addresses: data
                                 .ip_networks()
@@ -134,6 +146,11 @@ impl NetworkSampler {
         self.counters
             .retain(|key, _| present.contains(key.as_str()));
         for (identity, info) in &mut rows {
+            if !info.counter_status.is_available() {
+                self.counters.remove(identity);
+                info.rate_status = info.counter_status.clone();
+                continue;
+            }
             let counters = self.counters.entry(identity.clone()).or_default();
             let down = counters
                 .0
@@ -219,6 +236,7 @@ mod tests {
         vec![(
             id.into(),
             InterfaceInfo {
+                counter_status: Observation::available("fixture"),
                 name: "identical alias".into(),
                 received_bytes: count,
                 transmitted_bytes: count,
@@ -227,6 +245,48 @@ mod tests {
                 ..Default::default()
             },
         )]
+    }
+    #[test]
+    fn a_denied_interface_keeps_other_rates_and_recovers_with_a_new_baseline() {
+        let start = Instant::now();
+        let mut sampler = NetworkSampler::default();
+        let frame = |count| {
+            let mut value = rows("one", count);
+            value.extend(rows("two", count));
+            value
+        };
+        sampler.sample(Ok(frame(100)), "fixture", "fixture", start);
+        let mut partial = frame(200);
+        partial[1].1.counter_status = Observation::permission_denied("fixture", "denied");
+        let result = sampler.sample(
+            Ok(partial),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(1),
+        );
+        assert!(result.interfaces[0].rate_status.is_available());
+        assert_eq!(result.interfaces[0].download_rate, 100);
+        assert_eq!(
+            result.interfaces[1].rate_status.status,
+            crate::observation::ObservationStatus::PermissionDenied
+        );
+        assert!(!result.sample.observation.is_available());
+        let recovered = sampler.sample(
+            Ok(frame(300)),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(2),
+        );
+        assert!(recovered.interfaces[0].rate_status.is_available());
+        assert!(!recovered.interfaces[1].rate_status.is_available());
+        let ready = sampler.sample(
+            Ok(frame(450)),
+            "fixture",
+            "fixture",
+            start + Duration::from_secs(3),
+        );
+        assert_eq!(ready.total_download_rate, 300);
+        assert!(ready.sample.observation.is_available());
     }
     #[test]
     fn irregular_intervals_identity_replacement_and_failures_preserve_truth() {

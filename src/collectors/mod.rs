@@ -27,6 +27,8 @@ pub mod provider_cache;
 pub mod sampling;
 pub mod system_info;
 pub mod thermals;
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+mod unix_network;
 #[cfg(windows)]
 mod windows_connections;
 #[cfg(windows)]

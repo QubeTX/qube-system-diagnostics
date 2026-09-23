@@ -610,7 +610,18 @@ impl Presentation {
             v.inspector.push(String::new());
             if app.mode == Some(DiagnosticMode::Technician) {
                 let data = match row.target {
-                    Target::Process(i) => json!(s.processes.list[i]),
+                    Target::Process(i) => {
+                        let process = &s.processes.list[i];
+                        let mut value = json!(process);
+                        if !fast || !process.cpu_observation.is_available() {
+                            value["cpu_percent"] = serde_json::Value::Null;
+                        }
+                        if !fast || !process.memory_observation.is_available() {
+                            value["memory_bytes"] = serde_json::Value::Null;
+                            value["memory_percent"] = serde_json::Value::Null;
+                        }
+                        value
+                    }
                     Target::Cpu(i) => {
                         json!({"logical_processor":i,"usage_percent":if fast {Some(s.cpu.per_core_usage[i])}else{None},"frequency_mhz":s.cpu.per_core_frequency.get(i)})
                     }
@@ -620,7 +631,17 @@ impl Presentation {
                     Target::Activity(i) => json!(s.disk_activity.devices[i]),
                     Target::Gpu(i) => json!(s.gpu.adapters[i]),
                     Target::Interface(i) => {
-                        json!({"interface":s.network.interfaces[i],"adapter_capabilities":s.network.adapters})
+                        let interface = &s.network.interfaces[i];
+                        let mut value = json!({"interface":interface,"adapter_capabilities":s.network.adapters});
+                        if !fast || !interface.counter_status.is_available() {
+                            value["interface"]["received_bytes"] = serde_json::Value::Null;
+                            value["interface"]["transmitted_bytes"] = serde_json::Value::Null;
+                        }
+                        if !fast || !interface.rate_status.is_available() {
+                            value["interface"]["download_rate"] = serde_json::Value::Null;
+                            value["interface"]["upload_rate"] = serde_json::Value::Null;
+                        }
+                        value
                     }
                     Target::NetworkTotal => {
                         json!({"scope":s.network.aggregation,"sample":s.network.sample})

@@ -290,6 +290,8 @@ pub const GpuRow = struct {
 
 pub const InterfaceRow = struct {
     id: u32 = 0,
+    counters_available: bool = false,
+    counter_observation: ObservationView = .{},
     rate_available: bool = false,
     included_in_total: bool = false,
     rate_observation: ObservationView = .{},
@@ -318,6 +320,9 @@ pub const InterfaceRow = struct {
     }
     pub fn rateObservation(row: *const InterfaceRow) []const u8 {
         return row.rate_observation.summary();
+    }
+    pub fn counterObservation(row: *const InterfaceRow) []const u8 {
+        return row.counter_observation.summary();
     }
     pub fn addressObservation(row: *const InterfaceRow) []const u8 {
         return row.address_observation.summary();
@@ -1074,6 +1079,8 @@ pub const Projection = struct {
         self.interface_count = @min(data.network.interfaces.len, max_interfaces);
         for (data.network.interfaces[0..self.interface_count], 0..) |item, index| {
             var row = InterfaceRow{ .id = @intCast(index) };
+            row.counters_available = std.mem.eql(u8, item.counter_status.status, "available");
+            setObservation(&row.counter_observation, item.counter_status);
             row.rate_available = std.mem.eql(u8, item.rate_status.status, "available");
             row.included_in_total = item.included_in_total;
             setObservation(&row.rate_observation, item.rate_status);
@@ -1608,6 +1615,7 @@ const MemoryJson = struct {
     module_status: ObservationJson = .{},
 };
 const InterfaceJson = struct {
+    counter_status: ObservationJson = .{},
     rate_status: ObservationJson = .{},
     address_status: ObservationJson = .{},
     included_in_total: bool = false,
@@ -2161,6 +2169,7 @@ test "network rows distinguish unavailable rates and addresses from measured zer
     try std.testing.expect(value.network_rate_available);
     try std.testing.expectEqualStrings("hardware only",value.networkAggregation());
     try std.testing.expect(!value.interface_rows[0].rate_available);
+    try std.testing.expect(!value.interface_rows[0].counters_available);
     try std.testing.expectEqualStrings("Address unavailable",value.interface_rows[0].address());
     try std.testing.expect(value.interface_rows[1].rate_available);
     try std.testing.expectEqual(@as(f64,0),value.interface_rows[1].download_kib_s);

@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Read Linux and macOS interface counters with explicit per-interface failures, native identities, scoped addresses and 64-bit byte semantics. Preserve other readable rows, reset failed baselines and exclude loopback from the documented aggregate. Keep unavailable cumulative bytes nullable in schema 2 and inspectors, add native local-payload fixtures, and expose successful GPU utilization provenance in GUI Technician mode.
+
 - Prefer a persistent native PDH query for Windows GPU engine utilization, retaining fractional values, adapter identity, measured intervals and explicit warmup after reset/resume. Bound native array parsing and retry, preserve incomplete fields and the existing WMI/NVIDIA fallbacks, and test real worker warmup/reset against available adapters.
 
 - Add whole-process Windows GUI measurement with suspended-before-job ownership, isolated settings, bundle hashes, required worker checks, visibility validation and clean-shutdown assertions. Extend stage profiling with slow providers and quantized process CPU, retaining the still-failing long TUI resource result.

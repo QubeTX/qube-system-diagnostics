@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: qualify measured performance using exact release artifacts and the entire owned process tree. Windows CPU remains above its gate; the last cadence window passes memory but full foreground/hidden/soak acceptance remains open. Improve one measured cause per cycle. Native performance, full PTY coverage and unpublished composite lifecycle qualification remain required.
+Current cycle: qualify explicit Unix interface counters on native macOS and Linux, then complete measured performance using exact release artifacts and the entire owned process tree. The 330-second Windows TUI window now passes CPU and memory; full foreground/hidden/soak acceptance remains open. Native performance and unpublished composite lifecycle qualification remain required.
 
 ## Impact
 
@@ -49,6 +49,8 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations implemented; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: explicit Linux procfs/macOS 64-bit IFMIB counter candidate passes 222 root tests (six child fixtures), eight CLI contracts, 15 engine tests, 52 GUI tests (two skips), strict bindings, and Windows/Mac ARM/musl clippy. Per-interface denied reads preserve other interfaces and reset only the failed baseline; schema-2 and both inspectors distinguish unavailable totals from measured zero. Next oracle: native Unix loopback inventory and known-payload counter fixtures in all supported Mac/Linux lanes. Separately, df1a608's 330-second whole-job TUI run passes at 1.59 percent CPU, 142.8 MiB RSS and 60.4 MiB private memory; full long-window acceptance remains open.
 
 - 2026-09-23 — codex: native PDH GPU candidate passes six bounded parsing/aggregation/clock fixtures, the real isolated worker with valid second samples on both local adapters, 219 root tests (six child fixtures), 15 engine tests, clippy and Mac/musl cross-checks. Release GPU stage mean falls from 340.4 to 2.9 ms at unchanged cadence; preserve primary-source semantics and existing fallback providers. d5ad25c's Intel-Mac lane completed successfully before the next run, completing Mac/Linux runtime evidence. Next: whole-job 330-second resource measurement and hosted native GPU fallback qualification.
 
