@@ -1,9 +1,6 @@
 //! Versioned desktop-companion settings.
 //!
-//! The terminal UI deliberately does not read this document: its chooser,
-//! units, sorting, and session defaults remain exactly as they were before the
-//! GUI existed. The `shared` namespace is reserved for future settings that
-//! are explicitly introduced for both frontends.
+//! GUI and TUI preferences are independent; provider choices are deliberately shared.
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -19,6 +16,32 @@ const MAX_SETTINGS_BYTES: u64 = 256 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
 pub struct SharedSettings {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct TuiSettings {
+    pub mouse_enabled: bool,
+    pub reduced_motion: bool,
+    pub ascii: bool,
+    pub no_color: bool,
+}
+impl Default for TuiSettings {
+    fn default() -> Self {
+        Self {
+            mouse_enabled: false,
+            reduced_motion: true,
+            ascii: false,
+            no_color: false,
+        }
+    }
+}
+pub fn tui_preferences() -> TuiSettings {
+    settings_path()
+        .ok()
+        .and_then(|p| load_from_path(&p).ok())
+        .unwrap_or_default()
+        .tui
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -79,6 +102,7 @@ pub struct SettingsDocument {
     pub schema_version: u32,
     pub shared: SharedSettings,
     pub gui: GuiSettings,
+    pub tui: TuiSettings,
 }
 
 impl Default for SettingsDocument {
@@ -87,6 +111,7 @@ impl Default for SettingsDocument {
             schema_version: SETTINGS_SCHEMA_VERSION,
             shared: SharedSettings::default(),
             gui: GuiSettings::default(),
+            tui: TuiSettings::default(),
         }
     }
 }
@@ -100,8 +125,12 @@ pub fn write_json(bytes: &[u8]) -> Result<(), String> {
     if bytes.is_empty() || bytes.len() as u64 > MAX_SETTINGS_BYTES {
         return Err("settings input was empty or exceeded the 256 KiB limit".into());
     }
-    let document: SettingsDocument = serde_json::from_slice(bytes)
+    let mut document: SettingsDocument = serde_json::from_slice(bytes)
         .map_err(|error| format!("settings JSON was invalid: {error}"))?;
+    let input: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    if input.get("tui").is_none() {
+        document.tui = load_from_path(&settings_path()?)?.tui;
+    }
     validate(&document)?;
     save_to_path(&settings_path()?, &document)
 }
@@ -629,14 +658,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_keep_terminal_state_out_of_the_gui_document() {
+    fn defaults_keep_terminal_and_gui_preferences_independent() {
         let json = serde_json::to_value(SettingsDocument::default()).expect("serialize defaults");
         assert_eq!(json["schema_version"], SETTINGS_SCHEMA_VERSION);
         assert_eq!(json["shared"], serde_json::json!({}));
         assert_eq!(json["gui"]["audience_mode"], "user");
         assert_eq!(json["gui"]["tray_enabled"], true);
         assert_eq!(json["gui"]["close_to_tray"], true);
-        assert!(json.get("tui").is_none());
+        assert_eq!(json["tui"]["mouse_enabled"], false);
+        assert_eq!(json["tui"]["reduced_motion"], true);
     }
 
     #[test]

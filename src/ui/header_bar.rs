@@ -12,7 +12,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let mode = app.mode.unwrap_or(DiagnosticMode::User);
 
     // Clock
-    let now = chrono_free_time();
+    let now = format!("{} UTC", time_at(app.presentation_time_ms / 1000));
 
     // Mode badge
     let (mode_label, mode_fg, mode_bg) = match mode {
@@ -44,50 +44,16 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(clock_text, Style::default().fg(COLOR_MUTED)),
     ]);
 
-    let lane = match app.current_section {
-        crate::types::Section::Disk
-        | crate::types::Section::Gpu
-        | crate::types::Section::Thermals => "slow",
-        crate::types::Section::Network => "diagnostics",
-        crate::types::Section::Drivers => "drivers",
-        _ => "fast",
-    };
-    let (status, color) = if let Some(sample) = app.snapshot.samples.get(lane) {
-        if !sample.observation.is_available() {
-            (
-                format!(
-                    " {} · {} · r retry",
-                    lane,
-                    sample
-                        .observation
-                        .detail
-                        .as_deref()
-                        .unwrap_or("Unavailable")
-                ),
-                COLOR_WARN,
-            )
-        } else if sample.is_stale() {
-            (
-                format!(
-                    " {} · stale · last capture {}s ago · r retry",
-                    lane,
-                    sample.age_ms().unwrap_or(0) / 1000
-                ),
-                COLOR_WARN,
-            )
-        } else {
-            (
-                format!(
-                    " {} · live · sample {} · {}s since capture",
-                    lane,
-                    sample.sequence,
-                    sample.age_ms().unwrap_or(0) / 1000
-                ),
-                COLOR_MUTED,
-            )
-        }
+    let (status, color) = if let Some(at) = app.paused_at {
+        (
+            format!(
+                " PAUSED at {} UTC · collection continues · Space resumes newest data",
+                time_at(at / 1000)
+            ),
+            COLOR_WARN,
+        )
     } else {
-        (format!(" {} · waiting for first sample", lane), COLOR_MUTED)
+        (format!(" {}", app.view.status), COLOR_MUTED)
     };
     let separator_line = Line::from(Span::styled(status, Style::default().fg(color)));
 
@@ -96,12 +62,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Get current time as HH:MM:SS (without chrono dependency)
-fn chrono_free_time() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+fn time_at(secs: u64) -> String {
     let secs_of_day = secs % 86400;
     let h = secs_of_day / 3600;
     let m = (secs_of_day % 3600) / 60;

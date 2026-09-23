@@ -1,9 +1,9 @@
 pub mod bottom_bar;
 pub mod common;
+pub mod dashboard;
 pub mod header_bar;
 pub mod help_overlay;
 pub mod mode_select;
-pub mod sections;
 
 use ratatui::Frame;
 
@@ -11,6 +11,29 @@ use crate::app::App;
 
 /// Root render dispatcher
 pub fn render(frame: &mut Frame, app: &App) {
+    render_content(frame, app);
+    if app.preferences.no_color || app.preferences.ascii {
+        for cell in frame.buffer_mut().content.iter_mut() {
+            if app.preferences.no_color {
+                cell.set_style(ratatui::style::Style::reset());
+            }
+            if app.preferences.ascii && !cell.symbol().is_ascii() {
+                let symbol = match cell.symbol() {
+                    "│" | "┃" => "|",
+                    "─" | "━" => "-",
+                    "╭" | "╮" | "╰" | "╯" | "┌" | "┐" | "└" | "┘" => "+",
+                    "·" | "•" => ".",
+                    "↑" => "^",
+                    "↓" => "v",
+                    "█" | "▇" | "▆" | "▅" | "▄" | "▃" | "▂" | "▁" => "#",
+                    _ => "?",
+                };
+                cell.set_symbol(symbol);
+            }
+        }
+    }
+}
+fn render_content(frame: &mut Frame, app: &App) {
     // Terminal too small
     if app.too_small {
         render_too_small(frame);
@@ -47,7 +70,7 @@ pub fn render(frame: &mut Frame, app: &App) {
             chunks[1],
         );
     } else {
-        sections::render(frame, app, chunks[1]);
+        dashboard::render(frame, app, chunks[1]);
     }
 
     // Render bottom navigation bar
@@ -80,6 +103,7 @@ pub fn render(frame: &mut Frame, app: &App) {
                 lines
             })
             .wrap(ratatui::widgets::Wrap { trim: true })
+            .scroll((app.inspector_scroll, 0))
             .block(common::content_block(
                 "Findings · Evidence and next steps · F/Esc to close",
             )),
@@ -133,15 +157,17 @@ mod tests {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = App::new(Some(DiagnosticMode::User));
-        app.snapshot.refresh_static();
-        app.snapshot.refresh_fast();
-        app.snapshot.refresh_slow();
-        app.snapshot.refresh_connections();
+        app.snapshot.cpu.cpu_model = "Fixture processor".into();
+        app.snapshot.cpu.per_core_usage = vec![10.0, 20.0];
+        app.snapshot.cpu.per_core_frequency = vec![2000, 2400];
+        app.snapshot.memory.total_bytes = 8 * 1024 * 1024 * 1024;
+        app.snapshot.memory.used_bytes = 4 * 1024 * 1024 * 1024;
 
         for mode in [DiagnosticMode::User, DiagnosticMode::Technician] {
             app.mode = Some(mode);
             for section in Section::ALL {
                 app.current_section = section;
+                app.prepare_view();
                 terminal.draw(|frame| render(frame, &app)).unwrap();
                 let buffer = terminal.backend().buffer();
                 assert!(
@@ -191,6 +217,7 @@ mod tests {
 
         for section in [Section::Overview, Section::Thermals] {
             app.current_section = section;
+            app.prepare_view();
             terminal.draw(|frame| render(frame, &app)).unwrap();
             let rendered = terminal
                 .backend()
@@ -246,5 +273,30 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(!user_text.contains("Desktop app pending"));
+    }
+    #[test]
+    fn compact_and_wide_sections_support_inspection_filtering_and_ascii() {
+        for (w, h) in [(80, 24), (140, 40)] {
+            let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+            let mut app = App::new(Some(DiagnosticMode::User));
+            app.preferences.ascii = true;
+            app.preferences.no_color = true;
+            for mode in [DiagnosticMode::User, DiagnosticMode::Technician] {
+                app.mode = Some(mode);
+                for section in Section::ALL {
+                    app.current_section = section;
+                    app.filter = "no match ✓".into();
+                    app.show_inspector = true;
+                    app.prepare_view();
+                    terminal.draw(|f| render(f, &app)).unwrap();
+                    let cells = terminal.backend().buffer().content();
+                    assert!(cells.iter().all(|c| c.symbol().is_ascii()));
+                    assert!(cells.iter().all(|c| c.fg == ratatui::style::Color::Reset));
+                    let text = cells.iter().map(|c| c.symbol()).collect::<String>();
+                    assert!(text.contains("Inspector"));
+                    assert!(text.contains("filter"));
+                }
+            }
+        }
     }
 }

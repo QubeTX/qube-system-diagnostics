@@ -6,6 +6,9 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Replace section-specific render-time sorting with an adaptive prepared dashboard, complete-inventory filters, identity-preserving selection, contextual inspection, paging, pause-view and opt-in mouse input. Add independent TUI preferences and terminal fallbacks.
+- Render captured time buckets with explicit gaps in both frontends, keep CPU/GPU thermal histories separate, correct IEC byte labels, and subscribe the GUI storage view to live disk activity.
+
 - Preserve stable thermal/fan channel identities in both frontends, keep identical labels separate, and collect every GPU temperature. Read Linux hwmon units and fault/enable flags explicitly; do not classify generic package temperatures as CPU readings.
 
 - Identify GPUs through DXGI LUID/PCI locations, Linux DRM/PCI devices and Metal registry IDs. Join NVIDIA telemetry by PCI identity, preserve per-field availability, and keep shared/unified memory and allocation budgets distinct from dedicated VRAM.

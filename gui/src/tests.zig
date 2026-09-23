@@ -208,9 +208,13 @@ fn expectByText(widget: canvas.Widget, kind: canvas.WidgetKind, text: []const u8
 }
 
 test "a fast summary updates the native overview projection" {
+    var test_clock = native_sdk.TestClock{};
+    test_clock.setWallMs(1_777_777_777_000);
     var model = main.initialModel();
+    model.clock = test_clock.clock();
     main.applySummary(&model, engine.FastSummary{
         .sequence = 42,
+        .captured_unix_ms = 1_777_777_777_000,
         .cpu_percent = 18.25,
         .memory_percent = 62.5,
         .memory_used_bytes = 16 * 1024 * 1024 * 1024,
@@ -241,7 +245,10 @@ test "a fast summary updates the native overview projection" {
 }
 
 test "re-reading one fast sequence does not invent another history sample" {
+    var test_clock = native_sdk.TestClock{};
+    test_clock.setWallMs(1_777_777_777_000);
     var model = main.initialModel();
+    model.clock = test_clock.clock();
     const summary = engine.FastSummary{
         .sequence = 9,
         .captured_unix_ms = 1_777_777_777_000,
@@ -258,8 +265,8 @@ test "re-reading one fast sequence does not invent another history sample" {
 
     main.applySummary(&model, summary);
 
-    try testing.expectEqualSlices(f64, &cpu_history, &model.cpu_history);
-    try testing.expectEqualSlices(f64, &memory_history, &model.memory_history);
+    try testing.expectEqualSlices(u8, std.mem.asBytes(&cpu_history), std.mem.asBytes(&model.cpu_history));
+    try testing.expectEqualSlices(u8, std.mem.asBytes(&memory_history), std.mem.asBytes(&model.memory_history));
     try testing.expectEqual(@as(u64, 1_777_777_777_000), model.overview_topic_meta.captured_unix_ms);
 }
 
@@ -321,11 +328,16 @@ test "top sample state exposes collector failure without claiming live" {
 }
 
 test "instrument trace remains a bounded real CPU history" {
+    var test_clock = native_sdk.TestClock{};
+    test_clock.setWallMs(1_777_777_777_000);
     var model = main.initialModel();
+    model.clock = test_clock.clock();
     var sequence: u64 = 1;
     while (sequence <= 75) : (sequence += 1) {
+        test_clock.setWallMs(@intCast(sequence * 1000));
         main.applySummary(&model, engine.FastSummary{
             .sequence = sequence,
+            .captured_unix_ms = sequence * 1000,
             .cpu_percent = @floatFromInt(sequence),
             .memory_percent = 50,
             .memory_used_bytes = 8 * 1024 * 1024 * 1024,

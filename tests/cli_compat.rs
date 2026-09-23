@@ -41,11 +41,36 @@ fn normalize_cli_text(bytes: &[u8]) -> String {
 }
 
 fn strip_additive_gui_help(text: &str) -> String {
-    let mut normalized = text
+    let adapted = text
+        .replace(
+            "  r            Retry providers and discovery",
+            "  r            Refresh drivers (Drivers section)",
+        )
+        .replace(
+            "  q / Esc      Quit (Esc closes panels and filters first)",
+            "  q / Esc      Quit",
+        )
+        .replace(
+            "  j / k        Select rows / scroll inspector",
+            "  j / k        Scroll (Processes, Connections, Drivers, Disk)",
+        );
+    let mut normalized = adapted
         .lines()
         .filter(|line| {
             let trimmed = line.trim_start();
-            !trimmed.starts_with("gui ") && !trimmed.starts_with("sd300 gui ")
+            !trimmed.starts_with("gui ")
+                && !trimmed.starts_with("sd300 gui ")
+                && ![
+                    "/            Filter the complete inventory",
+                    "Enter        Inspect selected row",
+                    "Space        Pause view / resume newest sample",
+                    "PgUp/PgDn    Page through rows",
+                    "Home / End   Select first / last row",
+                    "Tab          Next section (Shift+Tab goes back)",
+                    "s            Reverse process sort direction",
+                    "F            Findings, evidence and next steps",
+                ]
+                .contains(&trimmed)
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -118,7 +143,7 @@ fn collector_command_lock() -> std::sync::MutexGuard<'static, ()> {
 }
 
 #[test]
-fn long_help_is_the_v2_0_6_golden_plus_only_the_additive_gui_lines() {
+fn long_help_preserves_v2_commands_with_explicit_v4_interaction_additions() {
     let output = run(&["--help"]);
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());

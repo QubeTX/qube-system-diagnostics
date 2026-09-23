@@ -10,7 +10,7 @@ pub fn render(frame: &mut Frame, area: Rect) {
     let [center_y] = Layout::vertical([Constraint::Length(23)])
         .flex(Flex::Center)
         .areas(area);
-    let [center] = Layout::horizontal([Constraint::Length(50)])
+    let [center] = Layout::horizontal([Constraint::Length(64)])
         .flex(Flex::Center)
         .areas(center_y);
 
@@ -30,36 +30,27 @@ pub fn render(frame: &mut Frame, area: Rect) {
         );
 
     let lines = vec![
+        help_line("1-9 / Tab", "Sections / next section"),
+        help_line("q / Ctrl+C", "Quit to shell"),
+        help_line("Esc", "Close panel / clear filter / quit"),
+        help_line("m", "Choose User or Technician"),
+        help_line("?", "Help"),
+        help_line("j/k / ↑↓", "Select rows; scroll inspector"),
+        help_line("PgUp/PgDn", "Page through all rows"),
+        help_line("Home / End", "First / last row"),
+        help_line("/", "Filter the complete inventory"),
+        help_line("Enter", "Open / close row inspector"),
+        help_line("Space", "Freeze view / resume latest"),
+        help_line("F", "Findings and evidence"),
+        help_line("c / M", "Process sort: CPU / memory"),
+        help_line("n / p / s", "Name / PID / reverse sort"),
+        help_line("f", "Toggle temperature unit"),
+        help_line("r", "Retry providers and discovery"),
         Line::from(""),
-        help_line("1-9", "Switch to section"),
-        help_line("q / Esc", "Quit"),
-        help_line("Ctrl+C", "Quit to shell"),
-        help_line("m", "Mode selection screen"),
-        help_line("?", "Toggle this help"),
-        Line::from(""),
-        Line::from(Span::styled(
-            " Process Table (Section 7, Tech Mode)",
-            Style::default().fg(COLOR_WARN),
-        )),
-        help_line("j / k", "Scroll up/down"),
-        help_line("c", "Sort by CPU"),
-        help_line("n", "Sort by name"),
-        help_line("p", "Sort by PID"),
-        Line::from(""),
-        Line::from(Span::styled(
-            " Connections (Section 6, Tech Mode)",
-            Style::default().fg(COLOR_WARN),
-        )),
-        help_line("j / k", "Scroll connections"),
-        Line::from(""),
-        help_line("f", "Toggle \u{00B0}C / \u{00B0}F"),
-        help_line("r", "Retry providers"),
-        help_line("F", "Findings, evidence and next steps"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "  Press ? or Esc to close",
-            Style::default().fg(COLOR_MUTED),
-        )),
+        Line::from(" Charts: dots are gaps; underscores are zero."),
+        Line::from(" Collection continues while the view is paused."),
+        Line::from(" Preferences: settings.json / tui namespace."),
+        Line::from(" Press ? or Esc to close."),
     ];
 
     let paragraph = Paragraph::new(lines).block(block);

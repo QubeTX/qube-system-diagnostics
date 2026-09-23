@@ -53,6 +53,7 @@ pub struct App {
     pub gpu_history: HistoryBuffer,
     /// Temperature history
     pub temp_history: HistoryBuffer,
+    pub gpu_temp_history: HistoryBuffer,
     /// Temperature display unit (Celsius or Fahrenheit)
     pub temp_unit: TempUnit,
     /// Network connection table scroll offset
@@ -65,6 +66,18 @@ pub struct App {
     pub driver_scroll: usize,
     /// Disk section scroll offset (tech mode)
     pub disk_scroll: usize,
+    pub view: crate::presentation::Presentation,
+    pub filter: String,
+    pub editing_filter: bool,
+    pub show_inspector: bool,
+    pub inspector_scroll: u16,
+    pub sort_reversed: bool,
+    pub paused_at: Option<u64>,
+    pub presentation_time_ms: u64,
+    pub preferences: crate::settings::TuiSettings,
+    pub terminal_width: u16,
+    pub terminal_height: u16,
+    live_while_paused: Option<SystemSnapshot>,
     monitor: Option<Monitor>,
 }
 
@@ -99,12 +112,25 @@ impl App {
             swap_history: HistoryBuffer::new(HISTORY_SAMPLES),
             gpu_history: HistoryBuffer::new(HISTORY_SAMPLES),
             temp_history: HistoryBuffer::new(HISTORY_SAMPLES),
+            gpu_temp_history: HistoryBuffer::new(HISTORY_SAMPLES),
             temp_unit: TempUnit::Celsius,
             connection_scroll: 0,
             disk_read_history: HistoryBuffer::new(HISTORY_SAMPLES),
             disk_write_history: HistoryBuffer::new(HISTORY_SAMPLES),
             driver_scroll: 0,
             disk_scroll: 0,
+            view: Default::default(),
+            filter: String::new(),
+            editing_filter: false,
+            show_inspector: false,
+            inspector_scroll: 0,
+            sort_reversed: false,
+            paused_at: None,
+            presentation_time_ms: crate::collectors::sampling::unix_ms(),
+            preferences: Default::default(),
+            terminal_width: 80,
+            terminal_height: 24,
+            live_while_paused: None,
             monitor: None,
         }
     }
@@ -112,6 +138,11 @@ impl App {
     /// Render immediately. Workers own all collection; this loop only handles
     /// input and bounded latest-result delivery.
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+        self.preferences = crate::settings::tui_preferences();
+        self.preferences.no_color |= std::env::var_os("NO_COLOR").is_some();
+        self.preferences.ascii |= std::env::var_os("SD300_ASCII").is_some()
+            || std::env::var("TERM").is_ok_and(|s| s == "dumb");
+        let _mouse = MouseSession::new(self.preferences.mouse_enabled)?;
         self.monitor = Some(Monitor::start(Profile::Full));
         let mut poll = interval(Duration::from_millis(50));
         poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -121,6 +152,9 @@ impl App {
             if dirty {
                 let size = terminal.size()?;
                 self.too_small = size.width < 80 || size.height < 24;
+                self.terminal_width = size.width;
+                self.terminal_height = size.height;
+                self.prepare_view();
                 terminal.draw(|frame| ui::render(frame, self))?;
                 dirty = false;
             }
@@ -130,12 +164,20 @@ impl App {
             }
             tokio::select! {
                 _ = poll.tick() => {
-                    let changed = self.monitor.as_ref().map(|m| m.drain(&mut self.snapshot)).unwrap_or_default();
-                    if changed.contains(&Lane::Fast) { self.update_fast_history(); }
-                    if changed.contains(&Lane::Slow) { self.update_slow_history(); }
-                    if changed.contains(&Lane::Activity) { self.update_activity_history(); }
-                    if !changed.is_empty() { self.findings = crate::findings::for_snapshot(&self.snapshot); }
-                    dirty |= !changed.is_empty();
+                    let target = self.live_while_paused.as_mut().unwrap_or(&mut self.snapshot);
+                    let changed = self.monitor.as_ref().map(|m| m.drain(target)).unwrap_or_default();
+                    if self.paused_at.is_none() {
+                        if changed.contains(&Lane::Fast) { self.update_fast_history(); }
+                        if changed.contains(&Lane::Slow) { self.update_slow_history(); }
+                        if changed.contains(&Lane::Activity) { self.update_activity_history(); }
+                        let now = crate::collectors::sampling::unix_ms();
+                        let age_changed = now / 1000 != self.presentation_time_ms / 1000;
+                        if !changed.is_empty() || age_changed {
+                            self.presentation_time_ms = now;
+                            self.findings = crate::findings::for_snapshot(&self.snapshot);
+                            dirty = true;
+                        }
+                    }
                 }
                 event = events.next() => {
                     match event {
@@ -215,6 +257,8 @@ impl App {
         // CPU and GPU temperatures must never be spliced into one series.
         self.temp_history
             .push_at(captured, self.snapshot.thermals.cpu_temp);
+        self.gpu_temp_history
+            .push_at(captured, self.snapshot.thermals.gpu_temp);
     }
     fn update_activity_history(&mut self) {
         let Some(sample) = self.snapshot.samples.get("activity") else {
@@ -235,126 +279,238 @@ impl App {
         self.disk_write_history
             .push_at(sample.captured_unix_ms, totals.map(|t| t.1));
     }
+    pub fn prepare_view(&mut self) {
+        self.view = crate::presentation::Presentation::prepare(self);
+    }
+    fn toggle_pause(&mut self) {
+        if let Some(latest) = self.live_while_paused.take() {
+            self.snapshot = latest;
+            self.paused_at = None;
+            self.presentation_time_ms = crate::collectors::sampling::unix_ms();
+            self.update_fast_history();
+            self.update_slow_history();
+            self.update_activity_history();
+            self.findings = crate::findings::for_snapshot(&self.snapshot);
+        } else {
+            self.live_while_paused = Some(self.snapshot.presentation_copy());
+            self.paused_at = Some(self.presentation_time_ms);
+        }
+    }
+    fn select_relative(&mut self, amount: isize) {
+        self.view.selected = self
+            .view
+            .selected
+            .saturating_add_signed(amount)
+            .min(self.view.rows.len().saturating_sub(1));
+        self.view.selected_id = self.view.rows.get(self.view.selected).map(|r| r.id.clone());
+        self.inspector_scroll = 0;
+        match self.current_section {
+            Section::Processes => self.process_scroll = self.view.selected,
+            Section::Network => self.connection_scroll = self.view.selected,
+            Section::Drivers => self.driver_scroll = self.view.selected,
+            Section::Disk => self.disk_scroll = self.view.selected,
+            _ => {}
+        }
+    }
+    fn select_section(&mut self, section: Section) {
+        self.current_section = section;
+        self.process_scroll = 0;
+        self.connection_scroll = 0;
+        self.driver_scroll = 0;
+        self.disk_scroll = 0;
+        self.filter.clear();
+        self.editing_filter = false;
+        self.inspector_scroll = 0;
+        self.view.selected = 0;
+        self.view.selected_id = None;
+        self.show_inspector = false;
+    }
     fn handle_event(&mut self, event: Event) {
-        if let Event::Key(key) = event {
-            if key.kind != KeyEventKind::Press {
+        if let Event::Mouse(mouse) = event {
+            if !self.preferences.mouse_enabled {
                 return;
             }
-
-            // Ctrl+C always quits immediately
-            if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                self.should_quit = true;
-                return;
-            }
-
-            // Help overlay takes priority
-            if self.show_findings {
-                if matches!(key.code, KeyCode::Char('F') | KeyCode::Esc) {
-                    self.show_findings = false;
-                }
-                return;
-            }
-            if self.show_help {
-                match key.code {
-                    KeyCode::Char('?') | KeyCode::Esc => self.show_help = false,
-                    _ => {}
-                }
-                return;
-            }
-
-            // Mode selection screen
-            if self.mode.is_none() {
-                match key.code {
-                    KeyCode::Char('1') => self.mode = Some(DiagnosticMode::User),
-                    KeyCode::Char('2') => self.mode = Some(DiagnosticMode::Technician),
-                    KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                    _ => {}
-                }
-                return;
-            }
-
-            // Main navigation
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                KeyCode::Char('m') => self.mode = None,
-                KeyCode::Char('?') => self.show_help = true,
-                KeyCode::Char('F') => self.show_findings = true,
-                KeyCode::Char(c @ '1'..='9') => {
-                    if let Some(section) = Section::from_number(c as u8 - b'0') {
-                        self.current_section = section;
-                        self.process_scroll = 0;
-                        self.connection_scroll = 0;
-                        self.driver_scroll = 0;
-                        self.disk_scroll = 0;
-                    }
-                }
-                // Scrollable table controls
-                KeyCode::Char('j') | KeyCode::Down => {
-                    match self.current_section {
-                        Section::Processes => {
-                            let max = self.snapshot.processes.list.len().saturating_sub(1);
-                            self.process_scroll = (self.process_scroll + 1).min(max);
-                        }
-                        Section::Network => {
-                            let max = self
-                                .snapshot
-                                .network_diag
-                                .active_connections
-                                .len()
-                                .saturating_sub(1);
-                            self.connection_scroll = (self.connection_scroll + 1).min(max);
-                        }
-                        Section::Drivers => {
-                            // Upper bound clamped in render; just increment here
-                            self.driver_scroll = self.driver_scroll.saturating_add(1);
-                        }
-                        Section::Disk => {
-                            self.disk_scroll = self.disk_scroll.saturating_add(1);
-                        }
-                        _ => {}
-                    }
-                }
-                KeyCode::Char('k') | KeyCode::Up => match self.current_section {
-                    Section::Processes => {
-                        self.process_scroll = self.process_scroll.saturating_sub(1);
-                    }
-                    Section::Network => {
-                        self.connection_scroll = self.connection_scroll.saturating_sub(1);
-                    }
-                    Section::Drivers => {
-                        self.driver_scroll = self.driver_scroll.saturating_sub(1);
-                    }
-                    Section::Disk => {
-                        self.disk_scroll = self.disk_scroll.saturating_sub(1);
-                    }
-                    _ => {}
-                },
-                KeyCode::Char('c') if self.current_section == Section::Processes => {
-                    self.process_sort = ProcessSortKey::Cpu;
-                }
-                KeyCode::Char('M') if self.current_section == Section::Processes => {
-                    self.process_sort = ProcessSortKey::Memory;
-                }
-                KeyCode::Char('n') if self.current_section == Section::Processes => {
-                    self.process_sort = ProcessSortKey::Name;
-                }
-                KeyCode::Char('p') if self.current_section == Section::Processes => {
-                    self.process_sort = ProcessSortKey::Pid;
-                }
-                // Temperature unit toggle
-                KeyCode::Char('f') => {
-                    self.temp_unit = self.temp_unit.toggle();
-                }
-                // Manual refresh for drivers section (non-blocking)
-                KeyCode::Char('r') => {
-                    if let Some(monitor) = &self.monitor {
-                        for lane in Lane::ALL {
-                            monitor.retry(lane);
-                        }
+            use crossterm::event::MouseEventKind;
+            match mouse.kind {
+                MouseEventKind::ScrollDown => self.select_relative(3),
+                MouseEventKind::ScrollUp => self.select_relative(-3),
+                MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                    if mouse.row == self.terminal_height.saturating_sub(1) {
+                        let section = (mouse.column as usize * 9
+                            / self.terminal_width.max(1) as usize)
+                            .min(8);
+                        self.select_section(Section::ALL[section]);
+                    } else if mouse.row >= 11 && mouse.row < self.terminal_height.saturating_sub(2)
+                    {
+                        let height = self.terminal_height.saturating_sub(14).max(1) as usize;
+                        let start = self.view.selected.saturating_sub(height.saturating_sub(1));
+                        let index = start + mouse.row.saturating_sub(11) as usize;
+                        self.select_relative(index as isize - self.view.selected as isize);
                     }
                 }
                 _ => {}
             }
+            return;
+        }
+        let Event::Key(key) = event else { return };
+        if key.kind == KeyEventKind::Release {
+            return;
+        }
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.should_quit = true;
+            return;
+        }
+        if self.editing_filter {
+            self.view.selected_id = None;
+            self.view.selected = 0;
+            match key.code {
+                KeyCode::Esc => {
+                    self.filter.clear();
+                    self.editing_filter = false;
+                }
+                KeyCode::Enter => self.editing_filter = false,
+                KeyCode::Backspace => {
+                    self.filter.pop();
+                }
+                KeyCode::Char(c)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && self.filter.len() < 256 =>
+                {
+                    self.filter.push(c)
+                }
+                _ => {}
+            }
+            return;
+        }
+        if self.show_help {
+            if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc) {
+                self.show_help = false;
+            }
+            return;
+        }
+        if self.show_findings {
+            match key.code {
+                KeyCode::Char('F') | KeyCode::Esc => {
+                    self.show_findings = false;
+                    self.inspector_scroll = 0;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.inspector_scroll = self.inspector_scroll.saturating_add(1)
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.inspector_scroll = self.inspector_scroll.saturating_sub(1)
+                }
+                KeyCode::PageDown => {
+                    self.inspector_scroll = self.inspector_scroll.saturating_add(10)
+                }
+                KeyCode::PageUp => self.inspector_scroll = self.inspector_scroll.saturating_sub(10),
+                _ => {}
+            }
+            return;
+        }
+        if self.mode.is_none() {
+            match key.code {
+                KeyCode::Char('1') => self.mode = Some(DiagnosticMode::User),
+                KeyCode::Char('2') => self.mode = Some(DiagnosticMode::Technician),
+                KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+                _ => {}
+            }
+            return;
+        }
+        // Repeat is useful for scrolling/filtering, but must not toggle pause or modes.
+        if key.kind == KeyEventKind::Repeat
+            && !matches!(
+                key.code,
+                KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::PageDown
+                    | KeyCode::PageUp
+                    | KeyCode::Char('j' | 'k')
+            )
+        {
+            return;
+        }
+        match key.code {
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Esc if self.show_inspector => {
+                self.show_inspector = false;
+                self.inspector_scroll = 0;
+            }
+            KeyCode::Esc if !self.filter.is_empty() => self.filter.clear(),
+            KeyCode::Esc => self.should_quit = true,
+            KeyCode::Char('m') => self.mode = None,
+            KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('F') => {
+                self.show_findings = true;
+                self.inspector_scroll = 0;
+            }
+            KeyCode::Char(' ') => self.toggle_pause(),
+            KeyCode::Char('/') => self.editing_filter = true,
+            KeyCode::Enter => {
+                self.show_inspector = !self.show_inspector;
+                self.inspector_scroll = 0;
+            }
+            KeyCode::Char(c @ '1'..='9') => {
+                if let Some(s) = Section::from_number(c as u8 - b'0') {
+                    self.select_section(s);
+                }
+            }
+            KeyCode::Tab => {
+                self.select_section(Section::ALL[(self.current_section.number() as usize) % 9])
+            }
+            KeyCode::BackTab => {
+                self.select_section(Section::ALL[(self.current_section.number() as usize + 7) % 9])
+            }
+            KeyCode::Down | KeyCode::Char('j') if self.show_inspector => {
+                self.inspector_scroll = self.inspector_scroll.saturating_add(1)
+            }
+            KeyCode::Up | KeyCode::Char('k') if self.show_inspector => {
+                self.inspector_scroll = self.inspector_scroll.saturating_sub(1)
+            }
+            KeyCode::Down | KeyCode::Char('j') => self.select_relative(1),
+            KeyCode::Up | KeyCode::Char('k') => self.select_relative(-1),
+            KeyCode::PageDown if self.show_inspector => {
+                self.inspector_scroll = self.inspector_scroll.saturating_add(10)
+            }
+            KeyCode::PageUp if self.show_inspector => {
+                self.inspector_scroll = self.inspector_scroll.saturating_sub(10)
+            }
+            KeyCode::PageDown => {
+                self.select_relative(self.terminal_height.saturating_sub(14).max(1) as isize)
+            }
+            KeyCode::PageUp => {
+                self.select_relative(-(self.terminal_height.saturating_sub(14).max(1) as isize))
+            }
+            KeyCode::Home => self.select_relative(-(self.view.selected as isize)),
+            KeyCode::End => self.select_relative(self.view.rows.len() as isize),
+            KeyCode::Char('c') if self.current_section == Section::Processes => {
+                self.process_sort = ProcessSortKey::Cpu;
+                self.sort_reversed = false;
+            }
+            KeyCode::Char('M') if self.current_section == Section::Processes => {
+                self.process_sort = ProcessSortKey::Memory;
+                self.sort_reversed = false;
+            }
+            KeyCode::Char('n') if self.current_section == Section::Processes => {
+                self.process_sort = ProcessSortKey::Name;
+                self.sort_reversed = false;
+            }
+            KeyCode::Char('p') if self.current_section == Section::Processes => {
+                self.process_sort = ProcessSortKey::Pid;
+                self.sort_reversed = false;
+            }
+            KeyCode::Char('s') if self.current_section == Section::Processes => {
+                self.sort_reversed = !self.sort_reversed
+            }
+            KeyCode::Char('f') => self.temp_unit = self.temp_unit.toggle(),
+            KeyCode::Char('r') => {
+                if let Some(m) = &self.monitor {
+                    for lane in Lane::ALL {
+                        m.retry(lane);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -372,6 +528,23 @@ impl App {
     }
 }
 
+struct MouseSession(bool);
+impl MouseSession {
+    fn new(enabled: bool) -> std::io::Result<Self> {
+        if enabled {
+            crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture)?;
+        }
+        Ok(Self(enabled))
+    }
+}
+impl Drop for MouseSession {
+    fn drop(&mut self) {
+        if self.0 {
+            let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture);
+        }
+    }
+}
+
 #[cfg(test)]
 mod compatibility_tests {
     use super::*;
@@ -381,6 +554,7 @@ mod compatibility_tests {
     use crossterm::event::{KeyEvent, KeyEventKind};
 
     fn press(app: &mut App, code: KeyCode) {
+        app.prepare_view();
         app.handle_event(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)));
     }
 
@@ -493,7 +667,7 @@ mod compatibility_tests {
     }
 
     #[test]
-    fn v2_section_unit_sort_and_scroll_keybindings_are_unchanged() {
+    fn section_unit_sort_keys_remain_and_v4_selection_is_bounded() {
         let mut app = App::new(Some(DiagnosticMode::Technician));
         for (key, section) in [
             ('1', Section::Overview),
@@ -539,19 +713,28 @@ mod compatibility_tests {
         app.snapshot.network_diag.active_connections = vec![connection(1), connection(2)];
         press(&mut app, KeyCode::Char('j'));
         press(&mut app, KeyCode::Char('j'));
-        assert_eq!(app.connection_scroll, 1);
+        assert_eq!(
+            app.connection_scroll, 2,
+            "connectivity evidence is an additive row"
+        );
         press(&mut app, KeyCode::Up);
-        assert_eq!(app.connection_scroll, 0);
+        assert_eq!(app.connection_scroll, 1);
 
         app.current_section = Section::Drivers;
         press(&mut app, KeyCode::Down);
-        assert_eq!(app.driver_scroll, 1);
+        assert_eq!(
+            app.driver_scroll, 0,
+            "empty inventories cannot select nonexistent rows"
+        );
         press(&mut app, KeyCode::Up);
         assert_eq!(app.driver_scroll, 0);
 
         app.current_section = Section::Disk;
         press(&mut app, KeyCode::Char('j'));
-        assert_eq!(app.disk_scroll, 1);
+        assert_eq!(
+            app.disk_scroll, 0,
+            "empty inventories cannot select nonexistent rows"
+        );
         press(&mut app, KeyCode::Char('k'));
         assert_eq!(app.disk_scroll, 0);
     }
@@ -565,5 +748,66 @@ mod compatibility_tests {
             KeyEventKind::Release,
         )));
         assert!(!app.should_quit);
+    }
+    #[test]
+    fn full_inventory_filter_sort_and_pid_reuse_keep_selection_truthful() {
+        let mut app = App::new(Some(DiagnosticMode::Technician));
+        app.select_section(Section::Processes);
+        app.snapshot.processes.list = (1..=250)
+            .map(|pid| {
+                let mut p = process(pid);
+                p.start_time_unix_ms = Some(pid as u64);
+                p.memory_bytes = pid as u64 * 1024;
+                p.memory_observation = crate::observation::Observation::available("fixture");
+                p
+            })
+            .collect();
+        press(&mut app, KeyCode::Char('M'));
+        app.prepare_view();
+        assert!(app.view.rows[0].name.ends_with("250"));
+        app.select_relative(11);
+        let selected = app.view.selected_id.clone();
+        app.snapshot.processes.list.reverse();
+        app.prepare_view();
+        assert_eq!(app.view.selected_id, selected);
+        let target = app.view.rows[app.view.selected].target;
+        if let crate::presentation::Target::Process(i) = target {
+            app.snapshot.processes.list[i].start_time_unix_ms = Some(99999);
+        }
+        app.prepare_view();
+        assert!(app.view.selection_lost);
+        assert!(app.view.inspector[0].contains("ended"));
+        press(&mut app, KeyCode::Char('/'));
+        for c in "process-200".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        press(&mut app, KeyCode::Enter);
+        app.prepare_view();
+        assert_eq!(app.view.rows.len(), 1);
+        assert_eq!(app.view.rows[0].name, "process-200");
+    }
+    #[test]
+    fn pause_freezes_values_while_latest_collection_can_advance() {
+        let mut app = App::new(Some(DiagnosticMode::User));
+        app.snapshot.cpu.total_usage = 20.0;
+        app.toggle_pause();
+        let frozen = app.paused_at;
+        app.live_while_paused.as_mut().unwrap().cpu.total_usage = 80.0;
+        app.prepare_view();
+        assert_eq!(app.snapshot.cpu.total_usage, 20.0);
+        assert_eq!(app.paused_at, frozen);
+        app.toggle_pause();
+        assert_eq!(app.snapshot.cpu.total_usage, 80.0);
+        assert!(app.paused_at.is_none());
+    }
+    #[test]
+    fn repeat_scrolls_but_does_not_toggle_pause() {
+        let mut app = App::new(Some(DiagnosticMode::User));
+        app.handle_event(Event::Key(KeyEvent::new_with_kind(
+            KeyCode::Char(' '),
+            KeyModifiers::NONE,
+            KeyEventKind::Repeat,
+        )));
+        assert!(app.paused_at.is_none());
     }
 }

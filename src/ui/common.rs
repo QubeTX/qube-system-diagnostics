@@ -93,27 +93,27 @@ pub fn sub_block(title: &str) -> Block<'static> {
 
 // -- Formatters --
 
-/// Format bytes to human-readable string (e.g., "12.4 GB")
+/// Format bytes to human-readable string (e.g., "12.4 GiB")
 pub fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-    const TB: u64 = GB * 1024;
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+    const TIB: u64 = GIB * 1024;
 
-    if bytes >= TB {
-        format!("{:.1} TB", bytes as f64 / TB as f64)
-    } else if bytes >= GB {
-        format!("{:.1} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.1} KB", bytes as f64 / KB as f64)
+    if bytes >= TIB {
+        format!("{:.1} TiB", bytes as f64 / TIB as f64)
+    } else if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
     } else {
         format!("{} B", bytes)
     }
 }
 
-/// Format bytes using GiB (binary) for technician mode
+/// Format bytes using GIB (binary) for technician mode
 pub fn format_bytes_gib(bytes: u64) -> String {
     let gib = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     if gib >= 1024.0 {
@@ -128,16 +128,16 @@ pub fn format_bytes_gib(bytes: u64) -> String {
 
 /// Format bytes per second as throughput
 pub fn format_throughput(bytes_per_sec: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
 
-    if bytes_per_sec >= GB {
-        format!("{:.1} GB/s", bytes_per_sec as f64 / GB as f64)
-    } else if bytes_per_sec >= MB {
-        format!("{:.1} MB/s", bytes_per_sec as f64 / MB as f64)
-    } else if bytes_per_sec >= KB {
-        format!("{:.1} KB/s", bytes_per_sec as f64 / KB as f64)
+    if bytes_per_sec >= GIB {
+        format!("{:.1} GiB/s", bytes_per_sec as f64 / GIB as f64)
+    } else if bytes_per_sec >= MIB {
+        format!("{:.1} MiB/s", bytes_per_sec as f64 / MIB as f64)
+    } else if bytes_per_sec >= KIB {
+        format!("{:.1} KiB/s", bytes_per_sec as f64 / KIB as f64)
     } else {
         format!("{} B/s", bytes_per_sec)
     }
@@ -211,12 +211,12 @@ pub fn plain_language_cpu(pct: f32) -> &'static str {
 
 /// Plain language for network speed
 pub fn plain_language_speed(bytes_per_sec: u64) -> &'static str {
-    const MB: u64 = 1024 * 1024;
+    const MIB: u64 = 1024 * 1024;
     if bytes_per_sec < 100 * 1024 {
         "Slow"
-    } else if bytes_per_sec < MB {
+    } else if bytes_per_sec < MIB {
         "Moderate"
-    } else if bytes_per_sec < 10 * MB {
+    } else if bytes_per_sec < 10 * MIB {
         "Fast"
     } else {
         "Very fast"

@@ -556,6 +556,7 @@ pub const Projection = struct {
     driver_attention_count: u32 = 0,
     driver_scan_buffer: canvas.TextBuffer(96) = canvas.TextBuffer(96).init("not scanned"),
     memory_module_observation: ObservationView = .{},
+    network_rate_available: bool = false,
     network_adapter_observation: ObservationView = .{},
     display_inventory_observation: ObservationView = .{},
     display_brightness_observation: ObservationView = .{},
@@ -1010,6 +1011,7 @@ pub const Projection = struct {
         copyMemoryModules(self, data.memory.modules[0..self.memory_module_count]);
 
         setObservation(&self.network_adapter_observation, data.network.adapter_status);
+        self.network_rate_available = std.mem.eql(u8, data.network.sample.observation.status, "available");
         self.total_download_kib_s = @as(f64, @floatFromInt(data.network.total_download_rate)) / 1024.0;
         self.total_upload_kib_s = @as(f64, @floatFromInt(data.network.total_upload_rate)) / 1024.0;
         self.interface_total_count = saturatedU32(data.network.interfaces.len);
@@ -1528,6 +1530,7 @@ const InterfaceJson = struct {
     operational_state: []const u8 = "unknown",
 };
 const NetworkJson = struct {
+    sample: struct { observation: ObservationJson = .{} } = .{},
     interfaces: []const InterfaceJson = &.{},
     total_download_rate: u64 = 0,
     total_upload_rate: u64 = 0,

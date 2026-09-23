@@ -1,3 +1,15 @@
+## v4 implementation contract (2026-09-23)
+
+The accepted v4 plan supersedes the v3 TUI layout and scheduler freeze below.
+`presentation.rs` prepares inventory sorting, filtering, identity selection and inspection;
+`ui/dashboard.rs` renders only visible rows. `Monitor` owns independent bounded lanes in
+both frontends. Space freezes terminal presentation while collection continues; `/`,
+Enter, page navigation and optional mouse are additive. GUI and TUI settings are separate
+namespaces. Histories use capture timestamps and preserve missing time buckets. See
+[ADR 0006](docs/adr/0006-v4-sampling-and-terminal-contract.md) and
+[ADR 0007](docs/adr/0007-adaptive-presentation-and-time-buckets.md).
+The complete v4 candidate remains unpublished until all accepted gates pass.
+
 # SD-300 / SD300 Project Context
 
 ## TL;DR

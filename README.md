@@ -16,6 +16,26 @@ ND-300 (Network Diagnostic).
 > mark's black plate on Windows/Linux and gives macOS a transparent-corner,
 > softened isometric treatment while retaining the monochrome tray identity.
 
+## v4 development preview (unpublished)
+
+The monitoring dashboard adapts to an 80×24 terminal and expands into aligned charts,
+tables and an inspector on wider terminals. All nine sections work in User and Technician
+modes. `/` filters the full inventory, arrows or j/k select rows, PgUp/PgDn move a page,
+and Enter opens details. Space freezes the view while monitoring continues; press it again
+to show the newest capture. F explains findings and their evidence. Process sorts remain
+c (CPU), M (memory), p (PID), n (name), with s reversing direction. Esc closes transient
+panels or clears a filter before quitting. Charts preserve unobserved intervals as gaps.
+
+Optional terminal preferences live in the settings document's independent `tui` object:
+`mouse_enabled` (false), `reduced_motion` (true), `ascii` (false), `no_color` (false).
+`NO_COLOR`, `SD300_ASCII`, and `TERM=dumb` are also honored. GUI preferences do not change
+these defaults. Mouse wheel and row/tab clicks supplement complete keyboard navigation.
+Technician inspection exposes units, availability, source, identity and capture age.
+
+JSON exports retain schema 1 by default. Request `snapshot --json --schema-version 2`
+or `capabilities --json --schema-version 2` for nullable readings, sample metadata and
+shared findings. This preview is not a published release or a performance certification.
+
 ## Install
 
 The managed channel is recommended on every platform. Installer filenames

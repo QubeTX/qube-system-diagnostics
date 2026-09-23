@@ -214,6 +214,28 @@ impl Default for SystemSnapshot {
 }
 
 impl SystemSnapshot {
+    /// Copy presentation values only. Collector handles and rate baselines are never cloned.
+    pub fn presentation_copy(&self) -> Self {
+        Self {
+            system: self.system.clone(),
+            cpu: self.cpu.clone(),
+            memory: self.memory.clone(),
+            disk: self.disk.clone(),
+            disk_activity: self.disk_activity.clone(),
+            disk_health: self.disk_health.clone(),
+            displays: self.displays.clone(),
+            gpu: self.gpu.clone(),
+            network: self.network.clone(),
+            network_diag: self.network_diag.clone(),
+            processes: self.processes.clone(),
+            thermals: self.thermals.clone(),
+            drivers: self.drivers.clone(),
+            warnings: self.warnings.clone(),
+            samples: self.samples.clone(),
+            ..Self::default()
+        }
+    }
+
     /// Refresh static info (once at startup)
     pub fn refresh_static(&mut self) {
         self.sys.refresh_cpu_all();

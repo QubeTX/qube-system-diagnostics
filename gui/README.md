@@ -241,3 +241,11 @@ for CLI/TUI isolation, desktop/tray lifecycle, and no-console collection.
 
 See [the information architecture](../docs/thinking/2026-07-21-native-gui-information-architecture.md)
 for hierarchy and professional/new-user presentation decisions.
+
+
+### v4 capture histories
+
+Histories use bounded timestamped samples. Missing captures produce empty time buckets;
+bar traces avoid connecting across gaps. CPU temperature remains its own series. The TUI
+preference namespace is preserved when the GUI saves its own preferences. These changes
+are in the unpublished v4 implementation and still require final performance qualification.

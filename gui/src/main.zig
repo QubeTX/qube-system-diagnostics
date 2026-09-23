@@ -25,7 +25,8 @@ const export_timer_key: u64 = 301;
 const visible_refresh_ms: u64 = 1000;
 const hidden_refresh_ms: u64 = 30000;
 const fast_summary_stale_after_ms: u64 = 2500;
-const history_sample_count: usize = 60;
+const history_model = @import("history.zig");
+const history_sample_count: usize = history_model.count;
 const primary_process_row_count: usize = 8;
 const tray_supported = builtin.os.tag == .windows or builtin.os.tag == .macos;
 const makira_font_id: canvas.FontId = canvas.min_registered_font_id;
@@ -106,16 +107,17 @@ pub const Model = struct {
     logical_processors: u32 = 0,
     warning_count: u32 = 0,
     overview_topic_meta: projection.TopicMeta = .{},
-    cpu_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    memory_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    swap_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    network_download_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    network_upload_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    gpu_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    temperature_history_celsius: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    temperature_history_fahrenheit: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    disk_read_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
-    disk_write_history: [history_sample_count]f64 = [_]f64{0} ** history_sample_count,
+    histories: [10]history_model.Timeline = [_]history_model.Timeline{.{}} ** 10,
+    cpu_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    memory_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    swap_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    network_download_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    network_upload_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    gpu_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    temperature_history_celsius: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    temperature_history_fahrenheit: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    disk_read_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
+    disk_write_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
     clock: native_sdk.Clock = .system,
     active_section: u8 = 0,
     show_all_processes: bool = false,
@@ -196,6 +198,7 @@ pub const Model = struct {
         "tray_tooltip_buffer",
         "last_monitor_section",
         "clock",
+        "histories",
         "engine_ready",
         "fast_summary_failed",
         "fast_summary_stale",
@@ -372,10 +375,10 @@ pub const Model = struct {
         return if (model.detail.hypervisor_present) "present" else "not detected";
     }
     pub fn primaryGpuTelemetryAvailable(model: *const Model) bool {
-        return model.detail.gpu_count > 0 and model.detail.gpu_rows[0].telemetry_available;
+        return model.detail.gpu_count > 0 and model.detail.gpu_rows[0].utilization_available;
     }
     pub fn thermalHistoryAvailable(model: *const Model) bool {
-        return model.detail.cpu_temperature_available or model.detail.gpu_temperature_available;
+        return model.detail.cpu_temperature_available;
     }
     pub fn summaryLive(model: *const Model) bool {
         return model.fast_summary_seen and model.engine_ready and !model.fast_summary_failed and !model.fast_summary_stale;
@@ -929,6 +932,7 @@ fn pollExport(model: *Model, fx: *Effects) void {
 }
 
 fn sampleEngine(model: *Model) void {
+    defer projectHistories(model);
     const runtime = active_engine orelse {
         markFastSummaryFailed(model);
         model.status_buffer.set("Engine unavailable — run sd300 update to repair the GUI companion.");
@@ -970,6 +974,7 @@ fn sampleDetailedTopics(runtime: *engine.Runtime, model: *Model) void {
         },
         2 => sampleTopic(runtime, model, allocator, .fast),
         3 => {
+            sampleTopic(runtime, model, allocator, .fast);
             sampleTopic(runtime, model, allocator, .slow);
             sampleTopic(runtime, model, allocator, .health);
         },
@@ -1023,30 +1028,25 @@ fn sampleTopic(runtime: *engine.Runtime, model: *Model, allocator: std.mem.Alloc
     };
     switch (topic) {
         .fast => {
-            if (model.detail.activity_sequence != previous_activity and model.detail.disk_io_available) {
-                pushHistoryRaw(&model.disk_read_history, model.detail.disk_read_mib_s);
-                pushHistoryRaw(&model.disk_write_history, model.detail.disk_write_mib_s);
+            const meta = model.detail.topicMeta(1);
+            const valid = std.mem.eql(u8,meta.availability(),"available");
+            if (model.detail.activity_sequence != previous_activity) {
+                const at = model.detail.activity_captured_unix_ms;
+                model.histories[8].observe(at, if (model.detail.disk_io_available) model.detail.disk_read_mib_s else null);
+                model.histories[9].observe(at, if (model.detail.disk_io_available) model.detail.disk_write_mib_s else null);
             }
-            const swap_percent = if (model.detail.swap_total_gib > 0)
-                model.detail.swap_used_gib / model.detail.swap_total_gib * 100
-            else
-                0;
-            pushHistory(&model.swap_history, swap_percent);
-            pushHistoryRaw(&model.network_download_history, model.detail.total_download_kib_s);
-            pushHistoryRaw(&model.network_upload_history, model.detail.total_upload_kib_s);
+            const swap: ?f64 = if (valid and model.detail.swap_total_gib > 0) model.detail.swap_used_gib / model.detail.swap_total_gib * 100 else null;
+            model.histories[2].observe(meta.captured_unix_ms,swap);
+            model.histories[3].observe(meta.captured_unix_ms,if(valid and model.detail.network_rate_available) model.detail.total_download_kib_s else null);
+            model.histories[4].observe(meta.captured_unix_ms,if(valid and model.detail.network_rate_available) model.detail.total_upload_kib_s else null);
         },
         .slow => {
-            if (model.detail.gpu_count > 0 and model.detail.gpu_rows[0].telemetry_available) {
-                pushHistory(&model.gpu_history, model.detail.gpu_rows[0].utilization_percent);
-            }
-            const temperature = if (model.detail.cpu_temperature_available)
-                model.detail.cpu_temperature_celsius
-            else
-                -1;
-            if (temperature >= 0) {
-                pushHistoryRaw(&model.temperature_history_celsius, temperature);
-                pushHistoryRaw(&model.temperature_history_fahrenheit, (temperature * 9 / 5) + 32);
-            }
+            const meta = model.detail.topicMeta(3);
+            const valid = std.mem.eql(u8,meta.availability(),"available");
+            model.histories[5].observe(meta.captured_unix_ms,if(valid and model.primaryGpuTelemetryAvailable()) model.detail.gpu_rows[0].utilization_percent else null);
+            const temperature: ?f64 = if (valid and model.detail.cpu_temperature_available) model.detail.cpu_temperature_celsius else null;
+            model.histories[6].observe(meta.captured_unix_ms,temperature);
+            model.histories[7].observe(meta.captured_unix_ms,if(temperature) |t| (t * 9 / 5) + 32 else null);
         },
         .medium => rebuildConnectionFilter(model),
         .drivers => rebuildDriverFilter(model),
@@ -1095,10 +1095,11 @@ pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     const static_meta = model.detail.topicMeta(0);
     overview_meta.target_buffer.set(if (static_meta.ready) static_meta.target() else "active target");
     model.overview_topic_meta = overview_meta;
-    if (sequence_advanced) {
-        pushHistory(&model.cpu_history, model.cpu_percent);
-        pushHistory(&model.memory_history, model.memory_percent);
+    if (sample_advanced) {
+        model.histories[0].observe(summary.captured_unix_ms, model.cpu_percent);
+        model.histories[1].observe(summary.captured_unix_ms, if(summary.memory_total_bytes > 0) model.memory_percent else null);
     }
+    projectHistories(model);
     var cpu_text: [64]u8 = undefined;
     const cpu_label = std.fmt.bufPrint(&cpu_text, "CPU · {d:.1}%", .{model.cpu_percent}) catch "CPU · live";
     model.tray_cpu_buffer.set(cpu_label);
@@ -1172,14 +1173,11 @@ fn updateTrayTooltip(model: *Model) void {
     model.tray_tooltip_buffer.set(tooltip);
 }
 
-fn pushHistory(history: *[history_sample_count]f64, sample: f64) void {
-    std.mem.copyForwards(f64, history[0 .. history.len - 1], history[1..]);
-    history[history.len - 1] = std.math.clamp(sample, 0, 100);
-}
-
-fn pushHistoryRaw(history: *[history_sample_count]f64, sample: f64) void {
-    std.mem.copyForwards(f64, history[0 .. history.len - 1], history[1..]);
-    history[history.len - 1] = @max(sample, 0);
+fn projectHistories(model: *Model) void {
+    const wall = model.clock.wallMs();
+    const now: u64 = if(wall > 0) @intCast(wall) else model.overview_topic_meta.captured_unix_ms;
+    const outputs = .{ &model.cpu_history, &model.memory_history, &model.swap_history, &model.network_download_history, &model.network_upload_history, &model.gpu_history, &model.temperature_history_celsius, &model.temperature_history_fahrenheit, &model.disk_read_history, &model.disk_write_history };
+    inline for (outputs,0..) |output,i| model.histories[i].project(now,if(i>=5 and i<=7) 5000 else 1000,output);
 }
 
 pub const AppUi = canvas.Ui(Msg);

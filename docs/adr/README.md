@@ -25,6 +25,9 @@ Rules:
 | [0004](0004-v3-release-scope-decisions.md) | v3.0.0 release scope: functional bar now, evidence bar deferred deliberately | Accepted |
 | [0005](0005-in-app-update-coordinator.md) | In-app updates spawn the CLI as a detached coordinator; the GUI never mutates the installation | Accepted |
 
+| [0006](0006-v4-sampling-and-terminal-contract.md) | Bounded independent collection and the v4 terminal contract | Accepted |
+| [0007](0007-adaptive-presentation-and-time-buckets.md) | Adaptive presentation and captured time buckets | Accepted |
+
 ## Dual-frontend contract pointer
 
 The rules for changing SD-300 across its two frontends — what the TUI and native

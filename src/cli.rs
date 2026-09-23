@@ -237,14 +237,22 @@ EXAMPLES:
 
 KEYBINDINGS:
   1-9          Switch to section
-  q / Esc      Quit
+  q / Esc      Quit (Esc closes panels and filters first)
   Ctrl+C       Quit to shell
   m            Return to mode selection
   ?            Help overlay
   f            Toggle temperature unit (C/F)
-  j / k        Scroll (Processes, Connections, Drivers, Disk)
+  j / k        Select rows / scroll inspector
   c / M / p / n  Sort processes by CPU / Memory / PID / Name
-  r            Refresh drivers (Drivers section)
+  r            Retry providers and discovery
+  /            Filter the complete inventory
+  Enter        Inspect selected row
+  Space        Pause view / resume newest sample
+  PgUp/PgDn    Page through rows
+  Home / End   Select first / last row
+  Tab          Next section (Shift+Tab goes back)
+  s            Reverse process sort direction
+  F            Findings, evidence and next steps
 
 SECTIONS:
   1 Overview    System health dashboard / identity and gauges
