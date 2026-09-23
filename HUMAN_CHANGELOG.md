@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: Mac checks confirm that routine updates no longer create duplicate keyboard events or trigger the unsupported accessibility calls we found. The unchanged-app repeat meets the approved responsiveness limit on every platform. Completed stability checks and remaining resource-use overruns are recorded together, including earlier failed results.
+
 - Behind the scenes: release checks now apply the owner's approved responsiveness budget while still reporting the stricter long-term targets. Resource use, correct input handling, accessibility and reliable shutdown remain required; the timing exception expires with this release.
 
 - Behind the scenes: align the product documentation with the requested font pairing so future updates preserve it.

@@ -1,0 +1,328 @@
+{
+  "schema": 1,
+  "identity": {
+    "revision": "ee939df26c88d6ae411530d3056088f18962ff7c",
+    "started_utc": "2026-09-23T19:48:37.9151445Z",
+    "observer_attached": false,
+    "build_active": false,
+    "plan": [
+      "Processes 7200 seconds",
+      "Thermals 900 seconds",
+      "hidden 1800 seconds"
+    ],
+    "files": [
+      {
+        "Path": "C:\\Users\\hey\\git\\qube-system-diagnostics\\target\\native-gui-stage\\windows-x86_64\\app\\zig-out\\bin\\sd300-gui.exe",
+        "Hash": "C62D441BC878F050F4BEE35BDBE88DC2F436EB92FF60634171157D92BE7A2946"
+      },
+      {
+        "Path": "C:\\Users\\hey\\git\\qube-system-diagnostics\\target\\native-gui-stage\\windows-x86_64\\app\\zig-out\\bin\\sd300_engine.dll",
+        "Hash": "182554A291A03F06848506511EFBEB12ED3A597DFB90FB2A4D336562E85E9D7C"
+      },
+      {
+        "Path": "C:\\Users\\hey\\git\\qube-system-diagnostics\\target\\native-gui-stage\\windows-x86_64\\app\\zig-out\\bin\\sd300.exe",
+        "Hash": "19C7F21757166CB414F803B5A289359E9DD30CB2ADE54CE07B8D7BD81B63973C"
+      }
+    ]
+  },
+  "purpose": "Unobserved release-build Windows two-hour soak, foreground and hidden resource qualification. Later product edits are macOS-only; these are candidate bytes, not final public artifact bytes.",
+  "windows": [
+    {
+      "kind": "processes-soak-2h",
+      "report": {
+        "schema": 2,
+        "binary": "C:\\Users\\hey\\git\\qube-system-diagnostics\\target\\native-gui-stage\\windows-x86_64\\app\\zig-out\\bin\\sd300-gui.exe",
+        "sha256": "c62d441bc878f050f4bee35bdbe88dc2f436eb92ff60634171157d92be7a2946",
+        "engine_sha256": "182554a291a03f06848506511efbeb12ed3a597dfb90fb2a4d336562e85e9d7c",
+        "revision": "ee939df26c88d6ae411530d3056088f18962ff7c",
+        "collector_sha256": "19c7f21757166cb414f803b5a289359e9dd30cb2ade54ce07b8d7bd81b63973c",
+        "build": "release",
+        "mode": "foreground",
+        "section": "Processes",
+        "legacy_in_process": false,
+        "warmup_seconds": 15,
+        "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+        "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+        "collector_topics_at_start": [],
+        "required_collector_topics": [],
+        "memory_roles_first": {
+          "gui": {
+            "rss_mib": 58.046875,
+            "private_mib": 219.71484375,
+            "processes": 1
+          }
+        },
+        "memory_roles_last": {
+          "gui": {
+            "rss_mib": 60.48828125,
+            "private_mib": 222.0390625,
+            "processes": 1
+          }
+        },
+        "rss_peak_elapsed_seconds": 6285.502962800005,
+        "measured_seconds": 7200.078318399988,
+        "samples": 28727,
+        "cpu_percent_one_core": 1.4882650613141166,
+        "cpu_interval_p95": 6.241165007112687,
+        "rss_mib_max": 77.8046875,
+        "private_mib_max": 228.86328125,
+        "rss_peak_roles": {
+          "gui": {
+            "rss_mib": 60.48046875,
+            "private_mib": 222.03125,
+            "processes": 1
+          },
+          "collector:static": {
+            "rss_mib": 17.32421875,
+            "private_mib": 6.64453125,
+            "processes": 1
+          }
+        },
+        "rss_last_window_delta": 1.0226010293349574,
+        "private_last_window_delta": 1.6420830431754894,
+        "handles_max": 638,
+        "process_count_max": 2,
+        "processes_created": 24,
+        "process_names": [
+          "sd300-gui.exe",
+          "sd300.exe"
+        ],
+        "cpu_gate": true,
+        "rss_gate": true,
+        "private_gate": true,
+        "collector_topics_at_end": [],
+        "clean_shutdown": true
+      }
+    },
+    {
+      "kind": "foreground-15m",
+      "report": {
+        "schema": 2,
+        "binary": "C:\\Users\\hey\\git\\qube-system-diagnostics\\target\\native-gui-stage\\windows-x86_64\\app\\zig-out\\bin\\sd300-gui.exe",
+        "sha256": "c62d441bc878f050f4bee35bdbe88dc2f436eb92ff60634171157d92be7a2946",
+        "engine_sha256": "182554a291a03f06848506511efbeb12ed3a597dfb90fb2a4d336562e85e9d7c",
+        "revision": "ee939df26c88d6ae411530d3056088f18962ff7c",
+        "collector_sha256": "19c7f21757166cb414f803b5a289359e9dd30cb2ade54ce07b8d7bd81b63973c",
+        "build": "release",
+        "mode": "foreground",
+        "section": "Thermals",
+        "legacy_in_process": false,
+        "warmup_seconds": 15,
+        "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+        "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+        "collector_topics_at_start": [
+          "activity",
+          "connections",
+          "diagnostics",
+          "slow"
+        ],
+        "required_collector_topics": [
+          "activity",
+          "connections",
+          "diagnostics",
+          "slow"
+        ],
+        "memory_roles_first": {
+          "gui": {
+            "rss_mib": 50.83203125,
+            "private_mib": 216.76953125,
+            "processes": 1
+          },
+          "collector:connections": {
+            "rss_mib": 8.9921875,
+            "private_mib": 1.796875,
+            "processes": 1
+          },
+          "collector:slow": {
+            "rss_mib": 41.65625,
+            "private_mib": 27.04296875,
+            "processes": 1
+          },
+          "collector:diagnostics": {
+            "rss_mib": 10.8359375,
+            "private_mib": 2.0234375,
+            "processes": 1
+          },
+          "collector:activity": {
+            "rss_mib": 9.1328125,
+            "private_mib": 1.92578125,
+            "processes": 1
+          }
+        },
+        "memory_roles_last": {
+          "gui": {
+            "rss_mib": 51.62890625,
+            "private_mib": 217.14453125,
+            "processes": 1
+          },
+          "collector:connections": {
+            "rss_mib": 9.61328125,
+            "private_mib": 2.62109375,
+            "processes": 1
+          },
+          "collector:slow": {
+            "rss_mib": 41.953125,
+            "private_mib": 26.9765625,
+            "processes": 1
+          },
+          "collector:diagnostics": {
+            "rss_mib": 11.14453125,
+            "private_mib": 2.19921875,
+            "processes": 1
+          },
+          "collector:activity": {
+            "rss_mib": 9.0859375,
+            "private_mib": 1.85546875,
+            "processes": 1
+          }
+        },
+        "rss_peak_elapsed_seconds": 585.306148899981,
+        "measured_seconds": 900.0048524999875,
+        "samples": 3589,
+        "cpu_percent_one_core": 0.9878418961080129,
+        "cpu_interval_p95": 6.235040889949911,
+        "rss_mib_max": 141.45703125,
+        "private_mib_max": 257.7265625,
+        "rss_peak_roles": {
+          "gui": {
+            "rss_mib": 51.65625,
+            "private_mib": 217.203125,
+            "processes": 1
+          },
+          "collector:connections": {
+            "rss_mib": 9.578125,
+            "private_mib": 2.60546875,
+            "processes": 1
+          },
+          "collector:slow": {
+            "rss_mib": 41.90234375,
+            "private_mib": 26.90625,
+            "processes": 1
+          },
+          "collector:diagnostics": {
+            "rss_mib": 11.109375,
+            "private_mib": 2.1640625,
+            "processes": 1
+          },
+          "collector:activity": {
+            "rss_mib": 9.2265625,
+            "private_mib": 1.8828125,
+            "processes": 1
+          },
+          "collector:static": {
+            "rss_mib": 17.984375,
+            "private_mib": 6.49609375,
+            "processes": 1
+          }
+        },
+        "rss_last_window_delta": 1.8432262569832432,
+        "private_last_window_delta": 1.3055058484636959,
+        "handles_max": 1288,
+        "process_count_max": 6,
+        "processes_created": 21,
+        "process_names": [
+          "sd300-gui.exe",
+          "sd300.exe"
+        ],
+        "cpu_gate": true,
+        "rss_gate": true,
+        "private_gate": true,
+        "collector_topics_at_end": [
+          "activity",
+          "connections",
+          "diagnostics",
+          "slow"
+        ],
+        "clean_shutdown": true
+      }
+    },
+    {
+      "kind": "hidden-30m",
+      "report": {
+        "schema": 2,
+        "binary": "C:\\Users\\hey\\git\\qube-system-diagnostics\\target\\native-gui-stage\\windows-x86_64\\app\\zig-out\\bin\\sd300-gui.exe",
+        "sha256": "c62d441bc878f050f4bee35bdbe88dc2f436eb92ff60634171157d92be7a2946",
+        "engine_sha256": "182554a291a03f06848506511efbeb12ed3a597dfb90fb2a4d336562e85e9d7c",
+        "revision": "ee939df26c88d6ae411530d3056088f18962ff7c",
+        "collector_sha256": "19c7f21757166cb414f803b5a289359e9dd30cb2ade54ce07b8d7bd81b63973c",
+        "build": "release",
+        "mode": "hidden",
+        "section": "Overview",
+        "legacy_in_process": false,
+        "warmup_seconds": 15,
+        "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+        "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+        "collector_topics_at_start": [
+          "slow"
+        ],
+        "required_collector_topics": [
+          "slow"
+        ],
+        "memory_roles_first": {
+          "gui": {
+            "rss_mib": 46.44140625,
+            "private_mib": 213.17578125,
+            "processes": 1
+          },
+          "collector:slow": {
+            "rss_mib": 41.1875,
+            "private_mib": 26.44140625,
+            "processes": 1
+          }
+        },
+        "memory_roles_last": {
+          "gui": {
+            "rss_mib": 49.8125,
+            "private_mib": 215.578125,
+            "processes": 1
+          },
+          "collector:slow": {
+            "rss_mib": 41.875,
+            "private_mib": 26.90625,
+            "processes": 1
+          }
+        },
+        "rss_peak_elapsed_seconds": 1785.2730049999955,
+        "measured_seconds": 1800.0631733000046,
+        "samples": 7181,
+        "cpu_percent_one_core": 0.29773260624930237,
+        "cpu_interval_p95": 0.0,
+        "rss_mib_max": 109.49609375,
+        "private_mib_max": 248.75390625,
+        "rss_peak_roles": {
+          "gui": {
+            "rss_mib": 49.8125,
+            "private_mib": 215.578125,
+            "processes": 1
+          },
+          "collector:slow": {
+            "rss_mib": 41.859375,
+            "private_mib": 26.89453125,
+            "processes": 1
+          },
+          "collector:static": {
+            "rss_mib": 17.82421875,
+            "private_mib": 6.28125,
+            "processes": 1
+          }
+        },
+        "rss_last_window_delta": 1.6376218662952624,
+        "private_last_window_delta": 0.9555242426880284,
+        "handles_max": 836,
+        "process_count_max": 3,
+        "processes_created": 36,
+        "process_names": [
+          "sd300-gui.exe",
+          "sd300.exe"
+        ],
+        "cpu_gate": true,
+        "rss_gate": true,
+        "private_gate": true,
+        "collector_topics_at_end": [
+          "slow"
+        ],
+        "clean_shutdown": true
+      }
+    }
+  ]
+}

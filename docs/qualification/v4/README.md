@@ -1,5 +1,57 @@
 # SD-300 v4 qualification evidence
 
+The operator's 2026-09-23 release decision is recorded in
+[ADR 0016](../../adr/0016-v4-responsiveness-release-decision.md): for 4.0.0 on
+all six targets, frame/input p95 and ordinary-refresh maximum may reach 100 ms.
+Original-target verdicts stay visible; CPU/memory and functional gates remain
+unchanged. `native-interaction-ec5635d.json` retains all six native reports and a
+separate assessment under that policy. Five targets meet the approved timing
+limit. Intel Mac's first navigation cohort exceeds it (151.354 ms frame p95,
+177.170 ms input p95; first refresh maximum 110.023 ms), so an unchanged-product repeat was required and is recorded below.
+
+The unchanged-product repeat in
+[35926413084](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/35926413084)
+passes the approved policy and complete native CI on all six targets. Retained
+`native-interaction-ce77ebf.json` includes original-target verdicts, all twelve
+cohorts per target, artifact identities and exact keyboard-completion counts.
+Intel Mac now records frame/input p95 29.462/38.219 ms and refresh maximum
+13.951 ms. Its prior slow first cohort did not reproduce; the earlier failure
+is still retained rather than reclassified or removed.
+
+The ec5635d native Mac fixtures pass on both architectures: passive semantic
+publication emits no assistive actions, actual external focus remains actionable,
+and unsupported legacy AppKit selectors do not throw. All four keyboard cohorts
+on every platform now record exactly 20 completions for 20 actions. Both Mac
+follow-up profiles lack the earlier unsupported-selector/exception-unwinding
+frames. These findings resolve those specific defects, not every accessibility
+behavior or the remaining resource limits.
+
+The final four-host resource run
+[35923985086](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/35923985086)
+is retained in `native-resources-ec5635d.json`. Each host ran independent,
+unobserved 900-second TUI, Thermals foreground and hidden windows using hashed
+normal release artifacts. All sessions shut down cleanly. Original limits are
+still active while the operator considers a separate resource-budget decision.
+
+| Target | TUI CPU / RSS | Foreground CPU / RSS | Hidden CPU / RSS |
+|---|---|---|---|
+| Linux GNU ARM64 | 0.899% / 27.96 MiB | 1.061% / 145.12 MiB | 0.193% / 123.32 MiB |
+| Linux GNU x86-64 | 1.625% / 34.94 MiB | 1.790% / **154.06 MiB** | 0.254% / 132.23 MiB |
+| macOS Intel | 1.564% / 34.66 MiB | 1.766% / 119.33 MiB | **1.025%** / 109.59 MiB |
+| macOS Apple Silicon | **2.047%** / 54.06 MiB | **2.152% / 187.63 MiB** | **1.787%** / 148.09 MiB |
+
+CPU is percent of one logical core including owned descendants. Bold values
+exceed an original limit. The unchanged Linux musl runtime is covered by the
+preceding native matrix below (foreground CPU 2.090%, RSS 79.09 MiB).
+
+`windows-resources-ee939df.json` retains the local 4.0.0 release-build identity,
+quarantine declaration and all three completed windows. The two-hour Processes
+soak records 1.488% CPU, 77.80 MiB RSS and 228.86 MiB private memory; fifteen-minute
+Thermals foreground records 0.988%, 141.46 MiB and 257.73 MiB; thirty-minute hidden
+records 0.298%, 109.50 MiB and 248.75 MiB. All original resource gates and clean
+shutdown pass. Subsequent product changes affect macOS only. These are qualified
+candidate bytes; final public artifact identity is verified during publication.
+
 The complete hosted resource comparison at 309d2f3 is retained in
 `native-resources-309d2f3.json` with all six targets, eighteen paired 900-second
 windows, exact executable identities and before/after values. It precedes the
@@ -17,12 +69,13 @@ target has a frame or input failure. The unchanged diagnostic repeat
 [35917363148](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/35917363148)
 adds bounded per-input traces. Mac focused semantic snapshots were calling the
 assistive-action setter, recording duplicate input and clearing keyboard focus
-visibility. The fix must pass independent qualification on both native Mac runners.
-The original performance thresholds remain active; no deferral is implied.
+visibility. The later ec5635d evidence above qualifies the correction on both
+native Mac runners. The original report remains unchanged; only the explicit
+ADR 0016 timing decision changes the release assessment.
 
-These initial measurements are diagnostic runs, not release acceptance. The
-foreground/hidden/soak matrix, native comparisons and installer qualification
-remain open. Do not infer hardware accuracy from parser fixtures or builds.
+The initial measurements below are diagnostic runs, not final release acceptance.
+The completed windows above preserve remaining resource-limit failures. Final
+composite installer qualification and public verification remain open. Do not infer hardware accuracy from parser fixtures or builds.
 
 The 0069088 Windows automation candidate passes the full synchronous work,
 input and refresh-stall gates across 1180×760 and 950×760 viewports in both

@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Retain both complete native interaction matrices and all original verdicts. The unchanged-product ce77ebf repeat passes the approved timing policy on all six targets; both Mac native accessibility fixtures and exact keyboard-completion counts pass. Retain the final native resource windows and passing Windows two-hour soak, foreground and hidden windows with exact identities; remaining CPU/RSS overruns remain explicit.
+
 - Record the operator's 2026-09-23 all-platform 4.0.0 responsiveness decision: frame/input p95 and ordinary-refresh maximum may reach 100 ms. Retain original-target verdicts, expire the exception for later versions, and keep CPU/memory, native accessibility, functional, shutdown and lifecycle checks mandatory (ADR 0016; follow-up #r16).
 
 - Reconcile product and contributor typography documentation with the verified Makira heading, Gail Rock body/control, and Plex Mono technical font mapping.
