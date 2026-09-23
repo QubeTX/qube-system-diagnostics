@@ -61,6 +61,8 @@ pub const Msg = union(enum) {
     show_cpu_processes,
     show_memory_processes,
     process_filter_edit: canvas.TextInputEvent,
+    process_previous_page,
+    process_next_page,
     connection_filter_edit: canvas.TextInputEvent,
     driver_filter_edit: canvas.TextInputEvent,
     toggle_driver_attention,
@@ -122,6 +124,9 @@ pub const Model = struct {
     active_section: u8 = 0,
     show_all_processes: bool = false,
     process_sort: ProcessSort = .cpu,
+    process_page_offset: u32 = 0,
+    process_matches: u32 = 0,
+    process_query_active: bool = false,
     process_filter_buffer: canvas.TextBuffer(64) = .{},
     filtered_process_rows: [projection.max_processes]projection.ProcessRow = [_]projection.ProcessRow{.{}} ** projection.max_processes,
     filtered_process_count: usize = 0,
@@ -177,6 +182,11 @@ pub const Model = struct {
         "tray_session_active",
         "show_all_processes",
         "process_sort",
+        "process_page_offset",
+        "process_matches",
+        "process_query_active",
+        "processHasPrevious",
+        "processHasNext",
         "process_filter_buffer",
         "filtered_process_rows",
         "filtered_process_count",
@@ -295,7 +305,7 @@ pub const Model = struct {
             model.filtered_connection_count;
     }
     pub fn processes(model: *const Model) []const projection.ProcessRow {
-        const rows = if (model.process_filter_buffer.text().len == 0)
+        const rows = if (model.process_query_active or model.process_filter_buffer.text().len == 0)
             model.detail.processes()
         else
             model.filtered_process_rows[0..model.filtered_process_count];
@@ -306,6 +316,7 @@ pub const Model = struct {
         return model.process_filter_buffer.text();
     }
     pub fn processMatchCount(model: *const Model) usize {
+        if (model.process_query_active) return model.process_matches;
         return if (model.process_filter_buffer.text().len == 0)
             model.detail.process_count
         else
@@ -315,8 +326,14 @@ pub const Model = struct {
         return model.processes().len;
     }
     pub fn processToggleLabel(model: *const Model) []const u8 {
-        return if (model.show_all_processes) "Show primary 8" else "Show all matches";
+        return if (model.show_all_processes) "Show primary 8" else "Show 16 per page";
     }
+    pub fn processPreviousDisabled(model: *const Model) bool { return !model.processHasPrevious(); }
+    pub fn processNextDisabled(model: *const Model) bool { return !model.processHasNext(); }
+    pub fn processPageNumber(model: *const Model) u32 { return model.process_page_offset / 16 + 1; }
+    pub fn processPageCount(model: *const Model) u32 { return @max(1, (model.process_matches +| 15) / 16); }
+    pub fn processHasPrevious(model: *const Model) bool { return model.process_page_offset > 0; }
+    pub fn processHasNext(model: *const Model) bool { return model.process_page_offset +| 16 < model.process_matches; }
     /// Sidebar build identity. Sourced from the engine's expected product
     /// version so it can never drift from the shipped version or carry a
     /// stale build-state word into a public release.
@@ -500,7 +517,19 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         .process_filter_edit => |edit| {
             model.process_filter_buffer.apply(edit);
             model.show_all_processes = true;
+            model.process_page_offset = 0;
+            requestProcessQuery(model);
             rebuildProcessFilter(model);
+        },
+        .process_previous_page => {
+            model.process_page_offset -|= 16;
+            model.show_all_processes = true;
+            requestProcessQuery(model);
+        },
+        .process_next_page => {
+            if (model.processHasNext()) model.process_page_offset +|= 16;
+            model.show_all_processes = true;
+            requestProcessQuery(model);
         },
         .connection_filter_edit => |edit| {
             model.connection_filter_buffer.apply(edit);
@@ -718,7 +747,9 @@ fn selectSection(model: *Model, section: u8) void {
 
 fn setProcessSort(model: *Model, process_sort: ProcessSort) void {
     model.process_sort = process_sort;
+    model.process_page_offset = 0;
     sortProcesses(model);
+    requestProcessQuery(model);
     const runtime = active_engine orelse {
         model.status_buffer.set("Current process rows were sorted locally; the engine is unavailable for a full-inventory refresh.");
         return;
@@ -728,6 +759,14 @@ fn setProcessSort(model: *Model, process_sort: ProcessSort) void {
         return;
     };
     model.status_buffer.set("Process ranking changed · full inventory refresh requested");
+}
+
+fn requestProcessQuery(model: *Model) void {
+    const runtime = active_engine orelse return;
+    runtime.setProcessQuery(model.process_filter_buffer.text(), model.process_page_offset) catch {
+        model.status_buffer.set("The process search could not be updated; the previous captured page remains visible.");
+        return;
+    };
 }
 
 fn sortProcesses(model: *Model) void {
@@ -996,6 +1035,9 @@ fn sampleProcessSummary(runtime: *engine.Runtime, model: *Model) void {
         return;
     } orelse return;
     model.detail.applyProcessSummary(summary);
+    model.process_query_active = true;
+    model.process_matches = summary.matched_count;
+    model.process_page_offset = summary.page_offset;
     if (model.process_sort != .cpu) {
         sortProcesses(model);
     } else {

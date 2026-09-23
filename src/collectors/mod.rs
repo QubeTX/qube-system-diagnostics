@@ -339,9 +339,9 @@ impl SystemSnapshot {
         {
             self.sys.refresh_memory();
             memory::refresh_usage(&mut self.memory, &self.sys);
-            self.processes = self
-                .gui_process_sampler
-                .collect(self.memory.total_bytes, 16, sort);
+            self.processes =
+                self.gui_process_sampler
+                    .collect(self.memory.total_bytes, usize::MAX, sort);
             self.cpu.total_usage = self.gui_process_sampler.total_cpu_percent();
         }
         #[cfg(not(target_os = "windows"))]
@@ -355,7 +355,7 @@ impl SystemSnapshot {
                 true,
                 ProcessRefreshKind::nothing().with_cpu().with_memory(),
             );
-            self.processes = processes::collect_limited(&self.sys, 16, sort);
+            self.processes = processes::collect_limited(&self.sys, usize::MAX, sort);
             self.mark_process_baselines();
         }
     }

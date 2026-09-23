@@ -429,7 +429,7 @@ test "process table defaults to a focused primary set and expands on demand" {
         model.detail.process_rows[index].pid = @intCast(index + 1);
     }
     try testing.expectEqual(@as(usize, 8), model.visibleProcessCount());
-    try testing.expectEqualStrings("Show all matches", model.processToggleLabel());
+    try testing.expectEqualStrings("Show 16 per page", model.processToggleLabel());
 
     var fx = main.Effects.init(testing.allocator);
     defer fx.deinit();
@@ -1462,4 +1462,27 @@ test "headless SD-300 warmed-state scroll damage attribution benchmark" {
         const burst_name = try std.fmt.bufPrint(&burst_name_buf, "sec{d} scroll-burst  warm      ", .{section});
         try warmRunBurst(&pool, burst_name, model_a, s0);
     }
+}
+
+
+test "engine process pages retain global match counts with fixed display storage" {
+    var model = main.initialModel();
+    model.process_query_active = true;
+    model.process_matches = 250;
+    model.process_page_offset = 240;
+    model.detail.process_count = 10;
+    model.process_filter_buffer.set("all inventory query");
+    model.show_all_processes = true;
+    try testing.expectEqual(@as(usize, 250), model.processMatchCount());
+    try testing.expectEqual(@as(usize, 10), model.visibleProcessCount());
+    try testing.expectEqual(@as(u32, 16), model.processPageNumber());
+    try testing.expect(model.processHasPrevious());
+    try testing.expect(!model.processHasNext());
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    main.update(&model, .process_previous_page, &fx);
+    try testing.expectEqual(@as(u32, 224), model.process_page_offset);
+    main.update(&model, .process_next_page, &fx);
+    try testing.expectEqual(@as(u32, 240), model.process_page_offset);
 }

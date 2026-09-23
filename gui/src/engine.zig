@@ -83,6 +83,8 @@ pub const ProcessSummary = extern struct {
     total_count: u32 = 0,
     total_threads: u32 = 0,
     row_count: u32 = 0,
+    matched_count: u32 = 0,
+    page_offset: u32 = 0,
     reserved: u32 = 0,
     rows: [process_summary_rows]ProcessRowSummary = [_]ProcessRowSummary{.{}} ** process_summary_rows,
 };
@@ -97,7 +99,7 @@ comptime {
     if (@sizeOf(ProcessRowSummary) != 272 or @alignOf(ProcessRowSummary) != 8) {
         @compileError("ProcessRowSummary no longer matches the SD-300 Rust ABI");
     }
-    if (@sizeOf(ProcessSummary) != 4384 or @alignOf(ProcessSummary) != 8) {
+    if (@sizeOf(ProcessSummary) != 4392 or @alignOf(ProcessSummary) != 8) {
         @compileError("ProcessSummary no longer matches the SD-300 Rust ABI");
     }
 }
@@ -112,6 +114,7 @@ const HandleFn = *const fn (?*anyopaque) callconv(.c) i32;
 const RequestExportFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
 const ReadExportStatusFn = *const fn (?*anyopaque, ?[*]u8, usize, *usize) callconv(.c) i32;
 const SetProfileFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
+const SetProcessQueryFn = *const fn (?*anyopaque, [*]const u8, usize, u32) callconv(.c) i32;
 const SetProcessSortFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
 const ReadFastSummaryFn = *const fn (?*anyopaque, *FastSummary) callconv(.c) i32;
 const ReadTraySummaryFn = *const fn (?*anyopaque, *TraySummary) callconv(.c) i32;
@@ -186,6 +189,7 @@ pub const Runtime = struct {
     destroy_fn: HandleFn,
     set_profile_fn: SetProfileFn,
     set_process_sort_fn: SetProcessSortFn,
+    set_process_query_fn: SetProcessQueryFn,
     request_driver_scan_fn: HandleFn,
     read_fast_summary_fn: ReadFastSummaryFn,
     read_tray_summary_fn: ReadTraySummaryFn,
@@ -217,6 +221,7 @@ pub const Runtime = struct {
         const start_fn = try library.lookup(HandleFn, "sd300_engine_start");
         const set_profile_fn = try library.lookup(SetProfileFn, "sd300_engine_set_profile");
         const set_process_sort_fn = try library.lookup(SetProcessSortFn, "sd300_engine_set_process_sort");
+        const set_process_query_fn = try library.lookup(SetProcessQueryFn, "sd300_engine_set_process_query");
         const request_driver_scan_fn = try library.lookup(HandleFn, "sd300_engine_request_driver_scan");
         const stop_fn = try library.lookup(HandleFn, "sd300_engine_stop");
         const destroy_fn = try library.lookup(HandleFn, "sd300_engine_destroy");
@@ -257,6 +262,7 @@ pub const Runtime = struct {
             .destroy_fn = destroy_fn,
             .set_profile_fn = set_profile_fn,
             .set_process_sort_fn = set_process_sort_fn,
+            .set_process_query_fn = set_process_query_fn,
             .request_driver_scan_fn = request_driver_scan_fn,
             .read_fast_summary_fn = read_fast_summary_fn,
             .read_tray_summary_fn = read_tray_summary_fn,
@@ -372,6 +378,12 @@ pub const Runtime = struct {
     pub fn setProcessSort(self: *Runtime, sort: u32) !void {
         if (self.set_process_sort_fn(self.handle, sort) != status_ok) {
             return error.EngineProcessSortFailed;
+        }
+    }
+
+    pub fn setProcessQuery(self: *Runtime, filter: []const u8, offset: u32) !void {
+        if (self.set_process_query_fn(self.handle, filter.ptr, filter.len, offset) != status_ok) {
+            return error.EngineProcessQueryFailed;
         }
     }
 
@@ -506,6 +518,6 @@ test "fast summary ABI is stable" {
     try std.testing.expectEqual(@as(usize, 8), @alignOf(FastSummary));
     try std.testing.expectEqual(@as(usize, 272), @sizeOf(ProcessRowSummary));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(ProcessRowSummary));
-    try std.testing.expectEqual(@as(usize, 4384), @sizeOf(ProcessSummary));
+    try std.testing.expectEqual(@as(usize, 4392), @sizeOf(ProcessSummary));
     try std.testing.expectEqual(@as(usize, 8), @alignOf(ProcessSummary));
 }

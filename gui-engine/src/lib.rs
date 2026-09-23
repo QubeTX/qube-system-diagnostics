@@ -172,6 +172,8 @@ pub struct ProcessSummary {
     pub total_count: u32,
     pub total_threads: u32,
     pub row_count: u32,
+    pub matched_count: u32,
+    pub page_offset: u32,
     pub reserved: u32,
     pub rows: [ProcessRowSummary; PROCESS_SUMMARY_ROWS],
 }
@@ -185,6 +187,8 @@ impl Default for ProcessSummary {
             total_threads: 0,
             row_count: 0,
             reserved: 0,
+            matched_count: 0,
+            page_offset: 0,
             rows: [ProcessRowSummary::default(); PROCESS_SUMMARY_ROWS],
         }
     }
@@ -196,6 +200,12 @@ struct LatestTopic {
     json: Vec<u8>,
 }
 
+#[derive(Default)]
+struct ProcessQuery {
+    filter: String,
+    offset: usize,
+}
+
 struct Shared {
     stop: AtomicBool,
     running: AtomicBool,
@@ -203,6 +213,8 @@ struct Shared {
     export_request: AtomicU8,
     profile: AtomicU8,
     process_sort: AtomicU8,
+    process_query: Mutex<ProcessQuery>,
+    process_query_dirty: AtomicBool,
     wake_lock: Mutex<()>,
     wake: Condvar,
     topics: Mutex<[LatestTopic; TOPIC_COUNT]>,
@@ -222,6 +234,8 @@ impl Default for Shared {
             export_request: AtomicU8::new(EXPORT_NONE),
             profile: AtomicU8::new(PROFILE_FOREGROUND),
             process_sort: AtomicU8::new(PROCESS_SORT_CPU),
+            process_query: Mutex::new(ProcessQuery::default()),
+            process_query_dirty: AtomicBool::new(false),
             wake_lock: Mutex::new(()),
             wake: Condvar::new(),
             topics: Mutex::new(std::array::from_fn(|_| LatestTopic::default())),
@@ -311,7 +325,14 @@ struct FastProjection<'a> {
     cpu: &'a collectors::cpu::CpuData,
     memory: &'a collectors::memory::MemoryData,
     network: &'a collectors::network::NetworkData,
-    processes: &'a collectors::processes::ProcessData,
+    processes: ProcessProjection<'a>,
+}
+
+#[derive(Serialize)]
+struct ProcessProjection<'a> {
+    list: &'a [collectors::processes::ProcessInfo],
+    total_count: usize,
+    total_threads: usize,
 }
 
 #[derive(Serialize)]
@@ -422,7 +443,12 @@ fn publish_fast(shared: &Shared, snapshot: &SystemSnapshot) {
             cpu: &snapshot.cpu,
             memory: &snapshot.memory,
             network: &snapshot.network,
-            processes: &snapshot.processes,
+            processes: ProcessProjection {
+                list: &snapshot.processes.list
+                    [..snapshot.processes.list.len().min(PROCESS_SUMMARY_ROWS)],
+                total_count: snapshot.processes.total_count,
+                total_threads: snapshot.processes.total_threads,
+            },
         },
         &snapshot.warnings,
         snapshot.samples.get("fast"),
@@ -472,14 +498,65 @@ fn update_process_summary(shared: &Shared, snapshot: &SystemSnapshot) {
     let Ok(mut summary) = shared.process_summary.lock() else {
         return;
     };
+    let Ok(query) = shared.process_query.lock() else {
+        return;
+    };
+    let mut rows: Vec<_> = snapshot
+        .processes
+        .list
+        .iter()
+        .filter(|row| {
+            query.filter.is_empty()
+                || row.name.to_lowercase().contains(&query.filter)
+                || row.friendly_name.to_lowercase().contains(&query.filter)
+                || row.status.to_lowercase().contains(&query.filter)
+                || row.pid.to_string().contains(&query.filter)
+        })
+        .collect();
+    let sort = selected_process_sort(shared);
+    rows.sort_by(|a, b| {
+        use std::cmp::Ordering;
+        let order = match sort {
+            ProcessSortKey::Cpu => b
+                .cpu_observation
+                .is_available()
+                .cmp(&a.cpu_observation.is_available())
+                .then_with(|| {
+                    if a.cpu_observation.is_available() && b.cpu_observation.is_available() {
+                        b.cpu_percent.total_cmp(&a.cpu_percent)
+                    } else {
+                        Ordering::Equal
+                    }
+                }),
+            ProcessSortKey::Memory => b
+                .memory_observation
+                .is_available()
+                .cmp(&a.memory_observation.is_available())
+                .then_with(|| {
+                    if a.memory_observation.is_available() && b.memory_observation.is_available() {
+                        b.memory_bytes.cmp(&a.memory_bytes)
+                    } else {
+                        Ordering::Equal
+                    }
+                }),
+            ProcessSortKey::Pid => a.pid.cmp(&b.pid),
+            ProcessSortKey::Name => a
+                .friendly_name
+                .to_lowercase()
+                .cmp(&b.friendly_name.to_lowercase())
+                .then_with(|| a.name.cmp(&b.name)),
+        };
+        order
+            .then_with(|| a.pid.cmp(&b.pid))
+            .then_with(|| a.start_time_unix_ms.cmp(&b.start_time_unix_ms))
+    });
+    let offset = query
+        .offset
+        .min(rows.len().saturating_sub(1) / PROCESS_SUMMARY_ROWS * PROCESS_SUMMARY_ROWS);
     let sample = snapshot.samples.get("fast");
-    let sequence = sample.map_or_else(
-        || summary.sequence.saturating_add(1),
-        |sample| sample.sequence,
-    );
     let mut next = ProcessSummary {
-        sequence,
-        captured_unix_ms: sample.map_or_else(unix_ms, |sample| sample.captured_unix_ms),
+        sequence: summary.sequence.saturating_add(1),
+        captured_unix_ms: sample.map_or(0, |sample| sample.captured_unix_ms),
         total_count: snapshot
             .processes
             .total_count
@@ -490,16 +567,12 @@ fn update_process_summary(shared: &Shared, snapshot: &SystemSnapshot) {
             .total_threads
             .try_into()
             .unwrap_or(u32::MAX),
-        row_count: snapshot
-            .processes
-            .list
-            .len()
-            .min(PROCESS_SUMMARY_ROWS)
-            .try_into()
-            .unwrap_or(PROCESS_SUMMARY_ROWS as u32),
+        matched_count: rows.len().try_into().unwrap_or(u32::MAX),
+        page_offset: offset.try_into().unwrap_or(u32::MAX),
+        row_count: rows.len().saturating_sub(offset).min(PROCESS_SUMMARY_ROWS) as u32,
         ..ProcessSummary::default()
     };
-    for (destination, source) in next.rows.iter_mut().zip(&snapshot.processes.list) {
+    for (destination, source) in next.rows.iter_mut().zip(rows.into_iter().skip(offset)) {
         destination.pid = source.pid;
         destination.start_time_unix_ms = source.start_time_unix_ms.unwrap_or(0);
         destination.availability_flags = u32::from(source.cpu_observation.is_available())
@@ -601,6 +674,11 @@ fn collect_loop(shared: &Shared) {
             monitor.retry(Lane::Drivers);
         }
         let changed = monitor.drain(&mut snapshot);
+        if shared.process_query_dirty.swap(false, Ordering::AcqRel)
+            && !changed.contains(&Lane::Fast)
+        {
+            update_process_summary(shared, &snapshot);
+        }
         for lane in &changed {
             let sample = snapshot.samples.get(lane.name());
             match lane {
@@ -1065,6 +1143,50 @@ pub extern "C" fn sd300_engine_set_process_sort(handle: *mut c_void, sort: u32) 
         }
         let sort = u8::try_from(sort).unwrap_or(PROCESS_SORT_CPU);
         engine.shared.process_sort.store(sort, Ordering::Release);
+        engine
+            .shared
+            .process_query_dirty
+            .store(true, Ordering::Release);
+        engine.shared.wake.notify_all();
+        STATUS_OK
+    }))
+    .unwrap_or(STATUS_PANIC)
+}
+
+/// Re-project the captured full inventory; this does not manufacture a new sample.
+#[no_mangle]
+pub extern "C" fn sd300_engine_set_process_query(
+    handle: *mut c_void,
+    filter: *const u8,
+    length: usize,
+    offset: u32,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| unsafe {
+        let Some(engine) = engine_from_handle(handle) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        if length > 256 || (length != 0 && filter.is_null()) {
+            return STATUS_INVALID_ARGUMENT;
+        }
+        let bytes = if length == 0 {
+            &[][..]
+        } else {
+            std::slice::from_raw_parts(filter, length)
+        };
+        let Ok(filter) = std::str::from_utf8(bytes) else {
+            return STATUS_INVALID_ARGUMENT;
+        };
+        let Ok(mut query) = engine.shared.process_query.lock() else {
+            return STATUS_PANIC;
+        };
+        *query = ProcessQuery {
+            filter: filter.trim().to_lowercase(),
+            offset: offset as usize / PROCESS_SUMMARY_ROWS * PROCESS_SUMMARY_ROWS,
+        };
+        engine
+            .shared
+            .process_query_dirty
+            .store(true, Ordering::Release);
         engine.shared.wake.notify_all();
         STATUS_OK
     }))
@@ -1396,8 +1518,65 @@ mod tests {
         assert_eq!(std::mem::align_of::<TraySummary>(), 8);
         assert_eq!(std::mem::size_of::<ProcessRowSummary>(), 272);
         assert_eq!(std::mem::align_of::<ProcessRowSummary>(), 8);
-        assert_eq!(std::mem::size_of::<ProcessSummary>(), 4384);
+        assert_eq!(std::mem::size_of::<ProcessSummary>(), 4392);
         assert_eq!(std::mem::align_of::<ProcessSummary>(), 8);
+    }
+
+    #[test]
+    fn process_query_searches_full_inventory_and_preserves_capture_time() {
+        use collectors::processes::ProcessInfo;
+        let engine = Engine::new();
+        let handle = (&engine as *const Engine).cast_mut().cast::<c_void>();
+        let mut snapshot = SystemSnapshot::default();
+        snapshot.processes.list = (1..=250)
+            .map(|pid| ProcessInfo {
+                pid,
+                name: format!("process-{pid}"),
+                friendly_name: format!("Process {pid}"),
+                start_time_unix_ms: Some(pid as u64),
+                ..ProcessInfo::default()
+            })
+            .collect();
+        snapshot.processes.total_count = 250;
+        sd300_engine_set_process_sort(handle, PROCESS_SORT_PID.into());
+        assert_eq!(
+            sd300_engine_set_process_query(handle, b"PROCESS".as_ptr(), 7, 240),
+            STATUS_OK
+        );
+        update_process_summary(&engine.shared, &snapshot);
+        let first = *engine.shared.process_summary.lock().unwrap();
+        assert_eq!(first.matched_count, 250);
+        assert_eq!(first.page_offset, 240);
+        assert_eq!(first.row_count, 10);
+        assert_eq!(first.rows[0].pid, 241);
+        assert_eq!(
+            sd300_engine_set_process_query(handle, b"250".as_ptr(), 3, 0),
+            STATUS_OK
+        );
+        update_process_summary(&engine.shared, &snapshot);
+        let second = *engine.shared.process_summary.lock().unwrap();
+        assert_eq!(second.matched_count, 1);
+        assert_eq!(second.rows[0].pid, 250);
+        assert!(second.sequence > first.sequence);
+        assert_eq!(second.captured_unix_ms, first.captured_unix_ms);
+        assert_eq!(
+            sd300_engine_set_process_query(handle, ptr::null(), 257, 0),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_set_process_query(handle, [255].as_ptr(), 1, 0),
+            STATUS_INVALID_ARGUMENT
+        );
+        // Empty filter with an out-of-range page clamps after process exit.
+        assert_eq!(
+            sd300_engine_set_process_query(handle, ptr::null(), 0, u32::MAX),
+            STATUS_OK
+        );
+        update_process_summary(&engine.shared, &snapshot);
+        assert_eq!(
+            engine.shared.process_summary.lock().unwrap().page_offset,
+            240
+        );
     }
 
     #[test]

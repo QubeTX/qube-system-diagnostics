@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Search and page the complete GUI process inventory before selecting bounded rows. Query changes reuse the actual capture timestamp; ABI-2 page counts and offsets match Rust/Zig layout assertions.
+
 ### Fixed
 
 - Read macOS storage counters through bounded native IOKit property snapshots, release owned references, require registry identity, and filter virtual/backing layers using cached physical-disk inventory.

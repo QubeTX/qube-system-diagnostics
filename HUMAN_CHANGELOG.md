@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Find any running process from the app, including quieter processes beyond the first page, and browse the results without losing the live view.
+
 **Fixed**
 
 - Macs read storage activity directly from the operating system, avoiding a helper launch on every sample. Virtual disks are kept out of the physical-drive total so activity is not counted twice.
