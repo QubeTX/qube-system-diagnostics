@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: native Windows TUI resource gates pass; both Mac architectures exceed the CPU gate. Attribute their provider costs and correct hidden GUI startup/visibility before repeat measurement. The Windows GUI exceeds peak RSS; inventory overlap is confirmed and serialized workers are in a fresh 15-minute candidate run. Full foreground/hidden/soak and unpublished composite lifecycle qualification remain required.
+Current cycle: native Windows TUI resource gates pass; both Mac architectures exceed the CPU gate. Attribute their provider costs and correct hidden GUI startup/visibility before repeat measurement. Serialized inventory reduces Windows GUI peak RSS but its completed 15-minute run still exceeds the limit. Linux role attribution identifies GUI address space as its separate memory cost. Full foreground/hidden/soak and unpublished composite lifecycle qualification remain required.
 
 ## Impact
 
@@ -49,6 +49,10 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations implemented; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: clock/capture correction passes 229 root tests (six child fixtures), eight CLI contracts, three worker integrations, 16 engine tests, 55 native GUI tests (two skips), strict bindings, clippy and coordinated version checks. Keep ABI 2, advance the nullable topic envelope to schema 2, and align installer/verifier expectations. Next oracle: native six-target runtime and installer checks on this candidate.
+
+- 2026-09-23 — codex: completed isolated 109b2b4 foreground run passes CPU (1.20 percent) and private memory (254.0 MiB), but peak RSS remains 155.14 MiB versus the 150 MiB gate. This improves the previous 178.7 MiB peak without reducing cadence; retain the report and keep hidden/soak qualification pending. Run 35869747344 proves GNU hidden profile/shutdown behavior and attributes its separate RSS failure principally to the GUI process. Next hypotheses: retained rendering allocation on Windows/Linux and repeated Mac disk/process work, using role and stage evidence rather than weakening gates.
 
 - 2026-09-23 — codex: visibility/startup changes pass Windows Native SDK strict validation and 53 native tests (two intentionally skipped), root and Apple Silicon cross-clippy. Add bounded per-role Unix RSS/CPU attribution alongside the authoritative wait4 total, with PID-reuse and private-argument non-disclosure fixtures. Windows 109b2b4 complete bundle passes release build/distribution locks and begins its isolated 15-minute inventory-overlap candidate measurement. Hosted 1bb2be7 TUI window passes Windows (0.85 percent, 83.3 MiB), fails Intel Mac CPU (4.51 percent) and Apple Silicon CPU (3.12 percent); no platform gate is waived.
 

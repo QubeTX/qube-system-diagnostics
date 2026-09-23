@@ -24,12 +24,34 @@ impl SampleMeta {
     }
 
     pub fn age_ms(&self) -> Option<u64> {
-        (self.sequence > 0).then(|| unix_ms().saturating_sub(self.captured_unix_ms))
+        self.age_ms_at(unix_ms())
+    }
+
+    pub fn age_ms_at(&self, now: u64) -> Option<u64> {
+        (self.sequence > 0 && self.captured_unix_ms > 0)
+            .then(|| now.checked_sub(self.captured_unix_ms))
+            .flatten()
     }
 
     pub fn is_stale(&self) -> bool {
-        self.age_ms()
+        self.is_stale_at(unix_ms())
+    }
+
+    pub fn is_stale_at(&self, now: u64) -> bool {
+        self.age_ms_at(now)
             .is_none_or(|age| age > self.expected_interval_ms.saturating_mul(3).max(3_000))
+    }
+
+    pub fn freshness_at(&self, now: u64) -> &'static str {
+        if self.sequence == 0 || self.captured_unix_ms == 0 {
+            "not_collected"
+        } else if self.captured_unix_ms > now {
+            "clock_changed"
+        } else if self.is_stale_at(now) {
+            "stale"
+        } else {
+            "current"
+        }
     }
 }
 
@@ -66,6 +88,25 @@ impl CounterRate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_age_distinguishes_clock_rollback_from_a_current_sample() {
+        let mut meta = SampleMeta::default();
+        assert_eq!(meta.age_ms_at(10_000), None);
+        assert_eq!(meta.freshness_at(10_000), "not_collected");
+        meta.sequence = 1;
+        meta.captured_unix_ms = 10_000;
+        meta.expected_interval_ms = 1000;
+        assert_eq!(meta.age_ms_at(10_000), Some(0));
+        assert!(!meta.is_stale_at(13_000));
+        assert_eq!(meta.freshness_at(13_001), "stale");
+        assert_eq!(meta.age_ms_at(9_000), None);
+        assert!(meta.is_stale_at(9_000));
+        assert_eq!(meta.freshness_at(9_000), "clock_changed");
+        meta.captured_unix_ms = 9_000;
+        meta.sequence = 2;
+        assert_eq!(meta.freshness_at(9_001), "current");
+    }
 
     #[test]
     fn rates_use_actual_time_and_reset_after_rollback_or_resume() {

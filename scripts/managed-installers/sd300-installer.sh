@@ -962,6 +962,7 @@ sd300_stage_gui_payload() {
     printf '%s\n' "$gui_result" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true' || sd300_fail 'staged GUI did not report success'
     printf '%s\n' "$gui_result" | grep -Eq "\"product_version\"[[:space:]]*:[[:space:]]*\"${sd300_version}\"" || sd300_fail 'staged GUI version is incompatible'
     printf '%s\n' "$gui_result" | grep -Eq '"abi_version"[[:space:]]*:[[:space:]]*2([[:space:],}]|$)' || sd300_fail 'staged GUI ABI is incompatible'
+    printf '%s\n' "$gui_result" | grep -Eq '"engine_schema_version"[[:space:]]*:[[:space:]]*2([[:space:],}]|$)' || sd300_fail 'staged GUI schema is incompatible'
 }
 
 sd300_install_gui_payload() {

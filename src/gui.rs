@@ -8,6 +8,9 @@ use serde::Deserialize;
 
 use crate::collectors::command::{run_output, CommandTimeout};
 
+pub const ENGINE_ABI_VERSION: u32 = 2;
+pub const ENGINE_SCHEMA_VERSION: u32 = 2;
+
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
@@ -93,11 +96,18 @@ pub fn verify_installed(expected_version: &str) -> std::result::Result<(), Strin
         .map_err(|_| "the GUI companion self-test returned non-UTF-8 output".to_string())?;
     let result: SelfTestResult = serde_json::from_str(line.trim())
         .map_err(|error| format!("the GUI companion self-test JSON was invalid: {error}"))?;
+    validate_self_test(&result, expected_version)
+}
+
+fn validate_self_test(
+    result: &SelfTestResult,
+    expected_version: &str,
+) -> std::result::Result<(), String> {
     if !result.success
         || result.product != "SD-300"
         || result.product_version != expected_version
-        || result.abi_version != 1
-        || result.engine_schema_version != 1
+        || result.abi_version != ENGINE_ABI_VERSION
+        || result.engine_schema_version != ENGINE_SCHEMA_VERSION
     {
         return Err(format!(
             "the GUI companion reported an incompatible identity (product={}, version={}, ABI={}, schema={})",
@@ -525,6 +535,25 @@ fn xdg_data_home() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installed_companion_validation_uses_the_current_engine_contract() {
+        let mut result = SelfTestResult {
+            success: true,
+            product: "SD-300".into(),
+            product_version: env!("CARGO_PKG_VERSION").into(),
+            abi_version: ENGINE_ABI_VERSION,
+            engine_schema_version: ENGINE_SCHEMA_VERSION,
+        };
+        assert!(validate_self_test(&result, env!("CARGO_PKG_VERSION")).is_ok());
+        result.abi_version = 1;
+        assert!(validate_self_test(&result, env!("CARGO_PKG_VERSION")).is_err());
+        result.abi_version = ENGINE_ABI_VERSION;
+        result.engine_schema_version = 1;
+        assert!(validate_self_test(&result, env!("CARGO_PKG_VERSION")).is_err());
+        result.engine_schema_version = ENGINE_SCHEMA_VERSION;
+        assert!(validate_self_test(&result, "0.0.0").is_err());
+    }
 
     #[test]
     fn update_cli_resolution_prefers_the_composite_root_layout() {

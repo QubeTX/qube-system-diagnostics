@@ -29,6 +29,15 @@ impl HistoryBuffer {
         if self.capacity == 0 {
             return;
         }
+        if let Some(last) = self.data.back() {
+            if captured_unix_ms == last.captured_unix_ms {
+                return;
+            }
+            if captured_unix_ms < last.captured_unix_ms {
+                // Do not splice readings from opposite sides of a clock change.
+                self.data.clear();
+            }
+        }
         if self.data.len() >= self.capacity {
             self.data.pop_front();
         }
@@ -90,6 +99,17 @@ impl Default for HistoryBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn clock_rollback_starts_a_new_timeline_without_repeating_captures() {
+        let mut history = HistoryBuffer::new(5);
+        history.push_at(10_000, Some(7.0));
+        history.push_at(10_000, Some(8.0));
+        assert_eq!(history.len(), 1);
+        history.push_at(9_000, Some(2.0));
+        assert_eq!(history.timeline(10_000, 1000, 2), [Some(2.0), None]);
+        history.push_at(10_000, Some(3.0));
+        assert_eq!(history.timeline(10_000, 1000, 2), [Some(2.0), Some(3.0)]);
+    }
     #[test]
     fn missing_and_nonfinite_samples_are_gaps_and_capacity_is_bounded() {
         let mut history = HistoryBuffer::new(3);

@@ -85,12 +85,10 @@ fn rate(value: Option<f64>) -> String {
         .unwrap_or_else(|| "Warming up / unavailable".into())
 }
 fn fresh(app: &App, lane: &str) -> bool {
-    app.snapshot.samples.get(lane).is_some_and(|s| {
-        s.observation.is_available()
-            && s.sequence > 0
-            && app.presentation_time_ms.saturating_sub(s.captured_unix_ms)
-                <= s.expected_interval_ms.saturating_mul(3).max(3000)
-    })
+    app.snapshot
+        .samples
+        .get(lane)
+        .is_some_and(|s| s.observation.is_available() && !s.is_stale_at(app.presentation_time_ms))
 }
 impl Presentation {
     pub fn prepare(app: &App) -> Self {
@@ -708,11 +706,18 @@ impl Presentation {
             .get(lane)
             .map(|m| {
                 format!(
-                    "{} · sample {} · {} ms interval · {} ms old",
+                    "{} · sample {} · {} ms interval · {}",
                     observation(&m.observation),
                     m.sequence,
                     m.interval_ms,
-                    app.presentation_time_ms.saturating_sub(m.captured_unix_ms)
+                    m.age_ms_at(app.presentation_time_ms)
+                        .map(|age| format!("{age} ms old"))
+                        .unwrap_or_else(|| if m.sequence == 0 || m.captured_unix_ms == 0 {
+                            "awaiting first capture"
+                        } else {
+                            "capture age unavailable: clock changed"
+                        }
+                        .into())
                 )
             })
             .unwrap_or_else(|| format!("{lane} · awaiting first capture"));
@@ -790,5 +795,36 @@ fn flatten(lines: &mut Vec<String>, prefix: &str, value: &Value, depth: usize) {
                 _ => value.to_string(),
             }
         )),
+    }
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+
+    #[test]
+    fn future_captures_are_not_presented_as_current_or_zero_age() {
+        let mut app = App::new(Some(DiagnosticMode::Technician));
+        app.current_section = Section::Cpu;
+        app.presentation_time_ms = 9000;
+        app.snapshot.cpu.total_usage = 75.0;
+        app.snapshot.samples.insert(
+            "fast".into(),
+            crate::collectors::sampling::SampleMeta {
+                sequence: 2,
+                captured_unix_ms: 10_000,
+                expected_interval_ms: 1000,
+                observation: Observation::available("fixture"),
+                ..Default::default()
+            },
+        );
+        let view = Presentation::prepare(&app);
+        assert!(view.summary[0].contains("Unavailable"));
+        assert!(view.status.contains("clock changed"));
+        assert!(!view.status.contains("0 ms old"));
+        app.presentation_time_ms = 10_000;
+        let view = Presentation::prepare(&app);
+        assert!(view.summary[0].contains("75.0%"));
+        assert!(view.status.contains("0 ms old"));
     }
 }

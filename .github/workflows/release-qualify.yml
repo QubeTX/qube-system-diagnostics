@@ -374,7 +374,7 @@ jobs:
           self_test=$($gui --self-test --json)
           jq -e --arg version '${{ steps.meta.outputs.version }}' '
             .success == true and .product_version == $version and
-            .abi_version == 2 and .engine_schema_version == 1
+            .abi_version == 2 and .engine_schema_version == 2
           ' <<< "$self_test" >/dev/null
 
           third=$("$CARGO_HOME/bin/sd300" update --json)

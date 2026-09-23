@@ -43,7 +43,7 @@
 
     <scroll grow="1" value="{scroll_top}" on-scroll="content_scrolled">
       <column gap="20" padding="24">
-        <row gap="12"><text>{collectorState}</text><if test="{technicianMode}"><text foreground="text_muted">{collectorSource} · {collectorAgeSeconds}s since capture</text></if></row>
+        <row gap="12"><text>{collectorState}</text><if test="{technicianMode}"><text foreground="text_muted">{collectorSource}</text><if test="{collectorAgeAvailable}"><text foreground="text_muted">{collectorAgeSeconds}s since capture</text></if><else><text foreground="text_muted">Capture age unavailable</text></else></if></row>
         <if test="{active_section == 0}">
         <column gap="4">
           <text size="display">System overview</text>

@@ -401,7 +401,7 @@ printf 'GUI self-test payload: %s\n' "$self_test"
 jq -e --arg version "$version" --arg arch "$expected_arch" '
   .success == true and .product == "SD-300" and
   .product_version == $version and .abi_version == 2 and
-  .engine_schema_version == 1 and .target_os == "linux" and
+  .engine_schema_version == 2 and .target_os == "linux" and
   .target_arch == $arch
 ' <<< "$self_test" >/dev/null
 

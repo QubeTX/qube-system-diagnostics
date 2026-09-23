@@ -208,7 +208,7 @@ function Assert-GuiCompanion([string]$Root, [string]$Channel) {
     $result = $selfTest.Lines[0] | ConvertFrom-Json
     if (-not $result.success -or $result.product -ne 'SD-300' -or
         $result.product_version -ne $CandidateVersion -or
-        $result.abi_version -ne 2 -or $result.engine_schema_version -ne 1 -or
+        $result.abi_version -ne 2 -or $result.engine_schema_version -ne 2 -or
         $result.target_os -ne 'windows' -or $result.target_arch -ne 'x86_64') {
         throw "$Channel GUI self-test reported an incompatible product, version, ABI, schema, or target"
     }

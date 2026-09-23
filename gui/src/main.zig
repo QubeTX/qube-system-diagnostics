@@ -424,17 +424,24 @@ pub const Model = struct {
             else => model.detail.topicMeta(0),
         };
     }
-    pub fn collectorAgeSeconds(model: *const Model) u64 {
+    fn collectorAgeMs(model: *const Model) ?u64 {
         const wall = model.clock.wallMs();
         const now: u64 = if (wall > 0) @intCast(wall) else 0;
         const meta = model.activeCollector();
-        return if (meta.captured_unix_ms == 0) 0 else (now -| meta.captured_unix_ms) / 1000;
+        return if (meta.captured_unix_ms == 0 or now < meta.captured_unix_ms) null else now - meta.captured_unix_ms;
+    }
+    pub fn collectorAgeAvailable(model: *const Model) bool {
+        return model.collectorAgeMs() != null;
+    }
+    pub fn collectorAgeSeconds(model: *const Model) u64 {
+        return (model.collectorAgeMs() orelse 0) / 1000;
     }
     pub fn collectorState(model: *const Model) []const u8 {
         const meta = model.activeCollector();
         if (!meta.ready) return "Waiting for collector";
         if (!std.mem.eql(u8, meta.availability(), "available")) return meta.availability();
-        if (model.collectorAgeSeconds() * 1000 > @max(3000, meta.expected_interval_ms * 3)) return "Stale sample";
+        const age = model.collectorAgeMs() orelse return "Capture age unavailable";
+        if (age > @max(3000, meta.expected_interval_ms *| 3)) return "Stale sample";
         return "Available";
     }
     pub fn collectorSource(model: *const Model) []const u8 {
@@ -448,7 +455,8 @@ pub const Model = struct {
         const now: u64 = if (wall > 0) @intCast(wall) else 0;
         return model.detail.disk_io_available and model.detail.activity_observation.available
             and model.detail.activity_captured_unix_ms > 0
-            and now -| model.detail.activity_captured_unix_ms <= 3000;
+            and now >= model.detail.activity_captured_unix_ms
+            and now - model.detail.activity_captured_unix_ms <= 3000;
     }
     pub fn processCpuSort(model: *const Model) bool {
         return model.process_sort == .cpu;
@@ -1271,7 +1279,7 @@ pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     const sequence_advanced = summary.sequence != model.sequence;
     const capture_advanced = summary.captured_unix_ms == 0 or
         model.overview_topic_meta.captured_unix_ms == 0 or
-        summary.captured_unix_ms > model.overview_topic_meta.captured_unix_ms;
+        summary.captured_unix_ms != model.overview_topic_meta.captured_unix_ms;
     const sample_advanced = !model.fast_summary_seen or (sequence_advanced and capture_advanced);
     model.engine_ready = true;
     model.fast_summary_seen = true;
@@ -1286,10 +1294,10 @@ pub fn applySummary(model: *Model, summary: engine.FastSummary) void {
     model.warning_count = summary.warning_count;
     var overview_meta = model.overview_topic_meta;
     overview_meta.ready = true;
-    overview_meta.schema_version = 1;
+    overview_meta.schema_version = engine.expected_schema_version;
     overview_meta.sequence = summary.sequence;
     overview_meta.captured_unix_ms = summary.captured_unix_ms;
-    overview_meta.freshness_ms = 0;
+    overview_meta.freshness_ms = null; // Recomputed from the current presentation clock.
     overview_meta.topic_buffer.set("fast-summary");
     overview_meta.availability_buffer.set("available");
     overview_meta.provenance_buffer.set("SD-300 platform CPU and memory collectors");
@@ -1325,8 +1333,9 @@ pub fn updateFastSummaryFreshness(model: *Model) void {
     const wall_ms = model.clock.wallMs();
     const now: u64 = if (wall_ms <= 0) 0 else @intCast(wall_ms);
     const captured = model.overview_topic_meta.captured_unix_ms;
-    const capture_age = if (captured == 0 or now == 0) 0 else now -| captured;
-    model.fast_summary_stale = monotonic_age > fast_summary_stale_after_ms or capture_age > fast_summary_stale_after_ms;
+    const capture_invalid = captured == 0 or now < captured;
+    const capture_age = now -| captured;
+    model.fast_summary_stale = capture_invalid or monotonic_age > fast_summary_stale_after_ms or capture_age > fast_summary_stale_after_ms;
 }
 
 pub fn markFastSummaryFailed(model: *Model) void {

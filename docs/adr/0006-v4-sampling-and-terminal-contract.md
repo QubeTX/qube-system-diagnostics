@@ -31,6 +31,15 @@ are gaps. A history never combines CPU and GPU temperature or advances merely
 because a screen redraws. Topic envelopes carry the actual sample's metadata;
 old values remain attributable when a provider fails and recovers.
 
+Capture age uses checked subtraction: an absent or future timestamp has no numeric
+age. Provider observation status remains separate from freshness (`not_collected`,
+`clock_changed`, `stale`, `current`). A backward clock change clears the chart's
+previous time domain; the next distinct sequence/capture starts the new timeline.
+GUI topic schema 2 carries nullable age, with a matching parser/engine handshake
+and installer self-tests. The fixed C ABI remains version 2 and unchanged in layout.
+CLI schema 1 remains the default compatibility projection; schema-2 exports add
+derived age/freshness to sample metadata.
+
 The authorized TUI changes are additive filtering, inspection, page navigation,
 stable row selection, optional mouse, pause-view, adaptive layout, explicit
 freshness, and restrained motion with terminal fallbacks. Existing mode chooser,

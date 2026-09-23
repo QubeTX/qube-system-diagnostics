@@ -246,7 +246,7 @@ jobs:
           "$gui" --self-test --json | jq -e \
             --arg version '${{ needs.draft-check.outputs.version }}' '
               .success == true and .product_version == $version and
-              .abi_version == 2 and .engine_schema_version == 1
+              .abi_version == 2 and .engine_schema_version == 2
             ' >/dev/null
 
           current=$("$binary" update --json)

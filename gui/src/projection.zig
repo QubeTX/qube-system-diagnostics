@@ -34,7 +34,7 @@ pub const TopicMeta = struct {
     schema_version: u32 = 0,
     sequence: u64 = 0,
     captured_unix_ms: u64 = 0,
-    freshness_ms: u64 = 0,
+    freshness_ms: ?u64 = null,
     expected_interval_ms: u64 = 1000,
     detail_buffer: canvas.TextBuffer(192) = .{},
     topic_buffer: canvas.TextBuffer(24) = canvas.TextBuffer(24).init("pending"),
@@ -1113,10 +1113,10 @@ pub const Projection = struct {
     pub fn applyProcessSummary(self: *Projection, summary: engine.ProcessSummary) void {
         var meta = self.topic_meta[1];
         meta.ready = true;
-        meta.schema_version = 1;
+        meta.schema_version = engine.expected_schema_version;
         meta.sequence = summary.sequence;
         meta.captured_unix_ms = summary.captured_unix_ms;
-        meta.freshness_ms = 0;
+        meta.freshness_ms = null; // Computed from capture time by the presentation clock.
         meta.topic_buffer.set("fast");
         meta.availability_buffer.set("available");
         meta.provenance_buffer.set("SD-300 platform process collector");
@@ -1520,7 +1520,7 @@ fn Envelope(comptime Data: type) type {
         topic: []const u8 = "unknown",
         sequence: u64 = 0,
         captured_unix_ms: u64 = 0,
-        freshness_ms: u64 = 0,
+        freshness_ms: ?u64 = null,
         availability: []const u8 = "unavailable",
         provenance: []const u8 = "not reported",
         sample: ?struct {
@@ -2058,6 +2058,17 @@ test "driver and service failures retain observation states without stopped plac
     try std.testing.expectEqualStrings("loaded; not running (may be on demand)", value.services()[1].state());
     try std.testing.expectEqual(@as(usize, 1), value.driverObservations().len);
     try std.testing.expectEqualStrings("unsupported", value.driverObservations()[0].state());
+}
+
+test "topic envelopes preserve null age after a clock change" {
+    const parsed = try std.json.parseFromSlice(Envelope(struct {}), std.testing.allocator,
+        \\{"schema_version":2,"sequence":3,"captured_unix_ms":10000,"freshness_ms":null,"freshness":"clock_changed","data":{}}
+    , .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var projection = Projection{};
+    projection.captureTopicMeta(0, parsed.value);
+    try std.testing.expect(projection.topicMeta(0).freshness_ms == null);
+    try std.testing.expectEqual(@as(u64, 10000), projection.topicMeta(0).captured_unix_ms);
 }
 
 test "slow observations distinguish missing telemetry from numeric zero" {

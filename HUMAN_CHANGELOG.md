@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- A clock adjustment no longer makes an old reading look brand new. Both views explain when capture age is unknown, charts restart across the clock change, and richer exports preserve that distinction. Behind the scenes, installation checks recognize the updated app and engine together.
+
 - Hidden Mac launches request background monitoring immediately. Linux window changes now reach the monitoring engine, including a prompt refresh when the window returns. Behind the scenes, platform checks report more precise causes when background operation or performance fails.
 
 - Occasional hardware inventory checks take turns to reduce memory peaks while live monitoring continues. Behind the scenes, checks verify that waiting work can stop promptly and a failed check cannot block later ones.

@@ -75,6 +75,16 @@ pub struct CapabilityRecord {
 }
 
 impl DiagnosticReport {
+    pub fn sample_metadata(&self) -> serde_json::Value {
+        let now = crate::collectors::sampling::unix_ms();
+        let mut samples = serde_json::json!(self.samples);
+        for (name, sample) in &self.samples {
+            samples[name]["freshness_ms"] = serde_json::json!(sample.age_ms_at(now));
+            samples[name]["freshness"] = serde_json::json!(sample.freshness_at(now));
+        }
+        samples
+    }
+
     pub async fn collect(include_sensitive: bool) -> Self {
         let mut snapshot = collect_snapshot().await;
         let attention = snapshot
@@ -217,7 +227,7 @@ impl DiagnosticReport {
             return schema_one_projection(value);
         }
         value["privileged_storage"] = json!(self.storage_probe);
-        value["samples"] = json!(self.samples);
+        value["samples"] = self.sample_metadata();
         value["findings"] = json!(self.findings);
         value["disk_activity"] = json!(self.disk_activity);
         value["companion_results"] = self
@@ -526,7 +536,7 @@ pub fn print_capabilities(report: &DiagnosticReport, json: bool, schema_version:
     if json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&if schema_version == 1 { serde_json::json!(report.capabilities) } else { serde_json::json!({"schema_version":2,"product":report.product,"product_version":report.product_version,"capabilities":report.capabilities,"samples":report.samples,"findings":report.findings}) }).map_err(|error| {
+            serde_json::to_string_pretty(&if schema_version == 1 { serde_json::json!(report.capabilities) } else { serde_json::json!({"schema_version":2,"product":report.product,"product_version":report.product_version,"capabilities":report.capabilities,"samples":report.sample_metadata(),"findings":report.findings}) }).map_err(|error| {
                 AppError::platform(format!("JSON serialization failed: {error}"))
             })?
         );
@@ -552,6 +562,27 @@ pub fn print_capabilities(report: &DiagnosticReport, json: bool, schema_version:
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn clock_rollback_makes_schema_two_readings_unavailable_without_changing_schema_one() {
+        let mut snapshot = SystemSnapshot::default();
+        snapshot.cpu.total_usage = 99.0;
+        let sample = crate::collectors::sampling::SampleMeta {
+            sequence: 5,
+            captured_unix_ms: crate::collectors::sampling::unix_ms() + 60_000,
+            expected_interval_ms: 1000,
+            observation: Observation::available("fixture"),
+            ..Default::default()
+        };
+        snapshot.samples.insert("fast".into(), sample);
+        let report = DiagnosticReport::from_snapshot(&snapshot, false);
+        let rich = report.as_schema(2);
+        assert!(rich["cpu"]["total_usage"].is_null());
+        assert!(rich["samples"]["fast"]["freshness_ms"].is_null());
+        assert_eq!(rich["samples"]["fast"]["freshness"], "clock_changed");
+        assert!(!report.findings.iter().any(|f| f.id == "cpu-pressure"));
+        assert_eq!(report.as_schema(1)["cpu"]["total_usage"], 99.0);
+        assert!(report.as_schema(1).get("samples").is_none());
+    }
     #[test]
     fn service_query_failure_is_null_in_schema_two_and_legacy_keys_stay_frozen() {
         use crate::collectors::drivers::ServiceInfo;

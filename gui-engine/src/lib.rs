@@ -13,8 +13,8 @@ use sd_300::types::ProcessSortKey;
 use serde::Serialize;
 use serde_json::json;
 
-pub const ABI_VERSION: u32 = 2;
-pub const SCHEMA_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = sd_300::gui::ENGINE_ABI_VERSION;
+pub const SCHEMA_VERSION: u32 = sd_300::gui::ENGINE_SCHEMA_VERSION;
 
 pub const STATUS_OK: i32 = 0;
 pub const STATUS_UNCHANGED: i32 = 1;
@@ -401,7 +401,8 @@ struct TopicEnvelope<'a, T: ?Sized> {
     topic: &'static str,
     sequence: u64,
     captured_unix_ms: u64,
-    freshness_ms: u64,
+    freshness_ms: Option<u64>,
+    freshness: &'static str,
     availability: &'static str,
     provenance: &'static str,
     sample: Option<&'a collectors::sampling::SampleMeta>,
@@ -446,7 +447,8 @@ fn publish_sample<T: Serialize>(
     };
     let state = &mut topics[topic as usize];
     state.sequence = state.sequence.saturating_add(1);
-    let captured_unix_ms = sample.map_or_else(unix_ms, |sample| sample.captured_unix_ms);
+    let now = unix_ms();
+    let captured_unix_ms = sample.map_or(now, |sample| sample.captured_unix_ms);
     let envelope = TopicEnvelope {
         schema_version: SCHEMA_VERSION,
         product_version: env!("CARGO_PKG_VERSION"),
@@ -454,7 +456,8 @@ fn publish_sample<T: Serialize>(
         topic: topic.name(),
         sequence: state.sequence,
         captured_unix_ms,
-        freshness_ms: unix_ms().saturating_sub(captured_unix_ms),
+        freshness_ms: sample.map_or(Some(0), |sample| sample.age_ms_at(now)),
+        freshness: sample.map_or("current", |sample| sample.freshness_at(now)),
         availability: sample.map_or("available", |sample| match sample.observation.status {
             sd_300::observation::ObservationStatus::Available => "available",
             sd_300::observation::ObservationStatus::Unavailable => "unavailable",
@@ -1655,6 +1658,26 @@ mod tests {
         assert_eq!(envelope["availability"], "available");
         assert_eq!(envelope["warnings"][0]["source"], "Test");
         assert_eq!(envelope["data"], serde_json::json!(["first", "second"]));
+    }
+
+    #[test]
+    fn future_capture_keeps_its_observation_but_cannot_claim_zero_age() {
+        let shared = Shared::default();
+        let sample = collectors::sampling::SampleMeta {
+            sequence: 3,
+            captured_unix_ms: unix_ms() + 60_000,
+            expected_interval_ms: 1000,
+            observation: sd_300::observation::Observation::available("fixture"),
+            ..Default::default()
+        };
+        publish_sample(&shared, Topic::Fast, &42, &[], Some(&sample));
+        let topics = shared.topics.lock().unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&topics[Topic::Fast as usize].json).unwrap();
+        assert_eq!(envelope["schema_version"], 2);
+        assert!(envelope["freshness_ms"].is_null());
+        assert_eq!(envelope["freshness"], "clock_changed");
+        assert_eq!(envelope["availability"], "available");
+        assert_eq!(envelope["captured_unix_ms"], sample.captured_unix_ms);
     }
 
     #[test]

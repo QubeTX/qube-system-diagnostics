@@ -307,6 +307,40 @@ test "top sample state becomes stale until sequence and capture advance" {
     try testing.expect(!model.summaryStale());
 }
 
+test "clock rollback cannot rejuvenate samples and later captures recover history" {
+    var clock = native_sdk.TestClock{};
+    clock.setWallMs(10_000);
+    var model = main.initialModel();
+    model.clock = clock.clock();
+    var summary = engine.FastSummary{ .sequence = 1, .captured_unix_ms = 10_000, .cpu_percent = 7, .memory_total_bytes = 100 };
+    main.applySummary(&model, summary);
+    try testing.expect(model.summaryLive());
+    model.detail.disk_io_available = true;
+    model.detail.activity_observation.available = true;
+    model.detail.activity_captured_unix_ms = 10_000;
+    try testing.expect(model.diskIoAvailable());
+    clock.setWallMs(9_000);
+    main.applySummary(&model, summary);
+    try testing.expect(model.summaryStale());
+    try testing.expect(!model.collectorAgeAvailable());
+    try testing.expect(!model.diskIoAvailable());
+    try testing.expectEqualStrings("Capture age unavailable", model.collectorState());
+    summary.sequence = 2;
+    summary.captured_unix_ms = 9_000;
+    summary.cpu_percent = 3;
+    main.applySummary(&model, summary);
+    try testing.expect(model.summaryLive());
+    try testing.expectEqual(@as(u64, 9_000), model.histories[0].latest);
+    try testing.expectEqual(@as(f64, 3), model.cpu_history[59]);
+    try testing.expect(std.math.isNan(model.cpu_history[58]));
+    clock.setWallMs(10_000);
+    summary.sequence = 3;
+    summary.captured_unix_ms = 10_000;
+    main.applySummary(&model, summary);
+    try testing.expectEqual(@as(f64, 3), model.cpu_history[58]);
+    try testing.expectEqual(@as(f64, 3), model.cpu_history[59]);
+}
+
 test "top sample state exposes collector failure without claiming live" {
     var model = main.initialModel();
     main.applySummary(&model, .{

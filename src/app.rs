@@ -865,7 +865,8 @@ mod compatibility_tests {
         assert!(app.monitor.is_none());
 
         for sample in 0..=HISTORY_SAMPLES {
-            app.cpu_history.push(sample as f64);
+            app.cpu_history
+                .push_at((sample as u64 + 1) * 1000, Some(sample as f64));
         }
         assert_eq!(app.cpu_history.len(), HISTORY_SAMPLES);
         assert_eq!(app.cpu_history.as_slice().first(), Some(&1.0));

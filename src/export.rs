@@ -99,7 +99,7 @@ fn write_report(
     let bytes = match kind {
         Kind::Snapshot => serde_json::to_vec_pretty(&report.as_schema(2)),
         Kind::Capabilities => serde_json::to_vec_pretty(&json!({
-            "schema_version":2, "samples":report.samples, "findings":report.findings,
+            "schema_version":2, "samples":report.sample_metadata(), "findings":report.findings,
             "product":report.product, "product_version":report.product_version,
             "target_os":report.target_os, "target_arch":report.target_arch,
             "capabilities":report.capabilities, "warnings":report.warnings,
