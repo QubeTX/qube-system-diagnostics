@@ -71,14 +71,16 @@ class DesktopEntry(unittest.TestCase):
         objects.g_object_unref.argtypes = [ctypes.c_void_p]
         prior = os.environ.get("SD300_DESKTOP_TEST_RESULT")
         try:
-            for index, name in enumerate(("Applications with spaces", 'literal $cash `tick` "quote" \\slash %field &amp')):
+            for index, name in enumerate(("Applications with spaces", "literal $cash", "literal `tick`",
+                    'literal "quote"', "literal \\slash", "literal %field", "literal &amp",
+                    'literal $cash `tick` "quote" \\slash %field &amp')):
                 with self.subTest(name=name):
                     result, executable, icon = self.configure(name)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     desktop = self.root / f"configured-{index}.desktop"
                     desktop.write_bytes(result.stdout)
                     app = gio.g_desktop_app_info_new_from_filename(os.fsencode(desktop))
-                    self.assertTrue(app, "GIO rejected the installed application entry")
+                    self.assertTrue(app, f"GIO rejected the synthetic application entry: {result.stdout!r}")
                     try:
                         icon_file = gio.g_file_icon_get_file(gio.g_app_info_get_icon(app))
                         icon_path = gio.g_file_get_path(icon_file)

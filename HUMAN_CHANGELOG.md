@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Linux launcher checks now cover each special character separately, including percent signs, so unusual installation folders do not silently lose their application-menu entry.
+
 - The Linux application menu can find SD-300's custom logo before the app opens. Its clickable launcher also handles spaces and special characters in the installation folder. The normal installers include the desktop app alongside the terminal tool on every supported system.
 
 - Behind the scenes: document why settings save in the background and how responsiveness is measured, so future changes preserve smooth navigation and reliable saving.

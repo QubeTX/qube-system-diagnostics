@@ -976,12 +976,24 @@ sd300_configure_linux_desktop() (
     done
     case "$2" in *'='*) return 1 ;; esac
     desktop_exec=$(printf '%s' "$2" | sed 's/\\/\\\\/g; s/["`$]/\\&/g; s/\\/\\\\/g; s/%/%%/g') || return 1
+    desktop_exec_prefix=''
+    case "$2" in
+        *%*)
+            # GIO checks argv[0] for existence before expanding %% to %. Use
+            # the native env executable for this case so literal percent paths
+            # remain launchable without interpreting the path as shell code.
+            desktop_env=$(command -v env) || return 1
+            case "$desktop_env" in /*) ;; *) return 1 ;; esac
+            desktop_env=$(printf '%s' "$desktop_env" | sed 's/\\/\\\\/g; s/["`$]/\\&/g; s/\\/\\\\/g') || return 1
+            desktop_exec_prefix="\"$desktop_env\" -- "
+            ;;
+    esac
     desktop_icon=$(printf '%s' "$3" | sed 's/\\/\\\\/g') || return 1
     desktop_exec_seen=0
     desktop_icon_seen=0
     while IFS= read -r desktop_line || [ -n "$desktop_line" ]; do
         case "$desktop_line" in
-            Exec=*) printf 'Exec="%s"\n' "$desktop_exec"; desktop_exec_seen=$((desktop_exec_seen + 1)) ;;
+            Exec=*) printf 'Exec=%s"%s"\n' "$desktop_exec_prefix" "$desktop_exec"; desktop_exec_seen=$((desktop_exec_seen + 1)) ;;
             Icon=*) printf 'Icon=%s\n' "$desktop_icon"; desktop_icon_seen=$((desktop_icon_seen + 1)) ;;
             *) printf '%s\n' "$desktop_line" ;;
         esac
