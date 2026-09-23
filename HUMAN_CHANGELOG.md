@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: optional-tool checks now reveal why a Linux package download failed, so a fix can target the actual cause.
+
 - Optional storage-health setup explains the platform-specific operation before asking to install. It keeps existing tools and leaves background services alone. Missing system libraries get a useful explanation, and successful setup refreshes ordinary storage readings.
 
 - Optional network-tool setup explains the download and asks before installing. Existing installations are preserved, and the companion remains available if you remove the monitor. Changing desktop preferences keeps your chosen diagnostic tools.

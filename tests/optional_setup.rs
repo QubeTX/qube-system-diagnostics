@@ -74,6 +74,33 @@ fn smart_helper_setup_verifies_version_and_preserves_repeat_ownership() {
         &["tools", "smartctl", "--install", "--accept", "--json"],
     );
     let payload: Value = serde_json::from_slice(&installed.stdout).unwrap();
+    #[cfg(all(target_os = "linux", target_env = "musl"))]
+    if !installed.status.success() {
+        // A native-only failure must disclose which package-manager condition
+        // failed before a product fix is chosen. Never print the archive bytes.
+        let mut diagnostic = Command::new("/sbin/apk");
+        diagnostic
+            .args(["fetch", "--stdout", "smartmontools"])
+            .env("HOME", temp.path())
+            .env("XDG_CONFIG_HOME", temp.path().join("config"));
+        let output = sd_300::collectors::command::run_memory_command(
+            &mut diagnostic,
+            sd_300::collectors::command::CommandTimeout::Custom(std::time::Duration::from_secs(30)),
+            &std::sync::atomic::AtomicBool::new(false),
+        );
+        match output {
+            Ok(output) => println!(
+                "Native Alpine fetch: exit={:?}, failure={:?}, stderr={}",
+                output.status.and_then(|s| s.code()),
+                output.failure,
+                String::from_utf8_lossy(&output.stderr)
+                    .chars()
+                    .take(2048)
+                    .collect::<String>()
+            ),
+            Err(error) => println!("Native Alpine fetch could not start: {error}"),
+        }
+    }
     assert!(installed.status.success(), "SMART setup payload: {payload}");
     assert_eq!(payload["installed"], true);
     assert!(payload["message"]
