@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: unchanged 866bebb GUI repeat peaks at 159.2 MiB at 285 seconds after warmup, including simultaneous static (11.6 MiB) and driver (13.9 MiB) workers; CPU passes at 1.03 percent and shutdown is clean. Add a cancellation-aware permit for the three ephemeral inventory lanes and deterministic overlap/panic/cancel tests; live lanes remain independent. Native Apple Silicon run 35865259681 also exposes TUI CPU failure (baseline 2.73 percent, candidate 3.12 percent); retain it as a separate platform optimization gate. Next oracles: rebuilt aligned Windows 15-minute peak and native per-stage Mac profiling.
+
 - 2026-09-23 — codex: 866bebb's 15-minute whole-family GUI Thermals run passes CPU (1.17 percent) and private memory (257.7 MiB), but RSS peaks at 178.7 MiB with eight processes; shutdown is clean. Stop the queued hidden/soak runs at this failure, retain exact hashes/report, and add peak-role attribution. Next oracle: unchanged bundle over a 330-second inventory-crossing window; identify overlapping workers before changing product scheduling.
 
 - 2026-09-23 — codex: extend manual native resource comparison to TUI plus foreground/hidden GUI, using hash-verified immutable v3.1.3 GUI payloads and a source-equivalence assertion against f83ae42. Baseline topology is explicitly legacy in-process; candidate worker checks remain mandatory. Archive checksum/path fixtures and local syntax/workflow checks precede hosted execution. Next oracle: complete native GUI smoke, then all-six before/after resource reports with no overlapping builds or visual observers.

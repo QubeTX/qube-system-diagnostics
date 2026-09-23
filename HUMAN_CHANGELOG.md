@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Occasional hardware inventory checks take turns to reduce memory peaks while live monitoring continues. Behind the scenes, checks verify that waiting work can stop promptly and a failed check cannot block later ones.
+
 - Behind the scenes: longer testing exposed a memory peak missed by short checks. Reports now identify which background checks overlap at that peak so improvements target the measured cause.
 
 - Behind the scenes: before-and-after comparisons cover the app as well as the terminal, including background operation. Baseline downloads are verified and every result identifies the exact files measured.

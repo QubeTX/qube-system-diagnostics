@@ -43,6 +43,16 @@ the parent retains their samples for the unchanged five-minute/one-minute cadenc
 These topics do not need a child-local numeric baseline between requests. Native
 checks remain isolated and cancellation still joins owned workers before unloading.
 
+The unchanged-binary foreground repeat attributed its working-set peak to
+simultaneous static and driver workers at the five-minute refresh. Static,
+driver and health lanes now share one session-local process permit. Their three
+existing threads wait with cancellation; no request queue or replacement thread
+is introduced. Each lane keeps its cadence and captures its actual acquisition
+time. Counter, socket, diagnostic and live telemetry lanes remain independent.
+Panic releases the permit, and shutdown never waits for the active probe merely
+to cancel a lane waiting for that permit. Long resource gates still determine
+whether the resulting peak is acceptable.
+
 ## Capture clocks, 2026-09-23
 
 Disk baselines belong to the persistent activity worker, and rates are computed

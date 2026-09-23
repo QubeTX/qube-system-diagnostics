@@ -10,7 +10,7 @@ use std::{
     panic::{catch_unwind, AssertUnwindSafe},
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard, TryLockError,
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -112,6 +112,26 @@ struct Shared {
     retry: [AtomicBool; 8],
     slots: [Mutex<Option<Update>>; 8],
     wakers: [Mutex<Option<thread::Thread>>; 8],
+    inventory: InventoryGate,
+}
+
+/// Inventory has no live counter baseline. Only one of its three bounded lane
+/// threads may own a short-lived native process at a time. Fast telemetry never
+/// takes this permit, and cancellation never waits for another probe to return.
+#[derive(Default)]
+struct InventoryGate(Mutex<()>);
+
+impl InventoryGate {
+    fn acquire(&self, stop: &AtomicBool) -> Option<MutexGuard<'_, ()>> {
+        while !stop.load(Ordering::Acquire) {
+            match self.0.try_lock() {
+                Ok(guard) => return Some(guard),
+                Err(TryLockError::Poisoned(error)) => return Some(error.into_inner()),
+                Err(TryLockError::WouldBlock) => thread::park_timeout(Duration::from_millis(20)),
+            }
+        }
+        None
+    }
 }
 
 impl Shared {
@@ -149,6 +169,7 @@ impl Monitor {
             retry: std::array::from_fn(|_| AtomicBool::new(false)),
             slots: std::array::from_fn(|_| Mutex::new(None)),
             wakers: std::array::from_fn(|_| Mutex::new(None)),
+            inventory: InventoryGate::default(),
         });
         let workers = Lane::ALL
             .into_iter()
@@ -323,6 +344,16 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
         }
         let result = catch_unwind(AssertUnwindSafe(|| {
             if lane != Lane::Fast {
+                let _inventory = if matches!(lane, Lane::Static | Lane::Health | Lane::Drivers) {
+                    Some(
+                        shared
+                            .inventory
+                            .acquire(&shared.stop)
+                            .ok_or("Collection cancelled")?,
+                    )
+                } else {
+                    None
+                };
                 return session.collect(lane.topic(), &shared.stop, requested).map(
                     |(data, captured, interval)| {
                         let data = match data {
@@ -444,6 +475,7 @@ mod tests {
                 retry: std::array::from_fn(|_| AtomicBool::new(false)),
                 slots: std::array::from_fn(|_| Mutex::new(None)),
                 wakers: std::array::from_fn(|_| Mutex::new(None)),
+                inventory: InventoryGate::default(),
             }),
             workers: Vec::new(),
         }
@@ -488,5 +520,49 @@ mod tests {
         monitor.drain(&mut snapshot);
         assert!(snapshot.samples["fast"].observation.is_available());
         assert_eq!(snapshot.samples["fast"].captured_unix_ms, 3000);
+    }
+
+    #[test]
+    fn inventory_permit_bounds_overlap_and_recovers_after_a_panic() {
+        use std::sync::{atomic::AtomicUsize, Barrier};
+        let gate = InventoryGate::default();
+        let stop = AtomicBool::new(false);
+        let active = AtomicUsize::new(0);
+        let barrier = Barrier::new(3);
+        thread::scope(|scope| {
+            for _ in 0..3 {
+                scope.spawn(|| {
+                    barrier.wait();
+                    let _permit = gate.acquire(&stop).unwrap();
+                    assert_eq!(active.fetch_add(1, Ordering::SeqCst), 0);
+                    thread::sleep(Duration::from_millis(10));
+                    assert_eq!(active.fetch_sub(1, Ordering::SeqCst), 1);
+                });
+            }
+        });
+        let panic = catch_unwind(|| {
+            let _permit = gate.acquire(&stop).unwrap();
+            panic!("fixture: native collector panic");
+        });
+        assert!(panic.is_err());
+        assert!(gate.acquire(&stop).is_some());
+    }
+
+    #[test]
+    fn waiting_inventory_cancels_without_waiting_for_the_active_probe() {
+        let gate = InventoryGate::default();
+        let stop = AtomicBool::new(false);
+        let _active_probe = gate.acquire(&stop).unwrap();
+        let (started, waiting) = std::sync::mpsc::channel();
+        thread::scope(|scope| {
+            let worker = scope.spawn(|| {
+                started.send(()).unwrap();
+                assert!(gate.acquire(&stop).is_none());
+            });
+            waiting.recv().unwrap();
+            stop.store(true, Ordering::Release);
+            worker.thread().unpark();
+            worker.join().unwrap();
+        });
     }
 }

@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Serialize short-lived static, driver and health worker processes within each monitor session after peak-role measurements confirm overlap. Retain independent live sampling, actual capture timestamps and existing cadences; test exclusive admission, cancellation and panic recovery.
+
 - Attribute Windows GUI peak working set to bounded process roles after the first full foreground run passes CPU/private memory but exceeds the RSS gate. Retain the failed result and repeat unchanged artifacts before choosing a product optimization.
 
 - Extend opt-in native before/after resource qualification to both GUI visibility profiles. Verify immutable public GUI baseline hashes, archive bounds and source equivalence; distinguish the legacy in-process collector topology and retain complete-bundle candidate gates.
