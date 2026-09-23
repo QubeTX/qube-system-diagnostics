@@ -196,18 +196,19 @@ geometry. Regenerate every committed ICO/ICNS/PNG/hicolor derivative with
 required transparency and palette structure with `zig build check-icons`.
 Never hand-edit generated icon outputs.
 
-Makira is the primary face for body copy, headings, navigation, and large
-numbers. IBM Plex Mono is secondary for technical labels and compact numeric
+Makira and Gail Rock are the main faces: Makira for headings and large readings,
+Gail Rock for body copy, navigation and controls. IBM Plex Mono serves technical labels and compact numeric
 data. The binaries are embedded from `src/fonts`; license notices/evidence live
 under `assets/fonts`. IBM Plex Mono's OFL notice must ship. Do not publicly ship
 Makira unless repository/release evidence confirms that the purchased license
 permits desktop-application embedding and redistribution.
 
-Makira's commercial source file is deliberately excluded from this public
-repository. Local builds use the operator-provided ignored file. Trusted CI
+Both commercial source files are deliberately excluded from this public
+repository. Local builds use the operator-provided ignored files. Trusted CI
 reconstructs the exact reviewed bytes from the split encrypted
 `SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1` and
-`SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2` secrets, then verifies the digest in
+`SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2` secrets for Makira, and
+`SD300_GAIL_ROCK_FONT_BROTLI_BASE64` for Gail Rock, then verifies the digests in
 `toolchain-lock.json` before compiling. Never print, upload, or attach either
 secret or the standalone font file.
 

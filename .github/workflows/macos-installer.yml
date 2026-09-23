@@ -196,6 +196,7 @@ jobs:
         env:
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
         run: |
           set -euo pipefail
           SD300_SKIP_NPM_CI=1 bash scripts/build-native-gui.sh '${{ matrix.gui_target }}'

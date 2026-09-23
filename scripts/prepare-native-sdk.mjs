@@ -17,10 +17,16 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "90059fd2ec71b69cb37aab16cadcd266d4916dd4c9031062450d5962483fee60",
+  patchHash: "29a33deb964db32f0543e5b2dd9a832325eaab6b63e08f1a2861755a51c5c599",
 };
 
 const files = new Map([
+  ["src/primitives/canvas/tokens.zig", ["90820897f491d1fad04671ad3ffbfda8cbe0b2fc7804b55f28a21bfd03b6ddae", "128682905eee9f7d5e09093693dc1e832ecff9bc2c3a0f6c0e805425a3898af9"]],
+  ["src/primitives/canvas/widget_metrics.zig", ["74adc55e86c5fb013a2a3020844eaeb852c17c1e8c0b54e87d1c6804151878a6", "f70376b84b9eebd5ac495151227be4f00fa64a1c421a7377923ba8b4382776af"]],
+  ["src/primitives/canvas/widget_layout.zig", ["5a3df6ee21309651016c4f2d2a4c94e65640e4d6fed632b74f119d130df3fcaa", "ce71dca1ff8c294bcc784113abea8022d0a2c7200e776af7a86b610deeb1d560"]],
+  ["src/primitives/canvas/widget_render.zig", ["382f55c72735bcd1956ef4005dcedbcd8e9b5255fa450067176f634284c03a80", "67e65b2bc371121a6d600b1e83685ac3352113f36206a8fc8a0e0e60bccd7ab6"]],
+  ["src/primitives/canvas/widget_text_select.zig", ["a1860f7c551d062d4e41768222120311ac4f63350d2413807ac6fe58c7108245", "87a5b032c6b62e8a85ed57294b3eafa1ad6ef332b4c61d09716dfd1c25960a76"]],
+  ["src/primitives/canvas/layout_audit.zig", ["6c1a6d7b132c6494ea45159fc045bc4f3135eaa393f43d02af6eeb56dd32484f", "509722ff7489bb621b2adda0d834b6f7b4deb2a97f37c4b76d0422373c70f455"]],
   ["build/app.zig", ["0b224d560c66f0a111c1cc333c3f81002ab25811dabb81d85d174a89ed491595", "26cf51a704eef3be95471b364b989808c10eed9905ffb4f993d689c7ae248e28"]],
   ["src/app_runner/root.zig", ["e085afe9f414a5ef0c21388e0bb1436bf05cb346349d6e87ca7e352c38b0c4e0", "5a3cbdbe53a4a68c93a49defb6024d20f335bda176697342a3c79163ce880340"]],
   ["src/platform/linux/gtk_host.c", ["da73fa340df0f577cc09873ae0c6d5e6d94bc7ca8024a68ad51d2df94cd93af7", "772f4e3d01366e5b31ad138cab1e6977bfc6e081c6a962cbb27336fc7bd2e14f"]],

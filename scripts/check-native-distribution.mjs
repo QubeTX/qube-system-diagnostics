@@ -101,17 +101,20 @@ for (const relativePath of ["scripts/prepare-native-sdk.mjs", "scripts/prepare-n
   }
 }
 
-const makiraPrepare = readFileSync(resolve(repoRoot, "scripts/prepare-makira-font.mjs"), "utf8");
+const makiraPrepare = readFileSync(resolve(repoRoot, "scripts/prepare-gui-fonts.mjs"), "utf8");
 const gitignore = readFileSync(resolve(repoRoot, ".gitignore"), "utf8");
 for (const marker of [
   "SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1",
   "SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2",
+  "SD300_GAIL_ROCK_FONT_BROTLI_BASE64",
   "brotliDecompressSync",
 ]) {
   if (!makiraPrepare.includes(marker)) throw new Error(`Licensed Makira preparer is missing ${marker}.`);
 }
-if (!gitignore.split(/\r?\n/).includes("gui/src/fonts/Makira-Regular.ttf")) {
-  throw new Error("The commercial Makira source font must remain excluded from the public repository.");
+for (const name of ["Makira-Regular.ttf", "Gail-Rock-Regular.ttf"]) {
+  if (!gitignore.split(/\r?\n/).includes(`gui/src/fonts/${name}`)) {
+    throw new Error(`The commercial ${name} source font must remain excluded from the public repository.`);
+  }
 }
 
 function* files(root) {

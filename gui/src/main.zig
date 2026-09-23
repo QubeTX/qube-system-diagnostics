@@ -31,6 +31,7 @@ const history_sample_count: usize = history_model.count;
 const tray_supported = builtin.os.tag == .windows or builtin.os.tag == .macos;
 const makira_font_id: canvas.FontId = canvas.min_registered_font_id;
 const plex_mono_font_id: canvas.FontId = canvas.min_registered_font_id + 1;
+const gail_rock_font_id: canvas.FontId = canvas.min_registered_font_id + 2;
 
 pub const ProcessSort = enum(u32) {
     cpu = 0,
@@ -1461,9 +1462,10 @@ pub fn qubeTokens(model: *const Model) canvas.DesignTokens {
     tokens.colors.accent_text = canvas.Color.rgb8(9, 9, 9);
     tokens.colors.info = canvas.Color.rgb8(255, 94, 26);
     tokens.colors.focus_ring = canvas.Color.rgb8(255, 94, 26);
-    tokens.typography.font_id = makira_font_id;
+    tokens.typography.font_id = gail_rock_font_id;
+    tokens.typography.heading_font_id = makira_font_id;
     tokens.typography.mono_font_id = plex_mono_font_id;
-    tokens.typography.button_font_id = makira_font_id;
+    tokens.typography.button_font_id = gail_rock_font_id;
     tokens.typography.body_size = 15;
     tokens.typography.label_size = 13;
     tokens.typography.title_size = 21;
@@ -1628,6 +1630,11 @@ const app_features: native_sdk.UiAppFeatures = .{ .runtime_markup = builtin.mode
 pub const NativeApp = native_sdk.UiAppWithFeatures(Model, Msg, app_features);
 
 const app_fonts = [_]NativeApp.FontRegistration{
+    .{
+        .id = gail_rock_font_id,
+        .name = "Gail-Rock-Regular.ttf",
+        .ttf = @embedFile("fonts/Gail-Rock-Regular.ttf"),
+    },
     .{
         .id = makira_font_id,
         .name = "Makira-Regular.ttf",

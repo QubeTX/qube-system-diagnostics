@@ -3070,3 +3070,131 @@ index d111f82..2074d24 100644
  pub fn validateTrayMenuItems(items: []const platform.TrayMenuItem) !void {
      if (items.len > platform.max_tray_items) return error.InvalidTrayOptions;
      for (items, 0..) |item, index| {
+diff --git a/src/primitives/canvas/tokens.zig b/src/primitives/canvas/tokens.zig
+--- a/src/primitives/canvas/tokens.zig
++++ b/src/primitives/canvas/tokens.zig
+@@ -322,6 +322,8 @@
+ pub const TypographyTokens = struct {
+     font_id: FontId = default_sans_font_id,
+     mono_font_id: FontId = default_mono_font_id,
++    /// Optional face for heading/display text; body remains the default.
++    heading_font_id: ?FontId = null,
+     font_family: FontFamily = default_sans_font_family,
+     mono_font_family: FontFamily = default_mono_font_family,
+     body_size: f32 = 14,
+@@ -1126,6 +1128,7 @@
+ pub const TypographyTokenOverrides = struct {
+     font_id: ?FontId = null,
+     mono_font_id: ?FontId = null,
++    heading_font_id: ?FontId = null,
+     font_family: ?FontFamily = null,
+     mono_font_family: ?FontFamily = null,
+     body_size: ?f32 = null,
+diff --git a/src/primitives/canvas/widget_metrics.zig b/src/primitives/canvas/widget_metrics.zig
+--- a/src/primitives/canvas/widget_metrics.zig
++++ b/src/primitives/canvas/widget_metrics.zig
+@@ -23,6 +23,13 @@
+         .lg => @max(8, tokens.typography.button_size + tokens.metrics.button_label_lg_step),
+         .default, .icon, .heading, .display => tokens.typography.button_size,
+     };
++}
++
++pub fn widgetBodyFontId(widget: Widget, tokens: DesignTokens) @import("root.zig").FontId {
++    if (widget.kind == .text and (widget.size == .heading or widget.size == .display)) {
++        return tokens.typography.heading_font_id orelse tokens.typography.font_id;
++    }
++    return tokens.typography.font_id;
+ }
+ 
+ pub fn widgetBodyTextSize(widget: Widget, tokens: DesignTokens) f32 {
+@@ -100,12 +107,14 @@
+ /// a snapped paint frame never wraps a line the layout frame fit —
+ /// painted lines are therefore always <= the reserved line count.
+ pub fn widgetTextSpanLayoutOptions(widget: Widget, tokens: DesignTokens, max_width: f32) text_spans_model.TextSpanLayoutOptions {
++    var typography = tokens.typography;
++    typography.font_id = widgetBodyFontId(widget, tokens);
+     return .{
+         .size = widgetBodyTextSize(widget, tokens),
+         .max_width = max_width,
+         .wrap = .word,
+         .alignment = widget.text_alignment,
+-        .typography = tokens.typography,
++        .typography = typography,
+         .measure = tokens.text_measure,
+     };
+ }
+diff --git a/src/primitives/canvas/widget_layout.zig b/src/primitives/canvas/widget_layout.zig
+--- a/src/primitives/canvas/widget_layout.zig
++++ b/src/primitives/canvas/widget_layout.zig
+@@ -247,7 +247,7 @@
+     if (widget.kind != .text) return frame;
+     if (widget.spans.len > 0) return frame;
+     if (std.mem.indexOfScalar(u8, widget.text, '\n') != null) return frame;
+-    const measured = measuredTextWidth(tokens, widget.text, widgetBodyTextSize(widget, tokens));
++    const measured = measureTextWidthForFont(tokens.text_measure, widget_metrics.widgetBodyFontId(widget, tokens), widget.text, widgetBodyTextSize(widget, tokens));
+     const width = @min(measured, frame.width);
+     const dx: f32 = switch (widget.text_alignment) {
+         .start => 0,
+@@ -1718,7 +1718,7 @@
+         );
+     }
+     return geometry.SizeF.init(
+-        measuredTextWidth(tokens, widget.text, text_size),
++        measureTextWidthForFont(tokens.text_measure, widget_metrics.widgetBodyFontId(widget, tokens), widget.text, text_size),
+         widgetLineHeight(text_size),
+     );
+ }
+@@ -1955,7 +1955,7 @@
+ fn intrinsicRowTextWidgetSize(widget: Widget, tokens: DesignTokens) geometry.SizeF {
+     const text_size = widgetBodyTextSize(widget, tokens);
+     const inset = widgetControlInset(widget, tokens, tokens.spacing.md);
+-    const text_width = measuredTextWidth(tokens, widget.text, text_size);
++    const text_width = measureTextWidthForFont(tokens.text_measure, widget_metrics.widgetBodyFontId(widget, tokens), widget.text, text_size);
+     // A leading icon widens the row by the same shared metrics the
+     // renderer paints with, so measured widths and pixels agree.
+     const icon_width = if (widget.icon.len > 0)
+diff --git a/src/primitives/canvas/widget_render.zig b/src/primitives/canvas/widget_render.zig
+--- a/src/primitives/canvas/widget_render.zig
++++ b/src/primitives/canvas/widget_render.zig
+@@ -912,7 +912,7 @@
+     const text_size = widgetBodyTextSize(widget, tokens);
+     try builder.drawText(.{
+         .id = widgetPartId(widget.id, 1),
+-        .font_id = tokens.typography.font_id,
++        .font_id = widget_metrics.widgetBodyFontId(widget, tokens),
+         .size = text_size,
+         .origin = pixelSnapTextPoint(tokens, textOrigin(widget.frame, text_size, 0)),
+         .color = widgetForegroundColor(widget, tokens, tokens.colors.text),
+diff --git a/src/primitives/canvas/widget_text_select.zig b/src/primitives/canvas/widget_text_select.zig
+--- a/src/primitives/canvas/widget_text_select.zig
++++ b/src/primitives/canvas/widget_text_select.zig
+@@ -102,7 +102,7 @@
+ pub fn staticTextDrawText(widget: Widget, tokens: DesignTokens) DrawText {
+     const text_size = widget_metrics.widgetBodyTextSize(widget, tokens);
+     return .{
+-        .font_id = tokens.typography.font_id,
++        .font_id = widget_metrics.widgetBodyFontId(widget, tokens),
+         .size = text_size,
+         .origin = pixelSnapTextPoint(tokens, staticTextOrigin(widget.frame, text_size)),
+         .color = tokens.colors.text,
+diff --git a/src/primitives/canvas/layout_audit.zig b/src/primitives/canvas/layout_audit.zig
+--- a/src/primitives/canvas/layout_audit.zig
++++ b/src/primitives/canvas/layout_audit.zig
+@@ -279,7 +279,7 @@
+     var max_line_width: f32 = 0;
+     var start: usize = 0;
+     while (start <= widget.text.len and widget.text.len > 0) {
+-        const end = text_model.nextTextLineEnd(widget.text, start, tokens.typography.font_id, text_size, .{
++        const end = text_model.nextTextLineEnd(widget.text, start, widget_metrics.widgetBodyFontId(widget, tokens), text_size, .{
+             .max_width = frame.width + layout_audit_wrap_slack,
+             .line_height = line_height,
+             .wrap = .none,
+@@ -287,7 +287,7 @@
+             .measure = tokens.text_measure,
+         });
+         line_count += 1;
+-        const line_width = text_metrics.measureTextWidthForFont(tokens.text_measure, tokens.typography.font_id, widget.text[start..end], text_size);
++        const line_width = text_metrics.measureTextWidthForFont(tokens.text_measure, widget_metrics.widgetBodyFontId(widget, tokens), widget.text[start..end], text_size);
+         max_line_width = @max(max_line_width, line_width);
+         if (end >= widget.text.len) break;
+         start = end;

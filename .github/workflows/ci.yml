@@ -206,6 +206,7 @@ jobs:
         env:
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
         run: scripts\build-native-gui.ps1 -Target '${{ matrix.target }}' -SkipNpmCi
       - name: Build and test macOS/Linux native GUI
         if: ${{ runner.os != 'Windows' }}
@@ -213,6 +214,7 @@ jobs:
         env:
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
+          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
         run: SD300_SKIP_NPM_CI=1 bash scripts/build-native-gui.sh '${{ matrix.target }}'
       - name: Verify native Unix window state and complete collector bundle
         if: ${{ runner.os != 'Windows' }}
@@ -316,7 +318,8 @@ jobs:
         env:
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1 }}
           SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2: ${{ secrets.SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2 }}
-        run: node scripts/prepare-makira-font.mjs gui
+          SD300_GAIL_ROCK_FONT_BROTLI_BASE64: ${{ secrets.SD300_GAIL_ROCK_FONT_BROTLI_BASE64 }}
+        run: node scripts/prepare-gui-fonts.mjs gui
       - name: Build and package in pinned Alpine 3.20
         shell: bash
         run: |

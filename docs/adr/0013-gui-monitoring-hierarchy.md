@@ -15,6 +15,8 @@ Present every row of each bounded sixteen-process page and preserve the engine's
 
 Treat absent optional observation detail as absent instead of substituting pending text. Distinguish pending, delayed and interrupted readings; do not describe uncaptured zero defaults as low resource pressure. Technician metadata uses the relevant topic's sequence and capture time. Unified graphics memory remains distinct from dedicated video memory.
 
+The operator subsequently requested Makira and Gail Rock as the main GUI fonts. Use the supplied static Makira face for heading/display text, Gail Rock for body/navigation/buttons, and Plex Mono for technical values. A reviewed downstream heading-font token resolves the same face in intrinsic sizing, wrapped text, selection geometry, overflow audit and painting. Do not switch only the rendered font after measuring another face. Embed the unchanged font files from private, hash-verified build inputs on every platform; preserve the pinned upstream SDK archive and put the downstream change in the reviewed patch.
+
 ## Verification and limits
 
 The review record is `docs/qualification/v4/gui-ux-review.md`. Fixtures cover process ordering and page completeness, repeated capture warmup, available observations without detail, large virtual-interface inventories, startup assessments, consent paragraphs and control bounds across all sections and both modes. Real Windows interaction checks cover resizing, search, focus, mode switching and confirmation dismissal.

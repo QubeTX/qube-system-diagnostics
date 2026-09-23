@@ -106,10 +106,11 @@ foreach ($relativePath in @('scripts\prepare-native-sdk.mjs', 'scripts\prepare-n
     }
 }
 
-$makiraPrepare = Get-Content -Raw -LiteralPath (Join-Path $repo 'scripts\prepare-makira-font.mjs')
+$makiraPrepare = Get-Content -Raw -LiteralPath (Join-Path $repo 'scripts\prepare-gui-fonts.mjs')
 foreach ($marker in @(
     'SD300_MAKIRA_FONT_BROTLI_BASE64_PART_1',
     'SD300_MAKIRA_FONT_BROTLI_BASE64_PART_2',
+    'SD300_GAIL_ROCK_FONT_BROTLI_BASE64',
     'brotliDecompressSync'
 )) {
     if (-not $makiraPrepare.Contains($marker)) {
@@ -117,8 +118,10 @@ foreach ($marker in @(
     }
 }
 $gitignore = Get-Content -LiteralPath (Join-Path $repo '.gitignore')
-if ($gitignore -notcontains 'gui/src/fonts/Makira-Regular.ttf') {
-    throw 'The commercial Makira source font must remain excluded from the public repository.'
+foreach ($fontName in @('Makira-Regular.ttf', 'Gail-Rock-Regular.ttf')) {
+    if ($gitignore -notcontains "gui/src/fonts/$fontName") {
+        throw "The commercial $fontName source font must remain excluded from the public repository."
+    }
 }
 
 $forbiddenSource = @(

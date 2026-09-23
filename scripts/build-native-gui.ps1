@@ -67,7 +67,7 @@ $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $guiRoot = Join-Path $repoRoot "gui"
 $engineRoot = Join-Path $repoRoot "gui-engine"
 
-& node (Join-Path $PSScriptRoot "prepare-makira-font.mjs") $guiRoot
+& node (Join-Path $PSScriptRoot "prepare-gui-fonts.mjs") $guiRoot
 if ($LASTEXITCODE -ne 0) {
     throw "Preparing the licensed Makira build input failed."
 }

@@ -34,7 +34,7 @@ function copyRequired(source, destination) {
 // and Zig content hash. SD-300 carries a reviewed downstream renderer patch,
 // so app tests must use the same generated, repository-relative dependency
 // graph as release builds instead of mutating Zig's content-addressed cache.
-run(process.execPath, [resolve(scriptRoot, "prepare-makira-font.mjs"), guiRoot], repoRoot);
+run(process.execPath, [resolve(scriptRoot, "prepare-gui-fonts.mjs"), guiRoot], repoRoot);
 run(process.execPath, [resolve(scriptRoot, "prepare-native-sdk.mjs"), guiRoot], repoRoot);
 
 const stageRelative = relative(stageBase, stageRoot);

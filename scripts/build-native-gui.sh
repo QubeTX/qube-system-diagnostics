@@ -26,7 +26,7 @@ repo_root=$(CDPATH='' cd -- "$script_root/.." && pwd)
 gui_root="$repo_root/gui"
 engine_root="$repo_root/gui-engine"
 
-node "$script_root/prepare-makira-font.mjs" "$gui_root"
+node "$script_root/prepare-gui-fonts.mjs" "$gui_root"
 if [[ $skip_npm_ci != 1 ]]; then
   (cd "$gui_root" && npm ci --ignore-scripts)
 fi

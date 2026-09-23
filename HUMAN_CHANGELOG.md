@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- The desktop app now pairs Makira's headings and large readings with Gail Rock for navigation, controls and explanations. The fonts travel with the app, keeping the same appearance on every supported system, while dense technical values remain easy to scan.
+
 - Quitting the Mac app now finishes its background monitoring cleanup before the operating system closes it. Behind the scenes, native checks verify that quitting leaves no collectors behind.
 
 - Connection checks now say when their results are delayed or unavailable, even while other readings remain live. Clearer labels distinguish a network response from the time needed to look up a name, and long hardware explanations stay readable.
