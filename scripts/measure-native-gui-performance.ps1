@@ -1,3 +1,5 @@
+# Legacy main-process diagnostic only. Isolated collector subprocesses are not
+# included here; v4 release resource acceptance uses measure-gui-windows.py.
 [CmdletBinding()]
 param(
     [Parameter()]

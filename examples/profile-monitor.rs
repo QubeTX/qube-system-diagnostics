@@ -15,27 +15,61 @@ use sd_300::{
 };
 
 #[derive(Default)]
-struct Timings(BTreeMap<&'static str, Vec<f64>>);
+struct Timings(BTreeMap<&'static str, Vec<(f64, Option<f64>)>>);
+
+#[cfg(windows)]
+fn process_cpu_ms() -> Option<f64> {
+    use windows_sys::Win32::{
+        Foundation::FILETIME,
+        System::Threading::{GetCurrentProcess, GetProcessTimes},
+    };
+    let mut created = FILETIME::default();
+    let mut exited = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    if unsafe {
+        GetProcessTimes(
+            GetCurrentProcess(),
+            &mut created,
+            &mut exited,
+            &mut kernel,
+            &mut user,
+        )
+    } == 0
+    {
+        return None;
+    }
+    let ticks = |v: FILETIME| (u64::from(v.dwHighDateTime) << 32) | u64::from(v.dwLowDateTime);
+    Some((ticks(kernel) + ticks(user)) as f64 / 10_000.0)
+}
+#[cfg(not(windows))]
+fn process_cpu_ms() -> Option<f64> {
+    None
+}
 impl Timings {
     fn measure<T>(&mut self, label: &'static str, collect: impl FnOnce() -> T) -> T {
         let start = Instant::now();
+        let before_cpu = process_cpu_ms();
         let value = collect();
-        self.0
-            .entry(label)
-            .or_default()
-            .push(start.elapsed().as_secs_f64() * 1000.0);
+        let wall = start.elapsed().as_secs_f64() * 1000.0;
+        let cpu = before_cpu
+            .zip(process_cpu_ms())
+            .map(|(before, after)| after - before);
+        self.0.entry(label).or_default().push((wall, cpu));
         value
     }
     fn report(self) -> serde_json::Value {
         let stages = self.0.into_iter().map(|(label, mut values)| {
-            values.sort_by(f64::total_cmp);
+            values.sort_by(|a,b| a.0.total_cmp(&b.0));
             let count = values.len();
-            (label, serde_json::json!({"count":count,"mean_ms":values.iter().sum::<f64>() / count as f64,
-                "p95_ms":values[((count * 95).div_ceil(100)).saturating_sub(1)],"max_ms":values[count-1]}))
+            let cpu = values.iter().map(|v|v.1).collect::<Option<Vec<_>>>().map(|v|v.iter().sum::<f64>());
+            (label, serde_json::json!({"count":count,"mean_ms":values.iter().map(|v|v.0).sum::<f64>() / count as f64,
+                "p95_ms":values[((count * 95).div_ceil(100)).saturating_sub(1)].0,"max_ms":values[count-1].0,
+                "process_cpu_total_ms":cpu}))
         }).collect::<BTreeMap<_,_>>();
         serde_json::json!({"schema":1,"os":std::env::consts::OS,"arch":std::env::consts::ARCH,
             "build":if cfg!(debug_assertions) {"debug"}else{"release"},"stages":stages,
-            "limitations":"Stage wall times, sequential diagnostic workload; TestBackend excludes terminal transport. Not process CPU or real input latency."})
+            "limitations":"Sequential diagnostic workload; TestBackend excludes terminal transport. Windows stage CPU is quantized process time and excludes external services/children. Not whole-product CPU or real input latency."})
     }
 }
 
@@ -46,6 +80,30 @@ fn main() {
         .unwrap_or(30)
         .clamp(5, 120);
     let mut timings = Timings::default();
+    let slow = std::env::args().any(|arg| arg == "--slow");
+    if slow {
+        for index in 0..count + 2 {
+            let start = Instant::now();
+            // Match the isolated Slow worker: each request owns fresh containers,
+            // while provider-local discovery caches survive in the worker.
+            let mut disks = sysinfo::Disks::new();
+            let mut components = sysinfo::Components::new();
+            timings.measure("disk.collect", || collectors::disk::collect(&mut disks));
+            let gpu = timings.measure("gpu.collect", collectors::gpu::collect);
+            timings.measure("thermals.collect", || {
+                collectors::thermals::collect(&mut components, &gpu)
+            });
+            if index < 2 {
+                timings.0.clear();
+            }
+            std::thread::sleep(Duration::from_secs(5).saturating_sub(start.elapsed()));
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&timings.report()).unwrap()
+        );
+        return;
+    }
     let mut sys = sysinfo::System::new();
     let mut networks = sysinfo::Networks::new();
     let mut network = collectors::network::NetworkSampler::default();

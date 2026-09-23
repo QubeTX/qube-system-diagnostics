@@ -64,6 +64,49 @@ over the same 330-second window. Its stage time improves substantially but whole
 process CPU remains above the gate. `candidate-native-network-tui-cadence.json`
 retains that result; further changes must target a measured remaining cost.
 
+The native ICMP candidate 059c3f5 records 2.0206 percent CPU and 139.7 MiB RSS
+over the same window. Child creations fall from 73 to seven, but CPU still fails.
+`candidate-native-icmp-tui-cadence.json` retains the exact bytes and failed gate.
+
+## Windows GUI process-family measurements
+
+`scripts/measure-gui-windows.py` requires the GUI, adjacent engine, and the
+bundle-relative CLI collector. It records all three hashes and starts the GUI
+suspended, assigns its ancestor Job Object, then resumes. Native accounting
+fixtures prove exited-child CPU remains counted and owned descendants die on
+cleanup. Existing user sessions are left untouched; settings are isolated.
+No screenshot, pointer observer, compilation or other measured SD-300 session
+runs concurrently. Visibility and required collector processes are checked at
+both ends. Normal exit uses the application's existing quit endpoint.
+
+Overview and Processes intentionally subscribe only to fast data plus static
+identity; other visible sections enable the full probe lanes. Hidden mode keeps
+the lower-frequency thermal/health summary contract. Results name their section
+and cannot be generalized to a different subscription. The old PowerShell
+main-PID sampler is retained as a diagnostic, not a v4 resource gate.
+
+The initial complete Thermals bundle smoke records 1.40 percent CPU, 127.7 MiB
+summed working set and 236.1 MiB private memory. All four persistent probe lanes
+are present at both ends and shutdown leaves no owned children. This is a short
+diagnostic result; the prescribed long foreground, hidden and soak runs remain
+open. An earlier GUI-only stage lacked its collector CLI and is excluded from
+composite qualification.
+
+The complete hidden smoke records 0.45 percent CPU, 93.0 MiB working set and
+229.1 MiB private memory, with its slow worker present and clean shutdown.
+Both smoke JSON reports are retained beside this document. Sampled memory
+includes all live job processes, with the same shared-page and polling limits
+as the TUI method.
+
+The release `profile-monitor` example accepts `--slow` after its sample count.
+It times providers sequentially with two warmup samples and ordinary cadence.
+Windows stage CPU uses GetProcessTimes and is quantized; a zero per-stage total
+does not establish zero work, and neither external services nor child CPU is
+included. Whole-job accounting remains authoritative. Current slow timings
+identify GPU collection at 340 ms mean wall time; disk and thermal providers
+average 1.3 and 27.6 ms respectively. The retained fast profile identifies process
+inventory as the main fast-stage CPU cost. Neither profile is an end-to-end gate.
+
 ## Native terminal interaction
 
 Windows lightweight connectivity uses [IcmpSendEcho](https://learn.microsoft.com/en-us/windows/win32/api/icmpapi/nf-icmpapi-icmpsendecho)

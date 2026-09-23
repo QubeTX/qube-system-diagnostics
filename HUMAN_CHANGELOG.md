@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: performance checks count background collectors as well as the app window, verify that the requested checks are running, and keep failed measurements visible. More detailed profiling helps target costly work without reducing monitoring frequency.
+
 - Behind the scenes: noisy background-check tests now recognize either safety limit stopping the check, while still requiring prompt cleanup. This avoids treating a correctly enforced timeout as a product failure on Mac.
 
 - Windows connection checks use the operating system's actual route and ping reply, with fewer background program launches. Readings below the provider's timing precision remain unavailable, and blocked pings still do not prove the internet is down.

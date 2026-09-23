@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Add whole-process Windows GUI measurement with suspended-before-job ownership, isolated settings, bundle hashes, required worker checks, visibility validation and clean-shutdown assertions. Extend stage profiling with slow providers and quantized process CPU, retaining the still-failing long TUI resource result.
+
 - Qualify noisy worker termination by either the output limit or its earlier absolute deadline, with a fixed cleanup allowance and owner-reaping assertion. Native Apple Silicon evidence identified deadline-first behavior; production limits and collection behavior are unchanged.
 
 - Use native Windows ICMP reply status and millisecond RTT inside the bounded diagnostic worker, with below-resolution RTT left unavailable. Resolve the OS-selected IPv4 route instead of the first printed default route. Remove periodic ping/route subprocesses and show provider provenance in both frontends; retain ICMP-independent TCP reachability fallback.
