@@ -530,6 +530,9 @@ fn run_confirmed(request: &Prepared, cancel: &AtomicBool) -> Result<ProbeResult,
                         if !peer.ip().is_loopback() {
                             continue;
                         }
+                        // Accepted sockets inherit nonblocking mode on Windows/BSD,
+                        // unlike Linux. Normalize before timed framing and reads.
+                        stream.set_nonblocking(false).map_err(|e| e.to_string())?;
                         stream
                             .set_read_timeout(Some(Duration::from_millis(100)))
                             .map_err(|e| e.to_string())?;

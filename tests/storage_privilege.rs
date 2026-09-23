@@ -98,6 +98,8 @@ fn privileged_worker_uses_confirmed_bytes_and_returns_a_bounded_structured_resul
         );
     }
     let mut stream = stream.take().unwrap();
+    // accept inherits nonblocking mode on Windows/macOS but not Linux.
+    stream.set_nonblocking(false).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
