@@ -447,7 +447,7 @@ The minimum supported terminal is 80×24; smaller sizes display a resize notice.
 - **`gui/src/main.zig`** — Native GUI `Model`, tagged `Msg`, update effects,
   engine bridge, settings, and bounded view histories.
 - **`gui/src/app.native`** — Declarative Native SDK view hierarchy and bindings.
-- **`gui/src/fonts/`** — embedded Makira and IBM Plex Mono font binaries;
+- **`gui/src/fonts/`** — embedded Makira, Gail Rock and IBM Plex Mono font binaries;
   license notices and retained evidence live under `gui/assets/fonts/`.
 
 ### Platform Patterns
@@ -486,9 +486,9 @@ In source code, use `#[cfg(target_os = "windows")]` / `#[cfg(target_os = "linux"
 The Ratatui TUI retains its warm earth palette and existing helpers unchanged.
 The native GUI uses the Warm Carbon identity: near-black/charcoal surfaces,
 controlled orange/amber status energy, restrained gradients, and a subtle
-opacity-faded grid rather than generic purple “AI” styling. Makira is primary
-for body copy, headings, and major numerals; IBM Plex Mono is secondary for
-technical labels and compact values. Do not silently substitute or redistribute
+opacity-faded grid rather than generic purple “AI” styling. Makira serves
+headings and major numerals, Gail Rock serves body copy, navigation and controls,
+and IBM Plex Mono serves technical labels and compact values. Do not silently substitute or redistribute
 fonts without preserving the applicable embedding-license evidence.
 
 

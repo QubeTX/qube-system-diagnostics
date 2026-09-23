@@ -51,5 +51,42 @@ class SnapshotReadTests(unittest.TestCase):
             interaction.decode_snapshot(b"x" * (1024 * 1024 + 1), 27)
 
 
+class TimingPolicyTests(unittest.TestCase):
+    def test_duplicate_or_lost_input_remains_a_functional_failure(self):
+        interaction.require_input_count({"input_latency_n": 20}, 20)
+        for actual in (None, 0, 19, 21, 38):
+            with self.assertRaisesRegex(RuntimeError, "lost or duplicated"):
+                interaction.require_input_count({"input_latency_n": actual}, 20)
+
+    def cohorts(self, frame=28000, input_latency=42000, refresh=21000):
+        return [{"kind": "navigation", "frame_work_p95_us": frame, "input_latency_p95_us": input_latency},
+                {"kind": "refresh", "frame_work_p95_us": 12000, "frame_work_total_max_us": refresh}]
+
+    def test_operator_policy_applies_to_all_three_operating_systems(self):
+        for platform in ("win32", "linux", "darwin"):
+            result = interaction.timing_verdict(self.cohorts(), "4.0.0", platform)
+            self.assertTrue(result["timing_passed"])
+            self.assertFalse(result["frame_gate"])
+            self.assertTrue(result["input_gate"])
+            self.assertEqual(result["timing_limits_us"]["frame_p95"], 100000)
+
+    def test_future_versions_and_unknown_platforms_keep_original_limits(self):
+        for version, platform in (("4.0.1", "darwin"), ("4.1.0", "win32"), ("4.0.0-rc.1", "linux"), ("4.0.0", "unknown")):
+            result = interaction.timing_verdict(self.cohorts(), version, platform)
+            self.assertFalse(result["timing_passed"])
+            self.assertEqual(result["timing_policy"], "original-targets")
+
+    def test_each_release_limit_remains_enforced(self):
+        for cohorts in (self.cohorts(frame=100001), self.cohorts(input_latency=100001), self.cohorts(refresh=100001)):
+            self.assertFalse(interaction.timing_verdict(cohorts, "4.0.0", "darwin")["timing_passed"])
+        self.assertTrue(interaction.timing_verdict(self.cohorts(frame=100000, input_latency=100000, refresh=100000), "4.0.0", "darwin")["timing_passed"])
+
+    def test_missing_measurements_do_not_pass(self):
+        for cohorts in ([], self.cohorts()[:1], self.cohorts()[1:]):
+            self.assertFalse(interaction.timing_verdict(cohorts, "4.0.0", "linux")["timing_passed"])
+        with self.assertRaises(KeyError):
+            interaction.timing_verdict([{"kind": "navigation"}], "4.0.0", "linux")
+
+
 if __name__ == "__main__":
     unittest.main()

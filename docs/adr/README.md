@@ -38,6 +38,7 @@ Rules:
 | [0013](0013-gui-monitoring-hierarchy.md) | GUI monitoring hierarchy and complete process pages | Accepted |
 | [0014](0014-macos-termination-cleanup.md) | Join collectors before AppKit termination | Candidate |
 | [0015](0015-gui-preference-writes-and-interaction-timing.md) | Keep preference writes outside GUI interaction | Accepted |
+| [0016](0016-v4-responsiveness-release-decision.md) | Version-scoped v4 responsiveness release decision | Accepted |
 
 ## Dual-frontend contract pointer
 

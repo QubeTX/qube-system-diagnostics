@@ -8,6 +8,10 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: release checks now apply the owner's approved responsiveness budget while still reporting the stricter long-term targets. Resource use, correct input handling, accessibility and reliable shutdown remain required; the timing exception expires with this release.
+
+- Behind the scenes: align the product documentation with the requested font pairing so future updates preserve it.
+
 - Avoid repeated internal Mac accessibility errors during ordinary screen updates, while keeping supported assistive controls available.
 
 - Behind the scenes: keep the full cross-platform performance results, including the limits that still need work. Separate diagnostic runs investigate remaining costs without disturbing the unattended stability checks.

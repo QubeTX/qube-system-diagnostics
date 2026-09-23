@@ -19,8 +19,37 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 
 import psutil
+
+
+def timing_verdict(cohorts, product_version, platform):
+    """Keep engineering targets visible alongside the version-scoped release bar."""
+    approved = product_version == "4.0.0" and platform in ("win32", "linux", "darwin")
+    frame_limit = 100000 if approved else 16700
+    input_limit = 100000 if approved else 50000
+    inputs = [row for row in cohorts if row["kind"] != "refresh"]
+    refreshes = [row for row in cohorts if row["kind"] == "refresh"]
+    frame_gate = bool(cohorts) and all(row["frame_work_p95_us"] <= 16700 for row in cohorts)
+    input_gate = bool(inputs) and all(row["input_latency_p95_us"] <= 50000 for row in inputs)
+    refresh_gate = bool(refreshes) and all(row["frame_work_total_max_us"] <= 100000 for row in refreshes)
+    release_frame = bool(cohorts) and all(row["frame_work_p95_us"] <= frame_limit for row in cohorts)
+    release_input = bool(inputs) and all(row["input_latency_p95_us"] <= input_limit for row in inputs)
+    return {
+        "product_version": product_version,
+        "timing_policy": "v4-operator-2026-09-23" if approved else "original-targets",
+        "timing_limits_us": {"frame_p95": frame_limit, "input_p95": input_limit, "refresh_max": 100000},
+        "frame_gate": frame_gate, "input_gate": input_gate, "refresh_stall_gate": refresh_gate,
+        "release_frame_gate": release_frame, "release_input_gate": release_input,
+        "timing_passed": release_frame and release_input and refresh_gate,
+    }
+
+
+def require_input_count(metrics, expected):
+    actual = metrics.get("input_latency_n")
+    if actual != expected:
+        raise RuntimeError(f"Expected {expected} input completions, observed {actual}; input was lost or duplicated")
 
 
 def numeric_observation(snapshot):
@@ -237,6 +266,7 @@ def main():
     parser.add_argument("--revision", required=True)
     parser.add_argument("--inspect", action="store_true", help="Print authored controls only; no timing qualification")
     args = parser.parse_args()
+    product_version = tomllib.loads(Path(__file__).resolve().parents[1].joinpath("Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
     binary = args.binary.resolve(strict=True)
     engine = binary.with_name("sd300_engine.dll" if sys.platform == "win32" else "libsd300_engine.dylib" if sys.platform == "darwin" else "libsd300_engine.so")
     collector = binary.with_name("sd300.exe" if sys.platform == "win32" else "sd300")
@@ -281,6 +311,7 @@ def main():
                     for _ in range(20):
                         session.input_command("widget-key main-canvas tab")
                     report["cohorts"].append({"kind": "keyboard", "width": width, "height": height, "mode": mode, **session.metrics()})
+                    require_input_count(report["cohorts"][-1], 20)
                     session.click("Processes")
                     session.profile()
                     # Distinct live refreshes, with no user input. Snapshot
@@ -289,10 +320,7 @@ def main():
                         time.sleep(1)
                         session.command("profile on")
                     report["cohorts"].append({"kind": "refresh", "width": width, "height": height, "mode": mode, **session.metrics(require_input=False)})
-            report["frame_gate"] = all(row["frame_work_p95_us"] <= 16700 for row in report["cohorts"])
-            report["input_gate"] = all(row["input_latency_p95_us"] <= 50000 for row in report["cohorts"] if row["kind"] != "refresh")
-            report["refresh_stall_gate"] = all(row["frame_work_total_max_us"] <= 100000 for row in report["cohorts"] if row["kind"] == "refresh")
-            report["passed"] = report["frame_gate"] and report["input_gate"] and report["refresh_stall_gate"]
+            report.update(timing_verdict(report["cohorts"], product_version, sys.platform))
     except BaseException as error:
         report.update(passed=False, failure_type=type(error).__name__, failure=str(error))
         raise
@@ -302,6 +330,10 @@ def main():
                 report["input_trace"] = session.input_trace
                 session.close()
                 report["clean_shutdown"] = session.closed
+            report["passed"] = bool(report.get("timing_passed") and report.get("clean_shutdown") and "failure_type" not in report)
+        except BaseException as error:
+            report.update(passed=False, failure_type=type(error).__name__, failure=str(error))
+            raise
         finally:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

@@ -4,6 +4,10 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Record the operator's 2026-09-23 all-platform 4.0.0 responsiveness decision: frame/input p95 and ordinary-refresh maximum may reach 100 ms. Retain original-target verdicts, expire the exception for later versions, and keep CPU/memory, native accessibility, functional, shutdown and lifecycle checks mandatory (ADR 0016; follow-up #r16).
+
+- Reconcile product and contributor typography documentation with the verified Makira heading, Gail Rock body/control, and Plex Mono technical font mapping.
+
 - Guard legacy AppKit accessibility superclass dispatch when NSAccessibilityElement does not implement the requested selector. Native stack attribution found exception unwinding during ordinary semantic publication. Preserve supported text/selection actions and extend the real-host fixture to reject unsupported queries without exceptions.
 
 - Retain the complete native before/after resource matrix with exact artifact identities, measured deltas and all failed limits. Run further GTK graphics-allocation and Mac hidden-frame diagnostics on a separate branch using unchanged application artifacts, without treating observer-attached diagnostics as acceptance.

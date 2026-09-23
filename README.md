@@ -135,8 +135,8 @@ and packaging pipeline is also run.
   preferences without changing any TUI startup choice, default, keybinding, or
   refresh cadence.
 - Its Warm Carbon visual system uses black/charcoal depth, restrained orange
-  energy, a subtle fading grid, Makira for primary copy and major numerals, and
-  IBM Plex Mono for compact technical text.
+  energy, a subtle fading grid, Makira for headings and major numerals,
+  Gail Rock for body copy and controls, and IBM Plex Mono for compact technical text.
 
 ## Features
 

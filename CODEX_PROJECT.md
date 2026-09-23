@@ -150,9 +150,9 @@ orange/amber energy, a subtle background gradient and fading grid, and existing
 green/amber/red status semantics. It deliberately avoids generic purple-gradient,
 blur-heavy, cursor, and continuous-background effects.
 
-Makira is the primary typeface for body text, headings, and prominent numerals.
-IBM Plex Mono is the technical secondary face for compact labels and small
-measurements. Both are bundled only with retained evidence that their licenses
+Makira serves headings and prominent numerals; Gail Rock serves body text,
+navigation and controls. IBM Plex Mono serves compact technical labels and small
+measurements. Fonts are bundled only with retained evidence that their licenses
 permit application embedding; do not silently replace the typography or assume
 that possession of a font file proves redistribution rights.
 
