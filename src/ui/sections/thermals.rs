@@ -166,13 +166,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
 
     // Temperature history sparkline (now in user mode too)
     let spark_data = app.temp_history.as_u64_vec();
-    let history_label = if thermal.cpu_temp.is_some() {
-        "CPU Temperature (60s)"
-    } else if thermal.gpu_temp.is_some() {
-        "GPU Temperature (60s)"
-    } else {
-        "Temperature History (60s)"
-    };
+    let history_label = "CPU temperature · captured samples";
     let sparkline = Sparkline::default()
         .block(sub_block(history_label))
         .data(&spark_data)
@@ -250,7 +244,14 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
                 truncate_str(&sensor.label, 20),
                 format_temp(sensor.temperature, unit),
                 crit_str,
-                truncate_str(&sensor.source, 18)
+                truncate_str(
+                    &format!(
+                        "{} · {}",
+                        sensor.source,
+                        sensor.device_id.as_deref().unwrap_or("ID unavailable")
+                    ),
+                    inner.width.saturating_sub(46) as usize
+                )
             ),
             Style::default().fg(color),
         )));
@@ -335,13 +336,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
 
     // Temperature history sparkline
     let spark_data = app.temp_history.as_u64_vec();
-    let history_label = if thermal.cpu_temp.is_some() {
-        "CPU Temperature (60s)"
-    } else if thermal.gpu_temp.is_some() {
-        "GPU Temperature (60s)"
-    } else {
-        "Temperature History (60s)"
-    };
+    let history_label = "CPU temperature · captured samples";
     let sparkline = Sparkline::default()
         .block(sub_block(history_label))
         .data(&spark_data)

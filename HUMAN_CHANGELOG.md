@@ -10,6 +10,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 **Fixed**
 
+- Separate sensors keep their own identity even when they share a label. Linux reports readable temperatures and fan speeds while excluding readings the device marks invalid. Graphics temperatures stay separate from processor temperatures.
+
 - Graphics readings stay attached to the correct device, even when two cards have the same name. Graphics monitoring now includes Linux driver readings and Mac graphics inventory. Shared memory and recommended allocation budgets are clearly distinguished from dedicated video memory.
 - Windows graphics load reflects the busiest engine. A card that only exposes temperature no longer appears idle just because its utilization is missing.
 

@@ -6,6 +6,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Preserve stable thermal/fan channel identities in both frontends, keep identical labels separate, and collect every GPU temperature. Read Linux hwmon units and fault/enable flags explicitly; do not classify generic package temperatures as CPU readings.
+
 - Identify GPUs through DXGI LUID/PCI locations, Linux DRM/PCI devices and Metal registry IDs. Join NVIDIA telemetry by PCI identity, preserve per-field availability, and keep shared/unified memory and allocation budgets distinct from dedicated VRAM.
 - Aggregate Windows GPU counters per physical engine across processes, then select the busiest engine. Preserve existing driver/display telemetry through PnP location matching; a temperature-only adapter no longer displays fabricated zero utilization.
 

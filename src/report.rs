@@ -149,6 +149,12 @@ impl DiagnosticReport {
         for adapter in &mut self.gpu.adapters {
             adapter.device_id = "[redacted]".into();
         }
+        for sensor in &mut self.thermals.sensors {
+            sensor.device_id = sensor.device_id.as_ref().map(|_| "[redacted]".into());
+        }
+        for fan in &mut self.thermals.fans {
+            fan.device_id = fan.device_id.as_ref().map(|_| "[redacted]".into());
+        }
         for device in &mut self.disk_activity.devices {
             device.identity = "[redacted]".into();
         }
@@ -217,7 +223,11 @@ impl DiagnosticReport {
             value["privacy"]["redacted_fields"]
                 .as_array_mut()
                 .unwrap()
-                .push(json!("gpu.adapters[].device_id"));
+                .extend([
+                    json!("gpu.adapters[].device_id"),
+                    json!("thermals.sensors[].device_id"),
+                    json!("thermals.fans[].device_id"),
+                ]);
         }
         value["processes"]["cpu_normalization"] =
             json!("percent of one logical processor; 100% equals one fully used logical processor");

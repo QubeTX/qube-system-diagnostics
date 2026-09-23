@@ -335,10 +335,11 @@ pub const ProcessRow = struct {
 };
 
 pub const SensorRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
     temperature_celsius: f64 = 0,
     critical_celsius: f64 = 0,
     critical_available: bool = false,
+    identity_buffer: canvas.TextBuffer(256) = canvas.TextBuffer(256).init("Provider does not expose a stable identifier"),
     label_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("Sensor"),
     kind_buffer: canvas.TextBuffer(24) = canvas.TextBuffer(24).init("other"),
     source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("platform sensor"),
@@ -352,11 +353,13 @@ pub const SensorRow = struct {
     pub fn source(row: *const SensorRow) []const u8 {
         return row.source_buffer.text();
     }
+    pub fn identity(row: *const SensorRow) []const u8 { return row.identity_buffer.text(); }
 };
 
 pub const FanRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
     rpm: u64 = 0,
+    identity_buffer: canvas.TextBuffer(256) = canvas.TextBuffer(256).init("Provider does not expose a stable identifier"),
     label_buffer: canvas.TextBuffer(80) = canvas.TextBuffer(80).init("Fan"),
     source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("platform sensor"),
 
@@ -366,6 +369,7 @@ pub const FanRow = struct {
     pub fn source(row: *const FanRow) []const u8 {
         return row.source_buffer.text();
     }
+    pub fn identity(row: *const FanRow) []const u8 { return row.identity_buffer.text(); }
 };
 
 pub const ConnectionRow = struct {
@@ -1217,6 +1221,7 @@ pub const Projection = struct {
         self.sensor_count = @min(data.thermals.sensors.len, max_sensors);
         for (data.thermals.sensors[0..self.sensor_count], 0..) |item, index| {
             var row = SensorRow{ .id = @intCast(index) };
+            if (item.device_id) |id| { row.id = std.hash.Wyhash.hash(0, id); row.identity_buffer.set(id); }
             row.label_buffer.set(item.label);
             row.kind_buffer.set(item.kind);
             row.source_buffer.set(item.source);
@@ -1229,6 +1234,7 @@ pub const Projection = struct {
         self.fan_count = @min(data.thermals.fans.len, max_fans);
         for (data.thermals.fans[0..self.fan_count], 0..) |item, index| {
             var row = FanRow{ .id = @intCast(index), .rpm = item.rpm };
+            if (item.device_id) |id| { row.id = std.hash.Wyhash.hash(0, id); row.identity_buffer.set(id); }
             row.label_buffer.set(item.label);
             row.source_buffer.set(item.source);
             self.fan_rows[index] = row;
@@ -1593,6 +1599,7 @@ const GpuJson = struct {
     telemetry_status: ObservationJson = .{},
 };
 const SensorJson = struct {
+    device_id: ?[]const u8 = null,
     label: []const u8 = "",
     temperature: f64 = 0,
     critical: ?f64 = null,
@@ -1600,6 +1607,7 @@ const SensorJson = struct {
     source: []const u8 = "platform sensor",
 };
 const FanJson = struct {
+    device_id: ?[]const u8 = null,
     label: []const u8 = "",
     rpm: u64 = 0,
     source: []const u8 = "platform sensor",
@@ -1972,4 +1980,15 @@ test "process identity and field availability survive PID reuse" {
     value.applyProcessRows(2, 1, 1, &.{reused});
     try std.testing.expectEqual(reused.id, value.process_rows[0].id);
     try std.testing.expect(!value.process_rows[0].cpu_available);
+}
+
+
+test "identical sensor labels preserve channel identity" {
+    var value = Projection{};
+    try value.applySlowJson(std.testing.allocator,
+        \\{"sequence":1,"data":{"disk":{"partitions":[]},"gpu":{},"thermals":{"sensors":[{"device_id":"hwmon:pci:1:temp1","label":"Core","temperature":42},{"device_id":"hwmon:pci:1:temp2","label":"Core","temperature":42}],"fans":[{"device_id":"hwmon:pci:1:fan1","rpm":1700}]}}}
+    );
+    try std.testing.expect(value.sensor_rows[0].id != value.sensor_rows[1].id);
+    try std.testing.expectEqualStrings("hwmon:pci:1:temp1", value.sensor_rows[0].identity());
+    try std.testing.expectEqualStrings("hwmon:pci:1:fan1", value.fan_rows[0].identity());
 }

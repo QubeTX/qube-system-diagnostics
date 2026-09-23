@@ -263,6 +263,123 @@ pub fn hardware(data: &mut SystemInfoData, dmi: &Path, device_tree: &Path) {
         };
 }
 
+pub fn thermals(
+    root: &Path,
+) -> (
+    Vec<super::thermals::SensorInfo>,
+    Vec<super::thermals::FanInfo>,
+    Observation,
+    Observation,
+) {
+    use super::thermals::{FanInfo, SensorInfo, SensorKind};
+    let paths = match entries(root) {
+        Ok(paths) => paths,
+        Err(error) => return (vec![], vec![], error.clone(), error),
+    };
+    let mut sensors = Vec::new();
+    let mut fans = Vec::new();
+    let mut rejected = 0;
+    for path in paths {
+        let Some(chip) = text(path.join("name")) else {
+            continue;
+        };
+        let device = fs::canonicalize(path.join("device"))
+            .or_else(|_| fs::canonicalize(&path))
+            .ok();
+        let Some(device) = device else {
+            continue;
+        };
+        let kind = match chip.as_str() {
+            "coretemp" | "k10temp" | "k8temp" | "zenpower" | "cpu_thermal" => SensorKind::Cpu,
+            "amdgpu" | "radeon" | "nouveau" => SensorKind::Gpu,
+            _ => SensorKind::Other,
+        };
+        let Ok(attributes) = entries(&path) else {
+            continue;
+        };
+        for attribute in attributes {
+            let Some(name) = attribute.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Some(channel) = name.strip_suffix("_input") else {
+                continue;
+            };
+            let is_temp = channel
+                .strip_prefix("temp")
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|v| v.is_ascii_digit()));
+            let is_fan = channel
+                .strip_prefix("fan")
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|v| v.is_ascii_digit()));
+            if !is_temp && !is_fan {
+                continue;
+            }
+            if number(path.join(format!("{channel}_fault"))) == Some(1)
+                || number(path.join(format!("{channel}_enable"))) == Some(0)
+            {
+                rejected += 1;
+                continue;
+            }
+            // Legacy thermistor channels can expose voltage requiring a
+            // board-specific conversion. Do not label those values Celsius.
+            if is_temp && number(path.join(format!("{channel}_type"))) == Some(4) {
+                rejected += 1;
+                continue;
+            }
+            let label = text(path.join(format!("{channel}_label")))
+                .unwrap_or_else(|| format!("{chip} {channel}"));
+            let id = Some(format!("hwmon:{}:{chip}:{channel}", device.display()));
+            if is_temp {
+                let celsius = |file: &Path| {
+                    text(file)
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .map(|v| v / 1000.0)
+                        .filter(|v| v.is_finite() && (-50.0..=200.0).contains(v))
+                };
+                if let Some(temperature) = celsius(&attribute) {
+                    sensors.push(SensorInfo {
+                        device_id: id,
+                        label,
+                        temperature,
+                        critical: celsius(&path.join(format!("{channel}_crit"))),
+                        kind,
+                        source: "Linux hwmon; millidegrees Celsius".into(),
+                    });
+                } else {
+                    rejected += 1;
+                }
+            } else if let Some(rpm) = number(&attribute).filter(|v| *v <= 100_000) {
+                fans.push(FanInfo {
+                    device_id: id,
+                    label,
+                    rpm,
+                    source: "Linux hwmon; RPM".into(),
+                });
+            } else {
+                rejected += 1;
+            }
+        }
+    }
+    let observation = |count: usize, what: &str| {
+        let mut status = if count > 0 {
+            Observation::available("Linux hwmon")
+        } else {
+            Observation::unavailable(
+                "Linux hwmon",
+                format!("No readable {what} channels; this hardware may not expose them"),
+            )
+        };
+        if rejected > 0 {
+            status.detail = Some(format!(
+                "{rejected} unreadable, disabled, faulted or uncalibrated channels excluded"
+            ));
+        }
+        status
+    };
+    let temperature_status = observation(sensors.len(), "temperature");
+    let fan_status = observation(fans.len(), "fan-speed");
+    (sensors, fans, temperature_status, fan_status)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,6 +442,29 @@ mod tests {
         hardware(&mut data, &root.join("dmi"), &root.join("tree"));
         assert_eq!(data.model.as_deref(), Some("Fixture ARM board"));
         assert!(data.bios_version.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn identical_sensor_labels_do_not_merge_channels_and_faults_are_excluded() {
+        let root = fixture("sensors");
+        for (path, value) in [
+            ("hwmon0/name", "coretemp"),
+            ("hwmon0/temp1_input", "41000"),
+            ("hwmon0/temp1_label", "Core"),
+            ("hwmon0/temp2_input", "42000"),
+            ("hwmon0/temp2_label", "Core"),
+            ("hwmon0/temp3_input", "999"),
+            ("hwmon0/temp3_fault", "1"),
+            ("hwmon0/fan1_input", "1800"),
+        ] {
+            write(&root, path, value);
+        }
+        let (sensors, fans, _, _) = thermals(&root);
+        assert_eq!(sensors.len(), 2);
+        assert_eq!(sensors[0].temperature, 41.0);
+        assert_ne!(sensors[0].device_id, sensors[1].device_id);
+        assert_eq!(fans[0].rpm, 1800);
         fs::remove_dir_all(root).unwrap();
     }
 }
