@@ -147,6 +147,23 @@ jobs:
         timeout-minutes: 2
         shell: bash
         run: cargo test --locked --test storage_privilege -- --ignored --nocapture
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Qualify native terminal interaction and stage timings
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'psutil==7.2.2' 'pyte==0.8.2' 'wcwidth==0.8.4' "pywinpty==3.0.5; sys_platform == 'win32'"
+          cargo build --release --locked --bin sd300 --example profile-monitor
+          python scripts/qualify-tui-native.py 'target/terminal-qualification/${{ matrix.target }}'
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: sd300-terminal-${{ matrix.target }}
+          if-no-files-found: warn
+          path: target/terminal-qualification/${{ matrix.target }}/**
       - id: product
         name: Resolve product version
         shell: bash
@@ -253,6 +270,12 @@ jobs:
           name: sd300-native-gui-linux-musl-x86_64
           if-no-files-found: error
           path: output/sd300-gui-linux-musl-x86_64.tar.xz*
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: sd300-terminal-linux-musl-x86_64
+          if-no-files-found: warn
+          path: output/terminal-qualification/**
 
   audit:
     name: Security audit

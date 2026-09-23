@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Add native PTY qualification across all six targets for both modes and terminal sizes, filtering, Unicode/ASCII, mouse and keyboard navigation, frozen views, consent dismissal and terminal restoration. Capture input latency separately from terminal setup, add release-stage profiling, and retain failed long-window resource measurements.
+
 - Calculate Windows per-process CPU from process-time deltas over monotonic capture intervals, independent of monitor affinity and processor-group size. Reset unreadable/reused/rolled-back baselines and use the same aggregate CPU provider on GUI Processes as other pages. Add a native restricted-affinity comparison against GetProcessTimes.
 
 - Start redirected Windows collector helpers detached from consoles, retaining suspended-before-job ownership and bounded cancellation. Verify both file and memory output capture without console allocation; reduce transient processes and working sets without changing cadence.

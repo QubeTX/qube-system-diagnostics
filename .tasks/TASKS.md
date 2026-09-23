@@ -12,12 +12,12 @@
 ## To-Do
 
 ## Active
-- [ ] **Implement and qualify SD-300 v4 monitoring** - measurement, adaptive TUI and optional setup implemented; qualifying bounded privileged reads before parity/performance/lifecycle and the single public release (ms #v4m) (owner codex) #v4a
+- [ ] **Implement and qualify SD-300 v4 monitoring** - measurement, adaptive TUI, optional setup and bounded privileged reads implemented; qualifying native interaction, performance and composite lifecycle before the single public release (ms #v4m) (owner codex) #v4a
   - [ ] Correct measurement semantics, sampling metadata, and histories
   - [ ] Isolate slow probes and bound cancellation, output, and shutdown
   - [ ] Expand Windows, Linux, and macOS providers with deterministic fixtures
   - [ ] Redesign the adaptive TUI and add guided inspection and filtering
-  - [ ] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup (native ND setup qualification active; SMART remains)
+  - [ ] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup (native setup and synthetic privileged-worker checks pass; final lifecycle qualification remains)
   - [ ] Wire GUI parity, versioned exports, settings, and documentation
   - [ ] Qualify performance, six native targets, and composite lifecycle
   - [ ] Publish once and verify exact public artifacts and installation

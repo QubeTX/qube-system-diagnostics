@@ -67,6 +67,12 @@ if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
   cargo test --locked --manifest-path "$repo_root/Cargo.toml" --test storage_privilege -- --ignored --nocapture
   RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=-crt-static" \
     cargo test --locked --manifest-path "$repo_root/gui-engine/Cargo.toml"
+  apk add --no-cache python3 python3-dev py3-pip linux-headers
+  python3 -m venv /tmp/sd300-qualification-python
+  /tmp/sd300-qualification-python/bin/python -m pip install --disable-pip-version-check \
+    'psutil==7.2.2' 'pyte==0.8.2' 'wcwidth==0.8.4'
+  cargo build --release --locked --bin sd300 --example profile-monitor
+  /tmp/sd300-qualification-python/bin/python scripts/qualify-tui-native.py "$output_dir/terminal-qualification"
 fi
 npm_cache=${RUNNER_TEMP:-/tmp}/sd300-native-npm-cache
 rm -rf "$repo_root/gui/node_modules" "$npm_cache"

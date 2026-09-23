@@ -48,6 +48,36 @@ refreshes. Its summed working set peaks at 117.3 MiB, but average CPU is 2.65 pe
 and fails the gate. `candidate-detached-tui-cadence.json` retains this result.
 Short-run acceptance must not substitute for the longer foreground/soak windows.
 
+An unchanged repeat records 2.64 percent CPU and a 152.4 MiB peak during overlapping
+infrequent checks. Both gates remain open. Stage profiling on 6b5acc4 identifies
+process enumeration (5.57 ms mean) and network collection (4.41 ms mean) as the
+largest fast-lane costs; physical topology, preparation and TestBackend drawing
+each average under 0.3 ms. Stage wall time is diagnostic, not process CPU.
+
+## Native terminal interaction
+
+`scripts/qualify-tui-native.py` runs `qualify-tui-pty.py` sequentially in Unicode
+and ASCII/no-color modes, followed by the release `profile-monitor` example.
+Dependencies are pinned in CI; musl runs inside the native Alpine build container.
+Each session uses isolated settings and explicitly enables mouse interaction.
+The harness checks all nine sections in both modes at compact and wide sizes,
+inspection, full-inventory filtering, Unicode input, repeated navigation, sort
+direction, pause/resume, resize recovery, mouse navigation, optional-action consent
+dismissal, and normal terminal restoration. It never starts an optional check.
+
+Input timing runs from key write to the decoded terminal change, including PTY
+transport and two-millisecond observer polling. Window/terminal setup is reported
+separately from monitor-to-chooser startup. Stage drawing uses TestBackend and
+does not measure terminal transport. These observers are never attached during
+process CPU, memory or soak measurements. Reports contain assertions and timing
+metadata, not captured host/process/connection text. Release resource acceptance
+and physical display/input checks remain separate.
+
+On Windows, 6b5acc4 passes both modes at both sizes with input p95 near 14 ms and
+the chooser visible about 42 ms after launch. The emulator must answer cursor and
+device-status requests; omitting those replies falsely added a three-second
+ConPTY startup delay. The retained PTY results use the corrected emulator.
+
 
 ## Endpoint inventory qualification
 

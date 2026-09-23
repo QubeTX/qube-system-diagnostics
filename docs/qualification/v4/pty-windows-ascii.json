@@ -1,0 +1,340 @@
+{
+  "schema": 1,
+  "sha256": "1677392cd802f3b2ac4b20c373fc12d376bc3cf47238094fa6745fb5bbf2a691",
+  "platform": "win32",
+  "startup_chooser_ms": 41.67789999337401,
+  "ascii": true,
+  "sections": [
+    {
+      "mode": "User Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Overview",
+      "input_ms": 0.4585999995470047
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "CPU",
+      "input_ms": 3.3570999949006364
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Mem",
+      "input_ms": 3.072000006795861
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Disk",
+      "input_ms": 3.249600005801767
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "GPU",
+      "input_ms": 5.574000009801239
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Net",
+      "input_ms": 5.69299999915529
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Procs",
+      "input_ms": 5.552199989324436
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Thermals",
+      "input_ms": 5.609500003629364
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Drivers",
+      "input_ms": 3.176400001393631
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Overview",
+      "input_ms": 24.761799999396317
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "CPU",
+      "input_ms": 12.635999999474734
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Mem",
+      "input_ms": 12.307299999520183
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Disk",
+      "input_ms": 8.871799989719875
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "GPU",
+      "input_ms": 9.084899997105822
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Net",
+      "input_ms": 6.326300004730001
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Procs",
+      "input_ms": 13.148099998943508
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Thermals",
+      "input_ms": 13.097500006551854
+    },
+    {
+      "mode": "User Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Drivers",
+      "input_ms": 19.446999998763204
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Overview",
+      "input_ms": 14.01139999506995
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "CPU",
+      "input_ms": 3.0962999881012365
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Mem",
+      "input_ms": 5.742800000007264
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Disk",
+      "input_ms": 5.432699996163137
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "GPU",
+      "input_ms": 3.159200001391582
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Net",
+      "input_ms": 3.2949000014923513
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Procs",
+      "input_ms": 5.782799998996779
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Thermals",
+      "input_ms": 5.8172999997623265
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        80,
+        24
+      ],
+      "section": "Drivers",
+      "input_ms": 6.184500001836568
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Overview",
+      "input_ms": 21.06389999971725
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "CPU",
+      "input_ms": 12.111499992897734
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Mem",
+      "input_ms": 9.538300000713207
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Disk",
+      "input_ms": 16.30950000253506
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "GPU",
+      "input_ms": 9.076100002857856
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Net",
+      "input_ms": 8.55180001235567
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Procs",
+      "input_ms": 15.531700002611615
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Thermals",
+      "input_ms": 15.666199993574992
+    },
+    {
+      "mode": "Tech Mode",
+      "size": [
+        140,
+        40
+      ],
+      "section": "Drivers",
+      "input_ms": 13.221200002590194
+    }
+  ],
+  "input_samples": 60,
+  "terminal_setup_ms": 22.57570000074338,
+  "input_p95_ms": 13.908200009609573,
+  "input_max_ms": 17.2387000056915,
+  "terminal_restored": true,
+  "input_method": "Key write to decoded terminal state, includes PTY transport and 2 ms observer polling",
+  "no_optional_action_executed": true
+}

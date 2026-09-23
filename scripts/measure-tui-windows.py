@@ -32,6 +32,7 @@ class Job:
             ("CreateJobObjectW", [c.c_void_p, w.LPCWSTR], w.HANDLE),
             ("OpenProcess", [w.DWORD, w.BOOL, w.DWORD], w.HANDLE),
             ("AssignProcessToJobObject", [w.HANDLE, w.HANDLE], w.BOOL),
+            ("SetInformationJobObject", [w.HANDLE, c.c_int, c.c_void_p, w.DWORD], w.BOOL),
             ("QueryInformationJobObject", [w.HANDLE, c.c_int, c.c_void_p, w.DWORD, c.c_void_p], w.BOOL),
             ("TerminateJobObject", [w.HANDLE, w.UINT], w.BOOL),
             ("CloseHandle", [w.HANDLE], w.BOOL),
@@ -41,6 +42,19 @@ class Job:
         self.handle = self.api.CreateJobObjectW(None, None)
         if not self.handle:
             raise c.WinError(c.get_last_error())
+        class BasicLimit(c.Structure):
+            _fields_ = [("process_time", c.c_int64), ("job_time", c.c_int64), ("flags", w.DWORD),
+                ("min_working", c.c_size_t), ("max_working", c.c_size_t), ("active", w.DWORD),
+                ("affinity", c.c_size_t), ("priority", w.DWORD), ("scheduling", w.DWORD)]
+        class ExtendedLimit(c.Structure):
+            _fields_ = [("basic", BasicLimit), ("io", c.c_uint64 * 6), ("process_memory", c.c_size_t),
+                ("job_memory", c.c_size_t), ("peak_process_memory", c.c_size_t), ("peak_job_memory", c.c_size_t)]
+        limits = ExtendedLimit()
+        limits.basic.flags = 0x2000  # KILL_ON_JOB_CLOSE also covers harness interruption.
+        if not self.api.SetInformationJobObject(self.handle, 9, c.byref(limits), c.sizeof(limits)):
+            error = c.get_last_error()
+            self.api.CloseHandle(self.handle)
+            raise c.WinError(error)
 
     def assign(self, pid):
         handle = self.api.OpenProcess(0x1101, False, pid)

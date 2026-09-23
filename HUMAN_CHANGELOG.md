@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: real terminal checks now exercise navigation, search, resizing, paused views and clean exit on every supported operating system. Timing measurements help identify slow work, and failed performance checks stay visible in the release evidence.
+
 - Process CPU readings keep the same meaning when Windows limits which processors the monitor can use. A busy thread counts as one processor, and missing readings or a reused process number start with a clear warmup.
 
 - Windows monitoring uses less memory by avoiding unused console hosts for background checks. Readings keep their existing update frequency, and checks still stop cleanly when cancelled.
