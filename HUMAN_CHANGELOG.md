@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: attribute the remaining Linux graphics memory before changing the app.
+
 - Keep keyboard focus visible on Mac when the app updates its accessibility information. Screen readers can still move focus, while routine screen updates no longer act like extra key presses.
 
 - Behind the scenes: prevent the interaction test from stopping when it reads a status file midway through an update. Real app errors and timeouts still fail the test.

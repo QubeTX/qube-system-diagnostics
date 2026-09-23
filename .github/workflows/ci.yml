@@ -50,8 +50,9 @@ jobs:
           out=target/platform-probes
           revision=9894ad329595c2bcaf14f9af5d8f1dcd6dabb917
           if [[ '${{ runner.os }}' == Linux ]]; then
-            GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/cairo-default.json" --revision "$revision" --seconds 90
-            GDK_BACKEND=x11 GDK_DEBUG=gl-disable,vulkan-disable xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/cairo-without-gl-diagnostic.json" --revision "$revision" --seconds 90
+            pkg-config --modversion gtk4 || dpkg-query -W libgtk-4-1
+            ldd "$SD300_DIAGNOSTIC_GUI" | grep -E 'LLVM|vulkan|GL|gtk|sd300'
+            GDK_BACKEND=x11 GDK_DEBUG=gl-disable,vulkan-disable LD_DEBUG=files xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/graphics-loader-diagnostic.json" --revision "$revision" --seconds 30 2>/dev/null
           else
             NATIVE_SDK_GPU_FRAME_TRACE=1 python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/hidden-frame-trace-diagnostic.json" --revision "$revision" --seconds 90 --hidden --profile-cpu
           fi

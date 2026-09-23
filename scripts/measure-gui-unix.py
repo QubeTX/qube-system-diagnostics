@@ -143,6 +143,7 @@ def main():
     stderr_tail = [b""]
     frame_paths = {}
     unsupported_flags = set()
+    graphics_dependencies = set()
     frame_tail = [b""]
     reader = None
     debugger = None
@@ -164,6 +165,7 @@ def main():
                 "close_to_tray": args.hidden, "launch_at_login": False, "reduced_motion": True}}), encoding="utf-8")
             env = dict(os.environ, HOME=directory, XDG_CONFIG_HOME=str(home / "config"), XDG_RUNTIME_DIR=str(home / "runtime"))
             report["renderer_override"] = env.get("GSK_RENDERER") if env.get("GSK_RENDERER") in ("cairo", "gl") else "none_or_external"
+            report["diagnostic_gtk_flags"] = env.get("GDK_DEBUG") if env.get("GDK_DEBUG") in ("gl-disable", "gl-disable,vulkan-disable") else "none_or_external"
             begin = time.monotonic()
             process = subprocess.Popen([str(launcher)] + (["--startup", "--hidden"] if args.hidden and sys.platform == "darwin" else []),
                                        env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -174,6 +176,12 @@ def main():
                     lines = frame_tail[0].split(b"\n")
                     frame_tail[0] = lines.pop()
                     for line in lines:
+                        if len(graphics_dependencies) < 32 and b"needed by " in line and any(name in line for name in (b"libLLVM", b"_dri.so", b"libgallium", b"libvulkan")):
+                            text = line.decode("ascii", "replace")
+                            fields = text.split()
+                            target = next((value.removeprefix("file=") for value in fields if value.startswith("file=")), "unknown")
+                            parent = text.split("needed by ", 1)[1].split()[0]
+                            graphics_dependencies.add((Path(target).name[:128], Path(parent).name[:128]))
                         for flag in (b"gl-disable", b"vulkan-disable"):
                             if flag in line and b"only available when building GTK with G_ENABLE_DEBUG" in line:
                                 unsupported_flags.add(flag.decode("ascii"))
@@ -225,6 +233,7 @@ def main():
             record_window(report, samples, elapsed, known, attribution)
             report["diagnostic_frame_paths"] = dict(frame_paths)
             report["unsupported_gtk_flags"] = sorted(unsupported_flags)
+            report["graphics_dependency_edges"] = sorted(graphics_dependencies)
             report["diagnostic_only"] = True
             if sys.platform == "linux":
                 report["root_mappings_after_window"] = linux_mapping_report(process.pid)

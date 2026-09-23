@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Record bounded graphics-library dependency edges from the Linux loader to distinguish linked allocations from GTK runtime probing.
+
 - Isolate unchanged-artifact native resource diagnostics from release CI and retain bounded frame-path counts. Correct the diagnostic insertion after syntax validation failed before any measurement.
 
 - Separate macOS accessibility snapshot publication from assistive-client focus actions. Previously each focused publication called the action setter, clearing keyboard-visible focus and producing duplicate input/redraw events. Add an actual AppKit-host regression fixture on both native Mac runners; preserve external accessibility focus requests.
