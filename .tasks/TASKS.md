@@ -12,7 +12,7 @@
 ## To-Do
 
 ## Active
-- [ ] **Implement and qualify SD-300 v4 monitoring** - accepted operator plan; one public release after local and six-target hosted qualification (ms #v4m) (owner codex) #v4a
+- [ ] **Implement and qualify SD-300 v4 monitoring** - measurement, adaptive TUI and optional setup implemented; qualifying bounded privileged reads before parity/performance/lifecycle and the single public release (ms #v4m) (owner codex) #v4a
   - [ ] Correct measurement semantics, sampling metadata, and histories
   - [ ] Isolate slow probes and bound cancellation, output, and shutdown
   - [ ] Expand Windows, Linux, and macOS providers with deterministic fixtures

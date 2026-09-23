@@ -71,6 +71,7 @@ fn strip_additive_gui_help(text: &str) -> String {
                     "s            Reverse process sort direction",
                     "F            Findings, evidence and next steps",
                     "N            Optional network diagnostics and SpeedQX",
+                    "A            Review a privileged read of the selected drive",
                 ]
                 .contains(&trimmed)
         })

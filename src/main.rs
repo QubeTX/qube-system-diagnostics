@@ -8,6 +8,20 @@ use sd_300::{
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Some(Command::StorageProbePrepare { device }) = &cli.command {
+        let result = sd_300::storage_probe::prepare_worker(device);
+        println!("{}", serde_json::to_string(&result).unwrap());
+        return Ok(());
+    }
+    if let Some(Command::StorageProbeRead { port, nonce }) = &cli.command {
+        return sd_300::storage_probe::read_worker(*port, nonce)
+            .map_err(sd_300::error::AppError::platform);
+    }
+    if let Some(Command::StorageProbeElevate { port, nonce }) = &cli.command {
+        let result = sd_300::storage_probe::elevate_worker(*port, nonce);
+        println!("{}", serde_json::to_string(&result).unwrap());
+        return Ok(());
+    }
     if let Some(Command::CollectWorker { topic }) = &cli.command {
         return sd_300::collectors::probe::print_worker(*topic);
     }
@@ -34,6 +48,11 @@ async fn run(cli: Cli) -> Result<()> {
 
     if let Some(command) = cli.command {
         match command {
+            Command::StorageProbePrepare { .. }
+            | Command::StorageProbeRead { .. }
+            | Command::StorageProbeElevate { .. } => {
+                unreachable!("private probe handled before runtime startup")
+            }
             Command::CollectServer { topic, response } => {
                 sd_300::collectors::probe::serve(topic, &response)?;
                 return Ok(());

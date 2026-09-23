@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Add separately prepared and confirmed, single-device SMART reads in Storage in both frontends. Isolate OS authorization, verify helper bytes and product version, bound read/callback/cancellation work, preserve prior results, and include redacted schema-2 findings. Add native synthetic privileged-worker qualification across all six targets without touching physical devices.
+
 - Correlate Windows disk health by unique serial and PnP identity, and retrieve reliability counters through the documented physical-disk association. Reject ambiguous joins and SMART device replacements; preserve conflicting fault evidence instead of letting later healthy readings erase it.
 
 - Fetch signed Alpine package indexes without requiring or modifying a system cache during confirmed SMART setup.

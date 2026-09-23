@@ -512,8 +512,7 @@ fn physical_drive_number(id: &str) -> Option<usize> {
         .ok()
 }
 
-#[cfg(any(not(windows), test))]
-fn empty_drive(device_id: String, model: String, media_type: MediaType) -> DriveHealth {
+pub(crate) fn empty_drive(device_id: String, model: String, media_type: MediaType) -> DriveHealth {
     DriveHealth {
         device_id,
         model,
@@ -678,7 +677,7 @@ fn collect_smart(drive: &mut DriveHealth) -> Option<Observation> {
 /// smartctl exits are a bitmask, not a success boolean. Preserve measured
 /// attributes from partial responses without turning command failures into a
 /// hardware failure (or declaring a device healthy from exit 0 alone).
-fn apply_smart_json(drive: &mut DriveHealth, bytes: &[u8], exit: i32) -> Observation {
+pub(crate) fn apply_smart_json(drive: &mut DriveHealth, bytes: &[u8], exit: i32) -> Observation {
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
         return Observation::error("smartctl JSON", "Malformed or missing structured output");
     };
@@ -706,7 +705,7 @@ fn apply_smart_json(drive: &mut DriveHealth, bytes: &[u8], exit: i32) -> Observa
         text("/serial_number"),
     ) {
         if expected.trim() != actual.trim() {
-            return Observation::contradictory("smartctl JSON", "The device identity changed between inventory and probe; readings were not attached to the previous device");
+            return Observation::contradictory("smartctl JSON", "The helper device identity does not match the inventory; readings were not attached to that device");
         }
     }
     let status = if passed == Some(false) || exit & 0x18 != 0 {

@@ -77,6 +77,23 @@ pub fn for_snapshot(snapshot: &SystemSnapshot) -> Vec<Finding> {
             });
         }
     }
+    if let Some(result) = &snapshot.storage_probe.result {
+        let fault = matches!(
+            result.drive.health_status,
+            DiskHealthStatus::Warning | DiskHealthStatus::Critical
+        );
+        if fault || !result.observation.is_available() {
+            findings.push(Finding {
+                id: "explicit-storage-read".into(),
+                kind: if fault { FindingKind::HardwareFault } else { FindingKind::IncompleteObservation },
+                severity: if fault { "warning" } else { "info" }.into(),
+                title: if fault { "Explicit storage read reported a hardware warning" } else { "Explicit storage read was incomplete" }.into(),
+                evidence: format!("Captured {} ms UTC; health {:?}; observation {:?}", result.captured_unix_ms, result.drive.health_status, result.observation.status),
+                next_step: if fault { "Verify backups and inspect the separately captured storage result before further testing" } else { "Inspect the storage result; ordinary monitoring remains available" }.into(),
+                source: "explicit storage probe".into(),
+            });
+        }
+    }
     if let Some(result) = &snapshot.companion.result {
         for check in &result.checks {
             use crate::companion::CheckState;

@@ -1886,6 +1886,7 @@ dependencies = [
  "clap_mangen",
  "crossterm",
  "futures",
+ "getrandom 0.4.3",
  "libc",
  "nix",
  "plist",

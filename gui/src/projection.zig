@@ -431,6 +431,7 @@ pub const DriverRow = struct {
 };
 
 pub const DriveHealthRow = struct {
+    device_buffer: canvas.TextBuffer(128) = .{},
     id: u32 = 0,
     temperature_celsius: f64 = 0,
     temperature_available: bool = false,
@@ -452,6 +453,7 @@ pub const DriveHealthRow = struct {
     health_buffer: canvas.TextBuffer(32) = canvas.TextBuffer(32).init("unknown"),
     source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("platform storage provider"),
 
+    pub fn device(self: *const DriveHealthRow) []const u8 { return self.device_buffer.text(); }
     pub fn model(row: *const DriveHealthRow) []const u8 {
         return row.model_buffer.text();
     }
@@ -1309,6 +1311,7 @@ pub const Projection = struct {
         self.drive_health_count = @min(parsed.value.data.drives.len, max_drive_health);
         for (parsed.value.data.drives[0..self.drive_health_count], 0..) |item, index| {
             var row = DriveHealthRow{ .id = @intCast(index) };
+            row.device_buffer.set(item.device_id);
             row.model_buffer.set(item.model);
             row.media_buffer.set(item.media_type);
             row.health_buffer.set(item.health_status);
@@ -1686,6 +1689,7 @@ const DriveHealthJson = struct {
     read_errors_total: ?u64 = null,
     write_errors_total: ?u64 = null,
     io_stats: ?DiskIoJson = null,
+    device_id: []const u8 = "",
     health_source: []const u8 = "platform storage provider",
 };
 const DiskIoJson = struct {

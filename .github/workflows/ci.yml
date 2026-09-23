@@ -143,6 +143,10 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: cargo test --locked --test optional_setup -- --ignored --nocapture
+      - name: Qualify the bounded privileged storage worker with synthetic data
+        timeout-minutes: 2
+        shell: bash
+        run: cargo test --locked --test storage_privilege -- --ignored --nocapture
       - id: product
         name: Resolve product version
         shell: bash

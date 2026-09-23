@@ -280,3 +280,14 @@ extract authenticated packages without running their service scripts. Missing
 runtime dependencies or unsupported package managers leave ordinary monitoring
 available with a specific setup instruction. Setup does not authorize a device
 self-test, repair, disk setting change, or privileged read.
+
+A privileged SMART read is a separate operation. In the TUI, select a physical
+drive under Storage and press **A**; in the GUI, use **Review read…** in Storage.
+Review the device, helper path and checksum, then explicitly allow that read.
+Only a short-lived worker requests OS authorization. Monitoring stays
+unprivileged and responsive. The read has a twelve-second limit, authentication
+expires after one minute, and cancellation preserves the previous result.
+Linux needs PolicyKit and a registered graphical authentication agent; a
+headless session retains ordinary unprivileged monitoring. No repair, self-test,
+service or disk-setting change is performed. Captured results remain in memory
+and appear in explicit schema-2 exports with identifier redaction.

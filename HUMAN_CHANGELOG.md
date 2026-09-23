@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Review an optional administrator-authorized storage read before allowing it. Monitoring stays responsive, cancellation keeps earlier results, and private details stay out of redacted exports. Behind the scenes, synthetic checks exercise the privileged process without opening a real drive.
+
 - Storage health stays attached to the correct drive, including systems with identical models. Conflicting checks remain visible, and a reassuring response no longer hides a fault reported by another check.
 
 - Optional storage-health setup works on fresh Alpine Linux systems even when their package cache is empty.

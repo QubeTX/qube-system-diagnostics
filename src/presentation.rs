@@ -232,7 +232,10 @@ impl Presentation {
                         rate(totals.map(|v| v.0)),
                         rate(totals.map(|v| v.1))
                     ),
-                    format!("Health: {}", observation(&s.disk_health.health_status)),
+                    format!(
+                        "Health: {} · A: optional read for selected drive",
+                        observation(&s.disk_health.health_status)
+                    ),
                 ];
                 for (i, d) in s.disk.partitions.iter().enumerate() {
                     add(

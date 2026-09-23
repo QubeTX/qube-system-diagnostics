@@ -1543,3 +1543,29 @@ test "SMART setup uses the shared operation notice and never implies probe conse
     main.update(&model, .companion_dismiss_setup, &fx);
     try testing.expect(!model.companionSetupConfirming());
 }
+
+
+test "storage selection retains device identity and consent comes from prepared core state" {
+    var model = main.initialModel();
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    try testing.expect(model.storagePrepareDisabled());
+    model.detail.drive_health_count = 2;
+    model.detail.drive_health_rows[0].device_buffer.set("/dev/disk1");
+    model.detail.drive_health_rows[1].device_buffer.set("/dev/disk2");
+    try testing.expectEqualStrings("/dev/disk1", model.storageDevice());
+    main.update(&model, .storage_next, &fx);
+    try testing.expectEqualStrings("/dev/disk2", model.storageDevice());
+    std.mem.swap(@import("projection.zig").DriveHealthRow, &model.detail.drive_health_rows[0], &model.detail.drive_health_rows[1]);
+    try testing.expectEqualStrings("/dev/disk2", model.storageDevice());
+    model.detail.drive_health_count = 1;
+    model.detail.drive_health_rows[0].device_buffer.set("/dev/disk3");
+    try testing.expect(model.storagePrepareDisabled());
+    try testing.expect(!model.storageConfirming());
+    try model.companion_ui.apply(testing.allocator, "{\"data\":{\"storage_probe\":{\"awaiting_consent\":true,\"notice\":\"Exact bounded read\"},\"storage_probe_lines\":[\"Review first\"]}}");
+    try testing.expect(model.storageConfirming());
+    try testing.expectEqualStrings("Exact bounded read", model.storageNotice());
+    try testing.expectEqual(@as(usize, 1), model.storageLines().len);
+    try testing.expect(!model.storageRunning());
+}

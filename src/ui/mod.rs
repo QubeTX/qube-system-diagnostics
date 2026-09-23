@@ -76,6 +76,24 @@ fn render_content(frame: &mut Frame, app: &App) {
     // Render bottom navigation bar
     bottom_bar::render(frame, app, chunks[2]);
 
+    if app.show_storage_probe {
+        let mut lines =
+            vec!["x cancel · Esc cancel and close · ordinary monitoring continues".into()];
+        if app.storage_probe.state.awaiting_consent {
+            lines.push(app.storage_probe.state.notice.clone());
+            lines.push("Y explicitly allows this one privileged read · Esc declines".into());
+        }
+        lines.extend(app.storage_probe.state.lines());
+        frame.render_widget(ratatui::widgets::Clear, chunks[1]);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(lines.join("\n\n"))
+                .wrap(ratatui::widgets::Wrap { trim: false })
+                .scroll((app.inspector_scroll, 0))
+                .block(common::content_block("Optional storage read")),
+            chunks[1],
+        );
+        return;
+    }
     if app.show_companion {
         let mut lines = vec![
             "s standard scan · d deep scan · b SpeedQX Quick · B Deep · i install ND-300 · h SMART helper · x cancel · Esc close"

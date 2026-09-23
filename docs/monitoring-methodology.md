@@ -137,3 +137,5 @@ Primary references: [physical-disk identity](https://learn.microsoft.com/en-us/w
 [reliability identity namespaces](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-storagereliabilitycounter),
 [physical-disk reliability association](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-physicaldisktostoragereliabilitycounter),
 [WMI device-instance naming](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wmistr/ns-wmistr-wmiregguidw).
+
+Explicit privileged SMART reads follow [ADR 0010](adr/0010-bounded-privileged-storage-reads.md). Synthetic native qualification proves process and data-flow behavior; it does not certify a physical drive or interactive authorization dialog.

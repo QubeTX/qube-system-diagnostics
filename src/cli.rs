@@ -2,6 +2,15 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// Private bounded preparation; no device access or authorization.
+    #[command(hide = true)]
+    StorageProbePrepare { device: String },
+    /// Private single-device read after explicit OS authorization.
+    #[command(hide = true)]
+    StorageProbeRead { port: u16, nonce: String },
+    /// Private isolated Windows authorization broker.
+    #[command(hide = true)]
+    StorageProbeElevate { port: u16, nonce: String },
     /// Private, read-only collector worker. No arbitrary command execution.
     #[command(hide = true)]
     CollectWorker {
@@ -283,6 +292,7 @@ KEYBINDINGS:
   s            Reverse process sort direction
   F            Findings, evidence and next steps
   N            Optional network diagnostics and SpeedQX
+  A            Review a privileged read of the selected drive
 
 SECTIONS:
   1 Overview    System health dashboard / identity and gauges

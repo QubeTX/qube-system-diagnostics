@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: qualify the cache-independent Alpine SMART download on the native musl runner. ND setup is qualified on all six targets; SMART setup passes the other five. Next: bounded privileged reads, remaining parity and availability audit, then measured performance and complete unpublished lifecycle qualification.
+Current cycle: qualify the bounded privileged SMART worker on all six native targets using synthetic helper bytes. Optional ND and SMART setup now pass all six. Next: remaining frontend parity and field availability, measured performance and complete unpublished lifecycle qualification.
 
 ## Impact
 
@@ -49,6 +49,8 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations implemented; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: bb8bc45 passed all lanes in CI 35840338750, including Alpine SMART setup after a7ca6c8. Bounded privileged-read candidate adds exact operation consent, independent OS brokers, verified helper bytes, in-memory typed results, shared findings and both frontends. Local root/engine/CLI/worker checks, clippy, Mac/musl cross checks and 47 GUI tests (two platform skips) pass. Native fixture confirms exact read-only arguments, hardware-fault import, changed-helper refusal, bounded framing and disconnect cancellation. Next oracle: explicit synthetic privileged-worker execution under preauthorized native runner tokens; interactive auth dialogs and physical-drive reads are not claimed by these fixtures.
 
 - 2026-09-23 — codex: storage identity audit replaces numeric cross-provider guesses with unique serial/PnP joins and the documented reliability association. Seven storage fixtures cover duplicate identities, reordered devices, instance boundaries, replacement and conflicting health. All 171 library tests pass (four child fixtures exercised by parent tests), root clippy passes, and live Windows health matches a unique inventory serial. Independent CIM confirms zero exposed reliability rows on this local device; missing counters remain unavailable. Next oracle: hosted native suite and composite qualification.
 

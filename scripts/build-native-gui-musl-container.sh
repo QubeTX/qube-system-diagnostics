@@ -64,6 +64,7 @@ repo_root=$(CDPATH='' cd -- "$script_root/.." && pwd)
 if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
   cargo test --locked --manifest-path "$repo_root/Cargo.toml"
   cargo test --locked --manifest-path "$repo_root/Cargo.toml" --test optional_setup -- --ignored --nocapture
+  cargo test --locked --manifest-path "$repo_root/Cargo.toml" --test storage_privilege -- --ignored --nocapture
   RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=-crt-static" \
     cargo test --locked --manifest-path "$repo_root/gui-engine/Cargo.toml"
 fi

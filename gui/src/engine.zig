@@ -111,6 +111,7 @@ const SetLaunchAtLoginFn = *const fn (u32, u32) callconv(.c) i32;
 const RequestUpdateFn = *const fn (?[*]u8, usize, *usize) callconv(.c) i32;
 const CreateFn = *const fn (*?*anyopaque) callconv(.c) i32;
 const HandleFn = *const fn (?*anyopaque) callconv(.c) i32;
+const RequestStorageProbeFn = *const fn (?*anyopaque, u32, ?[*]const u8, usize) callconv(.c) i32;
 const RequestCompanionFn = *const fn (?*anyopaque, u32, u32) callconv(.c) i32;
 const RequestExportFn = *const fn (?*anyopaque, u32) callconv(.c) i32;
 const ReadExportStatusFn = *const fn (?*anyopaque, ?[*]u8, usize, *usize) callconv(.c) i32;
@@ -193,6 +194,7 @@ pub const Runtime = struct {
     set_process_query_fn: SetProcessQueryFn,
     request_driver_scan_fn: HandleFn,
     request_companion_fn: RequestCompanionFn,
+    request_storage_probe_fn: RequestStorageProbeFn,
     read_fast_summary_fn: ReadFastSummaryFn,
     read_tray_summary_fn: ReadTraySummaryFn,
     read_process_summary_fn: ReadProcessSummaryFn,
@@ -224,6 +226,7 @@ pub const Runtime = struct {
         const set_profile_fn = try library.lookup(SetProfileFn, "sd300_engine_set_profile");
         const set_process_sort_fn = try library.lookup(SetProcessSortFn, "sd300_engine_set_process_sort");
         const set_process_query_fn = try library.lookup(SetProcessQueryFn, "sd300_engine_set_process_query");
+        const request_storage_probe_fn = try library.lookup(RequestStorageProbeFn, "sd300_engine_request_storage_probe");
         const request_companion_fn = try library.lookup(RequestCompanionFn, "sd300_engine_request_companion");
         const request_driver_scan_fn = try library.lookup(HandleFn, "sd300_engine_request_driver_scan");
         const stop_fn = try library.lookup(HandleFn, "sd300_engine_stop");
@@ -268,6 +271,7 @@ pub const Runtime = struct {
             .set_process_query_fn = set_process_query_fn,
             .request_driver_scan_fn = request_driver_scan_fn,
             .request_companion_fn = request_companion_fn,
+            .request_storage_probe_fn = request_storage_probe_fn,
             .read_fast_summary_fn = read_fast_summary_fn,
             .read_tray_summary_fn = read_tray_summary_fn,
             .read_process_summary_fn = read_process_summary_fn,
@@ -391,6 +395,9 @@ pub const Runtime = struct {
         }
     }
 
+    pub fn requestStorageProbe(self: *Runtime, action: u32, device: []const u8) !void {
+        if (device.len > 128 or self.request_storage_probe_fn(self.handle, action, if (device.len == 0) null else device.ptr, device.len) != status_ok) return error.StorageProbeRejected;
+    }
     pub fn requestCompanion(self: *Runtime, action: u32, mlab_consent: bool) !void {
         if (self.request_companion_fn(self.handle, action, @intFromBool(mlab_consent)) != status_ok) {
             return error.CompanionUnavailableOrBusy;

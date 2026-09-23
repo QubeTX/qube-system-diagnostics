@@ -27,6 +27,8 @@ pub struct App {
     pub show_companion: bool,
     pub companion: crate::companion::Controller,
     pub optional_setup: crate::optional_tools::Controller,
+    pub storage_probe: crate::storage_probe::Controller,
+    pub show_storage_probe: bool,
     pub setup_confirmation: bool,
     pub setup_smart: bool,
     pub speed_confirmation: Option<crate::companion::Action>,
@@ -108,6 +110,8 @@ impl App {
             show_companion: false,
             companion: Default::default(),
             optional_setup: Default::default(),
+            storage_probe: Default::default(),
+            show_storage_probe: false,
             setup_confirmation: false,
             setup_smart: false,
             speed_confirmation: None,
@@ -178,7 +182,12 @@ impl App {
             }
             tokio::select! {
                 _ = poll.tick() => {
+                    if self.storage_probe.poll() {
+                        self.live_while_paused.as_mut().unwrap_or(&mut self.snapshot).storage_probe = self.storage_probe.state.clone();
+                        dirty = true;
+                    }
                     if self.optional_setup.poll() {
+                        self.live_while_paused.as_mut().unwrap_or(&mut self.snapshot).optional_setup = self.optional_setup.state.clone();
                         dirty = true;
                         if self.optional_setup.state.succeeded && self.optional_setup.state.tool == "smartctl" {
                             if let Some(monitor) = &self.monitor { monitor.retry(Lane::Health); }
@@ -384,6 +393,29 @@ impl App {
             self.should_quit = true;
             return;
         }
+        if self.show_storage_probe {
+            if key.kind == KeyEventKind::Repeat {
+                return;
+            }
+            match key.code {
+                KeyCode::Esc => {
+                    self.storage_probe.cancel();
+                    self.show_storage_probe = false;
+                }
+                KeyCode::Char('y' | 'Y') => {
+                    self.storage_probe.confirm(true);
+                }
+                KeyCode::Char('x' | 'X') => self.storage_probe.cancel(),
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.inspector_scroll = self.inspector_scroll.saturating_add(1)
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.inspector_scroll = self.inspector_scroll.saturating_sub(1)
+                }
+                _ => {}
+            }
+            return;
+        }
         if self.show_companion {
             if key.kind == KeyEventKind::Repeat {
                 return;
@@ -540,6 +572,35 @@ impl App {
             KeyCode::Esc => self.should_quit = true,
             KeyCode::Char('m') => self.mode = None,
             KeyCode::Char('?') => self.show_help = true,
+            KeyCode::Char('A') => {
+                self.show_storage_probe = true;
+                self.inspector_scroll = 0;
+                if self.storage_probe.state.running {
+                    return;
+                }
+                self.storage_probe.cancel();
+                if self.paused_at.is_none()
+                    && self
+                        .snapshot
+                        .samples
+                        .get("health")
+                        .is_some_and(|m| m.observation.is_available() && !m.is_stale())
+                {
+                    if let Some(crate::presentation::ViewRow {
+                        target: crate::presentation::Target::Drive(index),
+                        ..
+                    }) = self.view.rows.get(self.view.selected)
+                    {
+                        if let Some(drive) = self.snapshot.disk_health.drives.get(*index) {
+                            self.storage_probe.prepare(drive);
+                        }
+                    } else {
+                        self.storage_probe.state.message = "Select a physical drive in Storage, then press A to prepare a privileged read".into();
+                    }
+                } else {
+                    self.storage_probe.state.message = "Resume the live view and wait for a current storage inventory before requesting a privileged read".into();
+                }
+            }
             KeyCode::Char('N') => {
                 self.show_companion = true;
                 self.inspector_scroll = 0;
@@ -690,6 +751,20 @@ mod compatibility_tests {
             pid: None,
             process_name: None,
         }
+    }
+
+    #[test]
+    fn storage_action_requires_an_inventory_selection_and_distinct_consent() {
+        let mut app = App::new(Some(DiagnosticMode::User));
+        press(&mut app, KeyCode::Char('A'));
+        assert!(app.show_storage_probe);
+        assert!(!app.storage_probe.state.running);
+        assert!(!app.storage_probe.state.awaiting_consent);
+        press(&mut app, KeyCode::Char('Y'));
+        assert!(!app.storage_probe.state.running);
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.show_storage_probe);
+        assert!(!app.should_quit);
     }
 
     #[test]

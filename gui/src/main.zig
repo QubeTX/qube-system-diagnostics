@@ -61,6 +61,11 @@ pub const Msg = union(enum) {
     select_processes,
     show_cpu_processes,
     show_memory_processes,
+    storage_previous,
+    storage_next,
+    storage_prepare,
+    storage_confirm,
+    storage_cancel,
     companion_smart_setup,
     companion_setup,
     companion_confirm_setup,
@@ -140,6 +145,7 @@ pub const Model = struct {
     process_page_offset: u32 = 0,
     process_matches: u32 = 0,
     process_query_active: bool = false,
+    storage_choice: canvas.TextBuffer(128) = .{},
     companion_ui: companion_model.Projection = .{},
     companion_setup_smart: bool = false,
     companion_setup_confirmation: bool = false,
@@ -203,6 +209,7 @@ pub const Model = struct {
         "process_page_offset",
         "process_matches",
         "process_query_active",
+        "storage_choice",
         "companion_ui",
         "companion_setup_smart",
         "companion_setup_confirmation",
@@ -353,6 +360,20 @@ pub const Model = struct {
     }
     pub fn processPreviousDisabled(model: *const Model) bool { return !model.processHasPrevious(); }
     pub fn processNextDisabled(model: *const Model) bool { return !model.processHasNext(); }
+    pub fn storageDevice(model: *const Model) []const u8 {
+        if (model.storage_choice.text().len > 0) return model.storage_choice.text();
+        const drives = model.detail.driveHealth();
+        return if (drives.len > 0) drives[0].device() else "No physical drive available";
+    }
+    pub fn storagePrepareDisabled(model: *const Model) bool {
+        if (model.companion_ui.storage_running) return true;
+        for (model.detail.driveHealth()) |drive| { if (std.mem.eql(u8, drive.device(), model.storageDevice())) return false; }
+        return true;
+    }
+    pub fn storageRunning(model: *const Model) bool { return model.companion_ui.storage_running; }
+    pub fn storageConfirming(model: *const Model) bool { return model.companion_ui.storage_confirming; }
+    pub fn storageNotice(model: *const Model) []const u8 { return model.companion_ui.storage_notice.text(); }
+    pub fn storageLines(model: *const Model) []const companion_model.Line { return model.companion_ui.storageLines(); }
     pub fn companionSetupNotice(model: *const Model) []const u8 { return if (model.companion_setup_smart) model.companion_ui.setup_smart_notice.text() else model.companion_ui.setup_network_notice.text(); }
     pub fn companionSetupUnavailable(model: *const Model) bool { return model.companionRunning() or model.companionSetupNotice().len == 0; }
     pub fn companionSetupConfirming(model: *const Model) bool { return model.companion_setup_confirmation; }
@@ -547,6 +568,11 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             selectSection(model, 6);
             setProcessSort(model, .memory);
         },
+        .storage_previous => selectStorageDevice(model, false),
+        .storage_next => selectStorageDevice(model, true),
+        .storage_prepare => { if (!model.storagePrepareDisabled()) requestStorageProbe(model, 1); },
+        .storage_confirm => { if (model.storageConfirming()) requestStorageProbe(model, 2); },
+        .storage_cancel => requestStorageProbe(model, 0),
         .companion_smart_setup => { model.companion_setup_smart = true; model.companion_setup_confirmation = true; model.companion_confirmation = 0; model.companion_mlab_consent = false; },
         .companion_setup => { model.companion_setup_smart = false; model.companion_setup_confirmation = true; model.companion_confirmation = 0; model.companion_mlab_consent = false; },
         .companion_dismiss_setup => { model.companion_setup_confirmation = false; },
@@ -808,6 +834,20 @@ fn setProcessSort(model: *Model, process_sort: ProcessSort) void {
         return;
     };
     model.status_buffer.set("Process ranking changed · full inventory refresh requested");
+}
+
+fn selectStorageDevice(model: *Model, next: bool) void {
+    const drives = model.detail.driveHealth();
+    if (drives.len == 0) return;
+    var index: usize = 0;
+    for (drives, 0..) |drive, i| { if (std.mem.eql(u8, drive.device(), model.storageDevice())) { index = i; break; } }
+    index = if (next) (index + 1) % drives.len else (index + drives.len - 1) % drives.len;
+    model.storage_choice.set(drives[index].device());
+}
+fn requestStorageProbe(model: *Model, action: u32) void {
+    const runtime = active_engine orelse return;
+    runtime.requestStorageProbe(action, if (action == 1) model.storageDevice() else "") catch { model.status_buffer.set("Storage action is busy or unavailable; monitoring continues."); return; };
+    model.status_buffer.set(if (action == 1) "Preparing the exact storage operation for review…" else if (action == 2) "Requesting authorization for the confirmed device read…" else "Cancelling the storage action…");
 }
 
 fn requestCompanion(model: *Model, action: u32, consent: bool) void {
@@ -1074,6 +1114,7 @@ fn sampleDetailedTopics(runtime: *engine.Runtime, model: *Model) void {
             sampleTopic(runtime, model, allocator, .fast);
             sampleTopic(runtime, model, allocator, .slow);
             sampleTopic(runtime, model, allocator, .health);
+            sampleTopic(runtime, model, allocator, .diagnostics);
         },
         4 => sampleTopic(runtime, model, allocator, .slow),
         5 => {

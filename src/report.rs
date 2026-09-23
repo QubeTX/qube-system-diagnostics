@@ -53,6 +53,7 @@ pub struct DiagnosticReport {
     pub network: crate::collectors::network::NetworkData,
     pub network_diagnostics: NetworkDiagData,
     pub companion: crate::companion::State,
+    pub storage_probe: crate::storage_probe::State,
     pub processes: crate::collectors::processes::ProcessData,
     pub thermals: crate::collectors::thermals::ThermalData,
     pub drivers: DriverData,
@@ -135,6 +136,7 @@ impl DiagnosticReport {
             network: snapshot.network.clone(),
             network_diagnostics: snapshot.network_diag.clone(),
             companion: snapshot.companion.clone(),
+            storage_probe: snapshot.storage_probe.clone(),
             processes: snapshot.processes.clone(),
             thermals: snapshot.thermals.clone(),
             drivers: snapshot.drivers.clone(),
@@ -148,6 +150,7 @@ impl DiagnosticReport {
     }
 
     fn redact(&mut self) {
+        self.storage_probe = self.storage_probe.redacted();
         for adapter in &mut self.gpu.adapters {
             adapter.device_id = "[redacted]".into();
         }
@@ -213,6 +216,7 @@ impl DiagnosticReport {
         if version == 1 {
             return schema_one_projection(value);
         }
+        value["privileged_storage"] = json!(self.storage_probe);
         value["samples"] = json!(self.samples);
         value["findings"] = json!(self.findings);
         value["disk_activity"] = json!(self.disk_activity);
@@ -228,6 +232,7 @@ impl DiagnosticReport {
                 .as_array_mut()
                 .unwrap()
                 .extend([
+                    json!("privileged_storage.identifiers_and_provider_detail"),
                     json!("gpu.adapters[].device_id"),
                     json!("thermals.sensors[].device_id"),
                     json!("thermals.fans[].device_id"),
@@ -618,6 +623,37 @@ mod tests {
             .as_schema(2)
             .to_string()
             .contains("private-host"));
+    }
+
+    #[test]
+    fn explicit_storage_export_redacts_identity_and_keeps_schema_one_unchanged() {
+        let mut snapshot = SystemSnapshot::default();
+        let mut drive = crate::collectors::disk_health::empty_drive(
+            "private-device".into(),
+            "Fixture model".into(),
+            crate::collectors::disk_health::MediaType::Unknown,
+        );
+        drive.serial = Some("private-serial".into());
+        snapshot.storage_probe.notice = "private-helper-path".into();
+        snapshot.storage_probe.result = Some(crate::storage_probe::ProbeResult {
+            captured_unix_ms: 500,
+            drive,
+            observation: Observation::error("smartctl", "private-provider-detail"),
+            elevated: true,
+        });
+        let report = DiagnosticReport::from_snapshot(&snapshot, false);
+        assert!(report.as_schema(1).get("privileged_storage").is_none());
+        let value = report.as_schema(2);
+        assert!(!value.to_string().contains("private-"));
+        assert_eq!(
+            value["privileged_storage"]["result"]["captured_unix_ms"],
+            500
+        );
+        assert_eq!(
+            value["privileged_storage"]["result"]["drive"]["temperature_celsius"],
+            serde_json::Value::Null
+        );
+        assert_eq!(value["findings"][0]["kind"], "incomplete_observation");
     }
 
     #[test]
