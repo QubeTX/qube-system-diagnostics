@@ -13,6 +13,8 @@ pub mod gpu_linux;
 #[cfg(windows)]
 mod gpu_windows;
 #[cfg(any(target_os = "linux", test))]
+mod linux_connections;
+#[cfg(any(target_os = "linux", test))]
 pub mod linux_inventory;
 pub mod macos;
 pub mod memory;
@@ -25,6 +27,8 @@ pub mod provider_cache;
 pub mod sampling;
 pub mod system_info;
 pub mod thermals;
+#[cfg(windows)]
+mod windows_connections;
 
 use serde::Serialize;
 use sysinfo::{Components, Disks, Networks, System};

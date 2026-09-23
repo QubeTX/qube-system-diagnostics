@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Connection monitoring does less background work on Windows, recognizes more connection states on Linux, and includes UDP on Mac computers. Minimal Linux systems can still show endpoints without an extra tool. Missing ownership and failed or partial checks are clearly identified instead of looking like an empty, healthy result.
+
 - Disk speeds stay accurate when a background response arrives late. Restarting a check or waking the computer shows a brief warmup instead of an artificial spike, and sample timing follows the actual readings.
 
 - Background inventory and storage-health checks release their helper processes between readings, reducing idle memory without slowing updates.

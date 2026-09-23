@@ -16,6 +16,7 @@ pub struct Query {
 #[derive(Serialize)]
 struct Connections<'a> {
     active_connections: Vec<&'a ConnectionInfo>,
+    connections_observation: &'a sd_300::observation::Observation,
     listening_count: usize,
     total_count: usize,
     matched_count: usize,
@@ -70,6 +71,7 @@ fn connections<'a>(snapshot: &'a SystemSnapshot, query: &Query) -> Connections<'
     let matched_count = matching.len();
     let page_offset = page_offset(query.offset, matched_count, CONNECTION_ROWS);
     Connections {
+        connections_observation: &snapshot.network_diag.connections_observation,
         active_connections: matching
             .into_iter()
             .skip(page_offset)

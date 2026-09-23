@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "binary": "sd300.exe (exact release bytes identified by sha256)",
+  "sha256": "d5c695cae6cf0496b5dbb9d2c46d5e55e07ea9c8223ab8c40f5122d4e9c00b60",
+  "revision": "7589af5-plus-native-sockets",
+  "build": "release",
+  "runtime": "Windows ConPTY",
+  "frontend": "tui",
+  "dimensions": [
+    80,
+    24
+  ],
+  "warmup_seconds": 10,
+  "measured_seconds": 30.12844299999415,
+  "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+  "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+  "cpu_percent_one_core": 3.111677559972754,
+  "cpu_interval_p95": 12.471440401793032,
+  "rss_mib_max": 132.8671875,
+  "private_mib_max": 54.6953125,
+  "handles_max": 1796,
+  "process_count_max": 14,
+  "process_names": [
+    "PING.EXE",
+    "ROUTE.EXE",
+    "cmd.exe",
+    "conhost.exe",
+    "nvidia-smi.exe",
+    "sd300.exe"
+  ],
+  "processes_created": 24,
+  "diagnostic_live_role_cost": {
+    "cmd.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 8.29296875
+    },
+    "sd300:tui": {
+      "observed_cpu_seconds": 0.40625,
+      "rss_mib_peak_per_process": 20.49609375
+    },
+    "sd300:connections": {
+      "observed_cpu_seconds": 0.015625,
+      "rss_mib_peak_per_process": 9.63671875
+    },
+    "conhost.exe": {
+      "observed_cpu_seconds": 0.0625,
+      "rss_mib_peak_per_process": 7.5
+    },
+    "sd300:diagnostics": {
+      "observed_cpu_seconds": 0.046875,
+      "rss_mib_peak_per_process": 11.4921875
+    },
+    "sd300:slow": {
+      "observed_cpu_seconds": 0.046875,
+      "rss_mib_peak_per_process": 16.8046875
+    },
+    "sd300:activity": {
+      "observed_cpu_seconds": 0.078125,
+      "rss_mib_peak_per_process": 9.77734375
+    },
+    "route.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 5.87109375
+    },
+    "nvidia-smi.exe": {
+      "observed_cpu_seconds": 0.03125,
+      "rss_mib_peak_per_process": 21.2578125
+    },
+    "ping.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 5.29296875
+    }
+  },
+  "diagnostic_note": "Role CPU samples omit processes that exit between polls; the total Job Object CPU above includes them",
+  "terminal_restored": true,
+  "samples": 120,
+  "foreground_cpu_gate": false,
+  "rss_gate": true,
+  "private_gate": true
+}

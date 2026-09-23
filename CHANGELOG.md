@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Replace periodic Windows netstat processes with bounded native IPv4/IPv6 TCP/UDP owner-PID tables. Preserve per-provider failures and partial endpoint inventories through reports, findings and both frontends. Correct Linux ss abbreviated states, add a PID-unavailable procfs fallback on minimal hosts, and include macOS UDP endpoints. Native fixtures compare owned loopback sockets with the actual worker output.
+
 - Compute disk activity deltas inside the isolated worker using its monotonic capture clock. Carry capture intervals across IPC, reset baselines on worker replacement/retry/resume, and record fast samples from completed captures rather than scheduled starts.
 
 - Retire isolated static, driver and health workers after each infrequent probe while retaining results and existing refresh/retry cadence in the parent session.

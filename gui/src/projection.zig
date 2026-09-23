@@ -599,6 +599,7 @@ pub const Projection = struct {
     connection_rows: [max_connections]ConnectionRow = [_]ConnectionRow{.{}} ** max_connections,
     connection_count: usize = 0,
     connection_total_count: u32 = 0,
+    connection_observation: ObservationView = .{},
     connection_matched_count: u32 = 0,
     connection_page_offset: u32 = 0,
     connection_paged: bool = false,
@@ -1261,6 +1262,7 @@ pub const Projection = struct {
         self.medium_ready = true;
         const data = parsed.value.data;
         self.listening_count = data.listening_count orelse saturatedU32(data.listening_ports.len);
+        setObservation(&self.connection_observation, data.connections_observation);
         self.connection_total_count = data.total_count orelse saturatedU32(data.active_connections.len);
         self.connection_paged = data.matched_count != null;
         self.connection_matched_count = data.matched_count orelse self.connection_total_count;
@@ -1682,6 +1684,7 @@ const ConnectionJson = struct {
     process_name: ?[]const u8 = null,
 };
 const MediumJson = struct {
+    connections_observation: ObservationJson = .{},
     total_count: ?u32 = null,
     matched_count: ?u32 = null,
     page_offset: u32 = 0,
@@ -2050,4 +2053,16 @@ test "storage error counters retain partial coverage and real zero" {
     );
     try std.testing.expectEqual(@as(u32, 0), value.disk_read_errors_measured_drives);
     try std.testing.expectEqual(@as(u32, 0), value.disk_write_errors_measured_drives);
+}
+
+test "endpoint failure remains visible beside partial inventory" {
+    var value = Projection{};
+    try value.applyMediumJson(std.testing.allocator,
+        \\{"data":{"connections_observation":{"status":"permission_denied","source":"fixture","detail":"IPv6 enumeration denied"},"active_connections":[{"protocol":"tcp","local_addr":"127.0.0.1","local_port":8080,"remote_addr":"*","remote_port":0,"state":"listening","pid":null}]}}
+    );
+    try std.testing.expect(!value.connection_observation.available);
+    try std.testing.expectEqualStrings("permission_denied", value.connection_observation.status());
+    try std.testing.expectEqualStrings("IPv6 enumeration denied", value.connection_observation.detail());
+    try std.testing.expectEqual(@as(usize, 1), value.connection_count);
+    try std.testing.expect(!value.connection_rows[0].pid_available);
 }

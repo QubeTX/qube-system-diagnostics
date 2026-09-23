@@ -5,6 +5,7 @@ use serde::Serialize;
 
 use super::command::{run_output, run_stdout, CommandTimeout};
 use super::DiagnosticWarning;
+use crate::observation::Observation;
 
 #[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct NetworkDiagData {
@@ -13,6 +14,8 @@ pub struct NetworkDiagData {
     pub internet: ConnectivityResult,
     pub active_connections: Vec<ConnectionInfo>,
     pub listening_ports: Vec<ConnectionInfo>,
+    #[serde(default)]
+    pub connections_observation: Observation,
 }
 
 #[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
@@ -94,6 +97,7 @@ impl std::fmt::Display for ConnectionState {
     }
 }
 
+#[cfg(any(not(windows), test))]
 fn parse_state(s: &str) -> ConnectionState {
     match s.trim() {
         "ESTABLISHED" => ConnectionState::Established,
@@ -154,7 +158,8 @@ pub fn collect_connectivity() -> (NetworkDiagData, Vec<DiagnosticWarning>) {
 
 /// Refresh only active connections (fast, every 3s)
 pub fn refresh_connections(data: &mut NetworkDiagData) {
-    let connections = collect_connections();
+    let (connections, observation) = collect_connections();
+    data.connections_observation = observation;
     data.listening_ports = connections
         .iter()
         .filter(|c| c.state == ConnectionState::Listening)
@@ -340,184 +345,166 @@ fn test_dns(domain: &str) -> DnsResult {
 
 // --- Connection tracking ---
 
-fn collect_connections() -> Vec<ConnectionInfo> {
+fn collect_connections() -> (Vec<ConnectionInfo>, Observation) {
     #[cfg(windows)]
     {
-        collect_connections_windows()
+        super::windows_connections::collect()
     }
     #[cfg(target_os = "linux")]
     {
-        collect_connections_linux()
+        let result = command_connections("ss", &["-Htunap"], parse_linux_connections);
+        if result.1.status == crate::observation::ObservationStatus::Unavailable {
+            super::linux_connections::collect(std::path::Path::new("/proc/net"))
+        } else {
+            result
+        }
     }
     #[cfg(target_os = "macos")]
     {
-        collect_connections_macos()
+        command_connections("netstat", &["-an"], parse_macos_connections)
     }
     #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
-        Vec::new()
+        (
+            Vec::new(),
+            Observation::unsupported(
+                "sockets",
+                "Endpoint inventory is not supported on this platform",
+            ),
+        )
     }
 }
 
-#[cfg(windows)]
-fn collect_connections_windows() -> Vec<ConnectionInfo> {
-    let mut connections = Vec::new();
-
-    let Some(output) = run_output("netstat", ["-ano"], CommandTimeout::Normal) else {
-        return connections;
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines().skip(4) {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 4 {
-            continue;
-        }
-
-        let proto_str = parts[0];
-        let protocol = match proto_str {
-            "TCP" => Protocol::Tcp,
-            "UDP" => Protocol::Udp,
-            _ => continue,
-        };
-
-        let (local_addr, local_port) = parse_addr_port(parts[1]);
-        let (remote_addr, remote_port) = if protocol == Protocol::Tcp && parts.len() >= 5 {
-            parse_addr_port(parts[2])
-        } else {
-            ("*".into(), 0)
-        };
-
-        let state = if protocol == Protocol::Tcp && parts.len() >= 5 {
-            parse_state(parts[3])
-        } else if protocol == Protocol::Udp {
-            ConnectionState::Unknown("".into())
-        } else {
-            continue;
-        };
-
-        let pid = if protocol == Protocol::Tcp && parts.len() >= 5 {
-            parts[4].parse().ok()
-        } else if protocol == Protocol::Udp && parts.len() >= 4 {
-            parts.last().and_then(|p| p.parse().ok())
-        } else {
-            None
-        };
-
-        connections.push(ConnectionInfo {
-            protocol,
-            local_addr,
-            local_port,
-            remote_addr,
-            remote_port,
-            state,
-            pid,
-            process_name: None,
-        });
+#[cfg(any(not(windows), test))]
+fn command_connections(
+    program: &str,
+    args: &[&str],
+    parse: fn(&str) -> Vec<ConnectionInfo>,
+) -> (Vec<ConnectionInfo>, Observation) {
+    use super::command::{run_checked, CommandError};
+    let result = run_checked(
+        program,
+        args,
+        CommandTimeout::Normal,
+        &std::sync::atomic::AtomicBool::new(false),
+    );
+    match result {
+        Ok(output) if output.status.success() => (
+            parse(&String::from_utf8_lossy(&output.stdout)),
+            Observation::available(program),
+        ),
+        Ok(output) => (
+            Vec::new(),
+            Observation::error(
+                program,
+                format!("Endpoint provider exited with {}", output.status),
+            ),
+        ),
+        Err(CommandError::PermissionDenied) => (
+            Vec::new(),
+            Observation::permission_denied(
+                program,
+                "Endpoint enumeration was denied by the operating system",
+            ),
+        ),
+        Err(CommandError::NotFound) => (
+            Vec::new(),
+            Observation::unavailable(
+                program,
+                format!("The {program} endpoint provider is not installed"),
+            ),
+        ),
+        Err(error) => (Vec::new(), Observation::error(program, error.to_string())),
     }
-
-    connections
 }
 
-#[cfg(target_os = "linux")]
-fn collect_connections_linux() -> Vec<ConnectionInfo> {
-    let mut connections = Vec::new();
-
-    let Some(output) = run_output("ss", ["-tunap"], CommandTimeout::Normal) else {
-        return connections;
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines().skip(1) {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 5 {
-            continue;
-        }
-
-        let protocol = match parts[0] {
-            "tcp" => Protocol::Tcp,
-            "udp" => Protocol::Udp,
-            _ => continue,
-        };
-
-        let state = parse_state(parts[1]);
-        let (local_addr, local_port) = parse_addr_port_unix(parts[4]);
-        let (remote_addr, remote_port) = if parts.len() > 5 {
-            parse_addr_port_unix(parts[5])
-        } else {
-            ("*".into(), 0)
-        };
-
-        // Try to extract PID from the users: column
-        let pid = parts.iter().find_map(|p| {
-            if p.contains("pid=") {
+#[cfg(any(target_os = "linux", test))]
+fn parse_linux_connections(stdout: &str) -> Vec<ConnectionInfo> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<_> = line.split_whitespace().collect();
+            if parts.len() < 6 {
+                return None;
+            }
+            let protocol = match parts[0] {
+                "tcp" => Protocol::Tcp,
+                "udp" => Protocol::Udp,
+                _ => return None,
+            };
+            let state = match parts[1] {
+                "ESTAB" => ConnectionState::Established,
+                "SYN-RECV" => ConnectionState::SynReceived,
+                "SYN-SENT" => ConnectionState::SynSent,
+                "FIN-WAIT-1" => ConnectionState::FinWait1,
+                "FIN-WAIT-2" => ConnectionState::FinWait2,
+                "CLOSE-WAIT" => ConnectionState::CloseWait,
+                "TIME-WAIT" => ConnectionState::TimeWait,
+                "LAST-ACK" => ConnectionState::LastAck,
+                other => parse_state(other),
+            };
+            let (local_addr, local_port) = parse_addr_port_unix(parts[4]);
+            let (remote_addr, remote_port) = parse_addr_port_unix(parts[5]);
+            let pid = parts.iter().find_map(|p| {
                 p.split("pid=")
                     .nth(1)?
                     .split(|c: char| !c.is_ascii_digit())
                     .next()?
                     .parse()
                     .ok()
-            } else {
-                None
-            }
-        });
-
-        connections.push(ConnectionInfo {
-            protocol,
-            local_addr,
-            local_port,
-            remote_addr,
-            remote_port,
-            state,
-            pid,
-            process_name: None,
-        });
-    }
-
-    connections
+            });
+            Some(ConnectionInfo {
+                protocol,
+                local_addr,
+                local_port,
+                remote_addr,
+                remote_port,
+                state,
+                pid,
+                process_name: None,
+            })
+        })
+        .collect()
 }
 
-#[cfg(target_os = "macos")]
-fn collect_connections_macos() -> Vec<ConnectionInfo> {
-    let mut connections = Vec::new();
-
-    let Some(output) = run_output("netstat", ["-anp", "tcp"], CommandTimeout::Normal) else {
-        return connections;
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines().skip(2) {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 6 {
-            continue;
-        }
-
-        let protocol = match parts[0] {
-            "tcp4" | "tcp6" | "tcp46" => Protocol::Tcp,
-            _ => continue,
-        };
-
-        let (local_addr, local_port) = parse_addr_port_unix(parts[3]);
-        let (remote_addr, remote_port) = parse_addr_port_unix(parts[4]);
-        let state = parse_state(parts[5]);
-
-        connections.push(ConnectionInfo {
-            protocol,
-            local_addr,
-            local_port,
-            remote_addr,
-            remote_port,
-            state,
-            pid: None,
-            process_name: None,
-        });
-    }
-
-    connections
+#[cfg(any(target_os = "macos", test))]
+fn parse_macos_connections(stdout: &str) -> Vec<ConnectionInfo> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<_> = line.split_whitespace().collect();
+            if parts.len() < 5 {
+                return None;
+            }
+            let protocol = match parts[0] {
+                "tcp4" | "tcp6" | "tcp46" => Protocol::Tcp,
+                "udp4" | "udp6" | "udp46" => Protocol::Udp,
+                _ => return None,
+            };
+            let state = if protocol == Protocol::Tcp {
+                parse_state(parts.get(5)?)
+            } else {
+                ConnectionState::Unknown("connectionless".into())
+            };
+            let (local_addr, local_port) = parse_addr_port_unix(parts[3]);
+            let (remote_addr, remote_port) = parse_addr_port_unix(parts[4]);
+            Some(ConnectionInfo {
+                protocol,
+                local_addr,
+                local_port,
+                remote_addr,
+                remote_port,
+                state,
+                pid: None,
+                process_name: None,
+            })
+        })
+        .collect()
 }
 
 // --- Address parsing helpers ---
 
+#[cfg(any(not(windows), test))]
 fn parse_addr_port(addr_str: &str) -> (String, u16) {
     // Windows format: "192.168.1.1:443" or "[::1]:443"
     if let Some(bracket_end) = addr_str.rfind(']') {
@@ -540,7 +527,7 @@ fn parse_addr_port(addr_str: &str) -> (String, u16) {
     }
 }
 
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg(any(not(windows), test))]
 fn parse_addr_port_unix(addr_str: &str) -> (String, u16) {
     // Unix format: "192.168.1.1:443" or ":::443" or "[::]:443" or "*:*"
     if addr_str == "*:*" || addr_str == "*.*" {
@@ -573,6 +560,43 @@ fn parse_addr_port_unix(addr_str: &str) -> (String, u16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linux_socket_states_and_inaccessible_owners_are_preserved() {
+        let rows = parse_linux_connections("tcp ESTAB 0 0 127.0.0.1:42000 127.0.0.1:443 users:((\"test\",pid=42,fd=3))\ntcp TIME-WAIT 0 0 [::1]:42001 [::1]:443\nudp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:*\n");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].state, ConnectionState::Established);
+        assert_eq!(rows[0].pid, Some(42));
+        assert_eq!(rows[1].state, ConnectionState::TimeWait);
+        assert_eq!(rows[1].pid, None);
+        assert_eq!(rows[2].protocol, Protocol::Udp);
+        assert_eq!(rows[2].local_port, 5353);
+    }
+    #[test]
+    fn macos_inventory_includes_udp_ipv6_and_wildcard_endpoints() {
+        let rows = parse_macos_connections("Active Internet connections\nProto Recv-Q Send-Q Local Address Foreign Address (state)\ntcp4 0 0 127.0.0.1.51000 127.0.0.1.443 ESTABLISHED\nudp6 0 0 fe80::1%en0.5353 *.*\ntcp46 0 0 *.8080 *.* LISTEN\n/var/run/unix-socket ignored\n");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].state, ConnectionState::Established);
+        assert_eq!(rows[1].protocol, Protocol::Udp);
+        assert_eq!(rows[1].local_addr, "fe80::1%en0");
+        assert_eq!(rows[1].local_port, 5353);
+        assert_eq!(rows[1].pid, None);
+        assert_eq!(rows[2].state, ConnectionState::Listening);
+    }
+    #[test]
+    fn missing_endpoint_provider_is_not_a_measured_empty_inventory() {
+        let (rows, observation) = command_connections(
+            "sd300-no-socket-provider-fixture-9471",
+            &[],
+            parse_linux_connections,
+        );
+        assert!(rows.is_empty());
+        assert_eq!(
+            observation.status,
+            crate::observation::ObservationStatus::Unavailable
+        );
+        assert!(observation.detail.unwrap().contains("not installed"));
+    }
 
     #[test]
     fn reply_rtt_is_not_process_runtime_or_summary() {

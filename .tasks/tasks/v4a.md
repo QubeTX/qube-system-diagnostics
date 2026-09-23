@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: native endpoint candidate passes 192 library tests, 8 CLI contracts, 2 worker tests, 15 engine and 50 GUI tests (two platform skips), strict bindings and clippy; Mac/musl test targets cross-check. Windows owned IPv4/IPv6 TCP listeners, TCP client and UDP endpoints match actual worker output. Same short performance method records 3.11 percent CPU, 132.9 MiB RSS and 24 child creations versus 44 previously. CPU still fails; short memory pass is not full acceptance. Next oracle: all-six native socket fixtures (including forced missing-ss Linux fallback), then remaining CPU cost.
+
 - 2026-09-23 — codex: capture-clock correction passes 185 library tests (four child fixtures), the live persistent-worker protocol, 15 engine tests and root clippy. Deterministic fixtures cover irregular capture intervals, unchanged rates through serialization, suspend-excluding monotonic clocks, worker replacement and explicit retry warmup. The worker now computes disk rates before IPC; fast-topic intervals use completed captures. Next: native protocol oracle, remaining connection-provider cost and failure semantics.
 
 - 2026-09-23 — codex: ebf36c5 native CI 35846994223 dispatched. Retiring static/driver/health workers reduces the same 30-second Windows measurement peak from 219 to 159.5 MiB (max live processes 21 to 16); CPU remains 4.82 percent and no gate is waived. Eight CLI contracts and persistent worker/cancellation test pass. Next: profile remaining fast/command costs and correct worker capture intervals rather than treating delivery time as measurement time.

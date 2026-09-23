@@ -313,6 +313,7 @@ impl ProbeData {
             Self::Connections(data) => {
                 snapshot.network_diag.active_connections = data.active_connections;
                 snapshot.network_diag.listening_ports = data.listening_ports;
+                snapshot.network_diag.connections_observation = data.connections_observation;
             }
             Self::Diagnostics(data, warnings) => {
                 snapshot.network_diag.gateway = data.gateway;

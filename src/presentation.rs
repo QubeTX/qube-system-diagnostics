@@ -320,11 +320,19 @@ impl Presentation {
                         )
                     ),
                     format!(
-                        "{} interfaces · {} sockets · Enter inspects evidence",
+                        "{} interfaces · {} sockets{} · Enter inspects evidence",
                         s.network.interfaces.len(),
-                        s.network_diag.active_connections.len()
+                        s.network_diag.active_connections.len(),
+                        if s.network_diag.connections_observation.is_available() {
+                            ""
+                        } else {
+                            " (incomplete)"
+                        }
                     ),
                 ];
+                if let Some(detail) = &s.network_diag.connections_observation.detail {
+                    v.summary.push(detail.clone());
+                }
                 add(
                     "diagnostics".into(),
                     "Connectivity evidence".into(),

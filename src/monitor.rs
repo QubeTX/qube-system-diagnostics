@@ -201,6 +201,14 @@ impl Monitor {
             let Some(update) = update else { continue };
             match update.result {
                 Ok(data) => {
+                    let observation = match &data {
+                        Data::Probe(probe) => match probe.as_ref() {
+                            ProbeData::Connections(data) => data.connections_observation.clone(),
+                            _ => Observation::available(lane.name()),
+                        },
+                        Data::Activity(data) => data.observation.clone(),
+                        _ => Observation::available(lane.name()),
+                    };
                     match data {
                         Data::Activity(data) => {
                             snapshot.disk_activity = data;
@@ -244,7 +252,7 @@ impl Monitor {
                                     "Waiting for a second CPU counter sample after startup or resume",
                                 )
                             } else {
-                                Observation::available(lane.name())
+                                observation
                             },
                         },
                     );

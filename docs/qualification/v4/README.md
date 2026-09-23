@@ -33,9 +33,33 @@ up its owned job. No installation, speed test, repair or elevated read is reques
 | ddbe0eb, unchanged repeat | 8.08% | 184.9 MiB | Regression confirmed |
 | ddbe0eb + PSS-only product change | 4.35% | 219.1 MiB | Startup CPU improves; both gates remain open |
 | ebf36c5 + idle worker retirement | 4.82% | 159.5 MiB | Idle memory improves; both gates remain open |
+| 7589af5 + native socket collection | 3.11% | 132.9 MiB | CPU remains open; short memory run passes |
 
 The last candidate's exact binary is identified in its JSON; the source change
 is the commit introducing this evidence. Memory peaks depend on whether the
 sampling instant overlaps a transient helper. The next cycle targets idle worker
 working sets; it must preserve cadence and bounded shutdown. Accepted gates stay
 at 2% foreground CPU and 150 MiB working set; no waiver is implied.
+
+
+## Endpoint inventory qualification
+
+Windows uses [GetExtendedTcpTable](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedtcptable)
+and its UDP counterpart. Ports and IPv6 scope IDs follow the documented network
+byte order; a TCP listener's undefined remote endpoint is not treated as measured.
+Allocation and retries are bounded, while table failures retain other successful
+families with an incomplete observation. Owned jobs still isolate native calls.
+
+Linux uses [ss](https://man7.org/linux/man-pages/man8/ss.8.html) with numeric
+endpoints and no header. On missing iproute2 it reads the documented
+[procfs endpoint tables](https://docs.kernel.org/networking/proc_net_tcp.html)
+in the current network namespace. This is a compatibility fallback, as the kernel
+prefers tcp_diag; owning PIDs are unavailable on that fallback. No automatic
+package installation is needed. macOS numeric TCP and UDP parsing follows
+[Apple's netstat implementation](https://github.com/apple-oss-distributions/network_cmds/blob/main/netstat.tproj/inet.c).
+
+The native worker fixture holds known loopback TCP listeners/client and UDP
+sockets open while collecting, with IPv6 checked when the host supports binding
+it. Linux additionally forces missing ss without modifying the host installation.
+Parser fixtures cover states, byte order, absent PID, malformed/oversized tables
+and partial failure; GUI fixtures preserve the same observation beside rows.
