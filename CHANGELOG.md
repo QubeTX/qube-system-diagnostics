@@ -6,6 +6,9 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Identify GPUs through DXGI LUID/PCI locations, Linux DRM/PCI devices and Metal registry IDs. Join NVIDIA telemetry by PCI identity, preserve per-field availability, and keep shared/unified memory and allocation budgets distinct from dedicated VRAM.
+- Aggregate Windows GPU counters per physical engine across processes, then select the busiest engine. Preserve existing driver/display telemetry through PnP location matching; a temperature-only adapter no longer displays fabricated zero utilization.
+
 - Add Linux power-supply battery, DRM display, hardware-backed network link and DMI/device-tree identity providers with documented units and explicit missing fields. Add native macOS CoreGraphics displays, IOKit power-source snapshots and hardware identity.
 
 - Add opt-in schema-2 JSON exports with nullable measurements, sample metadata and shared findings while freezing schema-1 keys. GUI exports use the richer report.
@@ -23,6 +26,8 @@ All notable changes to SD-300 will be documented in this file.
 - Bound collector output and cancellation with owned Windows jobs/Unix process groups and file-backed capture, eliminating inherited-pipe EOF waits and unjoined reader threads.
 
 ### Development
+
+- Reconcile candidate installer/self-test ABI assertions with the revised process ABI and print Linux package validation payloads before failed assertions.
 
 - Execute root collector and isolated-engine tests on every native GUI architecture, including the Alpine musl lane; cross-compilation alone is not the provider qualification bar.
 

@@ -64,75 +64,44 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(outer, area);
 
     let gpu = &app.snapshot.gpu;
-    let util = gpu.utilization_percent;
-    let status = if gpu.telemetry_available {
-        HealthStatus::from_percent(util as f64)
-    } else {
-        HealthStatus::Unknown
-    };
-
-    let util_desc = if util < 25.0 {
-        "Not very busy"
-    } else if util < 50.0 {
-        "Moderately busy"
-    } else if util < 75.0 {
-        "Busy"
-    } else {
-        "Very busy"
-    };
-
-    let mem_pct = gpu.memory_percent();
-    let mem_desc = if mem_pct < 50.0 {
-        "Mostly free"
-    } else if mem_pct < 80.0 {
-        "Moderate use"
-    } else {
-        "Nearly full"
-    };
-
-    let temp_desc = gpu
-        .temperature
-        .map(|t| {
-            format!(
-                "{} ({})",
-                plain_language_temp(t),
-                format_temp(t, app.temp_unit)
-            )
-        })
-        .unwrap_or_else(|| "Unknown".into());
-
-    let simple_name = simplify_gpu_name(&gpu.name);
-
-    let mut lines = vec![Line::from(""), status_line(&status, "Card", &simple_name)];
-
-    if gpu.telemetry_available {
-        lines.extend([
-            Line::from(vec![
-                Span::styled("  Utilization    ", Style::default().fg(COLOR_TEXT)),
-                Span::styled(
-                    format!("{} ({:.0}%)", util_desc, util),
-                    Style::default().fg(COLOR_DIM),
-                ),
-            ]),
-            gauge_line("GPU", util as f64, 20),
-            Line::from(vec![
-                Span::styled("  Memory         ", Style::default().fg(COLOR_TEXT)),
-                Span::styled(
-                    format!("Graphics memory: {}", mem_desc),
-                    Style::default().fg(COLOR_DIM),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("  Temperature    ", Style::default().fg(COLOR_TEXT)),
-                Span::styled(temp_desc, Style::default().fg(COLOR_DIM)),
-            ]),
-        ]);
+    let mut lines = vec![Line::from(""), Line::from(gpu.name.clone())];
+    if let Some(util) = gpu.utilization() {
+        lines.push(Line::from(format!("  Graphics utilization: {util:.1}%")));
+        lines.push(gauge_line("GPU", util as f64, 20));
     } else {
         lines.push(status_line(
             &HealthStatus::Unknown,
-            "Telemetry",
-            "Utilization and temperature unavailable",
+            "Utilization",
+            "Not exposed by the available provider",
         ));
+    }
+    if let Some(adapter) = gpu.primary() {
+        if adapter.unified_memory == Some(true) {
+            lines.push(Line::from("  This GPU shares memory with the processor."));
+        }
+        if let Some(capacity) = adapter.dedicated_memory_mb {
+            lines.push(Line::from(format!(
+                "  Reported GPU memory capacity: {capacity} MiB"
+            )));
+        }
+        if let Some(used) = adapter.memory_used_mb {
+            lines.push(Line::from(format!(
+                "  Reported GPU memory used: {used} MiB"
+            )));
+        }
+        if let Some(limit) = adapter.recommended_working_set_mb {
+            lines.push(Line::from(format!(
+                "  Recommended allocation budget: {limit} MiB (not VRAM capacity)"
+            )));
+        }
+        if let Some(temp) = adapter.temperature_celsius {
+            lines.push(Line::from(format!(
+                "  Temperature: {}",
+                format_temp(temp, app.temp_unit)
+            )));
+        } else {
+            lines.push(Line::from("  Temperature: not reported"));
+        }
     }
 
     if gpu.adapters.len() > 1 {
@@ -180,7 +149,7 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or_else(|| "N/A".into());
         let memory = adapter
             .dedicated_memory_mb
-            .map(|value| format!("{value} MB"))
+            .map(|value| format!("{value} MiB"))
             .unwrap_or_else(|| "N/A".into());
         let temperature = adapter
             .temperature_celsius
@@ -197,6 +166,33 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             ),
             Style::default().fg(COLOR_TEXT),
         )));
+        lines.push(Line::from(format!("    ID: {}", adapter.device_id)));
+        if adapter.unified_memory == Some(true) {
+            lines.push(Line::from(
+                "    Unified memory: shared with CPU; no dedicated VRAM value",
+            ));
+        }
+        if let Some(shared) = adapter.shared_memory_mb {
+            lines.push(Line::from(format!(
+                "    Shared-system limit: {shared} MiB (not currently used)"
+            )));
+        }
+        if let Some(dedicated) = adapter.dedicated_system_memory_mb {
+            lines.push(Line::from(format!(
+                "    Dedicated system memory: {dedicated} MiB"
+            )));
+        }
+        if let Some(recommended) = adapter.recommended_working_set_mb {
+            lines.push(Line::from(format!(
+                "    Recommended working set: {recommended} MiB (not capacity)"
+            )));
+        }
+        if let Some(field) = adapter.fields.get("utilization_percent") {
+            lines.push(Line::from(format!(
+                "    Utilization: {:?}; {}",
+                field.status, field.source
+            )));
+        }
         let details = [
             adapter.status.as_deref(),
             adapter.current_resolution.as_deref(),
@@ -249,16 +245,4 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         .bar_set(sparkline_bar_set())
         .style(Style::default().fg(SPARK_GPU));
     frame.render_widget(sparkline, chunks[1]);
-}
-
-fn simplify_gpu_name(name: &str) -> String {
-    if name.to_lowercase().contains("nvidia") {
-        "NVIDIA graphics card".to_string()
-    } else if name.to_lowercase().contains("amd") || name.to_lowercase().contains("radeon") {
-        "AMD graphics card".to_string()
-    } else if name.to_lowercase().contains("intel") {
-        "Intel integrated graphics".to_string()
-    } else {
-        "Graphics card".to_string()
-    }
 }

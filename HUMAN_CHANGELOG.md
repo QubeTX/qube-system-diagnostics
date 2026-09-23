@@ -10,6 +10,9 @@ The newest section is work in progress. It is deliberately candid about what has
 
 **Fixed**
 
+- Graphics readings stay attached to the correct device, even when two cards have the same name. Graphics monitoring now includes Linux driver readings and Mac graphics inventory. Shared memory and recommended allocation budgets are clearly distinguished from dedicated video memory.
+- Windows graphics load reflects the busiest engine. A card that only exposes temperature no longer appears idle just because its utilization is missing.
+
 - Linux now reports readable battery, display, adapter and computer details. Macs gain native display and battery discovery. Missing brightness or energy readings stay unavailable instead of being guessed from unrelated values.
 
 - Detailed reports distinguish missing readings from measured zero and explain when observations were captured. Existing report consumers keep their familiar format unless they choose the richer one.
@@ -27,6 +30,8 @@ The newest section is work in progress. It is deliberately candid about what has
 - A stuck or excessively noisy helper can no longer leave output-reader threads waiting indefinitely. Filtered connection checks no longer automatically label the internet offline.
 
 **Behind the scenes**
+
+- Installer checks recognize the updated internal interface and report the actual failing result, making platform-specific failures diagnosable.
 
 - Run the shared monitoring tests on every supported kind of operating system and processor, including the lightweight Linux build.
 

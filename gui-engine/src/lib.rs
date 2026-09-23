@@ -553,7 +553,7 @@ fn update_tray_summary(shared: &Shared, snapshot: &SystemSnapshot) {
             } else {
                 (free_bytes as f64 / total_bytes as f64 * 100.0) as f32
             },
-            gpu_available: u32::from(snapshot.gpu.telemetry_available),
+            gpu_available: u32::from(snapshot.gpu.utilization().is_some()),
             storage_available: u32::from(total_bytes > 0),
             disk_health,
             reserved: 0,

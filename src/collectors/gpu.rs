@@ -2,6 +2,7 @@ use serde::Serialize;
 
 use crate::observation::Observation;
 
+#[cfg(not(target_os = "macos"))]
 use super::command::{run_output, CommandTimeout};
 
 #[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
@@ -19,8 +20,22 @@ pub struct GpuData {
     pub telemetry_status: Observation,
 }
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct GpuAdapter {
+    #[serde(default)]
+    pub device_id: String,
+    #[serde(default)]
+    pub pci_address: Option<String>,
+    #[serde(default)]
+    pub shared_memory_mb: Option<u64>,
+    #[serde(default)]
+    pub dedicated_system_memory_mb: Option<u64>,
+    #[serde(default)]
+    pub unified_memory: Option<bool>,
+    #[serde(default)]
+    pub recommended_working_set_mb: Option<u64>,
+    #[serde(default)]
+    pub fields: std::collections::BTreeMap<String, Observation>,
     pub name: String,
     pub driver_version: Option<String>,
     pub status: Option<String>,
@@ -35,6 +50,16 @@ pub struct GpuAdapter {
 }
 
 impl GpuData {
+    pub fn utilization(&self) -> Option<f32> {
+        self.primary().and_then(|a| a.utilization_percent)
+    }
+    pub fn primary(&self) -> Option<&GpuAdapter> {
+        self.adapters
+            .iter()
+            .find(|a| a.utilization_percent.is_some())
+            .or_else(|| self.adapters.iter().find(|a| a.telemetry_available))
+            .or_else(|| self.adapters.first())
+    }
     pub fn memory_percent(&self) -> f64 {
         if self.memory_total_mb == 0 {
             return 0.0;
@@ -42,14 +67,37 @@ impl GpuData {
         (self.memory_used_mb as f64 / self.memory_total_mb as f64) * 100.0
     }
 
-    fn from_adapters(adapters: Vec<GpuAdapter>, inventory_status: Observation) -> Self {
+    fn from_adapters(mut adapters: Vec<GpuAdapter>, inventory_status: Observation) -> Self {
+        for adapter in &mut adapters {
+            adapter.telemetry_available = adapter.utilization_percent.is_some()
+                || adapter.memory_used_mb.is_some()
+                || adapter.temperature_celsius.is_some();
+            for (field, present) in [
+                ("utilization_percent", adapter.utilization_percent.is_some()),
+                ("memory_used_mb", adapter.memory_used_mb.is_some()),
+                ("dedicated_memory_mb", adapter.dedicated_memory_mb.is_some()),
+                ("temperature_celsius", adapter.temperature_celsius.is_some()),
+            ] {
+                adapter.fields.entry(field.into()).or_insert_with(|| {
+                    if present {
+                        Observation::available(&adapter.source)
+                    } else {
+                        Observation::unavailable(
+                            &adapter.source,
+                            "This provider does not expose a trustworthy reading for this field",
+                        )
+                    }
+                });
+            }
+        }
         let primary = adapters
             .iter()
-            .find(|adapter| adapter.telemetry_available)
+            .find(|adapter| adapter.utilization_percent.is_some())
+            .or_else(|| adapters.iter().find(|adapter| adapter.telemetry_available))
             .or_else(|| adapters.first());
         let telemetry_available = adapters.iter().any(|adapter| adapter.telemetry_available);
         let telemetry_status = if telemetry_available {
-            Observation::available("vendor telemetry")
+            Observation::available("per-adapter field providers")
         } else if adapters.is_empty() {
             Observation::unavailable("GPU inventory", "No graphics adapters were detected")
         } else {
@@ -89,7 +137,19 @@ pub fn collect() -> GpuData {
         collect_windows()
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let (mut adapters, status) =
+            super::gpu_linux::collect(std::path::Path::new("/sys/class/drm"));
+        merge_telemetry(&mut adapters, collect_nvidia());
+        GpuData::from_adapters(adapters, status)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let (adapters, status) = super::apple_inventory::gpus();
+        GpuData::from_adapters(adapters, status)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         let adapters = collect_nvidia();
         let status = if adapters.is_empty() {
@@ -109,6 +169,8 @@ pub fn collect() -> GpuData {
 #[serde(rename = "Win32_VideoController")]
 #[serde(rename_all = "PascalCase")]
 struct WmiVideoController {
+    #[serde(rename = "PNPDeviceID")]
+    pnp_device_id: Option<String>,
     name: Option<String>,
     driver_version: Option<String>,
     status: Option<String>,
@@ -122,11 +184,11 @@ struct WmiVideoController {
 fn collect_windows() -> GpuData {
     use wmi::{COMLibrary, WMIConnection};
 
-    let (mut adapters, inventory_status) = match COMLibrary::new()
+    let (mut adapters, mut inventory_status) = match COMLibrary::new()
         .and_then(WMIConnection::new)
         .and_then(|connection| {
             connection.raw_query::<WmiVideoController>(
-                "SELECT Name, DriverVersion, Status, AdapterRAM, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate FROM Win32_VideoController",
+                "SELECT Name, PNPDeviceID, DriverVersion, Status, AdapterRAM, CurrentHorizontalResolution, CurrentVerticalResolution, CurrentRefreshRate FROM Win32_VideoController",
             )
         }) {
         Ok(rows) => {
@@ -142,6 +204,8 @@ fn collect_windows() -> GpuData {
                         .zip(row.current_vertical_resolution)
                         .map(|(width, height)| format!("{width}x{height}"));
                     Some(GpuAdapter {
+                        pci_address: row.pnp_device_id.as_deref().and_then(super::gpu_windows::pnp_pci_address),
+                        device_id: row.pnp_device_id.unwrap_or_default(),
                         name,
                         driver_version: clean_string(row.driver_version),
                         status: clean_string(row.status),
@@ -153,6 +217,7 @@ fn collect_windows() -> GpuData {
                         refresh_rate_hz: row.current_refresh_rate,
                         telemetry_available: false,
                         source: "Win32_VideoController".into(),
+                        ..Default::default()
                     })
                 })
                 .collect::<Vec<_>>();
@@ -172,31 +237,36 @@ fn collect_windows() -> GpuData {
         ),
     };
 
-    for telemetry in collect_nvidia() {
-        if let Some(adapter) = adapters
-            .iter_mut()
-            .find(|adapter| gpu_names_match(&adapter.name, &telemetry.name))
-        {
-            adapter.utilization_percent = telemetry.utilization_percent;
-            adapter.memory_used_mb = telemetry.memory_used_mb;
-            adapter.dedicated_memory_mb = telemetry.dedicated_memory_mb;
-            adapter.temperature_celsius = telemetry.temperature_celsius;
-            adapter.driver_version = telemetry.driver_version;
-            adapter.telemetry_available = true;
-            adapter.source = "Win32_VideoController + nvidia-smi".into();
-        } else {
-            adapters.push(telemetry);
+    if let Ok(mut dxgi) = super::gpu_windows::inventory() {
+        if !dxgi.is_empty() {
+            for device in &mut dxgi {
+                if let Some(previous) = adapters
+                    .iter()
+                    .find(|a| a.pci_address.is_some() && a.pci_address == device.pci_address)
+                {
+                    device.driver_version = previous.driver_version.clone();
+                    device.current_resolution = previous.current_resolution.clone();
+                    device.refresh_rate_hz = previous.refresh_rate_hz;
+                    device.status = previous.status.clone();
+                }
+            }
+            adapters = dxgi;
+            inventory_status =
+                Observation::available("DXGI adapter identity and memory categories");
         }
     }
+    merge_telemetry(&mut adapters, collect_nvidia());
+    super::gpu_windows::add_engine_utilization(&mut adapters);
 
     GpuData::from_adapters(adapters, inventory_status)
 }
 
+#[cfg(not(target_os = "macos"))]
 fn collect_nvidia() -> Vec<GpuAdapter> {
     let Some(output) = run_output(
         "nvidia-smi",
         [
-            "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,driver_version",
+            "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,driver_version,uuid,pci.bus_id",
             "--format=csv,noheader,nounits",
         ],
         CommandTimeout::Normal,
@@ -211,30 +281,41 @@ fn collect_nvidia() -> Vec<GpuAdapter> {
     parse_nvidia_csv(&String::from_utf8_lossy(&output.stdout))
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
 fn parse_nvidia_csv(csv: &str) -> Vec<GpuAdapter> {
     csv.lines()
         .filter_map(|line| {
             let parts = line.split(',').map(str::trim).collect::<Vec<_>>();
-            if parts.len() != 6 || parts[0].is_empty() {
+            if parts.len() != 8 || parts[0].is_empty() {
                 return None;
             }
             Some(GpuAdapter {
+                device_id: format!("nvidia:{}", parts[6]),
+                pci_address: normalize_pci(parts[7]),
                 name: parts[0].to_string(),
-                utilization_percent: parts[1].parse().ok(),
+                utilization_percent: parts[1]
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|n| n.is_finite() && (0.0..=100.0).contains(n)),
                 memory_used_mb: parts[2].parse().ok(),
                 dedicated_memory_mb: parts[3].parse().ok(),
-                temperature_celsius: parts[4].parse().ok(),
+                temperature_celsius: parts[4]
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|n| n.is_finite() && (-50.0..=200.0).contains(n)),
                 driver_version: clean_string(Some(parts[5].to_string())),
                 status: None,
                 current_resolution: None,
                 refresh_rate_hz: None,
                 telemetry_available: true,
                 source: "nvidia-smi".into(),
+                ..Default::default()
             })
         })
         .collect()
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
 fn clean_string(value: Option<String>) -> Option<String> {
     value.and_then(|value| {
         let value = value.trim().to_string();
@@ -242,21 +323,56 @@ fn clean_string(value: Option<String>) -> Option<String> {
     })
 }
 
-#[cfg(windows)]
-fn gpu_names_match(left: &str, right: &str) -> bool {
-    fn normalize(value: &str) -> String {
-        value
-            .to_ascii_lowercase()
-            .replace("nvidia", "")
-            .replace("geforce", "")
-            .chars()
-            .filter(|character| character.is_ascii_alphanumeric())
-            .collect()
+#[cfg(any(not(target_os = "macos"), test))]
+pub(super) fn normalize_pci(value: &str) -> Option<String> {
+    let (domain, tail) = value.split_once(':')?;
+    let (bus, tail) = tail.split_once(':')?;
+    let (device, function) = tail.split_once('.')?;
+    let domain = u32::from_str_radix(domain, 16).ok()?;
+    let bus = u8::from_str_radix(bus, 16).ok()?;
+    let device = u8::from_str_radix(device, 16).ok()?;
+    let function = u8::from_str_radix(function, 16).ok()?;
+    if domain > 0xffff || device > 31 || function > 7 {
+        return None;
     }
+    Some(format!("{domain:04x}:{bus:02x}:{device:02x}.{function}"))
+}
 
-    let left = normalize(left);
-    let right = normalize(right);
-    !left.is_empty() && (left.contains(&right) || right.contains(&left))
+#[cfg(any(not(target_os = "macos"), test))]
+fn merge_telemetry(adapters: &mut Vec<GpuAdapter>, telemetry: Vec<GpuAdapter>) {
+    for row in telemetry {
+        // PCI location, never a display name, joins independent providers.
+        let matches = adapters
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.pci_address.is_some() && a.pci_address == row.pci_address)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if matches.len() == 1 {
+            let target = &mut adapters[matches[0]];
+            target.utilization_percent = row.utilization_percent.or(target.utilization_percent);
+            target.memory_used_mb = row.memory_used_mb.or(target.memory_used_mb);
+            target.temperature_celsius = row.temperature_celsius.or(target.temperature_celsius);
+            target.dedicated_memory_mb = target.dedicated_memory_mb.or(row.dedicated_memory_mb);
+            target.driver_version = row.driver_version.or(target.driver_version.take());
+            for (key, present) in [
+                ("utilization_percent", row.utilization_percent.is_some()),
+                ("memory_used_mb", row.memory_used_mb.is_some()),
+                ("temperature_celsius", row.temperature_celsius.is_some()),
+            ] {
+                if present {
+                    target
+                        .fields
+                        .insert(key.into(), Observation::available(&row.source));
+                }
+            }
+            target.source = format!("{} + {} (PCI identity match)", target.source, row.source);
+        } else {
+            // Preserve telemetry with its own stable identity if correlation
+            // is unavailable; never attach it to an arbitrary identical GPU.
+            adapters.push(row);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -266,7 +382,7 @@ mod tests {
     #[test]
     fn parses_every_nvidia_adapter_and_preserves_unavailable_fields() {
         let rows = parse_nvidia_csv(
-            "NVIDIA RTX A, 12, 100, 8192, 52, 610.74\nNVIDIA RTX B, N/A, 0, 4096, N/A, 610.74\n",
+            "NVIDIA RTX A, 12, 100, 8192, 52, 610.74, GPU-A, 00000000:01:00.0\nNVIDIA RTX B, N/A, 0, 4096, N/A, 610.74, GPU-B, 00000000:02:00.0\n",
         );
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].utilization_percent, Some(12.0));
@@ -274,13 +390,33 @@ mod tests {
         assert_eq!(rows[1].temperature_celsius, None);
     }
 
-    #[cfg(windows)]
     #[test]
-    fn matches_wmi_and_nvidia_names_without_vendor_noise() {
-        assert!(gpu_names_match(
-            "NVIDIA GeForce RTX 4070 Laptop GPU",
-            "NVIDIA GeForce RTX 4070 Laptop GPU"
-        ));
-        assert!(!gpu_names_match("Intel(R) Arc(TM) Graphics", "RTX 4070"));
+    fn identical_names_do_not_correlate_different_adapters() {
+        let mut rows = vec![
+            GpuAdapter {
+                name: "Same model".into(),
+                pci_address: Some("0000:01:00.0".into()),
+                ..Default::default()
+            },
+            GpuAdapter {
+                name: "Same model".into(),
+                pci_address: Some("0000:02:00.0".into()),
+                ..Default::default()
+            },
+        ];
+        merge_telemetry(
+            &mut rows,
+            vec![GpuAdapter {
+                name: "Same model".into(),
+                pci_address: Some("0000:02:00.0".into()),
+                temperature_celsius: Some(55.0),
+                ..Default::default()
+            }],
+        );
+        assert_eq!(rows[0].temperature_celsius, None);
+        assert_eq!(rows[1].temperature_celsius, Some(55.0));
+        let data = GpuData::from_adapters(rows, Observation::available("fixture"));
+        assert_eq!(data.utilization(), None);
+        assert!(!data.adapters[1].fields["utilization_percent"].is_available());
     }
 }

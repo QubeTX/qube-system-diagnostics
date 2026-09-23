@@ -40,6 +40,7 @@ unsafe extern "C" {
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     fn CFRelease(value: CfRef);
+    fn CFStringGetCString(value: CfRef, buffer: *mut i8, size: isize, encoding: u32) -> u8;
     fn CFArrayGetCount(array: CfRef) -> isize;
     fn CFArrayGetValueAtIndex(array: CfRef, index: isize) -> CfRef;
     fn CFPropertyListCreateData(
@@ -51,6 +52,84 @@ unsafe extern "C" {
     ) -> CfRef;
     fn CFDataGetLength(data: CfRef) -> isize;
     fn CFDataGetBytePtr(data: CfRef) -> *const u8;
+}
+
+#[link(name = "Metal", kind = "framework")]
+unsafe extern "C" {
+    fn MTLCopyAllDevices() -> CfRef;
+}
+#[link(name = "objc")]
+unsafe extern "C" {
+    fn objc_msgSend();
+    fn sel_registerName(name: *const i8) -> *const c_void;
+    fn objc_autoreleasePoolPush() -> *mut c_void;
+    fn objc_autoreleasePoolPop(pool: *mut c_void);
+}
+struct Pool(*mut c_void);
+impl Drop for Pool {
+    fn drop(&mut self) {
+        unsafe { objc_autoreleasePoolPop(self.0) }
+    }
+}
+
+pub fn gpus() -> (Vec<super::gpu::GpuAdapter>, Observation) {
+    let _pool = Pool(unsafe { objc_autoreleasePoolPush() });
+    let Some(devices) = Owned::new(unsafe { MTLCopyAllDevices() }) else {
+        return (
+            vec![],
+            Observation::unavailable("Metal", "Metal returned no device array"),
+        );
+    };
+    // These Objective-C selectors return scalars/pointers, never structs. Use
+    // their precise C ABI signatures on both Intel and Apple Silicon.
+    let get_u64: unsafe extern "C" fn(CfRef, *const c_void) -> u64 =
+        unsafe { std::mem::transmute(objc_msgSend as unsafe extern "C" fn()) };
+    let get_bool: unsafe extern "C" fn(CfRef, *const c_void) -> u8 =
+        unsafe { std::mem::transmute(objc_msgSend as unsafe extern "C" fn()) };
+    let get_ptr: unsafe extern "C" fn(CfRef, *const c_void) -> CfRef =
+        unsafe { std::mem::transmute(objc_msgSend as unsafe extern "C" fn()) };
+    let mut rows = Vec::new();
+    for index in 0..unsafe { CFArrayGetCount(devices.0) }.clamp(0, 64) {
+        let device = unsafe { CFArrayGetValueAtIndex(devices.0, index) };
+        if device.is_null() {
+            continue;
+        }
+        let registry = unsafe { get_u64(device, sel_registerName(c"registryID".as_ptr())) };
+        let unified =
+            unsafe { get_bool(device, sel_registerName(c"hasUnifiedMemory".as_ptr())) } != 0;
+        let recommended = unsafe {
+            get_u64(
+                device,
+                sel_registerName(c"recommendedMaxWorkingSetSize".as_ptr()),
+            )
+        };
+        let name = unsafe { get_ptr(device, sel_registerName(c"name".as_ptr())) };
+        let mut buffer = [0i8; 512];
+        let name = if !name.is_null()
+            && unsafe {
+                CFStringGetCString(name, buffer.as_mut_ptr(), buffer.len() as isize, 0x08000100)
+            } != 0
+        {
+            unsafe { std::ffi::CStr::from_ptr(buffer.as_ptr()) }
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            "Metal graphics device".into()
+        };
+        rows.push(super::gpu::GpuAdapter {
+            device_id: format!("iokit:{registry:016x}"), name, unified_memory: Some(unified),
+            recommended_working_set_mb: (recommended > 0).then_some(recommended / 1_048_576),
+            // Neither recommendedMaxWorkingSetSize nor currentAllocatedSize
+            // is total VRAM/system-wide usage. Preserve absent metrics.
+            source: "Metal registry ID and memory architecture; public Metal inventory has no system-wide utilization/temperature".into(), ..Default::default()
+        });
+    }
+    let status = if rows.is_empty() {
+        Observation::unavailable("Metal", "No Metal devices available in this session")
+    } else {
+        Observation::available("MTLCopyAllDevices")
+    };
+    (rows, status)
 }
 
 pub fn displays() -> DisplayData {

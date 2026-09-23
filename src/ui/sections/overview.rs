@@ -49,7 +49,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         HealthStatus::from_percent(disk_pct)
     };
-    let gpu_status = if app.snapshot.gpu.telemetry_available {
+    let gpu_status = if app.snapshot.gpu.utilization().is_some() {
         HealthStatus::from_percent(gpu_pct as f64)
     } else {
         HealthStatus::Unknown
@@ -127,7 +127,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
         bar_width,
     ));
 
-    if app.snapshot.gpu.telemetry_available {
+    if app.snapshot.gpu.utilization().is_some() {
         health_lines.push(health_gauge_line(
             "Graphics",
             &gpu_status,
@@ -394,12 +394,12 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("  GPU ", Style::default().fg(COLOR_DIM)),
             Span::styled(
-                if app.snapshot.gpu.telemetry_available {
+                if app.snapshot.gpu.utilization().is_some() {
                     gauge_bar(app.snapshot.gpu.utilization_percent as f64, 20)
                 } else {
                     format!("{:<20}", "N/A")
                 },
-                Style::default().fg(if app.snapshot.gpu.telemetry_available {
+                Style::default().fg(if app.snapshot.gpu.utilization().is_some() {
                     status_color(&HealthStatus::from_percent(
                         app.snapshot.gpu.utilization_percent as f64,
                     ))

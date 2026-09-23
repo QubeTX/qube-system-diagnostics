@@ -146,6 +146,9 @@ impl DiagnosticReport {
     }
 
     fn redact(&mut self) {
+        for adapter in &mut self.gpu.adapters {
+            adapter.device_id = "[redacted]".into();
+        }
         for device in &mut self.disk_activity.devices {
             device.identity = "[redacted]".into();
         }
@@ -211,6 +214,10 @@ impl DiagnosticReport {
                 .as_array_mut()
                 .unwrap()
                 .push(json!("disk_activity.devices[].identity"));
+            value["privacy"]["redacted_fields"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!("gpu.adapters[].device_id"));
         }
         value["processes"]["cpu_normalization"] =
             json!("percent of one logical processor; 100% equals one fully used logical processor");
@@ -240,12 +247,7 @@ impl DiagnosticReport {
                 }
             }
         }
-        let primary = self
-            .gpu
-            .adapters
-            .iter()
-            .find(|a| a.telemetry_available)
-            .or_else(|| self.gpu.adapters.first());
+        let primary = self.gpu.primary();
         value["gpu"]["utilization_percent"] = json!(primary.and_then(|a| a.utilization_percent));
         value["gpu"]["memory_used_mb"] = json!(primary.and_then(|a| a.memory_used_mb));
         value["gpu"]["memory_total_mb"] = json!(primary.and_then(|a| a.dedicated_memory_mb));

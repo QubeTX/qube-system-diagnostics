@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -Eeuo pipefail
+trap 'printf "Linux package validation failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
 
 archive=${1:-}
 version=${2:-}
@@ -395,10 +396,11 @@ grep -Eq "Machine:[[:space:]]+${expected_machine}$" < <(readelf -h "$root/libexe
 grep -Eq "Machine:[[:space:]]+${expected_machine}$" < <(readelf -h "$root/libexec/libsd300_engine.so")
 grep -E 'Requesting program interpreter:' < <(readelf -l "$root/libexec/sd300-gui") | grep -Fq "$expected_interpreter"
 
-self_test=$($entry --self-test --json)
+self_test=$("$entry" --self-test --json)
+printf 'GUI self-test payload: %s\n' "$self_test"
 jq -e --arg version "$version" --arg arch "$expected_arch" '
   .success == true and .product == "SD-300" and
-  .product_version == $version and .abi_version == 1 and
+  .product_version == $version and .abi_version == 2 and
   .engine_schema_version == 1 and .target_os == "linux" and
   .target_arch == $arch
 ' <<< "$self_test" >/dev/null

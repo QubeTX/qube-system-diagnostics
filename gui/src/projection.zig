@@ -237,7 +237,16 @@ pub const DiskRow = struct {
 };
 
 pub const GpuRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
+    shared_limit_mib: u64 = 0,
+    shared_limit_available: bool = false,
+    dedicated_system_mib: u64 = 0,
+    dedicated_system_available: bool = false,
+    recommended_mib: u64 = 0,
+    recommended_available: bool = false,
+    unified: bool = false,
+    identity_buffer: canvas.TextBuffer(192) = .init("Not reported"),
+    utilization_observation: ObservationView = .{},
     utilization_percent: f64 = 0,
     memory_used_mib: f64 = 0,
     memory_total_mib: f64 = 0,
@@ -256,6 +265,8 @@ pub const GpuRow = struct {
     resolution_buffer: canvas.TextBuffer(48) = canvas.TextBuffer(48).init("Not reported"),
     source_buffer: canvas.TextBuffer(128) = canvas.TextBuffer(128).init("platform inventory"),
 
+    pub fn identity(row: *const GpuRow) []const u8 { return row.identity_buffer.text(); }
+    pub fn utilizationObservation(row: *const GpuRow) []const u8 { return row.utilization_observation.summary(); }
     pub fn name(row: *const GpuRow) []const u8 {
         return row.name_buffer.text();
     }
@@ -1148,7 +1159,11 @@ pub const Projection = struct {
         self.gpu_count = @min(data.gpu.adapters.len, max_gpus);
         for (data.gpu.adapters[0..self.gpu_count], 0..) |item, index| {
             var row = GpuRow{
-                .id = @intCast(index),
+                .id = if (item.device_id.len > 0) std.hash.Wyhash.hash(0, item.device_id) else @intCast(index),
+                .shared_limit_mib = item.shared_memory_mb orelse 0, .shared_limit_available = item.shared_memory_mb != null,
+                .dedicated_system_mib = item.dedicated_system_memory_mb orelse 0, .dedicated_system_available = item.dedicated_system_memory_mb != null,
+                .recommended_mib = item.recommended_working_set_mb orelse 0, .recommended_available = item.recommended_working_set_mb != null,
+                .unified = item.unified_memory orelse false,
                 .telemetry_available = item.telemetry_available,
                 .utilization_available = item.utilization_percent != null,
                 .memory_used_available = item.memory_used_mb != null,
@@ -1157,6 +1172,8 @@ pub const Projection = struct {
                 .refresh_rate_available = item.refresh_rate_hz != null,
             };
             row.name_buffer.set(item.name);
+            row.identity_buffer.set(item.device_id);
+            setObservation(&row.utilization_observation, item.fields.utilization_percent);
             row.driver_buffer.set(item.driver_version orelse "Not reported");
             row.status_buffer.set(item.status orelse "Unknown");
             row.resolution_buffer.set(item.current_resolution orelse "Not reported");
@@ -1552,6 +1569,12 @@ const PartitionJson = struct {
 };
 const DiskJson = struct { partitions: []const PartitionJson = &.{} };
 const GpuAdapterJson = struct {
+    device_id: []const u8 = "",
+    unified_memory: ?bool = null,
+    shared_memory_mb: ?u64 = null,
+    dedicated_system_memory_mb: ?u64 = null,
+    recommended_working_set_mb: ?u64 = null,
+    fields: struct { utilization_percent: ObservationJson = .{} } = .{},
     name: []const u8 = "",
     driver_version: ?[]const u8 = null,
     status: ?[]const u8 = null,
@@ -1924,6 +1947,18 @@ test "fast disk counters survive slower SMART updates and preserve absent latenc
     try std.testing.expect(value.disk_io_available);
     try std.testing.expectEqual(@as(f64, 1), value.disk_read_mib_s);
     try std.testing.expectEqual(@as(u64, 2), value.activity_sequence);
+}
+
+test "Metal unified memory budget is not reported as dedicated VRAM" {
+    var value = Projection{};
+    try value.applySlowJson(std.testing.allocator,
+        \\{"sequence":1,"data":{"disk":{"partitions":[]},"gpu":{"adapters":[{"device_id":"iokit:1234","name":"Apple GPU","unified_memory":true,"recommended_working_set_mb":12288}]},"thermals":{}}}
+    );
+    const row = value.gpu_rows[0];
+    try std.testing.expect(row.unified and row.recommended_available);
+    try std.testing.expectEqual(@as(u64, 12288), row.recommended_mib);
+    try std.testing.expect(!row.memory_total_available and !row.utilization_available);
+    try std.testing.expectEqualStrings("iokit:1234", row.identity());
 }
 
 test "process identity and field availability survive PID reuse" {

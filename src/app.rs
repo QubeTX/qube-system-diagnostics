@@ -210,13 +210,8 @@ impl App {
         {
             return;
         }
-        self.gpu_history.push_at(
-            captured,
-            self.snapshot
-                .gpu
-                .telemetry_available
-                .then_some(self.snapshot.gpu.utilization_percent as f64),
-        );
+        self.gpu_history
+            .push_at(captured, self.snapshot.gpu.utilization().map(f64::from));
         // CPU and GPU temperatures must never be spliced into one series.
         self.temp_history
             .push_at(captured, self.snapshot.thermals.cpu_temp);

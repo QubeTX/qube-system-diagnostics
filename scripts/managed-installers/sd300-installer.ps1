@@ -358,7 +358,7 @@ function Test-Sd300GuiPayload([string]$Root) {
     }
     $result = Get-Content -LiteralPath $stdout -Raw | ConvertFrom-Json
     if (-not $result.success -or $result.product -ne 'SD-300' -or
-        $result.product_version -ne $Sd300Version -or $result.abi_version -ne 1 -or
+        $result.product_version -ne $Sd300Version -or $result.abi_version -ne 2 -or
         $result.engine_schema_version -ne 1 -or $result.target_os -ne 'windows' -or
         $result.target_arch -ne 'x86_64') {
         throw 'GUI companion self-test reported an incompatible product, version, ABI, schema, or target'

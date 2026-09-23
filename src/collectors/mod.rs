@@ -9,6 +9,10 @@ pub mod display;
 pub mod drivers;
 pub mod gpu;
 #[cfg(any(target_os = "linux", test))]
+pub mod gpu_linux;
+#[cfg(windows)]
+mod gpu_windows;
+#[cfg(any(target_os = "linux", test))]
 pub mod linux_inventory;
 pub mod macos;
 pub mod memory;

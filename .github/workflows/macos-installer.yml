@@ -499,7 +499,7 @@ jobs:
           test -x "$gui" && test -f "$engine" && test -f "$receipt"
           "$gui" --self-test --json | jq -e \
             --arg version '${{ needs.build.outputs.version }}' \
-            '.success == true and .product_version == $version and .abi_version == 1' \
+            '.success == true and .product_version == $version and .abi_version == 2' \
             >/dev/null
 
           third=$("$CARGO_HOME/bin/sd300" update --json)
@@ -598,7 +598,7 @@ jobs:
           self_test=$($gui --self-test --json)
           jq -e --arg version '${{ needs.build.outputs.version }}' '
             .success == true and .product == "SD-300" and
-            .product_version == $version and .abi_version == 1
+            .product_version == $version and .abi_version == 2
           ' <<< "$self_test"
           pkgutil --pkg-info com.qubetx.sd300.pkg | grep -Fqx 'package-id: com.qubetx.sd300.pkg'
           pkgutil --files com.qubetx.sd300.pkg | grep -Fqx 'usr/local/bin/sd300'

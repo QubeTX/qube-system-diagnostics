@@ -233,7 +233,7 @@ lipo "$app_engine" -verify_arch arm64 x86_64
 gui_self_test=$($app_executable --self-test --json)
 jq -e --arg version "$version" '
   .success == true and .product == "SD-300" and .product_version == $version and
-  .abi_version == 1 and .engine_schema_version == 1
+  .abi_version == 2 and .engine_schema_version == 1
 ' <<< "$gui_self_test" >/dev/null
 
 codesign --force --identifier dev.qubetx.sd300.engine --options runtime --timestamp \
