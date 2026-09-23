@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Select Cairo before GTK initialization for the Linux CPU-rendered GUI, preserving explicit renderer overrides. Route external quit through close-request so SDK widget cleanup precedes destruction; add native backend, override and lifecycle fixtures. Keep GNU GL smoke coverage and musl repeated shutdown diagnostics. Add separately bounded Apple `sample` runs for native TUI/hidden-GUI CPU attribution; debugger/profile reports cannot qualify performance gates.
+
 - Add an opt-in bounded native backtrace after Alpine GUI shutdown fails with SIGSEGV. Repeat unchanged artifacts only for diagnosis, attach after the sampling window, retain the original failure, and prohibit treating debugger runs as resource qualification. After an unchanged rerun passes, exercise three foreground/hidden shutdown pairs with traces to investigate the intermittent fault.
 
 - Draw opaque solid panels and borders directly through the reviewed SDK patch instead of retaining duplicate panel pixels. Correct fractional shadow-occlusion boundaries that blended pixels twice. Preserve rounded-edge coverage and translucent/gradient memoization; add byte-exact scale, clipping, translation, opacity and border fixtures. Match the warmed benchmark to the actual static-prefix runtime path, retain the generic diagnostic and exercise bounded bidirectional scrolling. Coordinate both preparers and patch/file hashes while retaining official upstream archive pins.

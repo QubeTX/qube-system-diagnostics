@@ -80,6 +80,11 @@ extern fn sd300_main_window_show() callconv(.c) void;
 extern fn sd300_main_window_hide() callconv(.c) void;
 extern fn sd300_claim_unix_instance() callconv(.c) c_int;
 extern fn sd300_model_open() callconv(.c) void;
+extern fn sd300_configure_renderer() callconv(.c) void;
+
+pub fn configureRendering() void {
+    if (comptime builtin.os.tag == .linux) sd300_configure_renderer();
+}
 
 /// Windows uses an explicit per-logon mutex because launching an `.exe`
 /// directly has no OS application-identity arbitration. macOS LaunchServices

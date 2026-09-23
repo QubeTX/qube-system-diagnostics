@@ -5,6 +5,14 @@
 extern void sd300_model_open(void);
 extern void sd300_model_visibility_changed(void);
 
+void sd300_configure_renderer(void) {
+    // SD-300 submits a CPU-rasterized Cairo image. Avoid a second GPU pipeline
+    // (and software-GL driver allocations on machines without an active GPU).
+    // Keep explicit overrides intact. This is private process setup against
+    // the distribution-qualified GTK closure, before any GTK or worker init.
+    g_setenv("GSK_RENDERER", "cairo", FALSE);
+}
+
 static void sd300_visibility_changed(GObject *object, GParamSpec *property, gpointer unused) {
     (void)object;
     (void)property;
@@ -54,13 +62,17 @@ static gboolean sd300_open_model(gpointer unused) {
     return G_SOURCE_REMOVE;
 }
 
-static gboolean sd300_destroy_windows(gpointer unused) {
+static gboolean sd300_close_windows(gpointer unused) {
     (void)unused;
     GListModel *windows = gtk_window_get_toplevels();
     guint count = g_list_model_get_n_items(windows);
-    for (guint index = 0; index < count; ++index) {
-        GtkWindow *window = GTK_WINDOW(g_list_model_get_item(windows, index));
-        gtk_window_destroy(window);
+    // Follow close-request so the SDK releases its borrowed drawing-area
+    // pointers before GTK destroys the widget tree. Destroying the window
+    // directly bypasses that cleanup and leaves teardown with stale pointers.
+    // Walk backwards because an accepted close removes a toplevel immediately.
+    while (count > 0) {
+        GtkWindow *window = GTK_WINDOW(g_list_model_get_item(windows, --count));
+        gtk_window_close(window);
         g_object_unref(window);
     }
     return G_SOURCE_REMOVE;
@@ -71,7 +83,7 @@ void sd300_platform_open(void) {
 }
 
 void sd300_platform_quit(void) {
-    g_main_context_invoke(NULL, sd300_destroy_windows, NULL);
+    g_main_context_invoke(NULL, sd300_close_windows, NULL);
 }
 
 #endif

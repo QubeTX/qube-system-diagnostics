@@ -1754,6 +1754,8 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     if (isSelfTest(args)) std.process.exit(runSelfTest(init));
 
+    window_visibility.configureRendering();
+
     if (!window_visibility.claimSingleInstanceOrNotify()) return;
     defer window_visibility.releaseSingleInstance();
 

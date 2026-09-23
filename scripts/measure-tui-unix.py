@@ -24,6 +24,7 @@ import time
 
 import psutil
 from resource_metrics import sample_family, descriptor_summary, FamilyAttribution
+from sample_macos import sample_owned_process
 
 
 class Terminal:
@@ -116,7 +117,10 @@ def main():
     parser.add_argument("--columns", type=int, default=80)
     parser.add_argument("--rows", type=int, default=24)
     parser.add_argument("--enforce-gates", action="store_true")
+    parser.add_argument("--profile-cpu", action="store_true", help="macOS stack attribution only; never resource qualification")
     args = parser.parse_args()
+    if args.profile_cpu and (sys.platform != "darwin" or args.enforce_gates):
+        parser.error("Native stack attribution requires macOS and cannot enforce resource gates")
     if not 5 <= args.seconds <= 7200:
         parser.error("Duration must be 5..7200 seconds")
     binary = args.binary.resolve(strict=True)
@@ -140,6 +144,9 @@ def main():
                 samples.append(sample_family(root, known, attribution))
                 time.sleep(.25)
             elapsed = time.monotonic() - begin
+            if args.profile_cpu:
+                report["diagnostic_only"] = True
+                report["native_stack_sample"] = sample_owned_process(terminal.pid)
             usage = terminal.quit()
             remaining = [p for p in known.values() if p.is_running()]
             if remaining:
@@ -153,6 +160,8 @@ def main():
                           **descriptor_summary(samples), process_count_max=max(row[2] for row in samples),
                           observed_process_identities=len(known), terminal_restored=True, clean_shutdown=True,
                           rss_last_window_delta=sum(r[0] for r in samples[-window:])/window-sum(r[0] for r in samples[:window])/window)
+            if args.profile_cpu:
+                report["cpu_gate"] = report["rss_gate"] = None
     except BaseException as error:
         report.update(passed=False, failure_type=type(error).__name__, failure=str(error))
         raise

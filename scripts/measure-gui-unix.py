@@ -21,6 +21,7 @@ import time
 import psutil
 from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_report
 from shutdown_trace import ShutdownTrace
+from sample_macos import sample_owned_process
 
 SECTIONS = ["Overview", "CPU", "Memory", "Storage", "GPU", "Network", "Processes", "Thermals", "Drivers"]
 
@@ -107,9 +108,12 @@ def main():
     parser.add_argument("--legacy-in-process", action="store_true", help="Qualify the pre-v4 in-process collector topology")
     parser.add_argument("--enforce-gates", action="store_true")
     parser.add_argument("--trace-shutdown", action="store_true", help="Linux-only crash diagnostic; never resource qualification")
+    parser.add_argument("--profile-cpu", action="store_true", help="macOS-only native stack attribution; never resource qualification")
     args = parser.parse_args()
     if args.trace_shutdown and (sys.platform != "linux" or args.enforce_gates):
         parser.error("Shutdown tracing requires Linux and cannot enforce resource gates")
+    if args.profile_cpu and (sys.platform != "darwin" or args.enforce_gates):
+        parser.error("Native stack attribution requires macOS and cannot enforce resource gates")
     if not 20 <= args.seconds <= 7200:
         parser.error("Duration must be 20..7200 seconds")
     if args.hidden:
@@ -145,7 +149,7 @@ def main():
                 "audience_mode": "user", "last_section": SECTIONS.index(args.section), "tray_enabled": args.hidden,
                 "close_to_tray": args.hidden, "launch_at_login": False, "reduced_motion": True}}), encoding="utf-8")
             env = dict(os.environ, HOME=directory, XDG_CONFIG_HOME=str(home / "config"), XDG_RUNTIME_DIR=str(home / "runtime"))
-            report["renderer_override"] = "cairo" if env.get("GSK_RENDERER") == "cairo" else "none_or_external"
+            report["renderer_override"] = env.get("GSK_RENDERER") if env.get("GSK_RENDERER") in ("cairo", "gl") else "none_or_external"
             begin = time.monotonic()
             process = subprocess.Popen([str(launcher)] + (["--startup", "--hidden"] if args.hidden and sys.platform == "darwin" else []),
                                        env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -204,6 +208,9 @@ def main():
             if args.trace_shutdown:
                 report["diagnostic_only"] = True
                 debugger = ShutdownTrace(process.pid)
+            if args.profile_cpu:
+                report["diagnostic_only"] = True
+                report["native_stack_sample"] = sample_owned_process(process.pid)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
                 connection.settimeout(2)
                 connection.connect(str(endpoint))
@@ -231,7 +238,7 @@ def main():
                           **descriptor_summary(samples), process_count_max=max(r[2] for r in samples),
                           observed_process_identities=len(known), clean_shutdown=True,
                           rss_last_window_delta=sum(r[0] for r in samples[-window:])/window-sum(r[0] for r in samples[:window])/window)
-            if args.trace_shutdown:
+            if args.trace_shutdown or args.profile_cpu:
                 report["cpu_gate"] = report["rss_gate"] = None
     except BaseException as error:
         report.update(passed=False, failure_type=type(error).__name__, failure=str(error))

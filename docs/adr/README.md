@@ -34,6 +34,7 @@ Rules:
 
 | [0010](0010-bounded-privileged-storage-reads.md) | Bounded, explicitly authorized storage reads | Accepted |
 | [0011](0011-solid-panel-rendering.md) | Draw opaque panels without retaining duplicate pixels | Accepted |
+| [0012](0012-linux-software-presentation.md) | Linux software presentation and ordered window cleanup | Candidate |
 
 ## Dual-frontend contract pointer
 

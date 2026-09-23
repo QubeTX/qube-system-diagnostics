@@ -230,12 +230,16 @@ jobs:
               flags=(); [[ $mode != hidden ]] || flags+=(--hidden)
               GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/$mode.json" --revision '${{ github.sha }}' --seconds 30 "${flags[@]}"
             done
-            # Diagnostic A/B on unchanged bytes. This is not a product setting
-            # or an acceptance substitute for the normal renderer above.
-            GDK_BACKEND=x11 GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground-cairo-diagnostic.json" --revision '${{ github.sha }}' --seconds 30
+            # Exercise an explicit renderer override independently of the
+            # qualified software default. Preserve the user's chosen backend.
+            GDK_BACKEND=x11 GSK_RENDERER=gl xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground-gl-diagnostic.json" --revision '${{ github.sha }}' --seconds 30
           else
             python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground.json" --revision '${{ github.sha }}' --seconds 30
             python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/hidden.json" --revision '${{ github.sha }}' --seconds 30 --hidden
+            # Attribute the remaining native Mac root-process cost on separate
+            # runs. Sampling observers invalidate resource acceptance.
+            python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/hidden-stack-diagnostic.json" --revision '${{ github.sha }}' --seconds 20 --hidden --profile-cpu
+            python scripts/measure-tui-unix.py target/release/sd300 --output "$out/tui-stack-diagnostic.json" --revision '${{ github.sha }}' --seconds 20 --profile-cpu
           fi
       - uses: actions/upload-artifact@v6
         if: ${{ always() && runner.os != 'Windows' }}

@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Linux uses a lighter drawing path by default and closes through the same cleanup as its window button. Explicit rendering choices remain respected. Behind the scenes, native Linux lifecycle checks and separate Mac performance traces investigate the remaining release blockers.
+
 - Behind the scenes: minimal Linux testing now captures where the app fails during shutdown, without mixing debugger results into performance acceptance. Repeated close checks investigate failures that disappear on a single retry.
 
 - The app avoids keeping duplicate pictures of simple solid panels and borders, and fixes uneven shadows at some scaled edges. Behind the scenes, rendering checks now follow the app's actual drawing path and compare every pixel across scaling, scrolling and translucent overlays.
