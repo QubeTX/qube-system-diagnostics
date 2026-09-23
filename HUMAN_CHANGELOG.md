@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Failed network and installation checks explain whether a helper was missing, denied access, took too long or returned unusable text. Behind the scenes, callers receive distinct failures instead of an ambiguous empty result.
+
 - Linux terminal navigation receives the same resize protection verified on Mac. Behind the scenes, longer resource checks remain release requirements even when shorter checks look healthy.
 
 - Mac terminal input uses a polling path that keeps pending keystrokes visible during resizing. Behind the scenes, native checks exercise rapid resizing and navigation together.

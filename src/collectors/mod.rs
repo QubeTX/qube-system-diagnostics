@@ -80,7 +80,7 @@ mod command_tests {
             args,
             CommandTimeout::Custom(Duration::from_millis(75)),
         );
-        assert!(output.is_none());
+        assert!(matches!(output, Err(super::command::CommandError::Timeout)));
         assert!(
             started.elapsed() < Duration::from_secs(1),
             "owned timeout cleanup took {:?}",

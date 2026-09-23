@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-use super::command::{run_output, run_stdout, CommandTimeout};
+use super::command::{run_output, run_stdout, CommandError, CommandTimeout};
 use super::DiagnosticWarning;
 use crate::observation::Observation;
 
@@ -117,27 +117,26 @@ fn parse_state(s: &str) -> ConnectionState {
 /// Collect connectivity diagnostics (ping/DNS) - call from spawn_blocking
 pub fn collect_connectivity() -> (NetworkDiagData, Vec<DiagnosticWarning>) {
     let warnings = Vec::new();
-    let mut data = NetworkDiagData::default();
-
     // Gateway detection + ping
-    let gateway_ip = detect_gateway();
-    if let Some(ref gw) = gateway_ip {
-        data.gateway = ping_host(gw);
-        data.gateway.target = gw.clone();
-    } else {
-        data.gateway = ConnectivityResult {
+    let gateway = match detect_gateway() {
+        Ok(Some(gw)) => ping_host(&gw),
+        result => ConnectivityResult {
             reachable: false,
             latency_ms: None,
             target: "N/A".into(),
-            error: Some("Could not detect default gateway".into()),
-        };
-    }
+            error: Some(match result {
+                Err(error) => format!("Default gateway query: {error}"),
+                _ => "No default gateway was reported by the routing provider".into(),
+            }),
+        },
+    };
 
-    // DNS test
-    data.dns = test_dns("www.google.com");
-
-    // Internet ping
-    data.internet = ping_host("1.1.1.1");
+    let mut data = NetworkDiagData {
+        gateway,
+        dns: test_dns("www.google.com"),
+        internet: ping_host("1.1.1.1"),
+        ..Default::default()
+    };
     // ICMP is commonly filtered independently of ordinary internet access.
     // A successful TCP connection proves reachability, not an ICMP RTT.
     if !data.internet.reachable {
@@ -170,7 +169,7 @@ pub fn refresh_connections(data: &mut NetworkDiagData) {
 
 // --- Gateway detection ---
 
-fn detect_gateway() -> Option<String> {
+fn detect_gateway() -> Result<Option<String>, CommandError> {
     #[cfg(windows)]
     {
         detect_gateway_windows()
@@ -185,14 +184,14 @@ fn detect_gateway() -> Option<String> {
     }
     #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
-        None
+        Ok(None)
     }
 }
 
 #[cfg(windows)]
-fn detect_gateway_windows() -> Option<String> {
+fn detect_gateway_windows() -> Result<Option<String>, CommandError> {
     let stdout = run_stdout("route", ["print", "0.0.0.0"], CommandTimeout::Normal)?;
-    parse_windows_gateway(&stdout)
+    Ok(parse_windows_gateway(&stdout))
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -210,9 +209,9 @@ fn parse_windows_gateway(stdout: &str) -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-fn detect_gateway_linux() -> Option<String> {
+fn detect_gateway_linux() -> Result<Option<String>, CommandError> {
     let stdout = run_stdout("ip", ["route", "show", "default"], CommandTimeout::Normal)?;
-    parse_linux_default_gateway(&stdout)
+    Ok(parse_linux_default_gateway(&stdout))
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -229,9 +228,9 @@ fn parse_linux_default_gateway(stdout: &str) -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn detect_gateway_macos() -> Option<String> {
+fn detect_gateway_macos() -> Result<Option<String>, CommandError> {
     let stdout = run_stdout("route", ["-n", "get", "default"], CommandTimeout::Normal)?;
-    parse_macos_gateway(&stdout)
+    Ok(parse_macos_gateway(&stdout))
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -255,7 +254,7 @@ fn ping_host(host: &str) -> ConnectivityResult {
     );
 
     match result {
-        Some(output) => {
+        Ok(output) => {
             let rtt = parse_ping_rtt(&String::from_utf8_lossy(&output.stdout));
             ConnectivityResult {
                 reachable: output.status.success(),
@@ -270,11 +269,11 @@ fn ping_host(host: &str) -> ConnectivityResult {
                 },
             }
         }
-        None => ConnectivityResult {
+        Err(error) => ConnectivityResult {
             reachable: false,
             latency_ms: None,
             target: host.into(),
-            error: Some("Ping failed or timed out".into()),
+            error: Some(format!("ICMP provider: {error}")),
         },
     }
 }

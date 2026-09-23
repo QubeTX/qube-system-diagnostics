@@ -18,7 +18,7 @@ pub fn collect() -> DriverData {
 
 fn collect_network_devices(data: &mut DriverData) {
     // Use networksetup to list network services
-    if let Some(output) = run_output(
+    if let Ok(output) = run_output(
         "networksetup",
         ["-listallhardwareports"],
         CommandTimeout::Normal,
@@ -66,7 +66,7 @@ fn collect_network_devices(data: &mut DriverData) {
 
 fn collect_bluetooth_devices(data: &mut DriverData) {
     // Check if Bluetooth is available via system_profiler
-    if let Some(output) = run_output(
+    if let Ok(output) = run_output(
         "system_profiler",
         ["SPBluetoothDataType", "-json"],
         CommandTimeout::Slow,
@@ -98,7 +98,7 @@ fn collect_bluetooth_devices(data: &mut DriverData) {
 
 fn collect_audio_devices(data: &mut DriverData) {
     // Use system_profiler for audio
-    if let Some(output) = run_output(
+    if let Ok(output) = run_output(
         "system_profiler",
         ["SPAudioDataType", "-json"],
         CommandTimeout::Slow,

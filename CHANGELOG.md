@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Replace remaining optional-result command adapters with explicit execution errors, preserving nonzero exit status separately from timeout, missing executable, denied access and invalid text. Propagate failure reasons through gateway/ping and install verification paths; retain bounded ownership and output handling.
+
 - Extend the verified macOS terminal polling path to Linux after the same resize/input test exposes lost readiness on both GNU architectures. Retain the unchanged Windows backend and record the long-window native-network resource result, which still exceeds the CPU gate.
 
 - Use crossterm's file-descriptor polling backend on macOS to retain pending input when resize and keyboard readiness arrive together. Extend real PTY qualification with immediate resize/key pairs without delays or retries.

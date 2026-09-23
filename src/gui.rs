@@ -71,9 +71,9 @@ pub fn verify_installed(expected_version: &str) -> std::result::Result<(), Strin
         ["--self-test", "--json"],
         CommandTimeout::Custom(Duration::from_secs(15)),
     )
-    .ok_or_else(|| {
+    .map_err(|error| {
         format!(
-            "the GUI companion self-test did not finish safely at {}",
+            "the GUI companion self-test did not finish safely at {}: {error}",
             executable.display()
         )
     })?;

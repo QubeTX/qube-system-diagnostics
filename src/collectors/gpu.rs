@@ -298,7 +298,7 @@ fn collect_nvidia_uncached() -> Vec<GpuAdapter> {
     if let Some(adapters) = super::nvml::collect() {
         return adapters;
     }
-    let Some(output) = run_output(
+    let Ok(output) = run_output(
         "nvidia-smi",
         [
             "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,driver_version,uuid,pci.bus_id",

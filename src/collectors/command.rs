@@ -45,6 +45,10 @@ pub enum CommandError {
     OutputLimit,
     #[error("provider response did not match the bounded worker protocol")]
     Protocol,
+    #[error("provider exited unsuccessfully ({0})")]
+    Exit(std::process::ExitStatus),
+    #[error("provider returned text with an invalid UTF-8 encoding")]
+    Encoding,
     #[error("provider process failed: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -515,16 +519,24 @@ impl WorkerFrame {
     }
 }
 
-/// Compatibility adapter while individual providers migrate to explicit errors.
-pub fn run_output<P, I, S>(program: P, args: I, timeout: CommandTimeout) -> Option<Output>
+/// Preserve execution failures separately from the provider's exit status.
+pub fn run_output<P, I, S>(
+    program: P,
+    args: I,
+    timeout: CommandTimeout,
+) -> Result<Output, CommandError>
 where
     P: AsRef<OsStr>,
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    run_checked(program, args, timeout, &AtomicBool::new(false)).ok()
+    run_checked(program, args, timeout, &AtomicBool::new(false))
 }
-pub fn run_status<P, I, S>(program: P, args: I, timeout: CommandTimeout) -> Option<bool>
+pub fn run_status<P, I, S>(
+    program: P,
+    args: I,
+    timeout: CommandTimeout,
+) -> Result<bool, CommandError>
 where
     P: AsRef<OsStr>,
     I: IntoIterator<Item = S>,
@@ -532,17 +544,25 @@ where
 {
     run_output(program, args, timeout).map(|output| output.status.success())
 }
-pub fn run_stdout<P, I, S>(program: P, args: I, timeout: CommandTimeout) -> Option<String>
+pub fn run_stdout<P, I, S>(
+    program: P,
+    args: I,
+    timeout: CommandTimeout,
+) -> Result<String, CommandError>
 where
     P: AsRef<OsStr>,
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
     let output = run_output(program, args, timeout)?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+    decode_stdout(output)
+}
+
+fn decode_stdout(output: Output) -> Result<String, CommandError> {
+    if !output.status.success() {
+        return Err(CommandError::Exit(output.status));
+    }
+    String::from_utf8(output.stdout).map_err(|_| CommandError::Encoding)
 }
 
 #[cfg(unix)]
@@ -732,6 +752,39 @@ pub(crate) fn test_fixture(name: &str) -> (std::path::PathBuf, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn text_commands_distinguish_missing_invalid_and_unsuccessful_output() {
+        assert!(matches!(
+            run_stdout(
+                "sd300-fixture-executable-does-not-exist-7ca491",
+                ["--version"],
+                CommandTimeout::Quick
+            ),
+            Err(CommandError::NotFound)
+        ));
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+        let output = |status, stdout| Output {
+            status: std::process::ExitStatus::from_raw(status),
+            stdout,
+            stderr: b"not part of the text result".to_vec(),
+        };
+        assert!(matches!(
+            decode_stdout(output(0, vec![0xff])),
+            Err(CommandError::Encoding)
+        ));
+        assert!(matches!(
+            decode_stdout(output(256, b"misleading success text".to_vec())),
+            Err(CommandError::Exit(_))
+        ));
+        assert_eq!(
+            decode_stdout(output(0, b"valid".to_vec())).unwrap(),
+            "valid"
+        );
+    }
+
     #[test]
     fn worker_framing_handles_fragmentation_and_rejects_invalid_lengths() {
         let bytes = [b"SD4\0".as_slice(), &3u32.to_le_bytes(), b"abc"].concat();
