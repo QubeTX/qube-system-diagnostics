@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: all six native font lanes pass in 35892988794 on 2c3a2ad, following local tests and Windows live compact/default readback. Its fifteen-minute foreground resource gates pass; the hidden window is running. Prior branch-only Windows installer qualification passes on 78cc519. Resource comparison 35890605196 retains a public-baseline musl crash, requiring corrected reporting and continuation before the candidate GUI can be measured. Final resource, composite lifecycle and publication gates remain open.
+Current cycle: all six native font lanes pass in 35892988794 on 2c3a2ad, following local tests and Windows live compact/default readback. Its fifteen-minute foreground and thirty-minute hidden Windows resource gates pass. Hosted comparison 35895796996 passes Windows/Linux ARM64 and confirms clean shutdown on all candidate lanes; Mac and x86-64 Linux resource budgets remain open. Native Mac thread profiling encountered task-port denial, so validate public libproc thread counters before choosing a product optimization. Prior branch-only Windows installer qualification passes on 78cc519. Soak, formal frame/input, final composite lifecycle and publication remain open.
 
 ## Impact
 
@@ -49,6 +49,8 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement, bounded workers, provider fixtures, adaptive TUI, optional companion/actions, GUI parity and the expanded GUI design/interaction review are implemented. Remaining work is native performance/shutdown qualification, composite lifecycle and final release preparation. Product remains 3.1.3 until the coordinated version update. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: operator reconfirms completing testing, merge, publication and public verification in this session. Exact 2c3a2ad Windows hidden window passes at 0.280 percent CPU, 112.40 MiB RSS and 234.76 MiB private memory with clean shutdown. Hosted bcd1814 comparison 35895796996 passes Windows/Linux ARM64, with the remaining Mac/x86-64 Linux resource failures retained. Intel profiling proves task-port denial, not zero CPU; replace that diagnostic with bounded public libproc reads and a native clock comparison. Separate the oversized-output fixture deadline from production deadlines; Windows fixture and ten portable resource fixtures pass, one native Mac fixture awaits the oracle. Next cycle: native thread attribution and unchanged-byte long measurements before product changes.
 
 - 2026-09-23 — codex: operator explicitly defers formal-verification exploration to a future version; capture #frm in Backlog without expanding v4 scope. Current native 1df660d check fails Apple Silicon's oversized-output fixture with a bounded Timeout instead of OutputLimit; inspect the fixture and repeat unchanged bytes once before considering a product change. Intel Mac long-run CPU remains above the GUI budgets, while its TUI and RSS pass.
 

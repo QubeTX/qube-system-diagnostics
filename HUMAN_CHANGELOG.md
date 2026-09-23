@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: Mac performance investigations can read permitted thread counters without requesting debugger access. Separate checks distinguish excessive output from a slow helper, while the app keeps the same time and memory limits.
+
 - Behind the scenes: Mac performance diagnosis now separates threads doing work from threads waiting, so optimizations can target measured costs without confusing a profiler trace with a performance pass.
 
 - Behind the scenes: performance comparisons keep useful measurements when an older app crashes while closing, then continue testing its replacement. A failed older version remains clearly marked as failed and cannot make the new version pass.

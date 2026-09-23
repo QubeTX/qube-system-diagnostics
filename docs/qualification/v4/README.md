@@ -4,6 +4,23 @@ These initial measurements are diagnostic runs, not release acceptance. The
 foreground/hidden/soak matrix, native comparisons and installer qualification
 remain open. Do not infer hardware accuracy from parser fixtures or builds.
 
+The 2c3a2ad font candidate passes the local 15-minute foreground and 30-minute
+hidden Windows windows. Hidden mode measures 0.280 percent of one core,
+112.40 MiB peak summed working set and 234.76 MiB private memory, with required
+collectors and clean shutdown. The report retains exact executable hashes.
+Hosted comparison 35895796996 passes Windows and Linux ARM64. Intel/ARM Mac
+CPU and ARM Mac RSS, GNU x86-64 foreground RSS/CPU and musl foreground CPU still
+require qualification; all measured candidate sessions shut down cleanly.
+
+Mac thread attribution initially used psutil's task-port queries, which hosted
+permissions denied. The diagnostic now reads public `PROC_PIDTHREADID64INFO`
+for kernel thread IDs from the bounded native stack report. Apple's
+[fill_taskthreadinfo](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/bsd_kern.c)
+returns these thread counters in nanoseconds, unlike the task counters below.
+A native fixture compares a bounded CPU workload with Python's independent
+current-thread clock. The following five-second thread window reports readable
+coverage and whole-process CPU; it is diagnostic evidence, not resource acceptance.
+
 ## macOS process counters
 
 The pinned sysinfo implementation can retain the previous percentage when its

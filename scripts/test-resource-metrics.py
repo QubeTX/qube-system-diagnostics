@@ -1,10 +1,15 @@
 import unittest
 import runpy
+import ctypes as c
+import os
+import sys
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 import psutil
 from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_totals, remaining_family
-from sample_macos import thread_counters, thread_delta
+from sample_macos import ThreadInfo, native_thread_counters, sampled_thread_ids, thread_counters, thread_delta
 
 
 class Process:
@@ -28,6 +33,34 @@ class Process:
 
 
 class Metrics(unittest.TestCase):
+    def test_native_thread_ids_and_nanosecond_counter_contract(self):
+        self.assertEqual(c.sizeof(ThreadInfo), 112)
+        self.assertEqual(sampled_thread_ids("    4281 Thread_68724: main\n 2 Thread_91\n 3 Thread_91\n junk Thread_12"), [91, 68724])
+        with self.assertRaises(RuntimeError):
+            sampled_thread_ids("\n".join(f"1 Thread_{i}" for i in range(1, 1026)))
+        def query(pid, flavor, identity, buffer, size):
+            self.assertEqual((pid, flavor, size), (42, 15, 112))
+            info = c.cast(buffer, c.POINTER(ThreadInfo)).contents
+            info.user_ns, info.system_ns = 250000000, 500000000
+            return size if identity == 9 else size - 1
+        self.assertEqual(native_thread_counters(42, [9, 10], query), {9: .75})
+        self.assertIsNone(native_thread_counters(42, [10], query))
+        self.assertIsNone(native_thread_counters(42, [], query))
+
+    @unittest.skipUnless(sys.platform == "darwin", "requires the native libproc ABI")
+    def test_native_thread_cpu_matches_independent_current_thread_clock(self):
+        identity = threading.get_native_id()
+        before = native_thread_counters(os.getpid(), [identity])
+        self.assertIsNotNone(before, "Own thread must be readable without task_for_pid")
+        cpu_begin = time.thread_time()
+        deadline = time.monotonic() + .15
+        while time.monotonic() < deadline:
+            pass
+        expected = time.thread_time() - cpu_begin
+        after = native_thread_counters(os.getpid(), [identity])
+        self.assertIsNotNone(after)
+        self.assertAlmostEqual(after[identity] - before[identity], expected, delta=.02)
+
     def test_thread_cpu_attributes_work_without_counting_waiting_stack_frequency(self):
         result = thread_delta({1: 8, 2: 1, 3: 9, 4: 1}, {1: 8, 2: 1.1, 3: 0, 5: .5}, 5)
         self.assertTrue(result["available"])

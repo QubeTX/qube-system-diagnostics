@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Correct Mac diagnostic thread attribution after hosted task-port access denial: use public libproc thread-ID reads with documented nanosecond units, bounded identities extracted from the native stack sample, and an independent native current-thread clock fixture. Report partial coverage and separate the following CPU window from the stack sample. Give the oversized-output regression fixture its own deadline so pipe throughput cannot conflate byte-limit and timeout checks; production limits are unchanged.
+
 - Attribute native macOS diagnostic CPU to bounded live-thread deltas alongside stack samples. Exclude new, ended and reset threads, preserve denied counters, and keep profiler results outside resource acceptance; waiting-stack frequency is not CPU time.
 
 - Preserve completed native GUI resource observations when shutdown fails, and continue candidate measurement after an explicitly reported failure in the immutable public baseline. Keep baseline failures intact; timeouts, malformed or missing reports, and candidate failures still fail qualification. Add deterministic reporting and continuation fixtures after the public musl baseline crashes on close.

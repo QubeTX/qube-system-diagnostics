@@ -1009,12 +1009,23 @@ mod tests {
         assert!(matches!(result.failure, Some(CommandError::Timeout)));
         assert!(String::from_utf8_lossy(&result.stdout).contains(r#"{"ok":true}"#));
         let (program, args) = test_fixture("fixture_excess_output");
-        let result =
-            run_memory(program, args, CommandTimeout::Slow, &AtomicBool::new(false)).unwrap();
+        // Pipe throughput varies by platform and scheduler. Exercise the byte
+        // limit independently of the short-deadline check above; production
+        // deadlines and the capture limit are unchanged.
+        let start = Instant::now();
+        let result = run_memory(
+            program,
+            args,
+            CommandTimeout::Custom(Duration::from_secs(20)),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
         assert!(
             matches!(result.failure, Some(CommandError::OutputLimit)),
-            "{:?}",
-            result.failure
+            "failure={:?}, bytes={}, elapsed={:?}",
+            result.failure,
+            result.stdout.len() + result.stderr.len(),
+            start.elapsed()
         );
         assert!(result.stdout.len() + result.stderr.len() <= MAX_OUTPUT_BYTES as usize);
     }
