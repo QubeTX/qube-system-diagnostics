@@ -44,7 +44,17 @@ fn process_cpu_ms() -> Option<f64> {
 }
 #[cfg(not(windows))]
 fn process_cpu_ms() -> Option<f64> {
-    None
+    let mut total = 0.0;
+    for who in [libc::RUSAGE_SELF, libc::RUSAGE_CHILDREN] {
+        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+        if unsafe { libc::getrusage(who, &mut usage) } != 0 {
+            return None;
+        }
+        for time in [usage.ru_utime, usage.ru_stime] {
+            total += time.tv_sec as f64 * 1000.0 + time.tv_usec as f64 / 1000.0;
+        }
+    }
+    Some(total)
 }
 impl Timings {
     fn measure<T>(&mut self, label: &'static str, collect: impl FnOnce() -> T) -> T {
@@ -69,7 +79,7 @@ impl Timings {
         }).collect::<BTreeMap<_,_>>();
         serde_json::json!({"schema":1,"os":std::env::consts::OS,"arch":std::env::consts::ARCH,
             "build":if cfg!(debug_assertions) {"debug"}else{"release"},"stages":stages,
-            "limitations":"Sequential diagnostic workload; TestBackend excludes terminal transport. Windows stage CPU is quantized process time and excludes external services/children. Not whole-product CPU or real input latency."})
+            "limitations":"Sequential diagnostic workload; TestBackend excludes terminal transport. Windows CPU is quantized process time without children; Unix getrusage includes self and terminated waited children. Neither includes external services. Not whole-product CPU or real input latency."})
     }
 }
 
@@ -81,6 +91,33 @@ fn main() {
         .clamp(5, 120);
     let mut timings = Timings::default();
     let slow = std::env::args().any(|arg| arg == "--slow");
+    if std::env::args().any(|arg| arg == "--providers") {
+        let mut snapshot = collectors::SystemSnapshot::default();
+        timings.measure("static.refresh", || snapshot.refresh_static());
+        timings.measure("drivers.collect", collectors::drivers::collect);
+        timings.measure("health.collect", collectors::disk_health::collect);
+        for index in 0..count {
+            let start = Instant::now();
+            timings.measure("activity.collect", collectors::disk_activity::collect);
+            if index % 3 == 0 {
+                timings.measure("connections.collect", || {
+                    collectors::network_diag::refresh_connections(&mut Default::default());
+                });
+            }
+            if index % 15 == 0 {
+                timings.measure(
+                    "diagnostics.collect",
+                    collectors::network_diag::collect_connectivity,
+                );
+            }
+            std::thread::sleep(Duration::from_secs(1).saturating_sub(start.elapsed()));
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&timings.report()).unwrap()
+        );
+        return;
+    }
     if slow {
         for index in 0..count + 2 {
             let start = Instant::now();

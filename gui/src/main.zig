@@ -571,7 +571,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 // core) while minimized, which is acceptable for a transient
                 // state; a genuine tray-hidden window stays policy-hidden and
                 // keeps the cheaper 30 s cadence.
-                const visibility_changed = applyWindowVisibility(model, !window_visibility.mainWindowPolicyHidden());
+                const visibility_changed = applyWindowVisibility(model, window_visibility.mainWindowPresentationActive());
                 sampleEngine(model);
                 if (visibility_changed) scheduleRefresh(fx, model.window_visible);
             }
@@ -776,7 +776,9 @@ pub fn initEffects(model: *Model, fx: *Effects) void {
     // window is freshly shown or freshly policy-hidden and never iconic, so both
     // predicates agree here; using policy-hidden keeps the field's meaning
     // singular across every site that reads it.
-    _ = applyWindowVisibility(model, !window_visibility.mainWindowPolicyHidden());
+    // macOS queues orderOut on its main queue. Choose the hidden collection
+    // profile now; the first visible frame or a timer is not guaranteed after it.
+    _ = applyWindowVisibility(model, startupPresentationActive(startup_should_show, window_visibility.mainWindowPresentationActive()));
     if (active_engine) |runtime| runtime.setView(model.window_visible, model.active_section) catch {};
     sampleEngine(model);
     scheduleRefresh(fx, model.window_visible);
@@ -794,6 +796,22 @@ pub export fn sd300_model_open() callconv(.c) void {
     } else {
         external_open_pending.store(true, .release);
     }
+}
+
+/// GTK mapping notifications run on the UI thread, including restoration while
+/// the slow hidden timer is pending. They never imply a close/quit request.
+pub export fn sd300_model_visibility_changed() callconv(.c) void {
+    if (active_app_state) |app_state| {
+        const visible = window_visibility.mainWindowPresentationActive();
+        if (applyWindowVisibility(&app_state.model, visible)) {
+            scheduleRefresh(&app_state.effects, visible);
+            if (visible) sampleEngine(&app_state.model);
+        }
+    }
+}
+
+pub fn startupPresentationActive(show_requested: bool, observed_active: bool) bool {
+    return show_requested and observed_active;
 }
 
 pub fn refreshIntervalMs(visible: bool) u64 {

@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Apply explicit hidden startup intent before macOS's asynchronous window hide, and connect Linux surface notifications to collection profiles with prompt restore sampling. Extend native hide/restore fixtures, expose X11 setup failures and collect Unix per-stage CPU timing and bounded role attribution to investigate native resource failures.
+
 - Serialize short-lived static, driver and health worker processes within each monitor session after peak-role measurements confirm overlap. Retain independent live sampling, actual capture timestamps and existing cadences; test exclusive admission, cancellation and panic recovery.
 
 - Attribute Windows GUI peak working set to bounded process roles after the first full foreground run passes CPU/private memory but exceeds the RSS gate. Retain the failed result and repeat unchanged artifacts before choosing a product optimization.

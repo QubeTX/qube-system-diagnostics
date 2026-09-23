@@ -19,7 +19,7 @@ import threading
 import time
 
 import psutil
-from resource_metrics import sample_family, descriptor_summary
+from resource_metrics import sample_family, descriptor_summary, FamilyAttribution
 
 SECTIONS = ["Overview", "CPU", "Memory", "Storage", "GPU", "Network", "Processes", "Thermals", "Drivers"]
 
@@ -147,6 +147,7 @@ def main():
             reader = threading.Thread(target=drain, daemon=True)
             reader.start()
             root = psutil.Process(process.pid)
+            attribution = FamilyAttribution(process.pid)
             samples = []
             required = set() if args.legacy_in_process else {"slow"} if args.hidden else set() if args.section in ("Overview", "Processes") else {"slow", "activity", "connections", "diagnostics"}
             checked = False
@@ -156,13 +157,22 @@ def main():
                     process.returncode = os.waitstatus_to_exitcode(status)
                     result = usage
                     raise RuntimeError(f"GUI exited during measurement: {process.returncode}")
-                samples.append(sample_family(root, known))
+                samples.append(sample_family(root, known, attribution))
                 if not checked and time.monotonic() - begin >= 15:
                     if args.hidden and sys.platform != "darwin":
                         # Linux intentionally has no tray startup route. Unmap
                         # only this PID's windows to exercise background mode.
-                        subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(process.pid), "windowunmap", "%@"],
-                                       check=True, capture_output=True, timeout=5)
+                        windows = subprocess.run(["xdotool", "search", "--onlyvisible", "--pid", str(process.pid)],
+                                                 capture_output=True, timeout=5)
+                        report["visible_before_hide"] = len(windows.stdout.splitlines())
+                        if windows.returncode != 0 or windows.stderr or not windows.stdout or len(windows.stdout) > 65536:
+                            raise RuntimeError(f"Owned-window discovery before hide failed ({windows.returncode}): {windows.stderr[:2048]!r}")
+                        for window in windows.stdout.splitlines():
+                            if not window.isdigit():
+                                raise RuntimeError("Invalid X11 window identifier")
+                            hidden = subprocess.run(["xdotool", "windowunmap", window.decode("ascii")], capture_output=True, timeout=5)
+                            if hidden.returncode:
+                                raise RuntimeError(f"Owned-window unmap failed ({hidden.returncode}): {hidden.stderr[:2048]!r}")
                         time.sleep(2)
                         report["hidden_method"] = "X11 unmap of owned windows after startup; tray not supported"
                     actual = visible_windows(process.pid)
@@ -201,6 +211,7 @@ def main():
             peak = max(row[0] for row in samples)
             window = max(1, len(samples)//10)
             report.update(measured_seconds=elapsed, samples=len(samples), cpu_percent_one_core=cpu,
+                          **attribution.report(),
                           cpu_gate=cpu <= (1 if args.hidden else 2), rss_gate=peak <= 150, rss_mib_max=peak,
                           **descriptor_summary(samples), process_count_max=max(r[2] for r in samples),
                           observed_process_identities=len(known), clean_shutdown=True,

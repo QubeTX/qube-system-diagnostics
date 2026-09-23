@@ -184,6 +184,12 @@ pub fn mainWindowVisible() bool {
     };
 }
 
+pub fn mainWindowPresentationActive() bool {
+    // GTK mapping notifications restore the foreground profile immediately.
+    // Windows/macOS retain their existing minimize/close-policy contract.
+    return if (comptime builtin.os.tag == .linux) mainWindowVisible() else !mainWindowPolicyHidden();
+}
+
 /// Whether the main window is alive but hidden by the close policy. This is
 /// intentionally narrower than `mainWindowVisible() == false`: minimizing is
 /// a background presentation state, not a request to quit.

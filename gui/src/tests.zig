@@ -629,6 +629,13 @@ test "close-policy quit consults startup tray presence, not the live setting" {
     }
 }
 
+test "hidden startup uses intent before asynchronous platform hide completes" {
+    try testing.expect(!main.startupPresentationActive(false, true));
+    try testing.expect(!main.startupPresentationActive(false, false));
+    try testing.expect(main.startupPresentationActive(true, true));
+    try testing.expect(!main.startupPresentationActive(true, false));
+}
+
 test "minimized window keeps foreground cadence via policy-hidden not visibility" {
     const Probe = struct { visible: bool, policy_hidden: bool };
     // Platform window-state truth table for the states the refresh tick sees,

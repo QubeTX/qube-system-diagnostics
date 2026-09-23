@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Hidden Mac launches request background monitoring immediately. Linux window changes now reach the monitoring engine, including a prompt refresh when the window returns. Behind the scenes, platform checks report more precise causes when background operation or performance fails.
+
 - Occasional hardware inventory checks take turns to reduce memory peaks while live monitoring continues. Behind the scenes, checks verify that waiting work can stop promptly and a failed check cannot block later ones.
 
 - Behind the scenes: longer testing exposed a memory peak missed by short checks. Reports now identify which background checks overlap at that peak so improvements target the measured cause.

@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: qualify explicit Unix interface counters on native macOS and Linux, then complete measured performance using exact release artifacts and the entire owned process tree. The 330-second Windows TUI window now passes CPU and memory; full foreground/hidden/soak acceptance remains open. Native performance and unpublished composite lifecycle qualification remain required.
+Current cycle: native Windows TUI resource gates pass; both Mac architectures exceed the CPU gate. Attribute their provider costs and correct hidden GUI startup/visibility before repeat measurement. The Windows GUI exceeds peak RSS; inventory overlap is confirmed and serialized workers are in a fresh 15-minute candidate run. Full foreground/hidden/soak and unpublished composite lifecycle qualification remain required.
 
 ## Impact
 
@@ -49,6 +49,10 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations implemented; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+
+- 2026-09-23 — codex: visibility/startup changes pass Windows Native SDK strict validation and 53 native tests (two intentionally skipped), root and Apple Silicon cross-clippy. Add bounded per-role Unix RSS/CPU attribution alongside the authoritative wait4 total, with PID-reuse and private-argument non-disclosure fixtures. Windows 109b2b4 complete bundle passes release build/distribution locks and begins its isolated 15-minute inventory-overlap candidate measurement. Hosted 1bb2be7 TUI window passes Windows (0.85 percent, 83.3 MiB), fails Intel Mac CPU (4.51 percent) and Apple Silicon CPU (3.12 percent); no platform gate is waived.
+
+- 2026-09-23 — codex: native run 35867587315 finds macOS hidden launch has no slow collector after asynchronous orderOut, and GNU hide automation fails before profile verification. Make startup intent authoritative, wire GTK mapping/state notifications into the model, retain Windows/macOS minimize policy, and separate X11 discovery/unmap with bounded error output. Add getrusage CPU and slow/provider stage reports for the Apple Silicon resource failure; Windows/macOS cross-clippy and Python syntax pass, native GUI tests follow. Next oracle: all native GUI foreground/hidden smokes and callback fixtures on this branch.
 
 - 2026-09-23 — codex: unchanged 866bebb GUI repeat peaks at 159.2 MiB at 285 seconds after warmup, including simultaneous static (11.6 MiB) and driver (13.9 MiB) workers; CPU passes at 1.03 percent and shutdown is clean. Add a cancellation-aware permit for the three ephemeral inventory lanes and deterministic overlap/panic/cancel tests; live lanes remain independent. Native Apple Silicon run 35865259681 also exposes TUI CPU failure (baseline 2.73 percent, candidate 3.12 percent); retain it as a separate platform optimization gate. Next oracles: rebuilt aligned Windows 15-minute peak and native per-stage Mac profiling.
 

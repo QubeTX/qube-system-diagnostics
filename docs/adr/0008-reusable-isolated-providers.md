@@ -53,6 +53,18 @@ Panic releases the permit, and shutdown never waits for the active probe merely
 to cancel a lane waiting for that permit. Long resource gates still determine
 whether the resulting peak is acceptable.
 
+## Frontend visibility, 2026-09-23
+
+The explicit hidden startup request selects the background profile before an
+asynchronous macOS `orderOut` completes. Linux reads GTK surface mapping and
+subscribes once per surface to `notify::mapped` and `notify::state`; those UI-thread
+notifications update the collection profile and sample immediately on restore.
+Signals belong to the surface lifetime, with no added polling thread. Window
+visibility never implies Linux close-to-tray support or a request to quit.
+Windows/macOS retain the existing distinction between minimized and policy-hidden
+windows. Native mapping/recovery and complete-bundle worker checks qualify this
+contract independently of resource gates.
+
 ## Capture clocks, 2026-09-23
 
 Disk baselines belong to the persistent activity worker, and rates are computed

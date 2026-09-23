@@ -38,3 +38,9 @@ if profile.returncode:
     print(profile.stderr.decode("utf-8", "replace")[-8192:], file=sys.stderr)
     raise SystemExit(profile.returncode)
 (args.output/"stage-profile.json").write_bytes(profile.stdout)
+for name, count, flag in [("slow-stage-profile", "5", "--slow"), ("provider-stage-profile", "15", "--providers")]:
+    profile = subprocess.run(["target/release/examples/profile-monitor" + suffix, count, flag], capture_output=True, timeout=90)
+    if profile.returncode:
+        print(profile.stderr.decode("utf-8", "replace")[-8192:], file=sys.stderr)
+        raise SystemExit(profile.returncode)
+    (args.output/f"{name}.json").write_bytes(profile.stdout)

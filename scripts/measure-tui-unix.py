@@ -23,7 +23,7 @@ import threading
 import time
 
 import psutil
-from resource_metrics import sample_family, descriptor_summary
+from resource_metrics import sample_family, descriptor_summary, FamilyAttribution
 
 
 class Terminal:
@@ -132,11 +132,12 @@ def main():
             begin = time.monotonic()
             terminal = Terminal(binary, env, args.columns, args.rows)
             root = psutil.Process(terminal.pid)
+            attribution = FamilyAttribution(terminal.pid)
             samples = []
             while time.monotonic() - begin < args.seconds:
                 if terminal.poll() is not None:
                     raise RuntimeError(f"TUI exited during measurement: {terminal.result[0]}")
-                samples.append(sample_family(root, known))
+                samples.append(sample_family(root, known, attribution))
                 time.sleep(.25)
             elapsed = time.monotonic() - begin
             usage = terminal.quit()
@@ -147,6 +148,7 @@ def main():
             peak = max(row[0] for row in samples)
             window = max(1, len(samples)//10)
             report.update(measured_seconds=elapsed, samples=len(samples), cpu_percent_one_core=cpu,
+                          **attribution.report(),
                           cpu_gate=cpu <= 2, rss_mib_max=peak, rss_gate=peak <= 150,
                           **descriptor_summary(samples), process_count_max=max(row[2] for row in samples),
                           observed_process_identities=len(known), terminal_restored=True, clean_shutdown=True,
