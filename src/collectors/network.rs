@@ -9,7 +9,7 @@ use super::sampling::{CounterRate, SampleMeta};
 
 use crate::observation::Observation;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct NetworkData {
     #[serde(skip)]
     pub sample: SampleMeta,
@@ -20,7 +20,7 @@ pub struct NetworkData {
     pub adapter_status: Observation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct InterfaceInfo {
     #[serde(skip)]
     pub rate_status: Observation,
@@ -35,7 +35,7 @@ pub struct InterfaceInfo {
     pub operational_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct NetworkAdapterInfo {
     pub name: String,
     pub description: Option<String>,

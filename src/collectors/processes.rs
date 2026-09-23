@@ -11,14 +11,14 @@ mod windows_gui;
 #[cfg(target_os = "windows")]
 pub use windows_gui::GuiProcessSampler;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct ProcessData {
     pub list: Vec<ProcessInfo>,
     pub total_count: usize,
     pub total_threads: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,

@@ -5,6 +5,7 @@ pub mod error;
 pub mod gui;
 pub mod history;
 pub mod migrate;
+pub mod monitor;
 pub mod observation;
 pub mod report;
 pub mod settings;

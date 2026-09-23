@@ -1,7 +1,7 @@
 use serde::Serialize;
 use sysinfo::System;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct CpuData {
     pub total_usage: f32,
     pub per_core_usage: Vec<f32>,

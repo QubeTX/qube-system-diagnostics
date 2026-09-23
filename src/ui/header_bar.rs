@@ -44,10 +44,52 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(clock_text, Style::default().fg(COLOR_MUTED)),
     ]);
 
-    let separator_line = Line::from(Span::styled(
-        "\u{2500}".repeat(area.width as usize),
-        Style::default().fg(COLOR_BORDER),
-    ));
+    let lane = match app.current_section {
+        crate::types::Section::Disk
+        | crate::types::Section::Gpu
+        | crate::types::Section::Thermals => "slow",
+        crate::types::Section::Network => "diagnostics",
+        crate::types::Section::Drivers => "drivers",
+        _ => "fast",
+    };
+    let (status, color) = if let Some(sample) = app.snapshot.samples.get(lane) {
+        if !sample.observation.is_available() {
+            (
+                format!(
+                    " {} · {} · r retry",
+                    lane,
+                    sample
+                        .observation
+                        .detail
+                        .as_deref()
+                        .unwrap_or("Unavailable")
+                ),
+                COLOR_WARN,
+            )
+        } else if sample.is_stale() {
+            (
+                format!(
+                    " {} · stale · last capture {}s ago · r retry",
+                    lane,
+                    sample.age_ms().unwrap_or(0) / 1000
+                ),
+                COLOR_WARN,
+            )
+        } else {
+            (
+                format!(
+                    " {} · live · sample {} · {}s since capture",
+                    lane,
+                    sample.sequence,
+                    sample.age_ms().unwrap_or(0) / 1000
+                ),
+                COLOR_MUTED,
+            )
+        }
+    } else {
+        (format!(" {} · waiting for first sample", lane), COLOR_MUTED)
+    };
+    let separator_line = Line::from(Span::styled(status, Style::default().fg(color)));
 
     let paragraph = Paragraph::new(vec![title_line, separator_line]);
     frame.render_widget(paragraph, area);

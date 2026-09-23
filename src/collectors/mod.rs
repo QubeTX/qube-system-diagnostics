@@ -9,6 +9,7 @@ pub mod memory;
 pub mod network;
 pub mod network_diag;
 pub mod platform;
+pub mod probe;
 pub mod processes;
 pub mod sampling;
 pub mod system_info;
@@ -19,7 +20,7 @@ use serde::Serialize;
 use sysinfo::ProcessRefreshKind;
 use sysinfo::{Components, Disks, Networks, ProcessesToUpdate, System};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct DiagnosticWarning {
     pub source: String,
     pub message: String,
@@ -134,7 +135,7 @@ mod command_tests {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WarningSeverity {
     Info,
@@ -157,6 +158,7 @@ pub struct SystemSnapshot {
     pub thermals: thermals::ThermalData,
     pub drivers: drivers::DriverData,
     pub warnings: Vec<DiagnosticWarning>,
+    pub samples: std::collections::BTreeMap<String, sampling::SampleMeta>,
     /// Internal sysinfo handle
     sys: System,
     networks: Networks,
@@ -183,11 +185,12 @@ impl Default for SystemSnapshot {
             thermals: thermals::ThermalData::default(),
             drivers: drivers::DriverData::default(),
             warnings: Vec::new(),
-            sys: System::new_all(),
-            networks: Networks::new_with_refreshed_list(),
+            samples: std::collections::BTreeMap::new(),
+            sys: System::new(),
+            networks: Networks::new(),
             network_sampler: network::NetworkSampler::default(),
-            disks: Disks::new_with_refreshed_list(),
-            components: Components::new_with_refreshed_list(),
+            disks: Disks::new(),
+            components: Components::new(),
             #[cfg(target_os = "windows")]
             gui_process_sampler: processes::GuiProcessSampler::default(),
         }
@@ -197,6 +200,8 @@ impl Default for SystemSnapshot {
 impl SystemSnapshot {
     /// Refresh static info (once at startup)
     pub fn refresh_static(&mut self) {
+        self.sys.refresh_cpu_all();
+        self.sys.refresh_memory();
         self.system = system_info::collect(&self.sys);
         memory::refresh_hardware(&mut self.memory);
         self.displays = display::collect();
@@ -207,7 +212,13 @@ impl SystemSnapshot {
     pub fn refresh_fast(&mut self) {
         self.sys.refresh_cpu_all();
         self.sys.refresh_memory();
-        self.sys.refresh_processes(ProcessesToUpdate::All, true);
+        self.sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            sysinfo::ProcessRefreshKind::nothing()
+                .with_cpu()
+                .with_memory(),
+        );
 
         self.cpu = cpu::collect(&self.sys);
         let modules = std::mem::take(&mut self.memory.modules);

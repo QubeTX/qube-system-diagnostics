@@ -5,7 +5,7 @@ use super::{DiagnosticWarning, WarningSeverity};
 use crate::collectors::gpu::GpuData;
 use crate::observation::Observation;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct ThermalData {
     pub cpu_temp: Option<f64>,
     pub gpu_temp: Option<f64>,
@@ -20,7 +20,7 @@ pub struct ThermalData {
     pub battery_status: Observation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct SensorInfo {
     pub label: String,
     pub temperature: f64,
@@ -29,14 +29,14 @@ pub struct SensorInfo {
     pub source: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct FanInfo {
     pub label: String,
     pub rpm: u64,
     pub source: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SensorKind {
     Cpu,
@@ -44,7 +44,7 @@ pub enum SensorKind {
     Other,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct BatteryInfo {
     pub percent: f64,
     pub is_charging: bool,
@@ -56,7 +56,7 @@ pub struct BatteryInfo {
     pub provider_status: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PowerSource {
     #[default]
@@ -343,7 +343,7 @@ struct AwccWmiMethodFunction {
 }
 
 #[cfg(windows)]
-#[derive(Serialize)]
+#[derive(Serialize, serde::Deserialize)]
 struct AwccMethodInput {
     arg2: u32,
 }

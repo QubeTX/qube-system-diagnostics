@@ -3,7 +3,7 @@ pub mod platform;
 use serde::Serialize;
 
 /// Driver/device health data
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct DriverData {
     pub network: Vec<DeviceInfo>,
     pub bluetooth: Vec<DeviceInfo>,
@@ -18,7 +18,7 @@ pub struct DriverData {
     pub scan_status: DriverScanStatus,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct DeviceInfo {
     pub name: String,
     pub driver_version: String,
@@ -28,7 +28,7 @@ pub struct DeviceInfo {
     pub extra: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceStatus {
     Ok,
@@ -103,7 +103,7 @@ impl DriverData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceCategory {
     Network,
@@ -133,7 +133,7 @@ impl DeviceCategory {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DriverScanStatus {
     #[default]
@@ -143,7 +143,7 @@ pub enum DriverScanStatus {
     ScanFailed(String),
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct ServiceInfo {
     pub name: String,
     pub display_name: String,

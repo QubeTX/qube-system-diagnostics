@@ -35,6 +35,8 @@ pub const TopicMeta = struct {
     sequence: u64 = 0,
     captured_unix_ms: u64 = 0,
     freshness_ms: u64 = 0,
+    expected_interval_ms: u64 = 1000,
+    detail_buffer: canvas.TextBuffer(192) = .{},
     topic_buffer: canvas.TextBuffer(24) = canvas.TextBuffer(24).init("pending"),
     availability_buffer: canvas.TextBuffer(32) = canvas.TextBuffer(32).init("pending"),
     provenance_buffer: canvas.TextBuffer(160) = canvas.TextBuffer(160).init("collector topic pending"),
@@ -51,6 +53,9 @@ pub const TopicMeta = struct {
     }
     pub fn target(meta: *const TopicMeta) []const u8 {
         return meta.target_buffer.text();
+    }
+    pub fn detail(meta: *const TopicMeta) []const u8 {
+        return meta.detail_buffer.text();
     }
 };
 
@@ -794,6 +799,10 @@ pub const Projection = struct {
         meta.availability_buffer.set(envelope.availability);
         meta.provenance_buffer.set(envelope.provenance);
         meta.target_buffer.set(envelope.target);
+        if (envelope.sample) |sample| {
+            meta.expected_interval_ms = sample.expected_interval_ms;
+            if (sample.observation.detail) |detail| meta.detail_buffer.set(detail);
+        }
         self.topic_meta[index] = meta;
     }
 
@@ -1325,6 +1334,10 @@ fn Envelope(comptime Data: type) type {
         freshness_ms: u64 = 0,
         availability: []const u8 = "unavailable",
         provenance: []const u8 = "not reported",
+        sample: ?struct {
+            expected_interval_ms: u64 = 1000,
+            observation: ObservationJson = .{},
+        } = null,
         data: Data,
     };
 }

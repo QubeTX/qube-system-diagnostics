@@ -165,15 +165,17 @@ where
 }
 
 #[cfg(unix)]
-struct OwnedProcess(u32);
+struct OwnedProcess(std::cell::Cell<Option<u32>>);
 #[cfg(unix)]
 impl OwnedProcess {
     fn new(child: &Child) -> std::io::Result<Self> {
-        Ok(Self(child.id()))
+        Ok(Self(std::cell::Cell::new(Some(child.id()))))
     }
     fn terminate(&self) {
-        unsafe {
-            libc::kill(-(self.0 as i32), libc::SIGKILL);
+        if let Some(pid) = self.0.take() {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
         }
     }
 }

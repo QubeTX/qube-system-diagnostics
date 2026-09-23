@@ -5,12 +5,12 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sd_300::collectors::disk_health::DiskHealthStatus;
-use sd_300::collectors::{self, DiagnosticWarning, SystemSnapshot, WarningSeverity};
+use sd_300::collectors::{self, DiagnosticWarning, SystemSnapshot};
 use sd_300::types::ProcessSortKey;
 use serde::Serialize;
 use serde_json::json;
@@ -333,6 +333,7 @@ struct TopicEnvelope<'a, T: ?Sized> {
     freshness_ms: u64,
     availability: &'static str,
     provenance: &'static str,
+    sample: Option<&'a collectors::sampling::SampleMeta>,
     warnings: &'a [DiagnosticWarning],
     data: &'a T,
 }
@@ -358,13 +359,23 @@ fn unix_ms() -> u64 {
 }
 
 fn publish<T: Serialize>(shared: &Shared, topic: Topic, data: &T, warnings: &[DiagnosticWarning]) {
+    publish_sample(shared, topic, data, warnings, None);
+}
+
+fn publish_sample<T: Serialize>(
+    shared: &Shared,
+    topic: Topic,
+    data: &T,
+    warnings: &[DiagnosticWarning],
+    sample: Option<&collectors::sampling::SampleMeta>,
+) {
     let mut topics = match shared.topics.lock() {
         Ok(topics) => topics,
         Err(_) => return,
     };
     let state = &mut topics[topic as usize];
     state.sequence = state.sequence.saturating_add(1);
-    let captured_unix_ms = unix_ms();
+    let captured_unix_ms = sample.map_or_else(unix_ms, |sample| sample.captured_unix_ms);
     let envelope = TopicEnvelope {
         schema_version: SCHEMA_VERSION,
         product_version: env!("CARGO_PKG_VERSION"),
@@ -372,9 +383,17 @@ fn publish<T: Serialize>(shared: &Shared, topic: Topic, data: &T, warnings: &[Di
         topic: topic.name(),
         sequence: state.sequence,
         captured_unix_ms,
-        freshness_ms: 0,
-        availability: "available",
+        freshness_ms: unix_ms().saturating_sub(captured_unix_ms),
+        availability: sample.map_or("available", |sample| match sample.observation.status {
+            sd_300::observation::ObservationStatus::Available => "available",
+            sd_300::observation::ObservationStatus::Unavailable => "unavailable",
+            sd_300::observation::ObservationStatus::Unsupported => "unsupported",
+            sd_300::observation::ObservationStatus::PermissionDenied => "permission_denied",
+            sd_300::observation::ObservationStatus::Error => "error",
+            sd_300::observation::ObservationStatus::Contradictory => "contradictory",
+        }),
         provenance: topic.provenance(),
+        sample,
         warnings,
         data,
     };
@@ -388,7 +407,7 @@ fn publish<T: Serialize>(shared: &Shared, topic: Topic, data: &T, warnings: &[Di
 }
 
 fn publish_fast(shared: &Shared, snapshot: &SystemSnapshot) {
-    publish(
+    publish_sample(
         shared,
         Topic::Fast,
         &FastProjection {
@@ -398,16 +417,30 @@ fn publish_fast(shared: &Shared, snapshot: &SystemSnapshot) {
             processes: &snapshot.processes,
         },
         &snapshot.warnings,
+        snapshot.samples.get("fast"),
     );
     update_fast_summary(shared, snapshot);
 }
 
 fn update_fast_summary(shared: &Shared, snapshot: &SystemSnapshot) {
+    if snapshot
+        .samples
+        .get("fast")
+        .is_some_and(|s| !s.observation.is_available())
+    {
+        return;
+    }
     if let Ok(mut summary) = shared.summary.lock() {
-        let sequence = summary.sequence.saturating_add(1);
+        let sequence = snapshot
+            .samples
+            .get("fast")
+            .map_or_else(|| summary.sequence.saturating_add(1), |s| s.sequence);
         *summary = FastSummary {
             sequence,
-            captured_unix_ms: unix_ms(),
+            captured_unix_ms: snapshot
+                .samples
+                .get("fast")
+                .map_or(0, |s| s.captured_unix_ms),
             cpu_percent: snapshot.cpu.total_usage,
             memory_percent: snapshot.memory.usage_percent() as f32,
             memory_used_bytes: snapshot.memory.used_bytes,
@@ -535,128 +568,47 @@ fn selected_process_sort(shared: &Shared) -> ProcessSortKey {
         .unwrap_or(ProcessSortKey::Cpu)
 }
 
-struct CollectorWorkers<'a> {
-    shared: &'a Shared,
-    diagnostics: Option<JoinHandle<()>>,
-    health: Option<JoinHandle<()>>,
-    drivers: Option<JoinHandle<()>>,
-}
-
-impl<'a> CollectorWorkers<'a> {
-    fn new(shared: &'a Shared) -> Self {
-        Self {
-            shared,
-            diagnostics: None,
-            health: None,
-            drivers: None,
-        }
-    }
-
-    fn join_slot(shared: &Shared, slot: &mut Option<JoinHandle<()>>, label: &str) {
-        if let Some(handle) = slot.take() {
-            if handle.join().is_err() {
-                set_error(shared, &format!("{label} collector worker panicked"));
-            }
-        }
-    }
-
-    fn join_diagnostics(&mut self) {
-        Self::join_slot(self.shared, &mut self.diagnostics, "diagnostics");
-    }
-
-    fn join_health(&mut self) {
-        Self::join_slot(self.shared, &mut self.health, "health");
-    }
-
-    fn join_drivers(&mut self) {
-        Self::join_slot(self.shared, &mut self.drivers, "drivers");
-    }
-}
-
-impl Drop for CollectorWorkers<'_> {
-    fn drop(&mut self) {
-        // These probes execute code from the engine dynamic library. The
-        // top-level engine worker must not return (and let the GUI close the
-        // library) until every child has left that code.
-        self.join_diagnostics();
-        self.join_health();
-        self.join_drivers();
-    }
-}
-
 fn collect_loop(shared: &Shared) {
+    use sd_300::monitor::{Lane, Monitor, Profile};
+    let profile = || match shared.profile.load(Ordering::Acquire) {
+        PROFILE_OVERVIEW => Profile::Overview,
+        PROFILE_HIDDEN => Profile::Hidden,
+        PROFILE_PROCESSES => Profile::Processes,
+        _ => Profile::Summary,
+    };
+    let monitor = Monitor::start(profile());
     let mut snapshot = SystemSnapshot::default();
-    let mut workers = CollectorWorkers::new(shared);
-
-    // Static identity and display inventory are collected once on the engine
-    // worker even for the lightweight Overview profile. They are part of the
-    // existing TUI contract, do not participate in the one-second loop, and
-    // therefore add parity without adding permanent renderer/collector load.
-    snapshot.refresh_static();
-    publish(
-        shared,
-        Topic::Static,
-        &StaticProjection {
-            system: &snapshot.system,
-            displays: &snapshot.displays,
-            memory_modules: &snapshot.memory.modules,
-            memory_module_status: &snapshot.memory.module_status,
-            network_adapters: &snapshot.network.adapters,
-            network_adapter_status: &snapshot.network.adapter_status,
-        },
-        &snapshot.warnings,
-    );
-    let (health_tx, health_rx) = mpsc::channel();
-    let mut health_running = false;
-
-    // The first native surface only displays CPU and memory. Start with the
-    // smallest truthful collection set and do not run command-backed connection,
-    // GPU, diagnostic, health, or driver probes until the UI selects a profile
-    // that needs them.
-    if matches!(
-        shared.profile.load(Ordering::Acquire),
-        PROFILE_OVERVIEW | PROFILE_HIDDEN
-    ) {
-        snapshot.refresh_overview();
-        thread::sleep(Duration::from_millis(250));
-        snapshot.refresh_overview();
-        update_fast_summary(shared, &snapshot);
-        publish(
-            shared,
-            Topic::Warnings,
-            &snapshot.warnings,
-            &snapshot.warnings,
-        );
-        let capabilities = sd_300::report::capabilities_for(&snapshot);
-        publish(
-            shared,
-            Topic::Capabilities,
-            &capabilities,
-            &snapshot.warnings,
-        );
-        let mut active_profile = shared.profile.load(Ordering::Acquire);
-        let mut next_overview = Instant::now() + Duration::from_secs(1);
-        let mut next_hidden_slow = Instant::now();
-        let mut next_hidden_health = Instant::now();
-        while !shared.stop.load(Ordering::Acquire) {
-            service_export_request(shared, &snapshot);
-            let profile = shared.profile.load(Ordering::Acquire);
-            if !matches!(profile, PROFILE_OVERVIEW | PROFILE_HIDDEN) {
-                break;
-            }
-            if profile != active_profile {
-                active_profile = profile;
-                next_overview = Instant::now();
-            }
-            let now = Instant::now();
-            if now >= next_overview {
-                snapshot.refresh_overview();
-                update_fast_summary(shared, &snapshot);
-                next_overview = now + Duration::from_secs(1);
-            }
-            if profile == PROFILE_HIDDEN && now >= next_hidden_slow {
-                snapshot.refresh_slow();
-                publish(
+    while !shared.stop.load(Ordering::Acquire) {
+        monitor.set_profile(profile());
+        monitor.set_sort(selected_process_sort(shared));
+        if shared.driver_request.swap(false, Ordering::AcqRel) {
+            monitor.retry(Lane::Drivers);
+        }
+        let changed = monitor.drain(&mut snapshot);
+        for lane in &changed {
+            let sample = snapshot.samples.get(lane.name());
+            match lane {
+                Lane::Fast => {
+                    publish_fast(shared, &snapshot);
+                    if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {
+                        update_process_summary(shared, &snapshot);
+                    }
+                }
+                Lane::Static => publish_sample(
+                    shared,
+                    Topic::Static,
+                    &StaticProjection {
+                        system: &snapshot.system,
+                        displays: &snapshot.displays,
+                        memory_modules: &snapshot.memory.modules,
+                        memory_module_status: &snapshot.memory.module_status,
+                        network_adapters: &snapshot.network.adapters,
+                        network_adapter_status: &snapshot.network.adapter_status,
+                    },
+                    &snapshot.warnings,
+                    sample,
+                ),
+                Lane::Slow => publish_sample(
                     shared,
                     Topic::Slow,
                     &SlowProjection {
@@ -665,274 +617,62 @@ fn collect_loop(shared: &Shared) {
                         thermals: &snapshot.thermals,
                     },
                     &snapshot.warnings,
-                );
-                update_tray_summary(shared, &snapshot);
-                next_hidden_slow = now + Duration::from_secs(30);
-            }
-            if profile == PROFILE_HIDDEN && now >= next_hidden_health && !health_running {
-                let sender = health_tx.clone();
-                workers.health = Some(thread::spawn(move || {
-                    let _ = sender.send(collectors::disk_health::collect());
-                }));
-                health_running = true;
-                next_hidden_health = now + Duration::from_secs(60);
-            }
-            if let Ok((health, warnings)) = health_rx.try_recv() {
-                workers.join_health();
-                health_running = false;
-                snapshot.disk_health = health;
-                snapshot
-                    .warnings
-                    .retain(|warning| warning.source != "Disk Health");
-                snapshot.warnings.extend(warnings);
-                publish(
+                    sample,
+                ),
+                Lane::Connections => publish_sample(
+                    shared,
+                    Topic::Medium,
+                    &MediumProjection {
+                        active_connections: &snapshot.network_diag.active_connections,
+                        listening_ports: &snapshot.network_diag.listening_ports,
+                    },
+                    &snapshot.warnings,
+                    sample,
+                ),
+                Lane::Diagnostics => publish_sample(
+                    shared,
+                    Topic::Diagnostics,
+                    &snapshot.network_diag,
+                    &snapshot.warnings,
+                    sample,
+                ),
+                Lane::Health => publish_sample(
                     shared,
                     Topic::Health,
                     &snapshot.disk_health,
                     &snapshot.warnings,
-                );
-                update_tray_summary(shared, &snapshot);
-            }
-            wait_for_wake(
-                shared,
-                next_overview.saturating_duration_since(Instant::now()),
-            );
-        }
-        if shared.stop.load(Ordering::Acquire) {
-            return;
-        }
-    }
-
-    if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {
-        snapshot.refresh_processes_gui(selected_process_sort(shared));
-        update_process_summary(shared, &snapshot);
-    } else {
-        snapshot.refresh_fast_gui_summary();
-    }
-    thread::sleep(Duration::from_millis(250));
-    if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {
-        snapshot.refresh_processes_gui(selected_process_sort(shared));
-        update_process_summary(shared, &snapshot);
-    } else {
-        snapshot.refresh_fast_gui_summary();
-    }
-    publish_fast(shared, &snapshot);
-    publish(
-        shared,
-        Topic::Warnings,
-        &snapshot.warnings,
-        &snapshot.warnings,
-    );
-    let capabilities = sd_300::report::capabilities_for(&snapshot);
-    publish(
-        shared,
-        Topic::Capabilities,
-        &capabilities,
-        &snapshot.warnings,
-    );
-
-    let (driver_tx, driver_rx) = mpsc::channel();
-    let (diag_tx, diag_rx) = mpsc::channel();
-    let mut driver_running = false;
-    let mut diag_running = false;
-    let mut next_fast = Instant::now() + Duration::from_secs(1);
-    let mut next_medium = Instant::now();
-    let mut next_slow = Instant::now();
-    let mut next_diag = Instant::now();
-    let mut next_health = Instant::now();
-    let mut active_profile = shared.profile.load(Ordering::Acquire);
-    let mut active_process_sort = shared.process_sort.load(Ordering::Acquire);
-    shared.driver_request.store(true, Ordering::Release);
-
-    while !shared.stop.load(Ordering::Acquire) {
-        service_export_request(shared, &snapshot);
-        let now = Instant::now();
-        let profile = shared.profile.load(Ordering::Acquire);
-        if profile != active_profile {
-            active_profile = profile;
-            next_fast = now;
-        }
-        let process_sort = shared.process_sort.load(Ordering::Acquire);
-        if process_sort != active_process_sort {
-            active_process_sort = process_sort;
-            if profile == PROFILE_PROCESSES {
-                next_fast = now;
+                    sample,
+                ),
+                Lane::Drivers => publish_sample(
+                    shared,
+                    Topic::Drivers,
+                    &snapshot.drivers,
+                    &snapshot.warnings,
+                    sample,
+                ),
             }
         }
-        if profile == PROFILE_OVERVIEW {
-            if now >= next_fast {
-                snapshot.refresh_overview();
-                update_fast_summary(shared, &snapshot);
-                next_fast = now + Duration::from_secs(1);
-            }
-            thread::sleep(Duration::from_millis(50));
-            continue;
-        }
-        let hidden = profile == PROFILE_HIDDEN;
-        let process_view = profile == PROFILE_PROCESSES;
-        let full_detail = profile == PROFILE_FOREGROUND;
-        let mut capability_state_changed = false;
-
-        if now >= next_fast {
-            if hidden {
-                // Tray/hidden mode still samples its visible CPU and memory
-                // summary every second. It deliberately skips the process
-                // inventory: no hidden UI consumes that table, and reopening
-                // the window forces a full foreground refresh.
-                snapshot.refresh_overview();
-                update_fast_summary(shared, &snapshot);
-            } else if process_view {
-                snapshot.refresh_processes_gui(selected_process_sort(shared));
-                update_process_summary(shared, &snapshot);
-                publish_fast(shared, &snapshot);
-            } else {
-                snapshot.refresh_fast_gui_summary();
-                publish_fast(shared, &snapshot);
-            }
-            next_fast = now + Duration::from_secs(1);
-        }
-        if full_detail && now >= next_medium {
-            snapshot.refresh_connections();
-            publish(
-                shared,
-                Topic::Medium,
-                &MediumProjection {
-                    active_connections: &snapshot.network_diag.active_connections,
-                    listening_ports: &snapshot.network_diag.listening_ports,
-                },
-                &snapshot.warnings,
-            );
-            next_medium = now + Duration::from_secs(3);
-        }
-        if full_detail && now >= next_slow {
-            snapshot.refresh_slow();
-            publish(
-                shared,
-                Topic::Slow,
-                &SlowProjection {
-                    disk: &snapshot.disk,
-                    gpu: &snapshot.gpu,
-                    thermals: &snapshot.thermals,
-                },
-                &snapshot.warnings,
-            );
+        if !changed.is_empty() {
             update_tray_summary(shared, &snapshot);
-            capability_state_changed = true;
-            next_slow = now + Duration::from_secs(5);
-        }
-        if full_detail && now >= next_diag && !diag_running {
-            let sender = diag_tx.clone();
-            workers.diagnostics = Some(thread::spawn(move || {
-                let _ = sender.send(collectors::network_diag::collect_connectivity());
-            }));
-            diag_running = true;
-            next_diag = now + Duration::from_secs(15);
-        }
-        if full_detail && now >= next_health && !health_running {
-            let sender = health_tx.clone();
-            workers.health = Some(thread::spawn(move || {
-                let _ = sender.send(collectors::disk_health::collect());
-            }));
-            health_running = true;
-            next_health = now + Duration::from_secs(60);
-        }
-        if full_detail && shared.driver_request.swap(false, Ordering::AcqRel) && !driver_running {
-            let sender = driver_tx.clone();
-            workers.drivers = Some(thread::spawn(move || {
-                let _ = sender.send(collectors::drivers::collect());
-            }));
-            driver_running = true;
-        }
-
-        if let Ok(drivers) = driver_rx.try_recv() {
-            workers.join_drivers();
-            driver_running = false;
-            snapshot.drivers = drivers;
-            snapshot
-                .warnings
-                .retain(|warning| warning.source != "Drivers");
-            if let collectors::drivers::DriverScanStatus::ScanFailed(message) =
-                &snapshot.drivers.scan_status
-            {
-                snapshot.warnings.push(DiagnosticWarning {
-                    source: "Drivers".into(),
-                    message: message.clone(),
-                    severity: WarningSeverity::Warning,
-                });
-            }
-            publish(
-                shared,
-                Topic::Drivers,
-                &snapshot.drivers,
-                &snapshot.warnings,
-            );
-            capability_state_changed = true;
-        }
-        if let Ok((diagnostics, warnings)) = diag_rx.try_recv() {
-            workers.join_diagnostics();
-            diag_running = false;
-            snapshot.network_diag.gateway = diagnostics.gateway;
-            snapshot.network_diag.dns = diagnostics.dns;
-            snapshot.network_diag.internet = diagnostics.internet;
-            snapshot
-                .warnings
-                .retain(|warning| warning.source != "Network");
-            snapshot.warnings.extend(warnings);
-            publish(
-                shared,
-                Topic::Diagnostics,
-                &snapshot.network_diag,
-                &snapshot.warnings,
-            );
-            capability_state_changed = true;
-        }
-        if let Ok((health, warnings)) = health_rx.try_recv() {
-            workers.join_health();
-            health_running = false;
-            snapshot.disk_health = health;
-            snapshot
-                .warnings
-                .retain(|warning| warning.source != "Disk Health");
-            snapshot.warnings.extend(warnings);
-            publish(
-                shared,
-                Topic::Health,
-                &snapshot.disk_health,
-                &snapshot.warnings,
-            );
-            update_tray_summary(shared, &snapshot);
-            capability_state_changed = true;
-        }
-
-        if capability_state_changed {
             publish(
                 shared,
                 Topic::Warnings,
                 &snapshot.warnings,
                 &snapshot.warnings,
             );
-            let capabilities = sd_300::report::capabilities_for(&snapshot);
             publish(
                 shared,
                 Topic::Capabilities,
-                &capabilities,
+                &sd_300::report::capabilities_for(&snapshot),
                 &snapshot.warnings,
             );
         }
-        if process_view && !driver_running && !diag_running && !health_running {
-            // The Processes profile has no command-backed background jobs to
-            // poll. Profile/sort/export/stop setters all signal this condvar,
-            // so sleep directly until the next one-second sample instead of
-            // waking the collector worker twenty times per second.
-            wait_for_wake(shared, next_fast.saturating_duration_since(Instant::now()));
-        } else {
-            // Detailed pages can have driver, connectivity, or disk-health
-            // workers completing on channels that do not own the wake handle.
-            thread::sleep(Duration::from_millis(50));
-        }
+        service_export_request(shared, &snapshot);
+        wait_for_wake(shared, Duration::from_millis(50));
     }
+    // Monitor Drop cancels process groups and joins every worker before the
+    // engine can unload. No uninterruptible native probe runs in this DLL.
 }
-
 fn service_export_request(shared: &Shared, snapshot: &SystemSnapshot) {
     let kind = shared.export_request.swap(EXPORT_NONE, Ordering::AcqRel);
     if kind == EXPORT_NONE {
@@ -1536,20 +1276,15 @@ pub extern "C" fn sd300_engine_last_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sd_300::collectors::WarningSeverity;
+    use std::time::Instant;
 
     #[test]
-    fn collector_worker_guard_joins_children_before_scope_exit() {
-        let shared = Shared::default();
-        let completed = Arc::new(AtomicBool::new(false));
-        {
-            let mut workers = CollectorWorkers::new(&shared);
-            let completed = Arc::clone(&completed);
-            workers.health = Some(thread::spawn(move || {
-                thread::sleep(Duration::from_millis(10));
-                completed.store(true, Ordering::Release);
-            }));
-        }
-        assert!(completed.load(Ordering::Acquire));
+    fn collector_session_cancels_and_joins_on_shutdown() {
+        let started = Instant::now();
+        let monitor = sd_300::monitor::Monitor::start(sd_300::monitor::Profile::Overview);
+        drop(monitor);
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

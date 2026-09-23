@@ -6,6 +6,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Move TUI and engine collection into independent bounded latest-result lanes; isolate native/helper probes in cancellable version-checked subprocesses, skip overdue work, and back off failed providers.
+- Render startup progressively, attach actual capture metadata to engine topics, and append timestamped TUI histories only on fresh samples without combining CPU and GPU temperature series.
 - Normalize network counters by monotonic elapsed time and invalidate first/reset/resume samples; retain the full process inventory before frontend ranking.
 - Parse ICMP reply RTT instead of subprocess duration, correct macOS timeout units, and use a TCP reachability fallback without mislabelling it as ICMP latency.
 - Bound collector output and cancellation with owned Windows jobs/Unix process groups and file-backed capture, eliminating inherited-pipe EOF waits and unjoined reader threads.

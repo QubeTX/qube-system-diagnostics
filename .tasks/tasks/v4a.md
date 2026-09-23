@@ -8,7 +8,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 ## Plan
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
-Current cycle: prove network rates use actual elapsed time, process ranking includes the full inventory, and connectivity displays reply RTT. Deterministic tests are the first oracle; Windows plus hosted native CI follow every validated commit. A failure without causal output redirects the next cycle to instrumentation.
+Current cycle: replace blocking TUI/engine probes with bounded independent collection, prove latest-only delivery and cancellation, and expose actual capture age. Local root/engine/native tests and real Windows PTY are the first oracle; the pushed revision then runs all native CI lanes. Next: platform storage activity and process/device identity.
 
 ## Impact
 Both frontends gain accurate, attributed readings and explicit incomplete states. Sampling and rendering changes can regress cadence, resource use, and terminal behavior, so qualify them against immutable pre-change bytes and contract fixtures.
@@ -29,8 +29,9 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 - [ ] Public release and exact bytes verified
 
 ## Status
-ACTIVE on codex/sd300-v4-monitoring. Implementation starting; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
+ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations implemented; product remains 3.1.3 until coordinated release preparation. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
 
 ## Activity
+- 2026-09-23 — codex: a019682 passed every hosted CI lane, including six native GUI targets and Windows/Linux/macOS core tests. Bounded-worker candidate passes 121 library + 7 CLI + 10 engine tests, root clippy, and native GUI tests (37 passed, 2 platform skips). Live Windows slow probe returned disks, two GPUs, and sensors; real PTY opened progressively and exited with terminal restoration. Next oracle: hosted builds of this runtime revision; remaining v4 scope stays open.
 - 2026-09-23 — codex: first measurement cycle passed 118 library tests, then 35 focused collector tests with bounded command execution (120 total discovered). Preserved pre-change release executable at target/v4-baseline/sd300.exe, SHA-256 42d0ca558626b2a20f96f770f3d7b1a8f4bbed904371ff2c5f025e324406bc51. Next oracle: full root/engine compatibility and hosted native platform compilation.
 - 2026-09-22 — codex: accepted implementation and single-release authorization; refreshed current main, created feature branch, upgraded the board bundle to installed 1.2.0 and verified its root-bound server.

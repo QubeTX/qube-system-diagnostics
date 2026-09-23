@@ -4,21 +4,13 @@ use ratatui::DefaultTerminal;
 use std::time::Duration;
 use tokio::time::interval;
 
-use crate::collectors::disk_health::DiskHealthData;
-use crate::collectors::drivers::{DriverData, DriverScanStatus};
-use crate::collectors::network_diag::NetworkDiagData;
-use crate::collectors::{DiagnosticWarning, SystemSnapshot, WarningSeverity};
+use crate::collectors::SystemSnapshot;
 use crate::error::Result;
 use crate::history::HistoryBuffer;
+use crate::monitor::{Lane, Monitor, Profile};
 use crate::types::{DiagnosticMode, HealthStatus, ProcessSortKey, Section, TempUnit};
 use crate::ui;
 
-// -- Refresh Intervals --
-const REFRESH_FAST: Duration = Duration::from_secs(1);
-const REFRESH_SLOW: Duration = Duration::from_secs(5);
-const REFRESH_MEDIUM: Duration = Duration::from_secs(3);
-const REFRESH_DIAG: Duration = Duration::from_secs(15);
-const REFRESH_HEALTH: Duration = Duration::from_secs(60);
 const HISTORY_SAMPLES: usize = 60;
 
 /// Main application state
@@ -71,13 +63,7 @@ pub struct App {
     pub driver_scroll: usize,
     /// Disk section scroll offset (tech mode)
     pub disk_scroll: usize,
-    /// Async driver scan handle
-    driver_scan_handle: Option<tokio::task::JoinHandle<DriverData>>,
-    /// Async connectivity check handle
-    connectivity_check_handle:
-        Option<tokio::task::JoinHandle<(NetworkDiagData, Vec<DiagnosticWarning>)>>,
-    /// Async disk health scan handle
-    disk_health_handle: Option<tokio::task::JoinHandle<(DiskHealthData, Vec<DiagnosticWarning>)>>,
+    monitor: Option<Monitor>,
 }
 
 impl App {
@@ -106,213 +92,120 @@ impl App {
             disk_write_history: HistoryBuffer::new(HISTORY_SAMPLES),
             driver_scroll: 0,
             disk_scroll: 0,
-            driver_scan_handle: None,
-            connectivity_check_handle: None,
-            disk_health_handle: None,
+            monitor: None,
         }
     }
 
-    /// Run the main event loop
+    /// Render immediately. Workers own all collection; this loop only handles
+    /// input and bounded latest-result delivery.
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
-        // Initial data collection
-        self.snapshot.refresh_static();
-        self.snapshot.refresh_fast();
-        self.snapshot.refresh_slow();
-        self.snapshot.refresh_connections();
-
-        // Initial driver scan — async to avoid blocking UI
-        self.start_driver_scan();
-
-        // Initial connectivity check in background
-        self.start_connectivity_check();
-        self.start_disk_health_scan();
-
-        let mut fast_tick = interval(REFRESH_FAST);
-        let mut slow_tick = interval(REFRESH_SLOW);
-        let mut medium_tick = interval(REFRESH_MEDIUM);
-        let mut diag_tick = interval(REFRESH_DIAG);
-        let mut health_tick = interval(REFRESH_HEALTH);
-        let mut event_stream = crossterm::event::EventStream::new();
-
+        self.monitor = Some(Monitor::start(Profile::Full));
+        let mut poll = interval(Duration::from_millis(50));
+        poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut events = crossterm::event::EventStream::new();
+        let mut dirty = true;
         loop {
-            self.poll_background_scans().await;
-
-            // Draw
-            let size = terminal.size()?;
-            self.too_small = size.width < 80 || size.height < 24;
-            terminal.draw(|frame| ui::render(frame, self))?;
-
+            if dirty {
+                let size = terminal.size()?;
+                self.too_small = size.width < 80 || size.height < 24;
+                terminal.draw(|frame| ui::render(frame, self))?;
+                dirty = false;
+            }
             if self.should_quit {
+                self.monitor.take();
                 return Ok(());
             }
-
-            // Event handling with tokio select
             tokio::select! {
-                _ = fast_tick.tick() => {
-                    self.snapshot.refresh_fast();
-                    self.update_fast_history();
+                _ = poll.tick() => {
+                    let changed = self.monitor.as_ref().map(|m| m.drain(&mut self.snapshot)).unwrap_or_default();
+                    if changed.contains(&Lane::Fast) { self.update_fast_history(); }
+                    if changed.contains(&Lane::Slow) { self.update_slow_history(); }
+                    dirty |= !changed.is_empty();
                 }
-                _ = slow_tick.tick() => {
-                    self.snapshot.refresh_slow();
-                }
-                _ = medium_tick.tick() => {
-                    self.snapshot.refresh_connections();
-                }
-                _ = diag_tick.tick() => {
-                    if self.connectivity_check_handle.is_none() {
-                        self.start_connectivity_check();
-                    }
-                }
-                _ = health_tick.tick() => {
-                    if self.disk_health_handle.is_none() {
-                        self.start_disk_health_scan();
-                    }
-                }
-                event = event_stream.next() => {
-                    if let Some(Ok(evt)) = event {
-                        self.handle_event(evt);
+                event = events.next() => {
+                    match event {
+                        Some(Ok(event)) => { self.handle_event(event); dirty = true; }
+                        Some(Err(error)) => return Err(error.into()),
+                        None => { self.should_quit = true; }
                     }
                 }
             }
         }
     }
-
-    fn start_driver_scan(&mut self) {
-        self.snapshot.drivers.scan_status = DriverScanStatus::Scanning;
-        self.driver_scan_handle = Some(tokio::task::spawn_blocking(
-            crate::collectors::drivers::collect,
-        ));
-    }
-
-    fn start_connectivity_check(&mut self) {
-        self.connectivity_check_handle = Some(tokio::task::spawn_blocking(
-            crate::collectors::network_diag::collect_connectivity,
-        ));
-    }
-
-    fn start_disk_health_scan(&mut self) {
-        self.disk_health_handle = Some(tokio::task::spawn_blocking(
-            crate::collectors::disk_health::collect,
-        ));
-    }
-
-    async fn poll_background_scans(&mut self) {
-        if self
-            .driver_scan_handle
-            .as_ref()
-            .is_some_and(tokio::task::JoinHandle::is_finished)
-        {
-            if let Some(handle) = self.driver_scan_handle.take() {
-                if let Ok(data) = handle.await {
-                    self.snapshot.warnings.retain(|w| w.source != "Drivers");
-                    if let DriverScanStatus::ScanFailed(ref msg) = data.scan_status {
-                        self.snapshot.warnings.push(DiagnosticWarning {
-                            source: "Drivers".into(),
-                            message: msg.clone(),
-                            severity: WarningSeverity::Warning,
-                        });
-                    }
-                    self.snapshot.drivers = data;
-                }
-            }
-        }
-
-        if self
-            .connectivity_check_handle
-            .as_ref()
-            .is_some_and(tokio::task::JoinHandle::is_finished)
-        {
-            if let Some(handle) = self.connectivity_check_handle.take() {
-                if let Ok((diag_data, diag_warnings)) = handle.await {
-                    self.snapshot.network_diag.gateway = diag_data.gateway;
-                    self.snapshot.network_diag.dns = diag_data.dns;
-                    self.snapshot.network_diag.internet = diag_data.internet;
-                    self.snapshot.warnings.retain(|w| w.source != "Network");
-                    self.snapshot.warnings.extend(diag_warnings);
-                }
-            }
-        }
-
-        if self
-            .disk_health_handle
-            .as_ref()
-            .is_some_and(tokio::task::JoinHandle::is_finished)
-        {
-            if let Some(handle) = self.disk_health_handle.take() {
-                if let Ok((health_data, health_warnings)) = handle.await {
-                    self.snapshot.disk_health = health_data;
-                    self.snapshot.warnings.retain(|w| w.source != "Disk Health");
-                    self.snapshot.warnings.extend(health_warnings);
-                }
-            }
-        }
-    }
-
     fn update_fast_history(&mut self) {
-        // CPU total
-        self.cpu_history.push(self.snapshot.cpu.total_usage as f64);
-
-        // Per-core
-        while self.per_core_history.len() < self.snapshot.cpu.per_core_usage.len() {
-            self.per_core_history
-                .push(HistoryBuffer::new(HISTORY_SAMPLES));
-        }
-        for (i, usage) in self.snapshot.cpu.per_core_usage.iter().enumerate() {
-            if let Some(buf) = self.per_core_history.get_mut(i) {
-                buf.push(*usage as f64);
-            }
-        }
-
-        // Memory
-        let mem_pct = if self.snapshot.memory.total_bytes > 0 {
-            (self.snapshot.memory.used_bytes as f64 / self.snapshot.memory.total_bytes as f64)
-                * 100.0
-        } else {
-            0.0
+        let Some(sample) = self.snapshot.samples.get("fast") else {
+            return;
         };
-        self.mem_history.push(mem_pct);
-
-        // Swap
-        let swap_pct = if self.snapshot.memory.swap_total_bytes > 0 {
-            (self.snapshot.memory.swap_used_bytes as f64
-                / self.snapshot.memory.swap_total_bytes as f64)
-                * 100.0
-        } else {
-            0.0
-        };
-        self.swap_history.push(swap_pct);
-
-        // Network
-        self.net_down_history
-            .push(self.snapshot.network.total_download_rate as f64);
-        self.net_up_history
-            .push(self.snapshot.network.total_upload_rate as f64);
-
-        // GPU
-        if self.snapshot.gpu.telemetry_available {
-            self.gpu_history
-                .push(self.snapshot.gpu.utilization_percent as f64);
-        }
-
-        // Temperature
-        if let Some(temperature) = self
-            .snapshot
-            .thermals
-            .cpu_temp
-            .or(self.snapshot.thermals.gpu_temp)
+        let captured = sample.captured_unix_ms;
+        if captured == 0
+            || self
+                .cpu_history
+                .samples()
+                .last()
+                .is_some_and(|v| v.captured_unix_ms == captured)
         {
-            self.temp_history.push(temperature);
+            return;
         }
-
-        // Disk I/O
-        if let Some(drive) = self.snapshot.disk_health.drives.first() {
-            if let Some(ref io) = drive.io_stats {
-                self.disk_read_history.push(io.read_bytes_per_sec as f64);
-                self.disk_write_history.push(io.write_bytes_per_sec as f64);
-            }
+        let cpu_available = sample.observation.is_available() && sample.interval_ms <= 10_000;
+        self.cpu_history.push_at(
+            captured,
+            cpu_available.then_some(self.snapshot.cpu.total_usage as f64),
+        );
+        self.per_core_history
+            .resize_with(self.snapshot.cpu.per_core_usage.len(), || {
+                HistoryBuffer::new(HISTORY_SAMPLES)
+            });
+        for (buffer, usage) in self
+            .per_core_history
+            .iter_mut()
+            .zip(&self.snapshot.cpu.per_core_usage)
+        {
+            buffer.push_at(captured, cpu_available.then_some(*usage as f64));
         }
+        self.mem_history.push_at(
+            captured,
+            (self.snapshot.memory.total_bytes > 0).then(|| self.snapshot.memory.usage_percent()),
+        );
+        self.swap_history.push_at(
+            captured,
+            (self.snapshot.memory.swap_total_bytes > 0)
+                .then(|| self.snapshot.memory.swap_percent()),
+        );
+        let network_available = self.snapshot.network.sample.observation.is_available();
+        self.net_down_history.push_at(
+            captured,
+            network_available.then_some(self.snapshot.network.total_download_rate as f64),
+        );
+        self.net_up_history.push_at(
+            captured,
+            network_available.then_some(self.snapshot.network.total_upload_rate as f64),
+        );
     }
-
+    fn update_slow_history(&mut self) {
+        let Some(sample) = self.snapshot.samples.get("slow") else {
+            return;
+        };
+        let captured = sample.captured_unix_ms;
+        if captured == 0
+            || self
+                .gpu_history
+                .samples()
+                .last()
+                .is_some_and(|v| v.captured_unix_ms == captured)
+        {
+            return;
+        }
+        self.gpu_history.push_at(
+            captured,
+            self.snapshot
+                .gpu
+                .telemetry_available
+                .then_some(self.snapshot.gpu.utilization_percent as f64),
+        );
+        // CPU and GPU temperatures must never be spliced into one series.
+        self.temp_history
+            .push_at(captured, self.snapshot.thermals.cpu_temp);
+    }
     fn handle_event(&mut self, event: Event) {
         if let Event::Key(key) = event {
             if key.kind != KeyEventKind::Press {
@@ -417,11 +310,12 @@ impl App {
                     self.temp_unit = self.temp_unit.toggle();
                 }
                 // Manual refresh for drivers section (non-blocking)
-                KeyCode::Char('r')
-                    if self.current_section == Section::Drivers
-                        && self.driver_scan_handle.is_none() =>
-                {
-                    self.start_driver_scan();
+                KeyCode::Char('r') => {
+                    if let Some(monitor) = &self.monitor {
+                        for lane in Lane::ALL {
+                            monitor.retry(lane);
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -453,7 +347,7 @@ impl App {
 #[cfg(test)]
 mod compatibility_tests {
     use super::*;
-    use crate::collectors::drivers::DriverScanStatus;
+
     use crate::collectors::network_diag::{ConnectionInfo, ConnectionState, Protocol};
     use crate::collectors::processes::ProcessInfo;
     use crossterm::event::{KeyEvent, KeyEventKind};
@@ -493,11 +387,11 @@ mod compatibility_tests {
 
     #[test]
     fn v2_refresh_cadence_history_and_startup_defaults_are_unchanged() {
-        assert_eq!(REFRESH_FAST, Duration::from_secs(1));
-        assert_eq!(REFRESH_MEDIUM, Duration::from_secs(3));
-        assert_eq!(REFRESH_SLOW, Duration::from_secs(5));
-        assert_eq!(REFRESH_DIAG, Duration::from_secs(15));
-        assert_eq!(REFRESH_HEALTH, Duration::from_secs(60));
+        assert_eq!(Lane::Fast.cadence(), Duration::from_secs(1));
+        assert_eq!(Lane::Connections.cadence(), Duration::from_secs(3));
+        assert_eq!(Lane::Slow.cadence(), Duration::from_secs(5));
+        assert_eq!(Lane::Diagnostics.cadence(), Duration::from_secs(15));
+        assert_eq!(Lane::Health.cadence(), Duration::from_secs(60));
         assert_eq!(HISTORY_SAMPLES, 60);
 
         let mut app = App::new(None);
@@ -511,9 +405,7 @@ mod compatibility_tests {
         assert_eq!(app.connection_scroll, 0);
         assert_eq!(app.driver_scroll, 0);
         assert_eq!(app.disk_scroll, 0);
-        assert!(app.driver_scan_handle.is_none());
-        assert!(app.connectivity_check_handle.is_none());
-        assert!(app.disk_health_handle.is_none());
+        assert!(app.monitor.is_none());
 
         for sample in 0..=HISTORY_SAMPLES {
             app.cpu_history.push(sample as f64);
@@ -644,53 +536,5 @@ mod compatibility_tests {
             KeyEventKind::Release,
         )));
         assert!(!app.should_quit);
-    }
-
-    #[tokio::test]
-    async fn completed_driver_scan_is_polled_and_duplicate_refresh_is_not_spawned() {
-        let mut app = App::new(Some(DiagnosticMode::Technician));
-        app.current_section = Section::Drivers;
-        app.snapshot.warnings.push(DiagnosticWarning {
-            source: "Drivers".into(),
-            message: "stale".into(),
-            severity: WarningSeverity::Warning,
-        });
-
-        app.driver_scan_handle = Some(tokio::spawn(async {
-            DriverData {
-                scan_status: DriverScanStatus::Success,
-                ..DriverData::default()
-            }
-        }));
-        while app
-            .driver_scan_handle
-            .as_ref()
-            .is_some_and(|handle| !handle.is_finished())
-        {
-            tokio::task::yield_now().await;
-        }
-        app.poll_background_scans().await;
-        assert!(app.driver_scan_handle.is_none());
-        assert_eq!(app.snapshot.drivers.scan_status, DriverScanStatus::Success);
-        assert!(app
-            .snapshot
-            .warnings
-            .iter()
-            .all(|warning| warning.source != "Drivers"));
-
-        let pending = tokio::spawn(async { std::future::pending::<DriverData>().await });
-        let pending_id = pending.id();
-        app.driver_scan_handle = Some(pending);
-        press(&mut app, KeyCode::Char('r'));
-        assert_eq!(
-            app.driver_scan_handle
-                .as_ref()
-                .map(tokio::task::JoinHandle::id),
-            Some(pending_id),
-            "manual refresh must not replace an in-flight scan"
-        );
-        if let Some(handle) = app.driver_scan_handle.take() {
-            handle.abort();
-        }
     }
 }

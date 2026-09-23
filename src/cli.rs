@@ -2,6 +2,12 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// Private, read-only collector worker. No arbitrary command execution.
+    #[command(hide = true)]
+    CollectWorker {
+        #[arg(value_enum)]
+        topic: CollectorTopic,
+    },
     /// Check for updates and install the latest release.
     Update(UpdateActionArgs),
     /// Install the latest release through the preferred managed CLI channel.
@@ -35,6 +41,16 @@ pub enum Command {
     /// Perform an elevated, proven-owner Global Windows uninstall.
     #[command(hide = true)]
     UninstallWorker(UninstallWorkerArgs),
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollectorTopic {
+    Static,
+    Slow,
+    Connections,
+    Diagnostics,
+    Health,
+    Drivers,
 }
 
 #[derive(Args, Debug, Clone, Default, PartialEq, Eq)]

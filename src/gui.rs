@@ -455,7 +455,7 @@ pub fn spawn_update_coordinator() -> std::result::Result<PathBuf, String> {
     })
 }
 
-fn locate_update_cli() -> Option<PathBuf> {
+pub fn locate_update_cli() -> Option<PathBuf> {
     let current = std::env::current_exe().ok();
     update_cli_from(current.as_deref(), crate::update::managed_cli_binary())
 }

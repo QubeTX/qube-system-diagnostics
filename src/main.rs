@@ -6,10 +6,18 @@ use sd_300::{
     types::DiagnosticMode,
 };
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Some(Command::CollectWorker { topic }) = &cli.command {
+        return sd_300::collectors::probe::print_worker(*topic);
+    }
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(run(cli))
+}
 
+async fn run(cli: Cli) -> Result<()> {
     // Enable UTF-8 output on Windows
     #[cfg(windows)]
     {
@@ -23,6 +31,10 @@ async fn main() -> Result<()> {
 
     if let Some(command) = cli.command {
         match command {
+            Command::CollectWorker { topic } => {
+                sd_300::collectors::probe::print_worker(topic)?;
+                return Ok(());
+            }
             Command::Update(args) => {
                 let exit_code = sd_300::update::run_with_relaunch(args.json, args.relaunch_gui)?;
                 std::process::exit(exit_code);

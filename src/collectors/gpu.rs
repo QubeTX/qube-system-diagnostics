@@ -4,7 +4,7 @@ use crate::observation::Observation;
 
 use super::command::{run_output, CommandTimeout};
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct GpuData {
     pub available: bool,
     pub telemetry_available: bool,
@@ -19,7 +19,7 @@ pub struct GpuData {
     pub telemetry_status: Observation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct GpuAdapter {
     pub name: String,
     pub driver_version: Option<String>,

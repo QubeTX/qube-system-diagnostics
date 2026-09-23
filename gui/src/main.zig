@@ -321,6 +321,32 @@ pub const Model = struct {
         _ = model;
         return "v" ++ engine.expected_product_version;
     }
+    fn activeCollector(model: *const Model) *const projection.TopicMeta {
+        return switch (model.active_section) {
+            0, 1, 2, 6 => &model.overview_topic_meta,
+            3, 4, 7 => model.detail.topicMeta(3),
+            5 => model.detail.topicMeta(4),
+            8 => model.detail.topicMeta(6),
+            else => model.detail.topicMeta(0),
+        };
+    }
+    pub fn collectorAgeSeconds(model: *const Model) u64 {
+        const wall = model.clock.wallMs();
+        const now: u64 = if (wall > 0) @intCast(wall) else 0;
+        const meta = model.activeCollector();
+        return if (meta.captured_unix_ms == 0) 0 else (now -| meta.captured_unix_ms) / 1000;
+    }
+    pub fn collectorState(model: *const Model) []const u8 {
+        const meta = model.activeCollector();
+        if (!meta.ready) return "Waiting for collector";
+        if (!std.mem.eql(u8, meta.availability(), "available")) return meta.availability();
+        if (model.collectorAgeSeconds() * 1000 > @max(3000, meta.expected_interval_ms * 3)) return "Stale sample";
+        return "Available";
+    }
+    pub fn collectorSource(model: *const Model) []const u8 {
+        const meta = model.activeCollector();
+        return if (meta.detail().len > 0) meta.detail() else meta.provenance();
+    }
     pub fn processCpuSort(model: *const Model) bool {
         return model.process_sort == .cpu;
     }

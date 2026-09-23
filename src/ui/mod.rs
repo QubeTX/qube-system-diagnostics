@@ -38,7 +38,23 @@ pub fn render(frame: &mut Frame, app: &App) {
     header_bar::render(frame, app, chunks[0]);
 
     // Render active section
-    sections::render(frame, app, chunks[1]);
+    if app.snapshot.system.os_name.is_empty() && app.snapshot.samples.is_empty()
+        || app
+            .snapshot
+            .samples
+            .get("fast")
+            .is_some_and(|s| s.sequence == 1 && !s.observation.is_available())
+    {
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(
+                "Collecting the first measurements… Navigation is ready.",
+            )
+            .block(common::content_block("Starting monitoring")),
+            chunks[1],
+        );
+    } else {
+        sections::render(frame, app, chunks[1]);
+    }
 
     // Render bottom navigation bar
     bottom_bar::render(frame, app, chunks[2]);

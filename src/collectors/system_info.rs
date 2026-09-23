@@ -3,7 +3,7 @@ use sysinfo::System;
 
 use crate::observation::Observation;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct SystemInfoData {
     pub os_name: String,
     pub os_version: String,

@@ -2,14 +2,14 @@ use super::DiagnosticWarning;
 use crate::observation::Observation;
 use serde::Serialize;
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct DiskHealthData {
     pub drives: Vec<DriveHealth>,
     pub health_status: Observation,
     pub reliability_status: Observation,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct DriveHealth {
     pub device_id: String,
     pub model: String,
@@ -26,7 +26,7 @@ pub struct DriveHealth {
     pub health_source: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct DiskIoStats {
     pub read_bytes_per_sec: u64,
     pub write_bytes_per_sec: u64,
@@ -35,7 +35,7 @@ pub struct DiskIoStats {
     pub avg_write_latency_ms: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaType {
     Ssd,
@@ -57,7 +57,7 @@ impl std::fmt::Display for MediaType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DiskHealthStatus {
     Healthy,
