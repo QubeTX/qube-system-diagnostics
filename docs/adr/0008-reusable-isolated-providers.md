@@ -52,3 +52,13 @@ alter a measurement denominator. Worker replacement and explicit retry start
 with unavailable rates. Wall-clock discontinuities invalidate disk baselines on
 platforms whose monotonic clock excludes suspend, but wall time never divides
 counter deltas. Fast samples likewise record capture-to-capture intervals.
+
+## Detached Windows helpers, 2026-09-23
+
+Use DETACHED_PROCESS with CREATE_SUSPENDED for owned helpers whose standard
+handles are already redirected. CREATE_NO_WINDOW still allocated headless console
+hosts in measured runs. The detached flag avoids those hosts without changing the
+job, deadlines, output limits or cancellation. The flags follow Microsoft's
+[process creation contract](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags).
+Native fixtures verify no attached console and valid stdout/stderr through both
+capture paths; the real persistent-worker protocol exercises redirected stdin.

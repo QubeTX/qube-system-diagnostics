@@ -24,6 +24,13 @@ impl CommandTimeout {
 }
 pub const MAX_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
 
+// Every helper has explicit redirected standard handles. Detaching avoids a
+// headless console host; suspension still lets us own the entire job before
+// any helper code runs. Do not combine DETACHED_PROCESS with CREATE_NO_WINDOW.
+#[cfg(windows)]
+const HELPER_CREATION_FLAGS: u32 =
+    winapi::um::winbase::DETACHED_PROCESS | winapi::um::winbase::CREATE_SUSPENDED;
+
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
     #[error("provider executable was not found")]
@@ -79,7 +86,7 @@ where
     {
         use std::os::windows::process::CommandExt;
         // Assign the job before resuming so even fast descendants are owned.
-        command.creation_flags(0x0800_0000 | 0x0000_0004);
+        command.creation_flags(HELPER_CREATION_FLAGS);
     }
     let mut child = command.spawn().map_err(classify)?;
     let owned = match OwnedProcess::new(&child) {
@@ -228,7 +235,7 @@ pub fn run_memory_command(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000 | 0x0000_0004);
+        command.creation_flags(HELPER_CREATION_FLAGS);
     }
     let mut child = command.spawn().map_err(classify)?;
     let owned = match OwnedProcess::new(&child) {
@@ -363,7 +370,7 @@ impl WorkerProcess {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000 | 0x0000_0004);
+            command.creation_flags(HELPER_CREATION_FLAGS);
         }
         let mut child = command.spawn().map_err(classify)?;
         let owned = match OwnedProcess::new(&child) {
@@ -672,13 +679,52 @@ mod tests {
     use super::*;
     #[cfg(windows)]
     #[test]
+    #[ignore = "child-only console and redirected handle probe"]
+    fn fixture_no_console() {
+        let mut processes = [0u32; 4];
+        assert_eq!(
+            unsafe { winapi::um::wincon::GetConsoleProcessList(processes.as_mut_ptr(), 4) },
+            0,
+            "background helpers must not allocate a console host"
+        );
+        std::io::stdout()
+            .write_all(b"redirected stdout works")
+            .unwrap();
+        std::io::stderr()
+            .write_all(b"redirected stderr works")
+            .unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
+    fn detached_helpers_keep_redirected_handles_without_console_allocation() {
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
+        let (program, args) = test_fixture("fixture_no_console");
+        let output = run_checked(
+            &program,
+            &args,
+            CommandTimeout::Slow,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("redirected stdout works"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("redirected stderr works"));
+        let output =
+            run_memory(program, args, CommandTimeout::Slow, &AtomicBool::new(false)).unwrap();
+        assert!(output.failure.is_none(), "{:?}", output.failure);
+        assert!(output.status.is_some_and(|s| s.success()));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("redirected stdout works"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("redirected stderr works"));
+    }
+    #[cfg(windows)]
+    #[test]
     fn suspended_child_snapshot_finds_its_thread_without_system_enumeration() {
         use std::os::windows::process::CommandExt;
         let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
         let (program, args) = test_fixture("fixture_hung");
         let mut child = Command::new(program)
             .args(args)
-            .creation_flags(0x0800_0000 | 0x0000_0004)
+            .creation_flags(HELPER_CREATION_FLAGS)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

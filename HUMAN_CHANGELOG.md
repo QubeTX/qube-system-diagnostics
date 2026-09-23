@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Windows monitoring uses less memory by avoiding unused console hosts for background checks. Readings keep their existing update frequency, and checks still stop cleanly when cancelled.
+
 - NVIDIA monitoring can read the installed driver directly, reducing repeated helper launches. Graphics memory keeps its allocated-memory meaning, and unsupported or denied readings stay visibly separate from real zero values. Existing helper-based readings remain available as a fallback.
 
 - Connection monitoring does less background work on Windows, recognizes more connection states on Linux, and includes UDP on Mac computers. Minimal Linux systems can still show endpoints without an extra tool. Missing ownership and failed or partial checks are clearly identified instead of looking like an empty, healthy result.

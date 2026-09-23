@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "binary": "<workspace>/target/release/sd300.exe",
+  "sha256": "05f6fb03780d97796e48df10300d8b196b745bb924747c6f690772d8b9e59aaa",
+  "revision": "fc3b163+detached-helpers",
+  "build": "release",
+  "runtime": "Windows ConPTY",
+  "frontend": "tui",
+  "dimensions": [
+    80,
+    24
+  ],
+  "warmup_seconds": 10,
+  "measured_seconds": 30.11307079999824,
+  "method": "Job Object user+kernel CPU, including terminated descendants; 100% = one logical core",
+  "memory_method": "250 ms sum of live job processes; RSS conservatively counts shared mappings per process",
+  "cpu_percent_one_core": 1.660408542592173,
+  "cpu_interval_p95": 6.23523496368863,
+  "rss_mib_max": 100.6875,
+  "private_mib_max": 50.02734375,
+  "handles_max": 1052,
+  "process_count_max": 7,
+  "process_names": [
+    "PING.EXE",
+    "cmd.exe",
+    "sd300.exe"
+  ],
+  "processes_created": 6,
+  "diagnostic_live_role_cost": {
+    "cmd.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 8.296875
+    },
+    "sd300:tui": {
+      "observed_cpu_seconds": 0.296875,
+      "rss_mib_peak_per_process": 20.44140625
+    },
+    "sd300:connections": {
+      "observed_cpu_seconds": 0.03125,
+      "rss_mib_peak_per_process": 9.94140625
+    },
+    "sd300:slow": {
+      "observed_cpu_seconds": 0.0625,
+      "rss_mib_peak_per_process": 37.46484375
+    },
+    "sd300:diagnostics": {
+      "observed_cpu_seconds": 0.03125,
+      "rss_mib_peak_per_process": 11.49609375
+    },
+    "sd300:activity": {
+      "observed_cpu_seconds": 0.078125,
+      "rss_mib_peak_per_process": 9.90234375
+    },
+    "ping.exe": {
+      "observed_cpu_seconds": 0,
+      "rss_mib_peak_per_process": 4.16796875
+    }
+  },
+  "diagnostic_note": "Role CPU samples omit processes that exit between polls; the total Job Object CPU above includes them",
+  "terminal_restored": true,
+  "samples": 120,
+  "foreground_cpu_gate": true,
+  "rss_gate": true,
+  "private_gate": true
+}

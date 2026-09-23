@@ -35,6 +35,7 @@ up its owned job. No installation, speed test, repair or elevated read is reques
 | ebf36c5 + idle worker retirement | 4.82% | 159.5 MiB | Idle memory improves; both gates remain open |
 | 7589af5 + native socket collection | 3.11% | 132.9 MiB | CPU remains open; short memory run passes |
 | aef8f2e + reusable NVML | 1.92% | 137.3 MiB | Short CPU/memory run passes; full matrix remains open |
+| fc3b163 + detached helpers | 1.66% | 100.7 MiB | Short CPU/memory run passes; slower cadence verification follows |
 
 The last candidate's exact binary is identified in its JSON; the source change
 is the commit introducing this evidence. Memory peaks depend on whether the
