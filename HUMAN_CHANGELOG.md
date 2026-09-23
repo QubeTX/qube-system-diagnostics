@@ -8,7 +8,7 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
-- Behind the scenes: minimal Linux testing now captures where the app fails during shutdown, without mixing debugger results into performance acceptance.
+- Behind the scenes: minimal Linux testing now captures where the app fails during shutdown, without mixing debugger results into performance acceptance. Repeated close checks investigate failures that disappear on a single retry.
 
 - Behind the scenes: long test runs keep their original app build until they finish. Memory reports now identify growth by component, and rendering tests exercise changing process readings as well as scrolling.
 

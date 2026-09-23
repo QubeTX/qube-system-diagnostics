@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: ec50cb2 native Alpine job 107237699372 passes both GUI smoke shutdowns with unchanged product code; this does not resolve the earlier SIGSEGV. Add three traced foreground/hidden shutdown pairs, bounded to twenty-second observation windows, so the next intermittent fault retains native evidence. Debugger results remain excluded from resource gates. Next oracle: native Alpine lifecycle stress on the branch.
+
 - 2026-09-23 — codex: run 35874747086 reaches native Alpine GUI monitoring, then the owned quit request exits with SIGSEGV (job 107227650151). Missing graphics drivers explain fallback messages but do not identify the crash. Add an opt-in bounded GDB backtrace only after a failed smoke, repeat unchanged bytes, and retain the failure. Debugger runs cannot qualify resources. Shared opaque-panel allocation candidate remains separate and awaits pixel/performance tests after the local measurement window.
 
 - 2026-09-23 — codex: 9dc7575 hosted TUI windows pass Windows (0.87 percent, 86.3 MiB) and GNU x86-64 (0.93 percent, 34.3 MiB); both Macs remain above CPU (2.73/3.00 percent). A premature follow-up dispatch cancelled the prior workflow's unfinished GUI windows; retain completed reports as partial evidence and change manual concurrency to queue subsequent runs. Render benchmark exposes obsolete unavailable process fixtures and scroll p95 above frame budget; fix the fixture and add retained-cache/first-last role allocation evidence before selecting a renderer change. No release gate is relaxed.

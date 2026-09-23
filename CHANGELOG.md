@@ -4,7 +4,7 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
-- Add an opt-in bounded native backtrace after Alpine GUI shutdown fails with SIGSEGV. Repeat unchanged artifacts only for diagnosis, attach after the sampling window, retain the original failure, and prohibit treating debugger runs as resource qualification.
+- Add an opt-in bounded native backtrace after Alpine GUI shutdown fails with SIGSEGV. Repeat unchanged artifacts only for diagnosis, attach after the sampling window, retain the original failure, and prohibit treating debugger runs as resource qualification. After an unchanged rerun passes, exercise three foreground/hidden shutdown pairs with traces to investigate the intermittent fault.
 
 - Preserve in-progress manually dispatched qualification windows, record first/last Windows GUI memory by role, and report retained raster-cache bytes outside render timings. Correct the render fixture's process field availability so process ticks exercise visible numeric changes.
 

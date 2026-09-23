@@ -104,6 +104,18 @@ if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
       exit 1
     fi
   done
+  # A previous unchanged build crashed on quit, then passed a repeat. Keep a
+  # bounded lifecycle stress lane until that intermittent failure is explained.
+  # Trace every owned shutdown so a reproduced crash cannot lose its evidence.
+  # These debugger-attached runs never qualify CPU or memory gates.
+  apk add --no-cache gdb
+  for attempt in 1 2 3; do
+    for mode in foreground hidden; do
+      flags=(); [[ $mode != hidden ]] || flags+=(--hidden)
+      GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- /tmp/sd300-qualification-python/bin/python scripts/measure-gui-unix.py \
+        "$bundle/sd300-gui" --output "$output_dir/gui-resource-smoke/$mode-lifecycle-$attempt.json" --revision "$(git -c safe.directory="$repo_root" rev-parse HEAD)" --seconds 20 --trace-shutdown "${flags[@]}"
+    done
+  done
 fi
 bash "$script_root/package-native-gui-linux.sh" \
   linux-musl-x86_64 "$output_dir" "$version"
