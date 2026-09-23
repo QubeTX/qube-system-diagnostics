@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkSharedLocks } from "./check-shared-rust-locks.mjs";
 
 const semverPattern = String.raw`[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`;
 
@@ -219,6 +220,7 @@ function main() {
   }
   const scriptRoot = dirname(fileURLToPath(import.meta.url));
   const repoRoot = resolve(options.repoRoot ?? resolve(scriptRoot, ".."));
+  checkSharedLocks(repoRoot);
   const { rootVersion, surfaces } = collectVersionSurfaces(repoRoot);
   const failures = [];
 
