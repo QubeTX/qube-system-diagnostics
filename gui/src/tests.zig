@@ -9,6 +9,37 @@ const testing = std.testing;
 
 const AppMarkup = canvas.MarkupView(main.Model, main.Msg);
 
+test "frame work counts nested events once and excludes queue wait" {
+    var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
+    profile.beginWorkAt(100_000);
+    profile.beginWorkAt(200_000);
+    profile.endWorkAt(400_000);
+    profile.endWorkAt(600_000);
+    try testing.expectEqual(@as(u64, 0), profile.stats(.frame_work).total);
+    profile.beginWorkAt(9_000_000);
+    profile.work_presented = true;
+    profile.endWorkAt(9_700_000);
+    try testing.expectEqual(@as(u64, 1200), profile.stats(.frame_work).p95_us);
+    try testing.expectEqual(@as(u64, 1), profile.stats(.frame_work).total);
+    profile.reset();
+    try testing.expectEqual(@as(u64, 0), profile.pending_work_ns);
+    profile.enabled = false;
+    profile.beginWorkAt(1);
+    profile.endWorkAt(100_000);
+    try testing.expectEqual(@as(u64, 0), profile.stats(.frame_work).total);
+}
+
+test "profile keeps percentile coverage and lifetime stalls explicit" {
+    var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
+    profile.recordNs(.frame_work, 101_000_000);
+    for (0..native_sdk.runtime.max_frame_profile_samples) |_| profile.recordNs(.frame_work, 1_000_000);
+    const stats = profile.stats(.frame_work);
+    try testing.expectEqual(@as(u64, 1000), stats.p95_us);
+    try testing.expectEqual(@as(u64, 101_000), stats.total_max_us);
+    try testing.expectEqual(native_sdk.runtime.max_frame_profile_samples, stats.window_len);
+    try testing.expectEqual(native_sdk.runtime.max_frame_profile_samples + 1, stats.total);
+}
+
 fn buildTree(arena: std.mem.Allocator, model: *const main.Model) !main.AppUi.Tree {
     var view = try AppMarkup.init(arena, main.app_markup);
     var ui = main.AppUi.init(arena);

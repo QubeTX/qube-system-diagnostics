@@ -15,7 +15,7 @@ $requiredVersion = "0.5.4"
 $requiredTarball = "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz"
 $requiredIntegrity = "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA=="
 $requiredZigHash = "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb"
-$requiredPatchHash = "29a33deb964db32f0543e5b2dd9a832325eaab6b63e08f1a2861755a51c5c599"
+$requiredPatchHash = "e8f05f38e372362ffc27fe8d6b5d6c4ba974e7a563cc09d257da23a698d86da7"
 
 if (-not (Test-Path -LiteralPath $sdkRoot -PathType Container)) {
     throw "The project-local Native SDK is missing. Run npm ci in '$gui' first."
@@ -43,6 +43,26 @@ if ($sdkPackage.version -ne $requiredVersion) {
 }
 
 $files = [ordered]@{
+    "src/runtime/frame_profile.zig" = @{
+        Pristine = "d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528"
+        Patched = "d719316514e4976b0d48b8b7e8a2549ac6c606428815cb2a05585768f0e210f7"
+    }
+    "src/runtime/flow.zig" = @{
+        Pristine = "e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78"
+        Patched = "4123abc991f5172ff368191033123e6a19f8936f0a8736ed7c72cdba18de0295"
+    }
+    "src/runtime/gpu_surface_events.zig" = @{
+        Pristine = "9ed40fbfb87ec9ad5011815e9d5ab760b8aff270516a2f77eec32e2a66acc439"
+        Patched = "f2d4aa53e0e7b9672b2a3d555c59845b09cf5cc93ba34bdb82614ce792da43af"
+    }
+    "src/runtime/automation_snapshot.zig" = @{
+        Pristine = "5112c477f7032f19f3f2e0ee118215d394271d1fdb9780163ad599c7ee6be0e6"
+        Patched = "848029310701f43626f5acbb34973f9d9439f0dde537c68a235e17405029727c"
+    }
+    "src/automation/snapshot.zig" = @{
+        Pristine = "f1e5adaaa62857a7f1411184f9e57413eddb085f201497e37927fc4da0b98a24"
+        Patched = "3f128e758dfcd6fad5cdc1fc929d0a3fdd8cbc7b413dcca3afcaf71eca948f53"
+    }
     "src/primitives/canvas/tokens.zig" = @{
         Pristine = "90820897f491d1fad04671ad3ffbfda8cbe0b2fc7804b55f28a21bfd03b6ddae"
         Patched = "128682905eee9f7d5e09093693dc1e832ecff9bc2c3a0f6c0e805425a3898af9"
@@ -150,6 +170,16 @@ $files = [ordered]@{
     "src/runtime/validation.zig" = @{
         Pristine = "96790d675894fca8b1af1233ef81161433932d2ac00777f61809ff82a7bdef36"
         Patched = "41cf8fb540a20f1084551c93543f1f0d480d54d716a28145b3a9d021b5cb0a28"
+    }
+}
+
+$patchFiles = [regex]::Matches([IO.File]::ReadAllText($patchPath), '(?m)^diff --git a/(\S+) b/\1\r?$')
+if ($patchFiles.Count -ne $files.Count) {
+    throw "Every patched Native SDK source must have reviewed pristine and patched hashes."
+}
+foreach ($match in $patchFiles) {
+    if (-not $files.Contains($match.Groups[1].Value)) {
+        throw "Native SDK patch contains an unverified source: '$($match.Groups[1].Value)'."
     }
 }
 

@@ -12,7 +12,8 @@ param(
     [string]$Target,
 
     [switch]$SkipNpmCi,
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$QualificationAutomation
 )
 
 $ErrorActionPreference = "Stop"
@@ -197,6 +198,7 @@ if (-not (Test-Path -LiteralPath $engineArtifact -PathType Leaf)) {
 # patched and hash-checked. No profile/global npm path enters the graph.
 $stageBase = Join-Path $repoRoot "target\native-gui-stage"
 $stageRoot = Join-Path $stageBase $Target
+if ($QualificationAutomation) { $stageRoot += "-automation" }
 $appStage = Join-Path $stageRoot "app"
 $sdkStage = Join-Path $stageRoot "sdk"
 $stageBaseFull = [IO.Path]::GetFullPath($stageBase)
@@ -252,6 +254,7 @@ $zigBuildArguments = @(
     # development telemetry out of the sink filter.
     "-Dtrace=off"
 )
+if ($QualificationAutomation) { $zigBuildArguments += "-Dautomation=true" }
 Invoke-StagedZigBuild -WorkingDirectory $appStage -Arguments $zigBuildArguments
 
 if (-not $SkipTests) {
@@ -310,6 +313,7 @@ $receipt = [ordered]@{
     zig_cpu = "baseline"
     zig_optimize = "ReleaseFast"
     native_sdk_trace = "off"
+    qualification_automation = [bool]$QualificationAutomation
     zig_version = $zigVersion
     rust_version = $rustVersion
     rust_target = $contract.Rust

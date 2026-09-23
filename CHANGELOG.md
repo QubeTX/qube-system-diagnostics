@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Add bounded full-event frame-work and input-to-present qualification counters, including p95, lifetime stall maxima and sample-window coverage. Exclude automation snapshot I/O and queue wait from synchronous work. Keep automation builds in a separate staging directory and verify every patched SDK file in both build preparers; deterministic fixtures cover nesting, idle gaps and overwritten percentile windows.
+
 - Correct Mac diagnostic thread attribution after hosted task-port access denial: use public libproc thread-ID reads with documented nanosecond units, bounded identities extracted from the native stack sample, and an independent native current-thread clock fixture. Report partial coverage and separate the following CPU window from the stack sample. Give the oversized-output regression fixture its own deadline so pipe throughput cannot conflate byte-limit and timeout checks; production limits are unchanged.
 
 - Attribute native macOS diagnostic CPU to bounded live-thread deltas alongside stack samples. Exclude new, ended and reset threads, preserve denied counters, and keep profiler results outside resource acceptance; waiting-stack frequency is not CPU time.
