@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Restrict GUI collector-presence inspection to collector-shaped processes and retain required-worker verification when protected helpers deny executable lookup. Native GNU long runs exposed a harness AccessDenied on a ping helper after the TUI resource gate passed.
+
 - Attribute Linux GUI RSS to fixed mapping categories after the measurement window and compare the unchanged binary with GTK's diagnostic Cairo renderer. Keep default-renderer acceptance independent and redact mapping paths/addresses from evidence.
 
 - Replace macOS process CPU percentages with checked libproc counters, Mach timebase conversion and per-instance monotonic deltas. Preserve measured idle zero, microsecond creation identity, inaccessible fields and full inventory before ranking. Expose inventory failure/recovery in both frontends and capabilities; use the reserved ABI-2 process-summary word without changing layout. Add native getrusage comparison, identity/reset/unit fixtures and GUI status tests.

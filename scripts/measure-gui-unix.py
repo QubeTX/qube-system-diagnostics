@@ -82,9 +82,11 @@ def topics(root, cli):
     for child in root.children(recursive=True):
         try:
             args = child.cmdline()
-            if Path(child.exe()).resolve() == cli and len(args) == 3 and args[1] == "collect-server":
+            if len(args) == 3 and args[1] == "collect-server" and Path(child.exe()).resolve() == cli:
                 values.add(args[2])
-        except psutil.NoSuchProcess:
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            # A protected ping/helper can deny exe inspection. It never proves
+            # a collector's presence; required owned workers must still match.
             pass
     return values
 

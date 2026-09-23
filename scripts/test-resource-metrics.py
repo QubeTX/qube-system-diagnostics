@@ -1,4 +1,6 @@
 import unittest
+import runpy
+from pathlib import Path
 from types import SimpleNamespace
 import psutil
 from resource_metrics import sample_family, descriptor_summary, FamilyAttribution, linux_mapping_totals
@@ -25,6 +27,19 @@ class Process:
 
 
 class Metrics(unittest.TestCase):
+    def test_collector_presence_does_not_inspect_protected_helper_executables(self):
+        topics = runpy.run_path(str(Path(__file__).with_name("measure-gui-unix.py")))["topics"]
+        def denied():
+            raise psutil.AccessDenied(44)
+        cli = Path("sd300").resolve()
+        helper = SimpleNamespace(cmdline=lambda: ["ping", "example.invalid"], exe=denied)
+        worker = SimpleNamespace(cmdline=lambda: [str(cli), "collect-server", "slow"], exe=lambda: str(cli))
+        unreadable = SimpleNamespace(cmdline=denied)
+        root = SimpleNamespace(children=lambda recursive: [helper, worker, unreadable])
+        self.assertEqual(topics(root, cli), {"slow"})
+        root.children = lambda recursive: [helper, unreadable]
+        self.assertEqual(topics(root, cli), set())
+
     def test_mapping_units_and_redaction(self):
         report = linux_mapping_totals("""1000-2000 r-xp 000000 00:00 0 /private/user/libLLVM.so
 Rss: 2048 kB

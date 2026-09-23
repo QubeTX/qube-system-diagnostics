@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: 9dc7575 GNU x86-64 completes the 330-second TUI gate at 0.93 percent CPU with low RSS; GUI qualification stops on protected helper exe lookup. Job 107210415278 traceback identifies topics(), not RSS collection. Filter the command shape before exe lookup, ignore unproven helpers and continue requiring exact owned collector identity. Add a denied-helper/missing-worker fixture. Next oracle: native GUI long run; normal-renderer memory remains an independent product gate.
+
 - 2026-09-23 — codex: GNU GUI smoke attributes more than 220 MiB RSS to the GUI root process while collector workers remain small. Add fixed-category post-window mapping evidence and an unchanged-binary diagnostic Cairo comparison, following GTK's documented debugging interface; this does not change product defaults or replace normal-renderer gates. Next oracle: both native GNU architectures with identical artifact hashes.
 
 - 2026-09-23 — codex: Mac process candidate passes 230 Windows library tests (six child fixtures), eight CLI contracts, three worker tests, engine suite plus new inventory-state ABI fixture, 56 GUI tests (two skips), strict bindings, Windows/Apple Silicon clippy and musl test compilation. Native Mac CPU/getrusage comparison and before/after provider cost are the next hosted oracles; no measured performance claim yet.
