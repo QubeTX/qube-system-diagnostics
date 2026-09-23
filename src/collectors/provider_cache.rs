@@ -8,7 +8,7 @@ thread_local! {static GENERATION: Cell<u64> = const{Cell::new(0)};}
 pub fn invalidate() {
     GENERATION.with(|g| g.set(g.get().wrapping_add(1)));
 }
-fn generation() -> u64 {
+pub(super) fn generation() -> u64 {
     GENERATION.with(Cell::get)
 }
 pub struct StaticCache<T> {

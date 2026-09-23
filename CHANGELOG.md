@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Prefer a reusable read-only NVML session for NVIDIA telemetry on Windows and Linux, with bounded discovery backoff and the existing nvidia-smi fallback. Require versioned allocated-memory semantics, preserve individual permission/unsupported errors and PCI identity, and expose memory/temperature provenance in both frontends.
+
 - Replace periodic Windows netstat processes with bounded native IPv4/IPv6 TCP/UDP owner-PID tables. Preserve per-provider failures and partial endpoint inventories through reports, findings and both frontends. Correct Linux ss abbreviated states, add a PID-unavailable procfs fallback on minimal hosts, and include macOS UDP endpoints. Native fixtures compare owned loopback sockets with the actual worker output.
 
 - Compute disk activity deltas inside the isolated worker using its monotonic capture clock. Carry capture intervals across IPC, reset baselines on worker replacement/retry/resume, and record fast samples from completed captures rather than scheduled starts.

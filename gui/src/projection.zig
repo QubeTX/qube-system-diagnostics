@@ -247,6 +247,8 @@ pub const GpuRow = struct {
     unified: bool = false,
     identity_buffer: canvas.TextBuffer(192) = .init("Not reported"),
     utilization_observation: ObservationView = .{},
+    memory_observation: ObservationView = .{},
+    temperature_observation: ObservationView = .{},
     utilization_percent: f64 = 0,
     memory_used_mib: f64 = 0,
     memory_total_mib: f64 = 0,
@@ -267,6 +269,8 @@ pub const GpuRow = struct {
 
     pub fn identity(row: *const GpuRow) []const u8 { return row.identity_buffer.text(); }
     pub fn utilizationObservation(row: *const GpuRow) []const u8 { return row.utilization_observation.summary(); }
+    pub fn memoryObservation(row: *const GpuRow) []const u8 { return row.memory_observation.summary(); }
+    pub fn temperatureObservation(row: *const GpuRow) []const u8 { return row.temperature_observation.summary(); }
     pub fn name(row: *const GpuRow) []const u8 {
         return row.name_buffer.text();
     }
@@ -1192,6 +1196,8 @@ pub const Projection = struct {
             row.name_buffer.set(item.name);
             row.identity_buffer.set(item.device_id);
             setObservation(&row.utilization_observation, item.fields.utilization_percent);
+            setObservation(&row.memory_observation, item.fields.memory_used_mb);
+            setObservation(&row.temperature_observation, item.fields.temperature_celsius);
             row.driver_buffer.set(item.driver_version orelse "Not reported");
             row.status_buffer.set(item.status orelse "Unknown");
             row.resolution_buffer.set(item.current_resolution orelse "Not reported");
@@ -1612,7 +1618,11 @@ const GpuAdapterJson = struct {
     shared_memory_mb: ?u64 = null,
     dedicated_system_memory_mb: ?u64 = null,
     recommended_working_set_mb: ?u64 = null,
-    fields: struct { utilization_percent: ObservationJson = .{} } = .{},
+    fields: struct {
+        utilization_percent: ObservationJson = .{},
+        memory_used_mb: ObservationJson = .{},
+        temperature_celsius: ObservationJson = .{},
+    } = .{},
     name: []const u8 = "",
     driver_version: ?[]const u8 = null,
     status: ?[]const u8 = null,

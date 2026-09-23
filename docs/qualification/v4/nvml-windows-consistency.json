@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "binary_sha256": "29d2ffb9d19b0e7ffed487241f69bd08f48a4e72a67e5c8714cac038e1adbe32",
+  "revision": "aef8f2e-plus-nvml",
+  "workload": "normal idle desktop; no artificial GPU load",
+  "method": "nvidia-smi calls bracket each isolated NVML worker capture; same physical PCI identity; no identifiers persisted",
+  "limitation": "Cross-interface consistency from the same NVIDIA driver, not an independent physical accuracy reference",
+  "tolerances_declared_before_capture": {
+    "memory_mib": 64,
+    "memory_fraction": 0.05,
+    "temperature_c": 3
+  },
+  "samples": [
+    {
+      "identity_matched": true,
+      "bracket_seconds": 0.5816304000036325,
+      "nvml_memory_mib": 826,
+      "smi_memory_bracket_mib": [
+        827,
+        827
+      ],
+      "nvml_temperature_c": 47.0,
+      "smi_temperature_bracket_c": [
+        47.0,
+        47.0
+      ],
+      "memory_pass": true,
+      "temperature_pass": true
+    },
+    {
+      "identity_matched": true,
+      "bracket_seconds": 0.5821274999907473,
+      "nvml_memory_mib": 826,
+      "smi_memory_bracket_mib": [
+        827,
+        827
+      ],
+      "nvml_temperature_c": 47.0,
+      "smi_temperature_bracket_c": [
+        47.0,
+        47.0
+      ],
+      "memory_pass": true,
+      "temperature_pass": true
+    },
+    {
+      "identity_matched": true,
+      "bracket_seconds": 0.597526999990805,
+      "nvml_memory_mib": 826,
+      "smi_memory_bracket_mib": [
+        827,
+        827
+      ],
+      "nvml_temperature_c": 47.0,
+      "smi_temperature_bracket_c": [
+        47.0,
+        47.0
+      ],
+      "memory_pass": true,
+      "temperature_pass": true
+    }
+  ]
+}

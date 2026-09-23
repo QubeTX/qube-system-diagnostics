@@ -34,11 +34,12 @@ up its owned job. No installation, speed test, repair or elevated read is reques
 | ddbe0eb + PSS-only product change | 4.35% | 219.1 MiB | Startup CPU improves; both gates remain open |
 | ebf36c5 + idle worker retirement | 4.82% | 159.5 MiB | Idle memory improves; both gates remain open |
 | 7589af5 + native socket collection | 3.11% | 132.9 MiB | CPU remains open; short memory run passes |
+| aef8f2e + reusable NVML | 1.92% | 137.3 MiB | Short CPU/memory run passes; full matrix remains open |
 
 The last candidate's exact binary is identified in its JSON; the source change
 is the commit introducing this evidence. Memory peaks depend on whether the
-sampling instant overlaps a transient helper. The next cycle targets idle worker
-working sets; it must preserve cadence and bounded shutdown. Accepted gates stay
+sampling instant overlaps a transient helper. Longer measurements must include
+the infrequent inventory/health lanes and preserve cadence and bounded shutdown. Accepted gates stay
 at 2% foreground CPU and 150 MiB working set; no waiver is implied.
 
 
@@ -63,3 +64,25 @@ sockets open while collecting, with IPv6 checked when the host supports binding
 it. Linux additionally forces missing ss without modifying the host installation.
 Parser fixtures cover states, byte order, absent PID, malformed/oversized tables
 and partial failure; GUI fixtures preserve the same observation beside rows.
+
+
+## NVIDIA telemetry
+
+Bindings follow the [NVIDIA NVML API](https://docs.nvidia.com/deploy/nvml-api/nvml-api-reference.html)
+and [published header](https://github.com/NVIDIA/go-nvml/blob/main/pkg/nvml/nvml.h).
+The driver session stays in the isolated worker. Windows loads only from System32;
+Linux uses the platform loader's versioned libnvidia-ml.so.1. Missing/older driver
+libraries retain nvidia-smi fallback; no driver is installed or changed.
+
+ABI assertions cover the PCI, memory and utilization structures. Synthetic
+function tables cover identical model names with distinct UUID/PCI identities,
+permission denial, unsupported fields, true zero utilization, allocation versus
+reservation, and invalid results. Inaccessible measurements remain nullable.
+
+Local Windows comparison with nvidia-smi first identified a reserved-memory
+semantic mismatch in NVML v1. The accepted path requires nvmlDeviceGetMemoryInfo_v2
+and uses its allocated bytes, converted to MiB. Three bracketed observations are
+retained in nvml-windows-consistency.json with predeclared tolerances. They agree
+within one MiB and exactly in temperature. Both interfaces use the same driver;
+this establishes interface/units consistency on one GPU, not independent physical
+accuracy or proof for unavailable hardware. macOS retains its Metal provider.

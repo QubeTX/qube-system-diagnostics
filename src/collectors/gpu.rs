@@ -294,6 +294,10 @@ fn collect_nvidia() -> Vec<GpuAdapter> {
 }
 #[cfg(not(target_os = "macos"))]
 fn collect_nvidia_uncached() -> Vec<GpuAdapter> {
+    #[cfg(any(windows, target_os = "linux"))]
+    if let Some(adapters) = super::nvml::collect() {
+        return adapters;
+    }
     let Some(output) = run_output(
         "nvidia-smi",
         [
@@ -381,20 +385,48 @@ fn merge_telemetry(adapters: &mut Vec<GpuAdapter>, telemetry: Vec<GpuAdapter>) {
             .collect::<Vec<_>>();
         if matches.len() == 1 {
             let target = &mut adapters[matches[0]];
+            if target.dedicated_memory_mb.is_some() {
+                target
+                    .fields
+                    .entry("dedicated_memory_mb".into())
+                    .or_insert_with(|| Observation::available(&target.source));
+            }
             target.utilization_percent = row.utilization_percent.or(target.utilization_percent);
             target.memory_used_mb = row.memory_used_mb.or(target.memory_used_mb);
             target.temperature_celsius = row.temperature_celsius.or(target.temperature_celsius);
             target.dedicated_memory_mb = target.dedicated_memory_mb.or(row.dedicated_memory_mb);
             target.driver_version = row.driver_version.or(target.driver_version.take());
-            for (key, present) in [
-                ("utilization_percent", row.utilization_percent.is_some()),
-                ("memory_used_mb", row.memory_used_mb.is_some()),
-                ("temperature_celsius", row.temperature_celsius.is_some()),
+            for (key, present, measured) in [
+                (
+                    "utilization_percent",
+                    row.utilization_percent.is_some(),
+                    target.utilization_percent.is_some(),
+                ),
+                (
+                    "memory_used_mb",
+                    row.memory_used_mb.is_some(),
+                    target.memory_used_mb.is_some(),
+                ),
+                (
+                    "temperature_celsius",
+                    row.temperature_celsius.is_some(),
+                    target.temperature_celsius.is_some(),
+                ),
             ] {
-                if present {
-                    target
-                        .fields
-                        .insert(key.into(), Observation::available(&row.source));
+                if present || !measured {
+                    target.fields.insert(
+                        key.into(),
+                        row.fields.get(key).cloned().unwrap_or_else(|| {
+                            if present {
+                                Observation::available(&row.source)
+                            } else {
+                                Observation::unavailable(
+                                    &row.source,
+                                    "Telemetry field was not reported",
+                                )
+                            }
+                        }),
+                    );
                 }
             }
             target.source = format!("{} + {} (PCI identity match)", target.source, row.source);
@@ -449,5 +481,39 @@ mod tests {
         let data = GpuData::from_adapters(rows, Observation::available("fixture"));
         assert_eq!(data.utilization(), None);
         assert!(!data.adapters[1].fields["utilization_percent"].is_available());
+    }
+    #[test]
+    fn matching_gpu_preserves_per_field_denial_and_existing_measured_utilization() {
+        let mut rows = vec![GpuAdapter {
+            pci_address: Some("0000:01:00.0".into()),
+            utilization_percent: Some(12.0),
+            fields: std::collections::BTreeMap::from([(
+                "utilization_percent".into(),
+                Observation::available("OS engine counters"),
+            )]),
+            ..Default::default()
+        }];
+        merge_telemetry(
+            &mut rows,
+            vec![GpuAdapter {
+                pci_address: Some("0000:01:00.0".into()),
+                temperature_celsius: Some(50.0),
+                fields: std::collections::BTreeMap::from([(
+                    "memory_used_mb".into(),
+                    Observation::permission_denied("NVML", "Driver denied access"),
+                )]),
+                ..Default::default()
+            }],
+        );
+        assert_eq!(rows[0].utilization_percent, Some(12.0));
+        assert_eq!(
+            rows[0].fields["utilization_percent"].source,
+            "OS engine counters"
+        );
+        assert_eq!(
+            rows[0].fields["memory_used_mb"].status,
+            crate::observation::ObservationStatus::PermissionDenied
+        );
+        assert_eq!(rows[0].temperature_celsius, Some(50.0));
     }
 }

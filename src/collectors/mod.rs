@@ -448,3 +448,6 @@ impl SystemSnapshot {
         self.warnings.extend(health_warnings);
     }
 }
+
+#[cfg(any(windows, target_os = "linux"))]
+mod nvml;
