@@ -242,6 +242,14 @@ jobs:
           else
             clang -fobjc-arc -fblocks -framework AppKit scripts/test-macos-termination.m gui/src/platform/window_visibility_macos.m -o target/test-macos-termination
             target/test-macos-termination
+            clang -fobjc-arc -fblocks -Wno-deprecated-declarations \
+              -framework AppKit -framework AVFoundation -framework MediaToolbox \
+              -framework Accelerate -framework Foundation -framework CoreText \
+              -framework UniformTypeIdentifiers -framework Security -framework Metal \
+              -framework QuartzCore -framework WebKit -framework CoreFoundation \
+              -framework CoreGraphics -framework CoreMedia -framework ImageIO \
+              scripts/test-macos-accessibility-focus.m -o target/test-macos-accessibility-focus
+            target/test-macos-accessibility-focus
             python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground.json" --revision '${{ github.sha }}' --seconds 30
             python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/hidden.json" --revision '${{ github.sha }}' --seconds 30 --hidden
           fi

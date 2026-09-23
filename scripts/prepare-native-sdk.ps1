@@ -15,7 +15,7 @@ $requiredVersion = "0.5.4"
 $requiredTarball = "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz"
 $requiredIntegrity = "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA=="
 $requiredZigHash = "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb"
-$requiredPatchHash = "5f3b903a26f8f1284996724392a24913538d2b2a9a7900a84eaeeeb9eea83781"
+$requiredPatchHash = "24e61852db862a44c98e5cfdd379bddac685262e8e25f436c3246d4b9b41cd6b"
 
 if (-not (Test-Path -LiteralPath $sdkRoot -PathType Container)) {
     throw "The project-local Native SDK is missing. Run npm ci in '$gui' first."
@@ -105,7 +105,7 @@ $files = [ordered]@{
     }
     "src/platform/macos/appkit_host.m" = @{
         Pristine = "df07d1e67688b307752f5ff850108664d76e5c3f44335970d21fa0139f9ec7d5"
-        Patched = "908540ca2a58d0fd8a32e8350db715bd1bf82c2f073f579cc4edfdca29fadfce"
+        Patched = "9eab234bdf3a64a5605c8a28bbfb06147f0087f2835ce041f2aebaafe4c37810"
     }
     "src/platform/macos/root.zig" = @{
         Pristine = "980888b6c53acf2dac2bca908f878214dce8707a71c7c8f4365aa0ade821ffc6"

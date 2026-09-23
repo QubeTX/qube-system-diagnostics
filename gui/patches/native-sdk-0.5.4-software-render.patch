@@ -342,10 +342,40 @@ index 7f6d6ec..32393e1 100644
  void native_sdk_appkit_set_tray_callback(native_sdk_appkit_host_t *host, native_sdk_appkit_tray_callback_t callback, void *context);
  
 diff --git a/src/platform/macos/appkit_host.m b/src/platform/macos/appkit_host.m
-index e725386..1cf3518 100644
 --- a/src/platform/macos/appkit_host.m
 +++ b/src/platform/macos/appkit_host.m
-@@ -9926,6 +9926,9 @@ static int NativeSdkSpectrumComputeBands(native_sdk_spectrum_tap_state_t *state,
+@@ -390,6 +390,7 @@
+ @property(nonatomic, assign) NativeSdkMetalSurfaceView *surfaceView;
+ @property(nonatomic, assign) uint64_t widgetId;
+ @property(nonatomic, assign) uint32_t actionFlags;
++- (void)applySnapshotFocus:(BOOL)focused;
+ - (BOOL)emitSetTextAccessibilityValue:(id)value;
+ - (BOOL)emitSetSelectionAccessibilityValue:(id)value;
+ @end
+@@ -1263,6 +1264,13 @@
+  * success-without-actuation dishonesty the press path had. Route the
+  * write to the runtime's focus dispatch; the next semantics publish
+  * reports the app's actual focus back. */
++// Publishing the app's semantic state is not an assistive-client action.
++// Do not echo it into the runtime: that clears keyboard-visible focus
++// and creates a second input/redraw for each focused publication.
++- (void)applySnapshotFocus:(BOOL)focused {
++    [super setAccessibilityFocused:focused];
++}
++
+ - (void)setAccessibilityFocused:(BOOL)focused {
+     [super setAccessibilityFocused:focused];
+     if (!focused || !self.accessibilityEnabled) return;
+@@ -5356,7 +5364,7 @@
+             }
+         }
+         element.accessibilityEnabled = (node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_ENABLED) != 0;
+-        element.accessibilityFocused = (node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_FOCUSED) != 0;
++        [element applySnapshotFocus:(node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_FOCUSED) != 0];
+         element.accessibilitySelected = (node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_SELECTED) != 0;
+         if ((node.state_flags & NATIVE_SDK_APPKIT_WIDGET_STATE_EXPANDED) != 0) {
+             element.accessibilityExpanded = YES;
+@@ -9926,6 +9934,9 @@
  
  - (void)emitEventNamed:(NSString *)name detailJSON:(NSString *)detailJSON windowId:(uint64_t)windowId {
      WKWebView *webView = [self webViewForWindowId:windowId];
@@ -355,7 +385,7 @@ index e725386..1cf3518 100644
      NSData *nameData = [NSJSONSerialization dataWithJSONObject:name ?: @"" options:NSJSONWritingFragmentsAllowed error:nil];
      NSString *nameJSON = nameData ? [[NSString alloc] initWithData:nameData encoding:NSUTF8StringEncoding] : @"\"\"";
      NSString *detail = detailJSON.length > 0 ? detailJSON : @"null";
-@@ -11021,6 +11024,16 @@ void native_sdk_appkit_update_tray_title(native_sdk_appkit_host_t *host, const c
+@@ -11021,6 +11032,16 @@
      }
  }
  
