@@ -6,6 +6,7 @@ const native_sdk = @import("native_sdk");
 const engine = @import("engine.zig");
 const projection = @import("projection.zig");
 const settings = @import("settings.zig");
+const settings_writer = @import("settings_writer.zig");
 const window_visibility = @import("platform/window_visibility.zig");
 
 pub const panic = std.debug.FullPanic(native_sdk.debug.capturePanic);
@@ -45,6 +46,7 @@ const shell_views = [_]native_sdk.ShellView{
     .{ .label = canvas_label, .kind = .gpu_surface, .fill = true, .role = "SD-300 system monitor", .accessibility_label = "Live SD-300 system diagnostics", .gpu_backend = .metal, .gpu_pixel_format = .bgra8_unorm, .gpu_present_mode = .timer, .gpu_alpha_mode = .@"opaque", .gpu_color_space = .srgb, .gpu_vsync = true },
 };
 var active_engine: ?*engine.Runtime = null;
+var active_settings_writer: ?*settings_writer.Writer = null;
 var active_app_state: ?*NativeApp = null;
 var external_open_pending = std.atomic.Value(bool).init(false);
 var startup_should_show = true;
@@ -194,6 +196,8 @@ pub const Model = struct {
     chart_density: settings.ChartDensity = .balanced,
     last_monitor_section: u8 = 0,
     settings_restart_required: bool = false,
+    settings_requested: u64 = 0,
+    settings_completed: u64 = 0,
     export_pending: bool = false,
     status_buffer: canvas.TextBuffer(384) = canvas.TextBuffer(384).init("Loading the SD-300 engine…"),
     tray_cpu_buffer: canvas.TextBuffer(64) = canvas.TextBuffer(64).init("CPU · waiting for live data"),
@@ -204,6 +208,7 @@ pub const Model = struct {
     tray_tooltip_buffer: canvas.TextBuffer(192) = canvas.TextBuffer(192).init("SD-300 — hardware summary is starting"),
 
     pub const view_unbound = .{
+        "settings_requested", "settings_completed",
         "window_visible",
         "tray_session_active",
         "sequence",
@@ -832,6 +837,10 @@ pub export fn sd300_model_open() callconv(.c) void {
 /// AppKit can terminate without returning from its run loop. Stop and join the
 /// engine before that exit; ordinary main cleanup still owns library unloading.
 pub export fn sd300_model_shutdown() callconv(.c) void {
+    if (active_settings_writer) |writer| {
+        active_settings_writer = null;
+        writer.stop();
+    }
     if (active_engine) |runtime| {
         active_engine = null;
         runtime.stopCollection();
@@ -1057,14 +1066,28 @@ fn settingsDocument(model: *const Model) settings.Document {
 }
 
 fn persistSettings(model: *Model) void {
-    const runtime = active_engine orelse {
-        model.status_buffer.set("Settings could not be saved because the GUI engine is unavailable.");
+    const writer = active_settings_writer orelse {
+        model.status_buffer.set("Settings could not be saved because the preference writer is unavailable.");
         return;
     };
-    settings.save(runtime, std.heap.page_allocator, settingsDocument(model)) catch {
+    model.settings_requested = writer.request(settingsDocument(model));
+    model.status_buffer.set("Saving GUI preferences…");
+}
+
+fn writeSettings(context: *anyopaque, document: settings.Document) !void {
+    const runtime: *engine.Runtime = @ptrCast(@alignCast(context));
+    try settings.save(runtime, std.heap.page_allocator, document);
+}
+
+fn pollSettings(model: *Model) void {
+    const writer = active_settings_writer orelse return;
+    const result = writer.status();
+    if (result.sequence == 0 or result.sequence <= model.settings_completed or result.sequence != model.settings_requested) return;
+    model.settings_completed = result.sequence;
+    if (result.failed) {
         model.status_buffer.set("Settings could not be saved; the previous document remains intact.");
         return;
-    };
+    }
     if (model.settings_restart_required) {
         model.status_buffer.set("Settings saved · restart SD-300 to apply tray availability.");
     } else {
@@ -1168,6 +1191,7 @@ fn pollExport(model: *Model, fx: *Effects) void {
 }
 
 fn sampleEngine(model: *Model) void {
+    pollSettings(model);
     defer projectHistories(model);
     const runtime = active_engine orelse {
         markFastSummaryFailed(model);
@@ -1805,6 +1829,17 @@ pub fn main(init: std.process.Init) !void {
     defer {
         active_engine = null;
         if (engine_runtime) |*runtime| runtime.deinit();
+    }
+    var preference_writer: ?settings_writer.Writer = null;
+    if (engine_runtime) |*runtime| {
+        preference_writer = .{ .io = init.io, .context = runtime, .save_fn = writeSettings };
+        if (preference_writer.?.start()) |_| {
+            active_settings_writer = &preference_writer.?;
+        } else |_| {}
+    }
+    defer {
+        active_settings_writer = null;
+        if (preference_writer) |*writer| writer.stop();
     }
     window_visibility.installTerminationCleanup();
     defer window_visibility.uninstallTerminationCleanup();

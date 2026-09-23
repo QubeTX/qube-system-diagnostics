@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Move GUI preference commits off the input/render thread into one joined writer with one replaceable pending document. Preserve atomic namespace-aware writes, report pending/success/failure honestly, and flush the newest request before engine unload, including AppKit termination. Tests cover coalescing, failure, requests during slow I/O and recovery. Local timing attributed 5.5 ms median and 11.3 ms p95 navigation cost to synchronous preference commits.
+
 - Stop macOS native-only event delivery from arming the JavaScript bridge's ten-second, 60 Hz frame keepalive when no WebView exists. Hosted thread counters and stacks attribute the hidden-window cost to this main-thread timer churn; native functional and long-window resource verification remain required.
 
 - Add bounded full-event frame-work and input-to-present qualification counters, including p95, lifetime stall maxima and sample-window coverage. Exclude automation snapshot I/O and queue wait from synchronous work. Keep automation builds in a separate staging directory and verify every patched SDK file in both build preparers; deterministic fixtures cover nesting, idle gaps and overwritten percentile windows.

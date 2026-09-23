@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Changing pages and preferences no longer waits for settings to reach disk. The app saves in the background, explains failures and finishes the latest save before closing.
+
 - The Mac app avoids repeatedly waking its interface for messages that have no recipient. Behind the scenes, native testing checks the resulting background resource use and continued responsiveness.
 
 - Behind the scenes: responsiveness checks now include preparing a screen and reacting to input, with explicit coverage and stall reporting. Separate test builds keep automation out of the app customers install.

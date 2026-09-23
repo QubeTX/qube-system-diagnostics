@@ -7,6 +7,8 @@ const window_visibility = @import("platform/window_visibility.zig");
 const canvas = native_sdk.canvas;
 const testing = std.testing;
 
+test { _ = @import("settings_writer.zig"); }
+
 const AppMarkup = canvas.MarkupView(main.Model, main.Msg);
 
 test "frame work counts nested events once and excludes queue wait" {
