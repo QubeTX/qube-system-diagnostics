@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: 9dc7575 Apple Silicon profiling attributes 15.1 ms CPU per slow disk collection to repeatedly recreated sysinfo disk state, including unused I/O discovery. Retain the worker's discovery containers and request only capacity/kind fields; preserve list refresh, cadence and explicit reset. Next oracle: native slow-stage comparison and worker lifecycle fixtures; whole-product CPU improvement remains unproven until measured.
+
 - 2026-09-23 — codex: clock/capture correction passes 229 root tests (six child fixtures), eight CLI contracts, three worker integrations, 16 engine tests, 55 native GUI tests (two skips), strict bindings, clippy and coordinated version checks. Keep ABI 2, advance the nullable topic envelope to schema 2, and align installer/verifier expectations. Next oracle: native six-target runtime and installer checks on this candidate.
 
 - 2026-09-23 — codex: completed isolated 109b2b4 foreground run passes CPU (1.20 percent) and private memory (254.0 MiB), but peak RSS remains 155.14 MiB versus the 150 MiB gate. This improves the previous 178.7 MiB peak without reducing cadence; retain the report and keep hidden/soak qualification pending. Run 35869747344 proves GNU hidden profile/shutdown behavior and attributes its separate RSS failure principally to the GUI process. Next hypotheses: retained rendering allocation on Windows/Linux and repeated Mac disk/process work, using role and stage evidence rather than weakening gates.

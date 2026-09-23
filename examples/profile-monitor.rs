@@ -119,12 +119,11 @@ fn main() {
         return;
     }
     if slow {
+        // Match the persistent worker's discovery containers and cadence.
+        let mut disks = sysinfo::Disks::new();
+        let mut components = sysinfo::Components::new();
         for index in 0..count + 2 {
             let start = Instant::now();
-            // Match the isolated Slow worker: each request owns fresh containers,
-            // while provider-local discovery caches survive in the worker.
-            let mut disks = sysinfo::Disks::new();
-            let mut components = sysinfo::Components::new();
             timings.measure("disk.collect", || collectors::disk::collect(&mut disks));
             let gpu = timings.measure("gpu.collect", collectors::gpu::collect);
             timings.measure("thermals.collect", || {

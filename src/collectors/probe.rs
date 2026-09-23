@@ -41,6 +41,7 @@ struct Envelope {
 #[derive(Default)]
 struct WorkerSampler {
     disk: disk_activity::DiskSampler,
+    slow: Option<Box<SystemSnapshot>>,
     previous: Option<(Instant, u64)>,
 }
 impl WorkerSampler {
@@ -79,6 +80,19 @@ impl WorkerSampler {
             let frame = disk_activity::collect();
             return self.activity(frame, Instant::now(), sampling::unix_ms());
         }
+        if matches!(topic, crate::cli::CollectorTopic::Slow) {
+            // Retain native discovery handles while refreshing the live values
+            // and device lists. Explicit retry/resume resets the entire sampler.
+            let snapshot = self.slow.get_or_insert_with(Default::default);
+            snapshot.refresh_slow();
+            let data = ProbeData::Slow {
+                disk: std::mem::take(&mut snapshot.disk),
+                gpu: std::mem::take(&mut snapshot.gpu),
+                thermals: std::mem::take(&mut snapshot.thermals),
+                warnings: std::mem::take(&mut snapshot.warnings),
+            };
+            return self.finish(data, Instant::now(), sampling::unix_ms());
+        }
         let data = collect_local(topic);
         self.finish(data, Instant::now(), sampling::unix_ms())
     }
@@ -98,16 +112,7 @@ fn collect_local(topic: crate::cli::CollectorTopic) -> ProbeData {
                 network: snapshot.network,
             }
         }
-        CollectorTopic::Slow => {
-            let mut snapshot = SystemSnapshot::default();
-            snapshot.refresh_slow();
-            ProbeData::Slow {
-                disk: snapshot.disk,
-                gpu: snapshot.gpu,
-                thermals: snapshot.thermals,
-                warnings: snapshot.warnings,
-            }
-        }
+        CollectorTopic::Slow => unreachable!("slow uses the worker's discovery state"),
         CollectorTopic::Connections => {
             let mut data = network_diag::NetworkDiagData::default();
             network_diag::refresh_connections(&mut data);

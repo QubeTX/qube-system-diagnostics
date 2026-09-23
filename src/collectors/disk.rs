@@ -46,7 +46,14 @@ impl PartitionInfo {
 }
 
 pub fn collect(disks: &mut Disks) -> DiskData {
-    disks.refresh(true);
+    // Physical I/O has its own one-second sampler. Capacity views do not use
+    // sysinfo's I/O counters; querying them here repeats costly IOKit discovery.
+    disks.refresh_specifics(
+        true,
+        sysinfo::DiskRefreshKind::nothing()
+            .with_kind()
+            .with_storage(),
+    );
 
     let partitions = disks
         .iter()
