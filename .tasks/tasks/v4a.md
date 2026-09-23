@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement, bounded workers, provider fixt
 
 ## Activity
 
+- 2026-09-23 — codex: operator explicitly defers formal-verification exploration to a future version; capture #frm in Backlog without expanding v4 scope. Current native 1df660d check fails Apple Silicon's oversized-output fixture with a bounded Timeout instead of OutputLimit; inspect the fixture and repeat unchanged bytes once before considering a product change. Intel Mac long-run CPU remains above the GUI budgets, while its TUI and RSS pass.
+
 - 2026-09-23 — codex: 78cc519 long comparison passes Linux ARM64 TUI/foreground/hidden gates. GNU x86-64 CPU and hidden gates pass, foreground RSS remains 155.10 MiB; await the already-dispatched final font comparison before changing that lane. Apple Silicon shuts down cleanly but remains above CPU/RSS (foreground 2.46 percent/187.36 MiB; hidden 2.22 percent/159.17 MiB; TUI 2.51 percent). Root monitor dominates hidden CPU. Add bounded per-thread CPU deltas to the existing native diagnostic profile, because waiting-stack frequency cannot attribute CPU. Next oracle: native thread counters plus stacks before choosing a product fix.
 
 - 2026-09-23 — codex: CI 35892988794 completes successfully on all six native targets for 2c3a2ad, closing the requested font build/layout change. Commit the validated comparison-reporting fix with visual/native evidence and dispatch a new native before/after run; the previous long run keeps its own source identity. Local hidden measurement continues without observers or compilation.

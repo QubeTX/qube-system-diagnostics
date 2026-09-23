@@ -1,6 +1,7 @@
 # Tasks
 
 ## Backlog
+- [ ] **Explore formal verification in a future version** - consider a small model of collector cancellation, shutdown and latest-value delivery; operator explicitly deferred this exploration beyond v4 on 2026-09-23 #frm
 - [ ] **Run the released-bytes two-hour soak and capture frame/input percentiles** - TASK FOR CODEX; unattended, machine-quarantined two-hour Processes soak plus formal frame-p95/input-p95 evidence on the public v3 bytes, with exit-attribution awareness; replaces the pre-release soak gate the operator waived on 2026-07-22 (needs #qv3) (ms #v3n) #sok
 - [ ] **Run the extensive post-release testing and performance sweep** - TASK FOR CODEX; everything waived from the v3.0.0 release under the operator's functional-bar directive: exhaustive GUI automation across all sections/modes/keyboard/scaling/exports/unavailable states, published-v2 PTY replay on hosted targets, physical interaction regression sweep (scroll granularity, tray and minimize lifecycle), formal foreground/hidden budget re-proof, and varied-load performance regression checks; feeds patch releases (needs #qv3) (ms #v3n) #ext
 - [ ] **Run the post-release hardening sweep** - TASK FOR CODEX; deferred robustness items from the release reviews: uninstall-fix trio, engine staleness/threading/panic containment, GUI and installer polish, documented quirks (needs #qv3) (ms #v3n) #hrd
