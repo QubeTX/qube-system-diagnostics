@@ -7,6 +7,31 @@ use crate::collectors::{DiagnosticWarning, SystemSnapshot, WarningSeverity};
 use crate::error::{AppError, Result};
 use crate::observation::Observation;
 
+/// One-shot exports share the cancellable provider boundary. The finite wait
+/// gathers a second fast/activity baseline without waiting forever for a probe.
+pub async fn collect_snapshot() -> SystemSnapshot {
+    let monitor = crate::monitor::Monitor::start(crate::monitor::Profile::Full);
+    let mut snapshot = SystemSnapshot::default();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(27);
+    loop {
+        monitor.drain(&mut snapshot);
+        let warm = snapshot
+            .samples
+            .get("fast")
+            .is_some_and(|sample| sample.sequence >= 2)
+            && snapshot
+                .samples
+                .get("activity")
+                .is_some_and(|sample| sample.sequence >= 2 || !sample.observation.is_available());
+        if (snapshot.samples.len() == crate::monitor::Lane::ALL.len() && warm)
+            || std::time::Instant::now() >= deadline
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    snapshot
+}
 #[derive(Debug, Clone, Serialize)]
 pub struct DiagnosticReport {
     pub schema_version: u32,
@@ -46,53 +71,7 @@ pub struct CapabilityRecord {
 
 impl DiagnosticReport {
     pub async fn collect(include_sensitive: bool) -> Self {
-        let mut snapshot = SystemSnapshot::default();
-        snapshot.refresh_static();
-        snapshot.refresh_fast();
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        snapshot.refresh_fast();
-        snapshot.refresh_slow();
-        snapshot.refresh_connections();
-
-        let (drivers, connectivity, disk_health) = tokio::join!(
-            tokio::task::spawn_blocking(crate::collectors::drivers::collect),
-            tokio::task::spawn_blocking(crate::collectors::network_diag::collect_connectivity),
-            tokio::task::spawn_blocking(crate::collectors::disk_health::collect),
-        );
-
-        match drivers {
-            Ok(data) => snapshot.drivers = data,
-            Err(error) => snapshot.warnings.push(DiagnosticWarning {
-                source: "Drivers".into(),
-                message: format!("Driver collector task failed: {error}"),
-                severity: WarningSeverity::Error,
-            }),
-        }
-        match connectivity {
-            Ok((data, warnings)) => {
-                snapshot.network_diag.gateway = data.gateway;
-                snapshot.network_diag.dns = data.dns;
-                snapshot.network_diag.internet = data.internet;
-                snapshot.warnings.extend(warnings);
-            }
-            Err(error) => snapshot.warnings.push(DiagnosticWarning {
-                source: "Network".into(),
-                message: format!("Connectivity collector task failed: {error}"),
-                severity: WarningSeverity::Error,
-            }),
-        }
-        match disk_health {
-            Ok((data, warnings)) => {
-                snapshot.disk_health = data;
-                snapshot.warnings.extend(warnings);
-            }
-            Err(error) => snapshot.warnings.push(DiagnosticWarning {
-                source: "Disk Health".into(),
-                message: format!("Disk-health collector task failed: {error}"),
-                severity: WarningSeverity::Error,
-            }),
-        }
-
+        let mut snapshot = collect_snapshot().await;
         let attention = snapshot
             .drivers
             .attention_devices()

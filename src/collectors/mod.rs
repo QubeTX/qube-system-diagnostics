@@ -1,10 +1,12 @@
 pub mod command;
 pub mod cpu;
 pub mod disk;
+pub mod disk_activity;
 pub mod disk_health;
 pub mod display;
 pub mod drivers;
 pub mod gpu;
+pub mod macos;
 pub mod memory;
 pub mod network;
 pub mod network_diag;
@@ -149,6 +151,7 @@ pub struct SystemSnapshot {
     pub cpu: cpu::CpuData,
     pub memory: memory::MemoryData,
     pub disk: disk::DiskData,
+    pub disk_activity: disk_activity::DiskActivity,
     pub disk_health: disk_health::DiskHealthData,
     pub displays: display::DisplayData,
     pub gpu: gpu::GpuData,
@@ -176,6 +179,7 @@ impl Default for SystemSnapshot {
             cpu: cpu::CpuData::default(),
             memory: memory::MemoryData::default(),
             disk: disk::DiskData::default(),
+            disk_activity: disk_activity::DiskActivity::default(),
             disk_health: disk_health::DiskHealthData::default(),
             displays: display::DisplayData::default(),
             gpu: gpu::GpuData::default(),

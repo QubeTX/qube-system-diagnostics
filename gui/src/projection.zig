@@ -569,6 +569,12 @@ pub const Projection = struct {
     drive_health_count: usize = 0,
     drive_health_total_count: u32 = 0,
     disk_io_available: bool = false,
+    activity_sequence: u64 = 0,
+    activity_captured_unix_ms: u64 = 0,
+    activity_observation: ObservationView = .{},
+    disk_read_latency_available: bool = false,
+    disk_write_latency_available: bool = false,
+    disk_queue_available: bool = false,
     disk_read_mib_s: f64 = 0,
     disk_write_mib_s: f64 = 0,
     disk_queue_depth: f64 = 0,
@@ -905,6 +911,29 @@ pub const Projection = struct {
         self.captureTopicMeta(1, envelope);
         const data = envelope.data;
         self.fast_ready = true;
+        if (data.activity_sample) |sample| {
+            self.activity_captured_unix_ms = sample.captured_unix_ms;
+            setObservation(&self.activity_observation, sample.observation);
+            if (sample.sequence != self.activity_sequence) {
+                self.activity_sequence = sample.sequence;
+                self.disk_io_available = data.disk_activity.devices.len > 0;
+                self.disk_read_mib_s = 0;
+                self.disk_write_mib_s = 0;
+                self.disk_read_latency_ms = 0;
+                self.disk_write_latency_ms = 0;
+                self.disk_queue_depth = 0;
+                self.disk_read_latency_available = false;
+                self.disk_write_latency_available = false;
+                self.disk_queue_available = data.disk_activity.devices.len > 0;
+                for (data.disk_activity.devices) |device| {
+                    if (device.read_bytes_per_sec) |read| { self.disk_read_mib_s += read / 1048576; } else { self.disk_io_available = false; }
+                    if (device.write_bytes_per_sec) |write| { self.disk_write_mib_s += write / 1048576; } else { self.disk_io_available = false; }
+                    if (device.read_latency_ms) |latency| { self.disk_read_latency_ms = @max(self.disk_read_latency_ms, latency); self.disk_read_latency_available = true; }
+                    if (device.write_latency_ms) |latency| { self.disk_write_latency_ms = @max(self.disk_write_latency_ms, latency); self.disk_write_latency_available = true; }
+                    if (device.queue_depth) |queue| { self.disk_queue_depth += @floatFromInt(queue); } else { self.disk_queue_available = false; }
+                }
+            }
+        }
         self.cpu_model_buffer.set(data.cpu.cpu_model);
         self.physical_core_count = saturatedU32(data.cpu.core_count);
         self.logical_thread_count = saturatedU32(data.cpu.thread_count);
@@ -1061,7 +1090,7 @@ pub const Projection = struct {
     pub fn applySlowJson(self: *Projection, allocator: std.mem.Allocator, bytes: []const u8) !void {
         const parsed = try std.json.parseFromSlice(Envelope(SlowDataJson), allocator, bytes, .{ .ignore_unknown_fields = true });
         defer parsed.deinit();
-        self.captureTopicMeta(2, parsed.value);
+        self.captureTopicMeta(3, parsed.value);
         const data = parsed.value.data;
         self.slow_ready = true;
         const gib = 1024.0 * 1024.0 * 1024.0;
@@ -1160,7 +1189,7 @@ pub const Projection = struct {
     pub fn applyMediumJson(self: *Projection, allocator: std.mem.Allocator, bytes: []const u8) !void {
         const parsed = try std.json.parseFromSlice(Envelope(MediumJson), allocator, bytes, .{ .ignore_unknown_fields = true });
         defer parsed.deinit();
-        self.captureTopicMeta(3, parsed.value);
+        self.captureTopicMeta(2, parsed.value);
         self.medium_ready = true;
         const data = parsed.value.data;
         self.listening_count = saturatedU32(data.listening_ports.len);
@@ -1206,12 +1235,14 @@ pub const Projection = struct {
         defer parsed.deinit();
         self.captureTopicMeta(5, parsed.value);
         self.health_ready = true;
-        self.disk_io_available = false;
-        self.disk_read_mib_s = 0;
-        self.disk_write_mib_s = 0;
-        self.disk_queue_depth = 0;
-        self.disk_read_latency_ms = 0;
-        self.disk_write_latency_ms = 0;
+        if (self.activity_sequence == 0) {
+            self.disk_io_available = false;
+            self.disk_read_mib_s = 0;
+            self.disk_write_mib_s = 0;
+            self.disk_queue_depth = 0;
+            self.disk_read_latency_ms = 0;
+            self.disk_write_latency_ms = 0;
+        }
         self.disk_read_errors_total = 0;
         self.disk_write_errors_total = 0;
         self.disk_errors_available = false;
@@ -1242,12 +1273,14 @@ pub const Projection = struct {
                 row.queue_depth = io.queue_depth;
                 row.read_latency_ms = io.avg_read_latency_ms;
                 row.write_latency_ms = io.avg_write_latency_ms;
-                self.disk_io_available = true;
-                self.disk_read_mib_s += row.read_mib_s;
-                self.disk_write_mib_s += row.write_mib_s;
-                self.disk_queue_depth += row.queue_depth;
-                self.disk_read_latency_ms = @max(self.disk_read_latency_ms, row.read_latency_ms);
-                self.disk_write_latency_ms = @max(self.disk_write_latency_ms, row.write_latency_ms);
+                if (self.activity_sequence == 0) {
+                    self.disk_io_available = true;
+                    self.disk_read_mib_s += row.read_mib_s;
+                    self.disk_write_mib_s += row.write_mib_s;
+                    self.disk_queue_depth += row.queue_depth;
+                    self.disk_read_latency_ms = @max(self.disk_read_latency_ms, row.read_latency_ms);
+                    self.disk_write_latency_ms = @max(self.disk_write_latency_ms, row.write_latency_ms);
+                }
             }
             if (row.error_counts_available) {
                 self.disk_errors_available = true;
@@ -1457,6 +1490,11 @@ const ProcessesJson = struct {
     total_threads: usize = 0,
 };
 const FastDataJson = struct {
+    disk_activity: struct { devices: []const struct {
+        read_bytes_per_sec: ?f64 = null, write_bytes_per_sec: ?f64 = null,
+        read_latency_ms: ?f64 = null, write_latency_ms: ?f64 = null, queue_depth: ?u64 = null,
+    } = &.{} } = .{},
+    activity_sample: ?struct { sequence: u64 = 0, captured_unix_ms: u64 = 0, observation: ObservationJson = .{} } = null,
     cpu: CpuJson,
     memory: MemoryJson,
     network: NetworkJson,
@@ -1829,4 +1867,22 @@ test "slow observations distinguish missing telemetry from numeric zero" {
     try std.testing.expectEqualStrings("permission_denied", value.cpuTemperatureStatus());
     try std.testing.expectEqualStrings("WMI · Access denied", value.cpuTemperatureObservation());
     try std.testing.expectEqualStrings("unsupported", value.batteryStatus());
+}
+
+test "fast disk counters survive slower SMART updates and preserve absent latency" {
+    var value = Projection{};
+    try value.applyFastJson(std.testing.allocator,
+        \\{"sequence":1,"data":{"cpu":{},"memory":{},"network":{},"processes":{},"activity_sample":{"sequence":2,"captured_unix_ms":123,"observation":{"status":"available","source":"fixture"}},"disk_activity":{"devices":[{"read_bytes_per_sec":1048576,"write_bytes_per_sec":0,"read_latency_ms":2.5,"write_latency_ms":null,"queue_depth":null}]}}}
+    );
+    try std.testing.expect(value.disk_io_available);
+    try std.testing.expectEqual(@as(f64, 1), value.disk_read_mib_s);
+    try std.testing.expect(value.disk_read_latency_available);
+    try std.testing.expect(!value.disk_write_latency_available);
+    try std.testing.expect(!value.disk_queue_available);
+    try value.applyHealthJson(std.testing.allocator,
+        \\{"sequence":1,"data":{"drives":[],"health_status":{},"reliability_status":{}}}
+    );
+    try std.testing.expect(value.disk_io_available);
+    try std.testing.expectEqual(@as(f64, 1), value.disk_read_mib_s);
+    try std.testing.expectEqual(@as(u64, 2), value.activity_sequence);
 }

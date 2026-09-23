@@ -6,6 +6,9 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Sample physical disk activity independently each second using identity-keyed counter deltas, documented Windows/Linux/macOS units, warmup/reset handling, and nullable latency. Keep SMART refreshes from overwriting activity charts.
+- Match Windows health rows by physical device number, remove partition-order health guesses, enumerate every structured macOS physical disk, and parse optional smartctl JSON/exit bitmasks while retaining partial telemetry.
+- Correct swapped medium/slow GUI topic metadata and keep one-shot exports within the cancellable worker boundary.
 - Scope the initial measurement placeholder to a running monitor session so populated offline/fixture views remain visible.
 - Move TUI and engine collection into independent bounded latest-result lanes; isolate native/helper probes in cancellable version-checked subprocesses, skip overdue work, and back off failed providers.
 - Render startup progressively, attach actual capture metadata to engine topics, and append timestamped TUI histories only on fresh samples without combining CPU and GPU temperature series.
@@ -15,6 +18,7 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Development
 
+- Copy the staged native test model contract back to the source checkout and run strict binding checks, preventing stale contracts from silently reducing validation coverage.
 - Track the accepted v4 monitoring and qualification plan; refresh the task board bundle while preserving project identity and existing acceptance items.
 
 ## [3.1.3] - 2026-07-25

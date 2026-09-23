@@ -10,6 +10,9 @@ The newest section is work in progress. It is deliberately candid about what has
 
 **Fixed**
 
+- Storage activity updates promptly, independently of slower health checks. Idle drives no longer show a made-up response time, and drive health is attached to the correct physical device.
+- Mac storage discovery includes additional drives. Optional storage-health tools preserve useful partial readings and distinguish an unreadable device from a failing one.
+- Exporting a diagnostic snapshot now has a finite collection wait, including when a hardware provider stops responding.
 - The startup message appears only while a live monitor is warming up; it does not cover already available diagnostic information.
 - The monitor opens before hardware discovery finishes and remains usable while slow checks run. Failed checks show their status and can recover without restarting the app.
 - Charts no longer repeat an old temperature or graphics reading as if it were new. Both interfaces show when their readings were captured.
@@ -19,6 +22,7 @@ The newest section is work in progress. It is deliberately candid about what has
 
 **Behind the scenes**
 
+- Strengthened interface checks so they validate the current screen bindings after native tests instead of relying on an older generated description.
 - Set up tracked work and verification for the monitoring improvements. The complete update will ship together after testing.
 
 ---

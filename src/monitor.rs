@@ -36,10 +36,11 @@ pub enum Lane {
     Diagnostics,
     Health,
     Drivers,
+    Activity,
 }
 
 impl Lane {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Fast,
         Self::Static,
         Self::Slow,
@@ -47,6 +48,7 @@ impl Lane {
         Self::Diagnostics,
         Self::Health,
         Self::Drivers,
+        Self::Activity,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -57,11 +59,12 @@ impl Lane {
             Self::Diagnostics => "diagnostics",
             Self::Health => "health",
             Self::Drivers => "drivers",
+            Self::Activity => "activity",
         }
     }
     pub fn cadence(self) -> Duration {
         Duration::from_secs(match self {
-            Self::Fast => 1,
+            Self::Fast | Self::Activity => 1,
             Self::Static => 300,
             Self::Slow => 5,
             Self::Connections => 3,
@@ -78,6 +81,7 @@ impl Lane {
             Self::Diagnostics => CollectorTopic::Diagnostics,
             Self::Health => CollectorTopic::Health,
             Self::Drivers => CollectorTopic::Drivers,
+            Self::Activity => CollectorTopic::Activity,
             Self::Fast => unreachable!("fast samples stay in process"),
         }
     }
@@ -90,6 +94,7 @@ struct FastData {
     processes: Option<collectors::processes::ProcessData>,
 }
 enum Data {
+    Activity(collectors::disk_activity::DiskActivity),
     Fast(Box<FastData>),
     Probe(Box<ProbeData>),
 }
@@ -104,8 +109,8 @@ struct Shared {
     stop: AtomicBool,
     profile: AtomicU8,
     sort: AtomicU8,
-    retry: [AtomicBool; 7],
-    slots: [Mutex<Option<Update>>; 7],
+    retry: [AtomicBool; 8],
+    slots: [Mutex<Option<Update>>; 8],
 }
 
 pub struct Monitor {
@@ -170,6 +175,12 @@ impl Monitor {
             match update.result {
                 Ok(data) => {
                     match data {
+                        Data::Activity(data) => {
+                            snapshot.disk_activity = data;
+                            snapshot
+                                .disk_activity
+                                .apply_legacy_io(&mut snapshot.disk_health);
+                        }
                         Data::Fast(data) => {
                             snapshot.cpu = data.cpu;
                             snapshot.memory.total_bytes = data.memory.total_bytes;
@@ -186,7 +197,12 @@ impl Monitor {
                                 snapshot.processes = processes;
                             }
                         }
-                        Data::Probe(data) => data.apply(snapshot),
+                        Data::Probe(data) => {
+                            data.apply(snapshot);
+                            snapshot
+                                .disk_activity
+                                .apply_legacy_io(&mut snapshot.disk_health);
+                        }
                     }
                     snapshot.samples.insert(
                         lane.name().into(),
@@ -230,6 +246,7 @@ impl Drop for Monitor {
 
 fn run_lane(shared: Arc<Shared>, lane: Lane) {
     let mut snapshot = SystemSnapshot::default();
+    let mut activity = collectors::disk_activity::DiskSampler::default();
     let mut next = Instant::now();
     let mut previous = None;
     let mut failures = 0u32;
@@ -257,8 +274,17 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
         };
         let result = catch_unwind(AssertUnwindSafe(|| {
             if lane != Lane::Fast {
-                return collectors::probe::collect(lane.topic(), &shared.stop)
-                    .map(|(data, captured)| (Data::Probe(Box::new(data)), captured));
+                return collectors::probe::collect(lane.topic(), &shared.stop).map(
+                    |(data, captured)| {
+                        let data = match data {
+                            ProbeData::Activity(frame) => {
+                                Data::Activity(activity.sample(frame, Instant::now()))
+                            }
+                            data => Data::Probe(Box::new(data)),
+                        };
+                        (data, captured)
+                    },
+                );
             }
             let full = profile == Profile::Full as u8;
             let summary = profile == Profile::Summary as u8;

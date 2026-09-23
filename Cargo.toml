@@ -51,6 +51,7 @@ serde_json = "1"
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"
 tempfile = "3"
+plist = "1.8.0"
 
 [target.'cfg(windows)'.dependencies]
 wmi = "0.14"
@@ -58,8 +59,11 @@ winreg = "0.52"
 winapi = { version = "0.3", features = [
     "consoleapi",
     "errhandlingapi",
+    "fileapi",
     "handleapi",
     "jobapi2",
+    "ioapiset",
+    "winioctl",
     "processthreadsapi",
     "psapi",
     "shellapi",

@@ -129,6 +129,7 @@ impl App {
                     let changed = self.monitor.as_ref().map(|m| m.drain(&mut self.snapshot)).unwrap_or_default();
                     if changed.contains(&Lane::Fast) { self.update_fast_history(); }
                     if changed.contains(&Lane::Slow) { self.update_slow_history(); }
+                    if changed.contains(&Lane::Activity) { self.update_activity_history(); }
                     dirty |= !changed.is_empty();
                 }
                 event = events.next() => {
@@ -214,6 +215,25 @@ impl App {
         // CPU and GPU temperatures must never be spliced into one series.
         self.temp_history
             .push_at(captured, self.snapshot.thermals.cpu_temp);
+    }
+    fn update_activity_history(&mut self) {
+        let Some(sample) = self.snapshot.samples.get("activity") else {
+            return;
+        };
+        if sample.captured_unix_ms == 0
+            || self
+                .disk_read_history
+                .samples()
+                .last()
+                .is_some_and(|s| s.captured_unix_ms == sample.captured_unix_ms)
+        {
+            return;
+        }
+        let totals = self.snapshot.disk_activity.totals();
+        self.disk_read_history
+            .push_at(sample.captured_unix_ms, totals.map(|t| t.0));
+        self.disk_write_history
+            .push_at(sample.captured_unix_ms, totals.map(|t| t.1));
     }
     fn handle_event(&mut self, event: Event) {
         if let Event::Key(key) = event {

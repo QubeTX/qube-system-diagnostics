@@ -30,7 +30,7 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(COLOR_DIM),
         )));
     } else {
-        for (i, part) in app.snapshot.disk.partitions.iter().enumerate() {
+        for part in &app.snapshot.disk.partitions {
             let pct = part.usage_percent();
             let status = HealthStatus::from_percent(pct);
 
@@ -74,30 +74,33 @@ fn render_user(frame: &mut Frame, app: &App, area: Rect) {
             ]));
             lines.push(gauge_line(&format!("    {}", name), pct, 20));
 
-            // Real health from disk_health collector
-            let drive_health = if app.snapshot.disk_health.drives.len() == 1 {
-                app.snapshot.disk_health.drives.first()
-            } else {
-                app.snapshot
-                    .disk_health
-                    .drives
-                    .get(i)
-                    .or_else(|| app.snapshot.disk_health.drives.first())
-            };
-            let (health_label, health_color) = match drive_health.map(|d| &d.health_status) {
-                Some(DiskHealthStatus::Healthy) => ("Good", COLOR_GOOD),
-                Some(DiskHealthStatus::Warning) => ("Degrading - Back up data", COLOR_WARN),
-                Some(DiskHealthStatus::Critical) => ("FAILING - Back up immediately!", COLOR_CRIT),
-                Some(DiskHealthStatus::Unknown) | None => ("Unknown", COLOR_DIM),
-            };
-            lines.push(Line::from(vec![
-                Span::styled("    Health   ", Style::default().fg(COLOR_DIM)),
-                Span::styled(health_label.to_string(), Style::default().fg(health_color)),
-            ]));
             lines.push(Line::from(""));
         }
     }
 
+    // Health belongs to physical devices, not a guessed partition/list index.
+    for drive in &app.snapshot.disk_health.drives {
+        lines.push(Line::from(format!(
+            "  {} · {}",
+            drive.model,
+            drive.health_status.user_label()
+        )));
+    }
+    if let Some((read, write)) = app.snapshot.disk_activity.totals() {
+        lines.insert(
+            0,
+            Line::from(format!(
+                "  Activity · read {} · write {}",
+                format_throughput(read as u64),
+                format_throughput(write as u64)
+            )),
+        );
+    } else {
+        lines.insert(
+            0,
+            Line::from("  Activity · waiting for readable counter samples"),
+        );
+    }
     let panel = Paragraph::new(lines);
     frame.render_widget(panel, inner);
 }
@@ -223,11 +226,27 @@ fn render_tech(frame: &mut Frame, app: &App, area: Rect) {
             ]));
 
             // Detail line
-            if let Some(ref io) = drive.io_stats {
+            if let Some(io) = app
+                .snapshot
+                .disk_activity
+                .devices
+                .iter()
+                .find(|d| d.device_id == drive.device_id)
+            {
+                let latency = |value: Option<f64>| {
+                    value
+                        .map(|v| format!("{v:.2}ms"))
+                        .unwrap_or_else(|| "N/A".into())
+                };
                 let mut detail_parts = vec![
-                    format!("Queue: {:.1}", io.queue_depth),
-                    format!("RdLat: {:.1}ms", io.avg_read_latency_ms),
-                    format!("WrLat: {:.1}ms", io.avg_write_latency_ms),
+                    format!(
+                        "Queue: {}",
+                        io.queue_depth
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "N/A".into())
+                    ),
+                    format!("RdLat: {}", latency(io.read_latency_ms)),
+                    format!("WrLat: {}", latency(io.write_latency_ms)),
                 ];
                 if let Some(poh) = drive.power_on_hours {
                     detail_parts.push(format!("POH: {}", poh));

@@ -303,6 +303,8 @@ struct StaticProjection<'a> {
 
 #[derive(Serialize)]
 struct FastProjection<'a> {
+    disk_activity: &'a collectors::disk_activity::DiskActivity,
+    activity_sample: Option<&'a collectors::sampling::SampleMeta>,
     cpu: &'a collectors::cpu::CpuData,
     memory: &'a collectors::memory::MemoryData,
     network: &'a collectors::network::NetworkData,
@@ -411,6 +413,8 @@ fn publish_fast(shared: &Shared, snapshot: &SystemSnapshot) {
         shared,
         Topic::Fast,
         &FastProjection {
+            disk_activity: &snapshot.disk_activity,
+            activity_sample: snapshot.samples.get("activity"),
             cpu: &snapshot.cpu,
             memory: &snapshot.memory,
             network: &snapshot.network,
@@ -588,6 +592,7 @@ fn collect_loop(shared: &Shared) {
         for lane in &changed {
             let sample = snapshot.samples.get(lane.name());
             match lane {
+                Lane::Activity => {}, // Carried by the next fast projection.
                 Lane::Fast => {
                     publish_fast(shared, &snapshot);
                     if shared.profile.load(Ordering::Acquire) == PROFILE_PROCESSES {

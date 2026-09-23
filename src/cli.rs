@@ -45,6 +45,7 @@ pub enum Command {
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CollectorTopic {
+    Activity,
     Static,
     Slow,
     Connections,

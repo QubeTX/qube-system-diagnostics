@@ -347,6 +347,13 @@ pub const Model = struct {
         const meta = model.activeCollector();
         return if (meta.detail().len > 0) meta.detail() else meta.provenance();
     }
+    pub fn diskIoAvailable(model: *const Model) bool {
+        const wall = model.clock.wallMs();
+        const now: u64 = if (wall > 0) @intCast(wall) else 0;
+        return model.detail.disk_io_available and model.detail.activity_observation.available
+            and model.detail.activity_captured_unix_ms > 0
+            and now -| model.detail.activity_captured_unix_ms <= 3000;
+    }
     pub fn processCpuSort(model: *const Model) bool {
         return model.process_sort == .cpu;
     }
@@ -991,6 +998,7 @@ fn sampleProcessSummary(runtime: *engine.Runtime, model: *Model) void {
 }
 
 fn sampleTopic(runtime: *engine.Runtime, model: *Model, allocator: std.mem.Allocator, topic: engine.Topic) void {
+    const previous_activity = model.detail.activity_sequence;
     const payload = runtime.readTopicAlloc(allocator, topic) catch {
         model.status_buffer.set("A detailed collector topic could not be read; other live topics remain available.");
         return;
@@ -1014,6 +1022,10 @@ fn sampleTopic(runtime: *engine.Runtime, model: *Model, allocator: std.mem.Alloc
     };
     switch (topic) {
         .fast => {
+            if (model.detail.activity_sequence != previous_activity and model.detail.disk_io_available) {
+                pushHistoryRaw(&model.disk_read_history, model.detail.disk_read_mib_s);
+                pushHistoryRaw(&model.disk_write_history, model.detail.disk_write_mib_s);
+            }
             const swap_percent = if (model.detail.swap_total_gib > 0)
                 model.detail.swap_used_gib / model.detail.swap_total_gib * 100
             else
@@ -1028,18 +1040,12 @@ fn sampleTopic(runtime: *engine.Runtime, model: *Model, allocator: std.mem.Alloc
             }
             const temperature = if (model.detail.cpu_temperature_available)
                 model.detail.cpu_temperature_celsius
-            else if (model.detail.gpu_temperature_available)
-                model.detail.gpu_temperature_celsius
             else
                 -1;
             if (temperature >= 0) {
                 pushHistoryRaw(&model.temperature_history_celsius, temperature);
                 pushHistoryRaw(&model.temperature_history_fahrenheit, (temperature * 9 / 5) + 32);
             }
-        },
-        .health => if (model.detail.disk_io_available) {
-            pushHistoryRaw(&model.disk_read_history, model.detail.disk_read_mib_s);
-            pushHistoryRaw(&model.disk_write_history, model.detail.disk_write_mib_s);
         },
         .medium => rebuildConnectionFilter(model),
         .drivers => rebuildDriverFilter(model),

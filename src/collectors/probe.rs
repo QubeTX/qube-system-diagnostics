@@ -7,6 +7,7 @@ use std::{path::PathBuf, sync::atomic::AtomicBool, time::Duration};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "topic", content = "data", rename_all = "snake_case")]
 pub enum ProbeData {
+    Activity(disk_activity::CounterFrame),
     Static {
         system: system_info::SystemInfoData,
         memory: memory::MemoryData,
@@ -35,6 +36,7 @@ struct Envelope {
 pub fn collect_local(topic: crate::cli::CollectorTopic) -> ProbeData {
     use crate::cli::CollectorTopic;
     match topic {
+        CollectorTopic::Activity => ProbeData::Activity(disk_activity::collect()),
         CollectorTopic::Static => {
             let mut snapshot = SystemSnapshot::default();
             snapshot.refresh_static();
@@ -101,6 +103,7 @@ pub fn collect(
     let executable =
         executable().ok_or("The matching SD-300 CLI collector companion is missing")?;
     let name = match topic {
+        crate::cli::CollectorTopic::Activity => "activity",
         crate::cli::CollectorTopic::Static => "static",
         crate::cli::CollectorTopic::Slow => "slow",
         crate::cli::CollectorTopic::Connections => "connections",
@@ -125,7 +128,8 @@ pub fn collect(
     }
     let correct = matches!(
         (topic, &envelope.data),
-        (crate::cli::CollectorTopic::Static, ProbeData::Static { .. })
+        (crate::cli::CollectorTopic::Activity, ProbeData::Activity(_))
+            | (crate::cli::CollectorTopic::Static, ProbeData::Static { .. })
             | (crate::cli::CollectorTopic::Slow, ProbeData::Slow { .. })
             | (
                 crate::cli::CollectorTopic::Connections,
@@ -152,6 +156,9 @@ impl ProbeData {
                 snapshot.warnings.extend(warnings);
             };
         match self {
+            Self::Activity(_) => {
+                unreachable!("Activity counters require the session's monotonic baseline")
+            }
             Self::Static {
                 system,
                 memory,

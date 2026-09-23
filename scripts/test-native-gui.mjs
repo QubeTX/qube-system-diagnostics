@@ -75,3 +75,11 @@ writeFileSync(resolve(appStage, "build.zig.zon"), `.{
 // `native test` implementation exposed by npx, without Windows cmd.exe
 // quoting or any chance of resolving a globally installed package.
 run(process.execPath, [resolve(sdkRoot, "bin", "native.js"), "test", appStage, "--yes", ...process.argv.slice(2)], guiRoot);
+
+// Tests compile the identical app sources in the pinned patched-SDK stage.
+// Bring back the generated contract so the subsequent strict source check
+// validates bindings, instead of silently falling back to structural checks
+// against an old contract from a previous build.
+mkdirSync(resolve(guiRoot, "zig-out"), { recursive: true });
+copyRequired(resolve(appStage, "zig-out", "model-contract.zon"), resolve(guiRoot, "zig-out", "model-contract.zon"));
+run(process.execPath, [resolve(sdkRoot, "bin", "native.js"), "check", "--strict"], guiRoot);
