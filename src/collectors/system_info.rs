@@ -55,7 +55,15 @@ pub fn collect(sys: &System) -> SystemInfoData {
     #[cfg(windows)]
     refresh_windows_hardware(&mut data);
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    super::linux_inventory::hardware(
+        &mut data,
+        std::path::Path::new("/sys/class/dmi/id"),
+        std::path::Path::new("/proc/device-tree"),
+    );
+    #[cfg(target_os = "macos")]
+    super::apple_inventory::hardware(&mut data);
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         data.hardware_status = Observation::unsupported(
             "platform hardware identity",

@@ -8,6 +8,53 @@ pub fn parse_plist(bytes: &[u8]) -> Result<Value, String> {
     Value::from_reader(std::io::Cursor::new(bytes)).map_err(|error| error.to_string())
 }
 
+pub fn parse_battery(value: &Value) -> Option<super::thermals::BatteryInfo> {
+    let row = value.as_dictionary()?;
+    let string = |key: &str| row.get(key).and_then(Value::as_string);
+    if string("Type") != Some("InternalBattery") && string("Transport Type") != Some("Internal") {
+        return None;
+    }
+    if row.get("Is Present").and_then(Value::as_boolean) == Some(false) {
+        return None;
+    }
+    let number = |key: &str| row.get(key).and_then(Value::as_signed_integer);
+    let current = number("Current Capacity")?;
+    let maximum = number("Max Capacity")?;
+    if maximum <= 0 || current < 0 || current > maximum {
+        return None;
+    }
+    let is_charging = row.get("Is Charging").and_then(Value::as_boolean)?;
+    let is_on_ac = match string("Power Source State") {
+        Some("AC Power") => true,
+        Some("Battery Power") => false,
+        _ => return None,
+    };
+    let time = if is_charging {
+        number("Time to Full Charge")
+    } else if !is_on_ac {
+        number("Time to Empty")
+    } else {
+        None
+    };
+    Some(super::thermals::BatteryInfo {
+        percent: current as f64 * 100.0 / maximum as f64,
+        is_charging,
+        is_on_ac,
+        time_remaining: time
+            .filter(|minutes| *minutes >= 0)
+            .map(|minutes| format!("{minutes} min (provider estimate)")),
+        // IOPS capacity uses provider-defined units, often percent or mAh, not mWh.
+        full_charged_capacity_mwh: None,
+        design_voltage_mv: None,
+        cycle_count: None,
+        provider_status: Some(format!(
+            "{}; {}",
+            string("Name").unwrap_or("Internal battery"),
+            string("BatteryHealth").unwrap_or("Health not reported")
+        )),
+    })
+}
+
 #[cfg(target_os = "macos")]
 pub fn command_plist(program: &str, args: &[&str]) -> Result<Value, String> {
     let output = super::command::run_checked(
@@ -133,6 +180,14 @@ pub fn disk_counters() -> CounterFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn iokit_capacity_is_a_ratio_not_energy_and_unknown_time_stays_missing() {
+        let value = parse_plist(br#"<?xml version="1.0"?><plist version="1.0"><dict><key>Type</key><string>InternalBattery</string><key>Current Capacity</key><integer>3000</integer><key>Max Capacity</key><integer>6000</integer><key>Is Charging</key><false/><key>Power Source State</key><string>Battery Power</string><key>Time to Empty</key><integer>-1</integer></dict></plist>"#).unwrap();
+        let battery = parse_battery(&value).unwrap();
+        assert_eq!(battery.percent, 50.0);
+        assert!(battery.full_charged_capacity_mwh.is_none());
+        assert!(battery.time_remaining.is_none());
+    }
     #[test]
     fn physical_disk_inventory_is_not_limited_to_disk_zero() {
         let value = parse_plist(br#"<?xml version="1.0"?><plist version="1.0"><dict><key>AllDisksAndPartitions</key><array><dict><key>DeviceIdentifier</key><string>disk0</string></dict><dict><key>DeviceIdentifier</key><string>disk4</string></dict><dict><key>DeviceIdentifier</key><string>disk4s1</string></dict></array></dict></plist>"#).unwrap();

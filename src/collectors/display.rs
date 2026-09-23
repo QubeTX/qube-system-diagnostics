@@ -26,7 +26,18 @@ pub fn collect() -> DisplayData {
         collect_windows()
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_inventory::displays(
+            std::path::Path::new("/sys/class/drm"),
+            std::path::Path::new("/sys/class/backlight"),
+        )
+    }
+    #[cfg(target_os = "macos")]
+    {
+        super::apple_inventory::displays()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         DisplayData {
             displays: Vec::new(),

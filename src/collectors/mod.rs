@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+pub mod apple_inventory;
 pub mod command;
 pub mod cpu;
 pub mod disk;
@@ -6,6 +8,8 @@ pub mod disk_health;
 pub mod display;
 pub mod drivers;
 pub mod gpu;
+#[cfg(any(target_os = "linux", test))]
+pub mod linux_inventory;
 pub mod macos;
 pub mod memory;
 pub mod network;

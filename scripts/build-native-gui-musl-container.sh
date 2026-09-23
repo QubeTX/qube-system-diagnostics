@@ -61,6 +61,11 @@ export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 
 script_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH='' cd -- "$script_root/.." && pwd)
+if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
+  cargo test --locked --manifest-path "$repo_root/Cargo.toml"
+  RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=-crt-static" \
+    cargo test --locked --manifest-path "$repo_root/gui-engine/Cargo.toml"
+fi
 npm_cache=${RUNNER_TEMP:-/tmp}/sd300-native-npm-cache
 rm -rf "$repo_root/gui/node_modules" "$npm_cache"
 npm --prefix "$repo_root/gui" ci --ignore-scripts --cache "$npm_cache"

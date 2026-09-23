@@ -6,6 +6,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ### Fixed
 
+- Add Linux power-supply battery, DRM display, hardware-backed network link and DMI/device-tree identity providers with documented units and explicit missing fields. Add native macOS CoreGraphics displays, IOKit power-source snapshots and hardware identity.
+
 - Add opt-in schema-2 JSON exports with nullable measurements, sample metadata and shared findings while freezing schema-1 keys. GUI exports use the richer report.
 - Preserve process creation identity and per-field availability in both frontends, label CPU normalization, and use the Windows batch sampler for the full TUI inventory. Revise the internal process ABI atomically with native layout assertions.
 - Distinguish resource pressure, reported storage faults and incomplete observations in shared findings; expose evidence and next steps in both interfaces (TUI: F).
@@ -21,6 +23,8 @@ All notable changes to SD-300 will be documented in this file.
 - Bound collector output and cancellation with owned Windows jobs/Unix process groups and file-backed capture, eliminating inherited-pipe EOF waits and unjoined reader threads.
 
 ### Development
+
+- Execute root collector and isolated-engine tests on every native GUI architecture, including the Alpine musl lane; cross-compilation alone is not the provider qualification bar.
 
 - Copy the staged native test model contract back to the source checkout and run strict binding checks, preventing stale contracts from silently reducing validation coverage.
 - Track the accepted v4 monitoring and qualification plan; refresh the task board bundle while preserving project identity and existing acceptance items.

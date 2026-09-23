@@ -10,6 +10,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 **Fixed**
 
+- Linux now reports readable battery, display, adapter and computer details. Macs gain native display and battery discovery. Missing brightness or energy readings stay unavailable instead of being guessed from unrelated values.
+
 - Detailed reports distinguish missing readings from measured zero and explain when observations were captured. Existing report consumers keep their familiar format unless they choose the richer one.
 - Both interfaces preserve the identity of a running application and show when its processor or memory reading is unavailable. Windows can gather the complete application list more efficiently.
 - Findings explain their evidence and suggest a next step. Busy processors are described as heavy demand; they are not treated as proof of broken hardware.
@@ -25,6 +27,8 @@ The newest section is work in progress. It is deliberately candid about what has
 - A stuck or excessively noisy helper can no longer leave output-reader threads waiting indefinitely. Filtered connection checks no longer automatically label the internet offline.
 
 **Behind the scenes**
+
+- Run the shared monitoring tests on every supported kind of operating system and processor, including the lightweight Linux build.
 
 - Strengthened interface checks so they validate the current screen bindings after native tests instead of relying on an older generated description.
 - Set up tracked work and verification for the monitoring improvements. The complete update will ship together after testing.

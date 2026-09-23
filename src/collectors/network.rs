@@ -152,7 +152,14 @@ pub fn refresh_hardware(data: &mut NetworkData) {
         data.adapter_status = status;
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let (adapters, status) =
+            super::linux_inventory::adapters(std::path::Path::new("/sys/class/net"));
+        data.adapters = adapters;
+        data.adapter_status = status;
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         data.adapter_status = Observation::unsupported(
             "platform network adapter provider",

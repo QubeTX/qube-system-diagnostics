@@ -833,14 +833,19 @@ fn collect_battery() -> (Option<BatteryInfo>, Observation) {
     {
         collect_battery_windows()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        super::linux_inventory::battery(std::path::Path::new("/sys/class/power_supply"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        super::apple_inventory::battery()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         (
             None,
-            Observation::unsupported(
-                "platform battery provider",
-                "Battery collection is not implemented on this platform",
-            ),
+            Observation::unsupported("battery provider", "No provider implemented for this OS"),
         )
     }
 }
