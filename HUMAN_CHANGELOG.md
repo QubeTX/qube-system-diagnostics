@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: Mac and Linux can run the same before-and-after resource comparisons as Windows on their own systems. Checks include work performed by background helpers and preserve failed results for investigation.
+
 - Behind the scenes: both views build their shared monitoring code with the same supporting libraries. Release checks catch accidental differences that could make the terminal and app report different results.
 
 - Linux and Mac network monitoring distinguishes failed reads from idle traffic and keeps other readable interfaces useful. Totals explain their scope, missing counters stay visibly unavailable, and the detailed graphics view explains where utilization came from.

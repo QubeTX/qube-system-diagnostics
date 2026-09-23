@@ -1,6 +1,13 @@
 name: CI
 
 on:
+  workflow_dispatch:
+    inputs:
+      resource_seconds:
+        description: "Sequential before/after native resource windows (after builds; no visual observers)"
+        type: choice
+        options: ["0", "330", "900"]
+        default: "0"
   pull_request:
   push:
     branches:
@@ -156,6 +163,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'psutil==7.2.2' 'pyte==0.8.2' 'wcwidth==0.8.4' "pywinpty==3.0.5; sys_platform == 'win32'"
+          python scripts/test-measure-tui-unix.py
           cargo build --release --locked --bin sd300 --example profile-monitor
           python scripts/qualify-tui-native.py 'target/terminal-qualification/${{ matrix.target }}'
       - uses: actions/upload-artifact@v6
@@ -225,6 +233,18 @@ jobs:
             target/native-gui-packages/sd300-gui-${{ matrix.target }}.zip*
             output/sd300-gui-${{ matrix.target }}.tar.xz*
 
+      - name: Measure native release resources before and after
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.resource_seconds != '0' }}
+        timeout-minutes: 50
+        shell: bash
+        run: python scripts/qualify-native-resources.py 'target/resource-qualification/${{ matrix.target }}' --seconds '${{ inputs.resource_seconds }}'
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.resource_seconds != '0' }}
+        with:
+          name: sd300-resources-${{ matrix.target }}
+          if-no-files-found: error
+          path: target/resource-qualification/${{ matrix.target }}/*.json
+
   native-gui-musl:
     name: Native GUI (Linux musl x86-64)
     runs-on: ubuntu-22.04
@@ -254,6 +274,7 @@ jobs:
           mkdir output
           docker run --rm \
             -e HOME=/tmp/sd300-home -e RUNNER_TEMP=/tmp \
+            -e SD300_RESOURCE_SECONDS='${{ inputs.resource_seconds || '0' }}' \
             -v "$PWD:/work" -w /work alpine:3.20 \
             sh -ceu 'apk add --no-cache bash; exec bash scripts/build-native-gui-musl-container.sh "$@"' \
               sh '${{ steps.product.outputs.version }}' /work/output
@@ -279,6 +300,12 @@ jobs:
           name: sd300-terminal-linux-musl-x86_64
           if-no-files-found: warn
           path: output/terminal-qualification/**
+      - uses: actions/upload-artifact@v6
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.resource_seconds != '0' }}
+        with:
+          name: sd300-resources-linux-musl-x86_64
+          if-no-files-found: error
+          path: output/resource-qualification/*.json
 
   audit:
     name: Security audit

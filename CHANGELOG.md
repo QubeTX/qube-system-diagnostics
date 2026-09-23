@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Add opt-in native before/after release TUI resource measurements to all six CI targets, using immutable baseline bytes, sequential measurements and retained failure reports. Validate Unix completed-child CPU accounting separately and keep visual interaction observers outside the resource window.
+
 - Reconcile the GUI engine's separately resolved Rust dependencies with the qualified CLI lockfile, including sysinfo and serialization. Check shared versions, registry sources and checksums alongside product-version validation so frontend builds cannot silently drift.
 
 - Read Linux and macOS interface counters with explicit per-interface failures, native identities, scoped addresses and 64-bit byte semantics. Preserve other readable rows, reset failed baselines and exclude loopback from the documented aggregate. Keep unavailable cumulative bytes nullable in schema 2 and inspectors, add native local-payload fixtures, and expose successful GPU utilization provenance in GUI Technician mode.

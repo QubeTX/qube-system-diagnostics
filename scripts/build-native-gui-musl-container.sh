@@ -73,6 +73,7 @@ if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
     'psutil==7.2.2' 'pyte==0.8.2' 'wcwidth==0.8.4'
   cargo build --release --locked --bin sd300 --example profile-monitor
   /tmp/sd300-qualification-python/bin/python scripts/qualify-tui-native.py "$output_dir/terminal-qualification"
+  /tmp/sd300-qualification-python/bin/python scripts/test-measure-tui-unix.py
 fi
 npm_cache=${RUNNER_TEMP:-/tmp}/sd300-native-npm-cache
 rm -rf "$repo_root/gui/node_modules" "$npm_cache"
@@ -86,3 +87,7 @@ node "$script_root/check-native-distribution.mjs" "$repo_root/gui"
 SD300_SKIP_NPM_CI=1 bash "$script_root/build-native-gui.sh" linux-musl-x86_64
 bash "$script_root/package-native-gui-linux.sh" \
   linux-musl-x86_64 "$output_dir" "$version"
+if [[ ${SD300_RESOURCE_SECONDS:-0} != 0 ]]; then
+  /tmp/sd300-qualification-python/bin/python scripts/qualify-native-resources.py \
+    "$output_dir/resource-qualification" --seconds "$SD300_RESOURCE_SECONDS"
+fi

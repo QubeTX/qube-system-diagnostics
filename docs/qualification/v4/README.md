@@ -6,6 +6,22 @@ remain open. Do not infer hardware accuracy from parser fixtures or builds.
 
 ## Windows TUI process-tree measurements
 
+The CI workflow accepts an explicit `resource_seconds` dispatch input for
+before/after native TUI measurements on all six targets. It builds the immutable
+f83ae429490aecb165921037b2f9ed994327634f baseline and finishes all compilation and
+visual interaction checks before sequential measurement. Ordinary pull-request
+runs do not launch the long resource windows. Candidate gate failures retain
+both reports and fail the lane; baseline failures remain comparison evidence.
+
+`measure-tui-unix.py` uses completed [wait4 resource accounting](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/wait4.2.html).
+On Linux, descendant totals require each intervening parent to reap its children;
+the [kernel accounting contract](https://man7.org/linux/man-pages/man2/getrusage.2.html)
+and a native waited-grandchild fixture validate that assumption. Startup and
+orderly-shutdown CPU are included conservatively. Memory/fd counts sum live
+descendants every quarter-second, with shared mappings counted more than once
+and short-lived peaks potentially missed. This does not substitute for GUI,
+physical-device, independent network-wire or long-soak qualification.
+
 Use an isolated development virtual environment with `psutil==7.2.2` and
 `pywinpty==3.0.5`. Run `scripts/measure-tui-windows.py` against immutable release
 bytes; record the source revision and executable SHA-256. The script accepts
