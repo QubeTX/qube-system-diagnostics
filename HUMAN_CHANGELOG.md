@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: isolated Linux checks can verify the mounted source safely without changing the machine's global trust settings.
+
 - Behind the scenes: performance reports explain when a protected helper limits inspection, while preserving the resource measurements that remain readable.
 
 - The Linux app can reduce background work when its window is hidden or minimized. Behind the scenes, Mac and Linux checks verify the app's window state, background collectors and clean shutdown before accepting performance results.

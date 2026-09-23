@@ -94,7 +94,7 @@ if [[ ${SD300_SKIP_NATIVE_TESTS:-0} != 1 ]]; then
   for mode in foreground hidden; do
     flags=(); [[ $mode != hidden ]] || flags+=(--hidden)
     GDK_BACKEND=x11 xvfb-run -a dbus-run-session -- /tmp/sd300-qualification-python/bin/python scripts/measure-gui-unix.py \
-      "$bundle/sd300-gui" --output "$output_dir/gui-resource-smoke/$mode.json" --revision "$(git rev-parse HEAD)" --seconds 30 "${flags[@]}"
+      "$bundle/sd300-gui" --output "$output_dir/gui-resource-smoke/$mode.json" --revision "$(git -c safe.directory="$repo_root" rev-parse HEAD)" --seconds 30 "${flags[@]}"
   done
 fi
 bash "$script_root/package-native-gui-linux.sh" \

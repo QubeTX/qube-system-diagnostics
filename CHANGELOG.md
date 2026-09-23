@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Scope Git checkout trust to the mounted source for Alpine qualification commands, preserving global configuration while allowing exact candidate/baseline identity checks across container UID boundaries.
+
 - Preserve explicit unavailable descriptor coverage in Unix performance reports when a protected helper denies fd enumeration. Continue independent CPU/RSS accounting, retain nullable maxima and add denied-versus-zero fixtures.
 
 - Detect Linux GUI mapping/minimized state through GTK/GDK so background windows use the existing reduced collection profile. Add native mapping/recovery fixtures and complete-bundle Mac/Linux foreground/hidden resource smoke checks with bounded process accounting and normal shutdown.

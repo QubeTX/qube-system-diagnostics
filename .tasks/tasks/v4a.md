@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: musl run 35865259681 job 107195130681 completes native build/packaging but resource setup stops on Git's host/container UID ownership check before measurements. Scope safe.directory to the resolved mounted source on each qualification Git command; do not alter global configuration. Python syntax/workflow checks pass. Next oracle: the same native Alpine candidate/baseline setup, separate from the GNU descriptor-access correction.
+
 - 2026-09-23 — codex: manual native resource run 35865259681 fails both GNU baseline windows on psutil AccessDenied for a helper's /proc/PID/fd, after collector/build/PTY gates passed. Separate nullable descriptor coverage from readable RSS and final wait4 CPU; keep denied memory fatal and retain failed baseline artifacts. Denied-versus-zero fixtures validate the change. Next oracle: repeat native resource windows; this is harness correction, not a relaxed CPU/RSS gate.
 
 - 2026-09-23 — codex: Linux GUI audit finds mainWindowVisible hardcoded true. Use documented GTK surface mapping/minimized state, retaining foreground startup behavior and existing no-tray policy. Add native GTK hide/restore fixture and bounded Mac/Linux GUI smoke harness; local syntax/workflow checks precede native runtime proof. Next oracle: all five Unix target smoke reports, then long native GUI comparisons. Local Windows 866bebb foreground/hidden/soak sequence runs without visual observers or compilation.

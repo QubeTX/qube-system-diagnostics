@@ -45,14 +45,17 @@ def main():
     os.chdir(root)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    candidate = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    # The isolated Alpine runner mounts a checkout owned by the host UID. Scope
+    # trust to this resolved checkout for these commands, not global Git state.
+    git = ["git", "-c", f"safe.directory={root}"]
+    candidate = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
     baseline = root / "target/resource-baseline-source"
     # A retained worktree may contain an interrupted earlier attempt: never
     # reset or delete it silently. A fresh hosted runner creates this once.
     if baseline.exists():
         raise RuntimeError(f"Baseline stage already exists: {baseline}")
-    bounded(["git", "fetch", "--depth=1", "origin", BASELINE], 120)
-    bounded(["git", "worktree", "add", "--detach", str(baseline), BASELINE], 60)
+    bounded([*git, "fetch", "--depth=1", "origin", BASELINE], 120)
+    bounded([*git, "worktree", "add", "--detach", str(baseline), BASELINE], 60)
     bounded(["cargo", "build", "--release", "--locked", "--manifest-path", str(baseline / "Cargo.toml")], 900)
     windows = os.name == "nt"
     harness = root / "scripts" / ("measure-tui-windows.py" if windows else "measure-tui-unix.py")
