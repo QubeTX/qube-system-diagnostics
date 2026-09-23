@@ -36,6 +36,7 @@ Rules:
 | [0011](0011-solid-panel-rendering.md) | Draw opaque panels without retaining duplicate pixels | Accepted |
 | [0012](0012-linux-software-presentation.md) | Linux software presentation and ordered window cleanup | Candidate |
 | [0013](0013-gui-monitoring-hierarchy.md) | GUI monitoring hierarchy and complete process pages | Accepted |
+| [0014](0014-macos-termination-cleanup.md) | Join collectors before AppKit termination | Candidate |
 
 ## Dual-frontend contract pointer
 

@@ -234,6 +234,8 @@ jobs:
             # qualified software default. Preserve the user's chosen backend.
             GDK_BACKEND=x11 GSK_RENDERER=gl xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground-gl-diagnostic.json" --revision '${{ github.sha }}' --seconds 30
           else
+            clang -fobjc-arc -fblocks -framework AppKit scripts/test-macos-termination.m gui/src/platform/window_visibility_macos.m -o target/test-macos-termination
+            target/test-macos-termination
             python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/foreground.json" --revision '${{ github.sha }}' --seconds 30
             python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/hidden.json" --revision '${{ github.sha }}' --seconds 30 --hidden
           fi

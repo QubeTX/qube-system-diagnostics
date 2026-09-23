@@ -291,11 +291,17 @@ pub const Runtime = struct {
 
     pub fn deinit(self: *Runtime) void {
         if (self.handle) |handle| {
-            _ = self.stop_fn(handle);
+            self.stopCollection();
             _ = self.destroy_fn(handle);
             self.handle = null;
         }
         self.library.close();
+    }
+
+    // May run from AppKit's termination notification before main can unwind.
+    // Keep the library loaded until ordinary deinit; stopping is idempotent.
+    pub fn stopCollection(self: *Runtime) void {
+        if (self.handle) |handle| _ = self.stop_fn(handle);
     }
 
     pub fn readFastSummary(self: *Runtime) !FastSummary {

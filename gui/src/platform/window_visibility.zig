@@ -81,6 +81,16 @@ extern fn sd300_main_window_hide() callconv(.c) void;
 extern fn sd300_claim_unix_instance() callconv(.c) c_int;
 extern fn sd300_model_open() callconv(.c) void;
 extern fn sd300_configure_renderer() callconv(.c) void;
+extern fn sd300_install_termination_cleanup() callconv(.c) void;
+extern fn sd300_uninstall_termination_cleanup() callconv(.c) void;
+
+pub fn installTerminationCleanup() void {
+    if (comptime builtin.os.tag == .macos) sd300_install_termination_cleanup();
+}
+
+pub fn uninstallTerminationCleanup() void {
+    if (comptime builtin.os.tag == .macos) sd300_uninstall_termination_cleanup();
+}
 
 pub fn configureRendering() void {
     if (comptime builtin.os.tag == .linux) sd300_configure_renderer();

@@ -1,6 +1,29 @@
 #import <AppKit/AppKit.h>
 
 extern void sd300_model_open(void);
+extern void sd300_model_shutdown(void);
+
+static id sd300_termination_observer = nil;
+
+void sd300_install_termination_cleanup(void) {
+    if (sd300_termination_observer) return;
+    // AppKit terminate: exits without returning to Zig main. Its synchronous
+    // notification is the last opportunity to join owned collector processes.
+    sd300_termination_observer = [[NSNotificationCenter defaultCenter]
+        addObserverForName:NSApplicationWillTerminateNotification
+                    object:nil
+                     queue:nil
+                usingBlock:^(NSNotification *note) {
+                    (void)note;
+                    sd300_model_shutdown();
+                }];
+}
+
+void sd300_uninstall_termination_cleanup(void) {
+    if (!sd300_termination_observer) return;
+    [[NSNotificationCenter defaultCenter] removeObserver:sd300_termination_observer];
+    sd300_termination_observer = nil;
+}
 
 int sd300_main_window_visible(void) {
     BOOL found = NO;

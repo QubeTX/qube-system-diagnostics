@@ -459,6 +459,17 @@ pub const Model = struct {
     pub fn collectorNoticeVisible(model: *const Model) bool {
         return model.technicianMode() or !std.mem.eql(u8, model.collectorState(), "Available");
     }
+    pub fn diagnosticsState(model: *const Model) []const u8 {
+        const meta = model.detail.topicMeta(4);
+        if (!meta.ready) return "Waiting for checks";
+        if (!std.mem.eql(u8, meta.availability(), "available")) return "Checks unavailable";
+        const wall = model.clock.wallMs();
+        if (wall <= 0 or meta.captured_unix_ms == 0) return "Capture age unavailable";
+        const now: u64 = @intCast(wall);
+        if (now < meta.captured_unix_ms) return "Capture age unavailable";
+        if (now - meta.captured_unix_ms > @max(3000, meta.expected_interval_ms *| 3)) return "Checks delayed";
+        return "Current";
+    }
     pub fn diskReadErrorsAvailable(model: *const Model) bool { return model.detail.disk_read_errors_measured_drives > 0; }
     pub fn diskWriteErrorsAvailable(model: *const Model) bool { return model.detail.disk_write_errors_measured_drives > 0; }
     pub fn diskIoAvailable(model: *const Model) bool {
@@ -814,6 +825,15 @@ pub export fn sd300_model_open() callconv(.c) void {
         update(&app_state.model, .open_window, &app_state.effects);
     } else {
         external_open_pending.store(true, .release);
+    }
+}
+
+/// AppKit can terminate without returning from its run loop. Stop and join the
+/// engine before that exit; ordinary main cleanup still owns library unloading.
+pub export fn sd300_model_shutdown() callconv(.c) void {
+    if (active_engine) |runtime| {
+        active_engine = null;
+        runtime.stopCollection();
     }
 }
 
@@ -1779,6 +1799,8 @@ pub fn main(init: std.process.Init) !void {
         active_engine = null;
         if (engine_runtime) |*runtime| runtime.deinit();
     }
+    window_visibility.installTerminationCleanup();
+    defer window_visibility.uninstallTerminationCleanup();
 
     const settings_document = if (engine_runtime) |*runtime|
         settings.load(runtime, std.heap.page_allocator) catch settings.Document{}

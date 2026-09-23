@@ -8,6 +8,10 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Quitting the Mac app now finishes its background monitoring cleanup before the operating system closes it. Behind the scenes, native checks verify that quitting leaves no collectors behind.
+
+- Connection checks now say when their results are delayed or unavailable, even while other readings remain live. Clearer labels distinguish a network response from the time needed to look up a name, and long hardware explanations stay readable.
+
 - Behind the scenes: Mac testing now explains which background work remains after the app closes and preserves performance traces even when another check fails, without recording private command lines.
 
 - The desktop monitor puts useful readings first, makes its two viewing modes easier to reach, and keeps explanations and consent readable. Network scans and bandwidth tests have separate controls, and storage tools live with storage. Process rankings follow the values on screen, waiting states no longer look like idle readings, and graphics memory labels explain what is shared with the rest of the computer.

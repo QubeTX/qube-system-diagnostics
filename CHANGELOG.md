@@ -4,6 +4,10 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Stop and join the GUI engine from AppKit's synchronous termination notification, because `terminate:` does not unwind `main`. Preserve ordinary library-unload ownership and idempotent shutdown; add a native notification fixture and retain the complete-bundle remaining-worker gate on both Mac architectures.
+
+- Derive the GUI connectivity panel's freshness from its own diagnostic topic instead of an unconditional Current badge. Use readable reachability states, label DNS resolution duration separately from RTT, wrap long graphics provenance, and improve spacing in compact Settings.
+
 - Retain bounded process-role, state and parent evidence when native GUI shutdown leaves a helper, without logging executable paths or arguments. Run macOS CPU attribution independently after failed shutdown qualification so both failures remain diagnosable; profiling never substitutes for resource acceptance.
 
 - Review the native GUI across all nine sections and Settings. Prioritize live readings/history, add direct audience switching, wrap explanations and consent, separate optional network scans from bandwidth tests, and place SMART setup with storage. Preserve current process rank on every captured page, avoid startup-zero interpretations, remove synthetic pending detail from available observations, and expose unified/shared GPU memory categories. Record source and live visual evidence separately from accessibility and cross-platform acceptance.

@@ -19,7 +19,7 @@
   - [x] Redesign the adaptive TUI and add guided inspection and filtering
   - [x] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup (native setup and synthetic privileged-worker checks pass; final lifecycle qualification remains)
   - [x] Wire GUI parity, versioned exports, settings, and architecture documentation
-  - [ ] Review and improve GUI layout, clarity, navigation, and diagnostic flows (operator added 2026-09-23)
+  - [x] Review and improve GUI layout, clarity, navigation, and diagnostic flows (Windows live review and bounded fixtures complete; native platform/performance qualification continues below)
   - [ ] Qualify performance, six native targets, and composite lifecycle
   - [ ] Publish once and verify exact public artifacts and installation
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k

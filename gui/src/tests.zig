@@ -343,6 +343,31 @@ test "clock rollback cannot rejuvenate samples and later captures recover histor
     try testing.expectEqual(@as(f64, 3), model.cpu_history[59]);
 }
 
+test "connectivity freshness belongs to its diagnostic capture not live CPU" {
+    var clock = native_sdk.TestClock{};
+    clock.setWallMs(100_000);
+    var model = main.initialModel();
+    model.clock = clock.clock();
+    try testing.expectEqualStrings("Waiting for checks", model.diagnosticsState());
+    const meta = &model.detail.topic_meta[4];
+    meta.ready = true;
+    meta.availability_buffer.set("available");
+    meta.expected_interval_ms = 15_000;
+    meta.captured_unix_ms = 100_000;
+    try testing.expectEqualStrings("Current", model.diagnosticsState());
+    clock.setWallMs(145_001);
+    main.applySummary(&model, .{ .sequence = 1, .captured_unix_ms = 145_001, .cpu_percent = 3, .memory_total_bytes = 100 });
+    try testing.expect(model.summaryLive());
+    try testing.expectEqualStrings("Checks delayed", model.diagnosticsState());
+    meta.availability_buffer.set("error");
+    try testing.expectEqualStrings("Checks unavailable", model.diagnosticsState());
+    meta.availability_buffer.set("available");
+    meta.captured_unix_ms = 150_000;
+    try testing.expectEqualStrings("Capture age unavailable", model.diagnosticsState());
+    clock.setWallMs(150_000);
+    try testing.expectEqualStrings("Current", model.diagnosticsState());
+}
+
 test "top sample state exposes collector failure without claiming live" {
     var model = main.initialModel();
     main.applySummary(&model, .{
