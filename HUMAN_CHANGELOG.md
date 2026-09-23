@@ -10,6 +10,10 @@ The newest section is work in progress. It is deliberately candid about what has
 
 - Behind the scenes: Mac testing now explains which background work remains after the app closes and preserves performance traces even when another check fails, without recording private command lines.
 
+- The desktop monitor puts useful readings first, makes its two viewing modes easier to reach, and keeps explanations and consent readable. Network scans and bandwidth tests have separate controls, and storage tools live with storage. Process rankings follow the values on screen, waiting states no longer look like idle readings, and graphics memory labels explain what is shared with the rest of the computer.
+
+- Behind the scenes: project guidance now describes how the new monitor actually runs, and the task board separates completed features from the remaining release checks.
+
 - Linux uses a lighter drawing path by default and closes through the same cleanup as its window button. Explicit rendering choices remain respected. Behind the scenes, native Linux lifecycle checks and separate Mac performance traces investigate the remaining release blockers.
 
 - Behind the scenes: minimal Linux testing now captures where the app fails during shutdown, without mixing debugger results into performance acceptance. Repeated close checks investigate failures that disappear on a single retry.

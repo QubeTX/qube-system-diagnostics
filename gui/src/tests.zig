@@ -240,10 +240,10 @@ test "a fast summary updates the native overview projection" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const tree = try buildTree(arena_state.allocator(), &model);
-    _ = try expectByText(tree.root, .badge, "LIVE · SAMPLE 42");
+    _ = try expectByText(tree.root, .badge, "Live");
     _ = try expectByText(tree.root, .text, "18.3%");
     _ = try expectByText(tree.root, .text, "16.0 GiB used of 32.0 GiB");
-    _ = try expectByText(tree.root, .badge, "3 WARNINGS");
+    _ = try expectByText(tree.root, .badge, "0 FINDINGS");
 }
 
 test "re-reading one fast sequence does not invent another history sample" {
@@ -298,8 +298,8 @@ test "top sample state becomes stale until sequence and capture advance" {
     var arena_stale = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_stale.deinit();
     const stale_tree = try buildTree(arena_stale.allocator(), &model);
-    _ = try expectByText(stale_tree.root, .badge, "STALE · SAMPLE 9");
-    try testing.expect(findByText(stale_tree.root, .badge, "LIVE · SAMPLE 9") == null);
+    _ = try expectByText(stale_tree.root, .badge, "Readings delayed");
+    try testing.expect(findByText(stale_tree.root, .badge, "Live") == null);
 
     var next = summary;
     next.sequence = 10;
@@ -359,8 +359,8 @@ test "top sample state exposes collector failure without claiming live" {
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const tree = try buildTree(arena_state.allocator(), &model);
-    _ = try expectByText(tree.root, .badge, "COLLECTOR FAILED · LAST SAMPLE 7");
-    try testing.expect(findByText(tree.root, .badge, "LIVE · SAMPLE 7") == null);
+    _ = try expectByText(tree.root, .badge, "Collection interrupted");
+    try testing.expect(findByText(tree.root, .badge, "Live") == null);
 }
 
 test "instrument trace remains a bounded real CPU history" {
@@ -456,23 +456,25 @@ test "drivers view exposes a real asynchronous rescan action" {
     _ = try expectByText(tree.root, .button, "Scan again");
 }
 
-test "process table defaults to a focused primary set and expands on demand" {
+test "process pages expose every returned row before advancing" {
     var model = main.initialModel();
     model.active_section = 6;
+    model.process_query_active = true;
+    model.process_matches = 32;
     model.detail.process_count = 16;
     for (0..model.detail.process_count) |index| {
         model.detail.process_rows[index].id = @intCast(index + 1);
         model.detail.process_rows[index].pid = @intCast(index + 1);
     }
-    try testing.expectEqual(@as(usize, 8), model.visibleProcessCount());
-    try testing.expectEqualStrings("Show 16 per page", model.processToggleLabel());
-
+    try testing.expectEqual(@as(usize, 16), model.visibleProcessCount());
+    try testing.expectEqual(@as(u32, 16), model.processes()[15].pid);
     var fx = main.Effects.init(testing.allocator);
     defer fx.deinit();
     fx.executor = .fake;
-    main.update(&model, .toggle_process_rows, &fx);
-    try testing.expectEqual(@as(usize, 16), model.visibleProcessCount());
-    try testing.expectEqualStrings("Show primary 8", model.processToggleLabel());
+    main.update(&model, .process_next_page, &fx);
+    try testing.expectEqual(@as(u32, 16), model.process_page_offset);
+    try testing.expectEqual(@as(u32, 2), model.processPageNumber());
+    try testing.expect(!model.processHasNext());
 }
 
 test "process consumers sort immediately by CPU memory PID and name" {
@@ -576,10 +578,12 @@ test "connection and driver filters operate on bounded projections" {
 
 test "audience mode changes interpretation without touching terminal defaults" {
     var model = main.initialModel();
+    model.fast_summary_seen = true;
+    model.engine_ready = true;
     model.cpu_percent = 92;
     model.memory_percent = 80;
     try testing.expect(model.userMode());
-    try testing.expect(std.mem.indexOf(u8, model.cpuAssessment(), "critical") != null);
+    try testing.expect(std.mem.indexOf(u8, model.cpuAssessment(), "very high") != null);
     try testing.expect(std.mem.indexOf(u8, model.memoryAssessment(), "elevated") != null);
 
     var fx = main.Effects.init(testing.allocator);
@@ -587,6 +591,42 @@ test "audience mode changes interpretation without touching terminal defaults" {
     fx.executor = .fake;
     main.update(&model, .toggle_audience_mode, &fx);
     try testing.expect(model.technicianMode());
+}
+
+test "overview never interprets startup or interrupted measurements as current headroom" {
+    var model = main.initialModel();
+    try testing.expectEqualStrings("Waiting for the first CPU reading.", model.cpuAssessment());
+    try testing.expectEqualStrings("Waiting for the first memory reading.", model.memoryAssessment());
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const tree = try buildTree(arena.allocator(), &model);
+    _ = try expectByText(tree.root, .text, "Waiting for data");
+    try testing.expect(findByText(tree.root, .text, "0.0%") == null);
+    model.fast_summary_seen = true;
+    model.fast_summary_failed = true;
+    try testing.expect(std.mem.indexOf(u8, model.cpuAssessment(), "older") != null);
+    try testing.expect(std.mem.indexOf(u8, model.memoryAssessment(), "older") != null);
+}
+
+test "bandwidth consent wraps and SMART setup is located with storage" {
+    var model = main.initialModel();
+    model.active_section = 5;
+    model.companion_confirmation = 3;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const tree = try buildTree(arena.allocator(), &model);
+    const consent = try expectByText(tree.root, .text, "M-Lab publishes measurement results and your IP address. Enable it only if you consent to that publication.");
+    // Explicit wrapping compiles into a paragraph, rather than an ellipsized leaf.
+    try testing.expect(consent.spans.len > 0);
+    try testing.expect(findByText(tree.root, .button, "Set up SMART helper…") == null);
+    model.active_section = 3;
+    model.detail.health_ready = true;
+    model.companion_setup_confirmation = true;
+    model.companion_setup_smart = true;
+    try testing.expect(model.smartSetupConfirming());
+    try testing.expect(!model.networkSetupConfirming());
+    const storage = try buildTree(arena.allocator(), &model);
+    _ = try expectByText(storage.root, .button, "Set up SMART helper…");
 }
 
 test "tray commands map to real show and graceful quit effects" {
@@ -827,6 +867,34 @@ test "the overview lays out at the production window size" {
     try testing.expect(layout.nodes.len > 20);
     _ = try expectByText(tree.root, .text, "System overview");
     _ = try expectByText(tree.root, .button, "Refresh");
+}
+
+test "every GUI section keeps controls inside compact and wide windows" {
+    for ([_]f32{ 960, 1180, 1600 }) |width| {
+        for (0..10) |section| {
+            for ([_]bool{ false, true }) |technician| {
+                var arena = std.heap.ArenaAllocator.init(testing.allocator);
+                defer arena.deinit();
+                var model = main.initialModel();
+                model.active_section = @intCast(section);
+                model.audience_mode = if (technician) .technician else .user;
+                warmPopulate(&model, @intCast(section));
+                if (section == 5) model.companion_confirmation = 3;
+                const tree = try buildTree(arena.allocator(), &model);
+                const nodes = try arena.allocator().alloc(canvas.WidgetLayoutNode, 2048);
+                const layout = try canvas.layoutWidgetTreeWithTokens(tree.root,
+                    native_sdk.geometry.RectF.init(0, 0, width, 640), main.qubeTokens(&model), nodes);
+                for (layout.nodes) |node| {
+                    if (node.widget.kind != .button and node.widget.kind != .list_item) continue;
+                    if (node.frame.x < -0.1 or node.frame.x + node.frame.width > width + 0.1) {
+                        std.debug.print("section {d} tech {} width {d}: control {s} extends from {d} to {d}\n",
+                            .{ section, technician, width, node.widget.text, node.frame.x, node.frame.x + node.frame.width });
+                        return error.ControlOutsideWindow;
+                    }
+                }
+            }
+        }
+    }
 }
 
 test "solid panels and borders match per-pixel drawing across clipping scale and opacity" {
@@ -1203,12 +1271,14 @@ fn warmPopulate(model: *main.Model, section: u8) void {
             d.fast_ready = true;
             d.medium_ready = true;
             d.diagnostics_ready = true;
+            d.network_rate_available = true;
             d.interface_count = 4;
             d.interface_total_count = 6;
             for (0..4) |i| {
                 const r = &d.interface_rows[i];
                 r.id = @intCast(i);
                 r.is_up = true;
+                r.rate_available = true;
                 r.download_kib_s = 100 + @as(f64, @floatFromInt(i)) * 40;
                 r.upload_kib_s = 20 + @as(f64, @floatFromInt(i)) * 8;
                 r.received_gib = 12.5;
@@ -1249,7 +1319,6 @@ fn warmPopulate(model: *main.Model, section: u8) void {
             d.process_total_count = 486;
             d.process_total_threads = 3277;
             d.process_count = 16;
-            model.show_all_processes = true;
             for (0..16) |i| {
                 const r = &d.process_rows[i];
                 r.cpu_available = true;
@@ -1645,7 +1714,6 @@ test "engine process pages retain global match counts with fixed display storage
     model.process_page_offset = 240;
     model.detail.process_count = 10;
     model.process_filter_buffer.set("all inventory query");
-    model.show_all_processes = true;
     try testing.expectEqual(@as(usize, 250), model.processMatchCount());
     try testing.expectEqual(@as(usize, 10), model.visibleProcessCount());
     try testing.expectEqual(@as(u32, 16), model.processPageNumber());

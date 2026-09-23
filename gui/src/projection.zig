@@ -10,13 +10,6 @@ pub const max_disks: usize = 16;
 pub const max_gpus: usize = 8;
 pub const max_interfaces: usize = 16;
 pub const max_processes: usize = 16;
-// Keep row identity stable for a full 30 one-second engine samples. The GUI
-// still applies CPU and memory values from every projection it consumes, but a
-// near-tie cannot invalidate every process-name/PID cell on each visual frame.
-// Thirty samples is short enough to surface a genuinely sustained new top
-// consumer while making the table readable and substantially cheaper to paint
-// on the SDK's Windows/Linux software presentation paths.
-const process_rank_reconcile_samples: u64 = 30;
 pub const max_sensors: usize = 24;
 pub const max_fans: usize = 12;
 pub const max_connections: usize = 20;
@@ -289,7 +282,7 @@ pub const GpuRow = struct {
 };
 
 pub const InterfaceRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
     counters_available: bool = false,
     counter_observation: ObservationView = .{},
     rate_available: bool = false,
@@ -1077,9 +1070,16 @@ pub const Projection = struct {
         self.total_download_kib_s = @as(f64, @floatFromInt(data.network.total_download_rate)) / 1024.0;
         self.total_upload_kib_s = @as(f64, @floatFromInt(data.network.total_upload_rate)) / 1024.0;
         self.interface_total_count = saturatedU32(data.network.interfaces.len);
-        self.interface_count = @min(data.network.interfaces.len, max_interfaces);
-        for (data.network.interfaces[0..self.interface_count], 0..) |item, index| {
-            var row = InterfaceRow{ .id = @intCast(index) };
+        var interface_indices: [max_interfaces]usize = undefined;
+        self.interface_count = selectInterfaceIndices(data.network.interfaces, &interface_indices);
+        for (interface_indices[0..self.interface_count], 0..) |source_index, index| {
+            const item = data.network.interfaces[source_index];
+            // Keep UI identity independent of priority and enumeration position.
+            var identity = std.hash.Wyhash.init(0);
+            identity.update(item.name);
+            identity.update("\x00");
+            identity.update(item.mac_address);
+            var row = InterfaceRow{ .id = identity.final() };
             row.counters_available = std.mem.eql(u8, item.counter_status.status, "available");
             setObservation(&row.counter_observation, item.counter_status);
             row.rate_available = std.mem.eql(u8, item.rate_status.status, "available");
@@ -1163,53 +1163,19 @@ pub const Projection = struct {
     ) void {
         self.process_total_count = total_count;
         self.process_total_threads = total_threads;
-        if (total_count > 0) {
-            self.process_samples_observed +|= 1;
-            self.process_values_warmed = self.process_samples_observed >= 2;
-        } else {
-            self.process_samples_observed = 0;
-            self.process_values_warmed = false;
+        // The engine already ranked the complete inventory. Preserve that
+        // captured order, including consecutive samples, query changes and PID reuse.
+        if (sequence != self.process_order_sequence) {
+            if (total_count > 0) {
+                self.process_samples_observed +|= 1;
+            } else {
+                self.process_samples_observed = 0;
+            }
         }
-        const candidate_count = candidates.len;
-        const reorder_due = self.process_count == 0 or
-            sequence <= self.process_order_sequence or
-            sequence - self.process_order_sequence >= process_rank_reconcile_samples;
-        if (reorder_due) {
-            self.process_count = candidate_count;
-            self.process_order_sequence = sequence;
-            for (candidates, 0..) |item, index| {
-                self.process_rows[index] = item;
-            }
-        } else {
-            // Live CPU and memory values still update every fast sample. Keep
-            // row positions stable between sustained rank reconciliations so
-            // a one-second sample does not repaint every name/status cell just
-            // because two near-equal processes swapped order.
-            const previous_rows = self.process_rows;
-            const previous_count = self.process_count;
-            var next_rows = [_]ProcessRow{.{}} ** max_processes;
-            var used = [_]bool{false} ** max_processes;
-            var next_count: usize = 0;
-
-            for (previous_rows[0..previous_count]) |previous| {
-                for (candidates, 0..) |item, candidate_index| {
-                    if (!used[candidate_index] and item.pid == previous.pid and item.start_time_unix_ms == previous.start_time_unix_ms) {
-                        next_rows[next_count] = item;
-                        used[candidate_index] = true;
-                        next_count += 1;
-                        break;
-                    }
-                }
-            }
-            for (candidates, 0..) |item, candidate_index| {
-                if (next_count >= candidate_count) break;
-                if (used[candidate_index]) continue;
-                next_rows[next_count] = item;
-                next_count += 1;
-            }
-            self.process_rows = next_rows;
-            self.process_count = next_count;
-        }
+        self.process_values_warmed = self.process_samples_observed >= 2;
+        self.process_order_sequence = sequence;
+        self.process_count = @min(candidates.len, max_processes);
+        @memcpy(self.process_rows[0..self.process_count], candidates[0..self.process_count]);
     }
 
     pub fn applySlowJson(self: *Projection, allocator: std.mem.Allocator, bytes: []const u8) !void {
@@ -1565,7 +1531,7 @@ const DisplayJson = struct {
 const ObservationJson = struct {
     status: []const u8 = "unavailable",
     source: []const u8 = "not_collected",
-    detail: ?[]const u8 = "The collector has not run yet",
+    detail: ?[]const u8 = null,
 };
 const DisplaysJson = struct {
     displays: []const DisplayJson = &.{},
@@ -1646,6 +1612,22 @@ const NetworkJson = struct {
     total_upload_rate: u64 = 0,
     adapter_status: ObservationJson = .{},
 };
+
+fn selectInterfaceIndices(interfaces: []const InterfaceJson, indices: *[max_interfaces]usize) usize {
+    var count: usize = 0;
+    // Prefer active aggregate contributors, then other active interfaces, then
+    // inactive ones. Never let virtual inventory displace the live connection.
+    for (0..3) |priority| {
+        for (interfaces, 0..) |item, index| {
+            const item_priority: usize = if (!item.is_up) 2 else if (item.included_in_total) 0 else 1;
+            if (priority != item_priority) continue;
+            indices[count] = index;
+            count += 1;
+            if (count == max_interfaces) return count;
+        }
+    }
+    return count;
+}
 const ProcessJson = struct {
     start_time_unix_ms: ?u64 = null,
     cpu_observation: ObservationJson = .{},
@@ -1971,7 +1953,7 @@ test "typed process summary preserves bounded live process parity" {
     try std.testing.expectEqual(@as(u64, 9), projection.topicMeta(1).sequence);
 }
 
-test "process values stay live while rank order reconciles every thirty samples" {
+test "process rank and values follow each captured inventory without a delayed reorder" {
     const first =
         \\{"sequence":1,"data":{"cpu":{},"memory":{},"network":{},"processes":{"list":[{"pid":7,"name":"alpha.exe","friendly_name":"Alpha","cpu_percent":10,"memory_bytes":1048576,"status":"Run"},{"pid":8,"name":"beta.exe","friendly_name":"Beta","cpu_percent":9,"memory_bytes":2097152,"status":"Run"}],"total_count":2}}}
     ;
@@ -1986,16 +1968,28 @@ test "process values stay live while rank order reconciles every thirty samples"
     try projection.applyFastJson(std.testing.allocator, first);
     try std.testing.expectEqual(@as(u32, 7), projection.processes()[0].pid);
     try std.testing.expect(!projection.process_values_warmed);
+    try projection.applyFastJson(std.testing.allocator, first);
+    try std.testing.expect(!projection.process_values_warmed);
 
     try projection.applyFastJson(std.testing.allocator, second);
     try std.testing.expect(projection.process_values_warmed);
-    try std.testing.expectEqual(@as(u32, 7), projection.processes()[0].pid);
-    try std.testing.expectEqual(@as(f64, 5), projection.processes()[0].cpu_percent);
-    try std.testing.expectEqual(@as(u32, 8), projection.processes()[1].pid);
+    try std.testing.expectEqual(@as(u32, 8), projection.processes()[0].pid);
+    try std.testing.expectEqual(@as(f64, 11), projection.processes()[0].cpu_percent);
+    try std.testing.expectEqual(@as(u32, 7), projection.processes()[1].pid);
 
     try projection.applyFastJson(std.testing.allocator, sixth);
     try std.testing.expectEqual(@as(u32, 8), projection.processes()[0].pid);
     try std.testing.expectEqual(@as(f64, 12), projection.processes()[0].cpu_percent);
+}
+
+test "available observations with omitted detail do not inherit a pending explanation" {
+    var value = Projection{};
+    try value.applySlowJson(std.testing.allocator,
+        \\{"schema_version":2,"sample":{"observation":{"status":"available","source":"GPU probe"}},"data":{"disk":{},"gpu":{"inventory_status":{"status":"available","source":"Metal"},"adapters":[{"device_id":"metal:1","name":"Apple GPU","fields":{"temperature_celsius":{"status":"available","source":"Sensor API"}}}]},"thermals":{}}}
+    );
+    try std.testing.expectEqualStrings("Metal", value.gpuInventoryObservation());
+    try std.testing.expectEqualStrings("Sensor API", value.gpu_rows[0].temperatureObservation());
+    try std.testing.expectEqualStrings("", value.topicMeta(3).detail());
 }
 
 test "static warnings and capability topics preserve explicit provenance" {
@@ -2196,4 +2190,19 @@ test "network rows distinguish unavailable rates and addresses from measured zer
     try std.testing.expectEqual(@as(f64,0),value.interface_rows[1].download_kib_s);
     try std.testing.expect(!value.interface_rows[1].included_in_total);
     try std.testing.expectEqualStrings("No assigned address",value.interface_rows[1].address());
+}
+
+test "active aggregate interfaces survive a large virtual inventory" {
+    var interfaces = [_]InterfaceJson{.{ .name = "virtual", .is_up = true }} ** 21;
+    interfaces[0].is_up = false;
+    interfaces[20] = .{ .name = "physical", .is_up = true, .included_in_total = true };
+    var indices: [max_interfaces]usize = undefined;
+    const count = selectInterfaceIndices(&interfaces, &indices);
+    try std.testing.expectEqual(max_interfaces, count);
+    try std.testing.expectEqual(@as(usize, 20), indices[0]);
+    try std.testing.expectEqual(@as(usize, 1), indices[1]);
+    try std.testing.expectEqual(@as(usize, 15), indices[count - 1]);
+    try std.testing.expectEqual(@as(usize, 0), selectInterfaceIndices(&.{}, &indices));
+    try std.testing.expectEqual(@as(usize, 1), selectInterfaceIndices(interfaces[0..1], &indices));
+    try std.testing.expectEqual(@as(usize, 0), indices[0]);
 }

@@ -239,10 +239,10 @@ cutover while preserving exact MSI/EXE/PKG ownership when it can be proven.
 
 ## GUI Settings, Tray, and Startup
 
-The versioned settings document separates `shared` and `gui` namespaces. The
-`shared` namespace is reserved for preferences deliberately supported by both
-frontends. GUI mode, temperature unit, window geometry, chart density,
-navigation, tray, close behavior, launch-at-login, and reduced motion remain in
+The versioned settings document separates `shared`, `tui` and `gui` namespaces.
+Verified optional-helper paths are deliberately shared; terminal presentation
+preferences belong under `tui`. GUI mode, temperature unit, window geometry,
+chart density, navigation, tray, close behavior, launch-at-login, and reduced motion remain in
 `gui`. In particular, GUI choices never change the TUI chooser, sort defaults,
 temperature default, or session behavior.
 
@@ -286,7 +286,7 @@ a documented SDK limitation, not a successful Windows/Linux screen-reader claim.
 
 ## Platform Support
 
-| Platform | Target | v3 release requirement |
+| Platform | Target | Composite release requirement |
 |----------|--------|------------------------|
 | Windows x86_64 | `x86_64-pc-windows-msvc` | CLI/TUI + GUI + managed/native lifecycle |
 | macOS x86_64 | `x86_64-apple-darwin` | CLI/TUI + GUI in universal PKG, native Intel qualification |

@@ -28,7 +28,6 @@ const hidden_refresh_ms: u64 = 30000;
 const fast_summary_stale_after_ms: u64 = 2500;
 const history_model = @import("history.zig");
 const history_sample_count: usize = history_model.count;
-const primary_process_row_count: usize = 8;
 const tray_supported = builtin.os.tag == .windows or builtin.os.tag == .macos;
 const makira_font_id: canvas.FontId = canvas.min_registered_font_id;
 const plex_mono_font_id: canvas.FontId = canvas.min_registered_font_id + 1;
@@ -88,7 +87,6 @@ pub const Msg = union(enum) {
     connection_filter_edit: canvas.TextInputEvent,
     driver_filter_edit: canvas.TextInputEvent,
     toggle_driver_attention,
-    toggle_process_rows,
     sort_process_cpu,
     sort_process_memory,
     sort_process_pid,
@@ -144,7 +142,6 @@ pub const Model = struct {
     disk_write_history: [history_sample_count]f64 = [_]f64{std.math.nan(f64)} ** history_sample_count,
     clock: native_sdk.Clock = .system,
     active_section: u8 = 0,
-    show_all_processes: bool = false,
     process_sort: ProcessSort = .cpu,
     process_page_offset: u32 = 0,
     process_matches: u32 = 0,
@@ -208,7 +205,7 @@ pub const Model = struct {
     pub const view_unbound = .{
         "window_visible",
         "tray_session_active",
-        "show_all_processes",
+        "sequence",
         "process_sort",
         "process_page_offset",
         "process_matches",
@@ -217,6 +214,7 @@ pub const Model = struct {
         "companion_ui",
         "companion_setup_smart",
         "companion_setup_confirmation",
+        "companionSetupConfirming",
         "companion_confirmation",
         "companion_mlab_consent",
         "processHasPrevious",
@@ -358,8 +356,7 @@ pub const Model = struct {
             model.detail.processes()
         else
             model.filtered_process_rows[0..model.filtered_process_count];
-        if (model.show_all_processes) return rows;
-        return rows[0..@min(rows.len, primary_process_row_count)];
+        return rows;
     }
     pub fn processFilter(model: *const Model) []const u8 {
         return model.process_filter_buffer.text();
@@ -374,11 +371,17 @@ pub const Model = struct {
     pub fn visibleProcessCount(model: *const Model) usize {
         return model.processes().len;
     }
-    pub fn processToggleLabel(model: *const Model) []const u8 {
-        return if (model.show_all_processes) "Show primary 8" else "Show 16 per page";
+    pub fn processSortDescription(model: *const Model) []const u8 {
+        return switch (model.process_sort) {
+            .cpu => "Highest CPU use first",
+            .memory => "Highest memory use first",
+            .pid => "Lowest process ID first",
+            .name => "Process names A to Z",
+        };
     }
     pub fn processPreviousDisabled(model: *const Model) bool { return !model.processHasPrevious(); }
     pub fn processNextDisabled(model: *const Model) bool { return !model.processHasNext(); }
+    pub fn processObservationVisible(model: *const Model) bool { return model.technicianMode() or !model.detail.process_observation.available; }
     pub fn storageDevice(model: *const Model) []const u8 {
         if (model.storage_choice.text().len > 0) return model.storage_choice.text();
         const drives = model.detail.driveHealth();
@@ -396,6 +399,8 @@ pub const Model = struct {
     pub fn companionSetupNotice(model: *const Model) []const u8 { return if (model.companion_setup_smart) model.companion_ui.setup_smart_notice.text() else model.companion_ui.setup_network_notice.text(); }
     pub fn companionSetupUnavailable(model: *const Model) bool { return model.companionRunning() or model.companionSetupNotice().len == 0; }
     pub fn companionSetupConfirming(model: *const Model) bool { return model.companion_setup_confirmation; }
+    pub fn networkSetupConfirming(model: *const Model) bool { return model.companion_setup_confirmation and !model.companion_setup_smart; }
+    pub fn smartSetupConfirming(model: *const Model) bool { return model.companion_setup_confirmation and model.companion_setup_smart; }
     pub fn companionSetupMessage(model: *const Model) []const u8 { return model.companion_ui.setup_message.text(); }
     pub fn companionLines(model: *const Model) []const companion_model.Line { return model.companion_ui.lines(); }
     pub fn companionDetails(model: *const Model) []const companion_model.DetailLine { return model.companion_ui.details(); }
@@ -417,9 +422,9 @@ pub const Model = struct {
     pub fn findings(model: *const Model) []const projection.FindingRow { return model.detail.findings(); }
     fn activeCollector(model: *const Model) *const projection.TopicMeta {
         return switch (model.active_section) {
-            0, 1, 2, 6 => &model.overview_topic_meta,
+            0, 1, 2 => &model.overview_topic_meta,
             3, 4, 7 => model.detail.topicMeta(3),
-            5 => model.detail.topicMeta(4),
+            5, 6 => model.detail.topicMeta(1),
             8 => model.detail.topicMeta(6),
             else => model.detail.topicMeta(0),
         };
@@ -436,6 +441,9 @@ pub const Model = struct {
     pub fn collectorAgeSeconds(model: *const Model) u64 {
         return (model.collectorAgeMs() orelse 0) / 1000;
     }
+    pub fn collectorSequence(model: *const Model) u64 {
+        return model.activeCollector().sequence;
+    }
     pub fn collectorState(model: *const Model) []const u8 {
         const meta = model.activeCollector();
         if (!meta.ready) return "Waiting for collector";
@@ -447,6 +455,9 @@ pub const Model = struct {
     pub fn collectorSource(model: *const Model) []const u8 {
         const meta = model.activeCollector();
         return if (meta.detail().len > 0) meta.detail() else meta.provenance();
+    }
+    pub fn collectorNoticeVisible(model: *const Model) bool {
+        return model.technicianMode() or !std.mem.eql(u8, model.collectorState(), "Available");
     }
     pub fn diskReadErrorsAvailable(model: *const Model) bool { return model.detail.disk_read_errors_measured_drives > 0; }
     pub fn diskWriteErrorsAvailable(model: *const Model) bool { return model.detail.disk_write_errors_measured_drives > 0; }
@@ -490,13 +501,17 @@ pub const Model = struct {
         return model.fast_summary_failed;
     }
     pub fn cpuAssessment(model: *const Model) []const u8 {
-        if (model.cpu_percent >= 90) return "CPU demand is critical right now; open Processes to identify sustained consumers.";
+        if (!model.fast_summary_seen) return "Waiting for the first CPU reading.";
+        if (!model.summaryLive()) return "The CPU reading is older. Wait for collection to recover before assessing current load.";
+        if (model.cpu_percent >= 90) return "CPU demand is very high. Check Processes if the system feels slow.";
         if (model.cpu_percent >= 70) return "CPU demand is high. Short bursts are normal; sustained load can reduce responsiveness.";
         if (model.cpu_percent >= 35) return "CPU demand is moderate and leaves working headroom.";
         return "CPU demand is light; the processor has substantial headroom.";
     }
     pub fn memoryAssessment(model: *const Model) []const u8 {
-        if (model.memory_percent >= 90) return "Physical memory pressure is critical; paging and application slowdown are likely.";
+        if (!model.fast_summary_seen) return "Waiting for the first memory reading.";
+        if (!model.summaryLive()) return "The memory reading is older. Wait for collection to recover before assessing current use.";
+        if (model.memory_percent >= 90) return "Most physical memory is in use. Check Processes and swap activity if apps feel slow.";
         if (model.memory_percent >= 75) return "Memory pressure is elevated. Processes and swap usage can explain where capacity went.";
         if (model.memory_percent >= 50) return "Memory use is moderate with usable capacity remaining.";
         return "Memory pressure is low and physical capacity is readily available.";
@@ -622,19 +637,16 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
         },
         .process_filter_edit => |edit| {
             model.process_filter_buffer.apply(edit);
-            model.show_all_processes = true;
             model.process_page_offset = 0;
             requestProcessQuery(model);
             rebuildProcessFilter(model);
         },
         .process_previous_page => {
             model.process_page_offset -|= 16;
-            model.show_all_processes = true;
             requestProcessQuery(model);
         },
         .process_next_page => {
             if (model.processHasNext()) model.process_page_offset +|= 16;
-            model.show_all_processes = true;
             requestProcessQuery(model);
         },
         .connection_previous_page => { model.detail.connection_page_offset -|= projection.max_connections; requestInventoryQuery(model, .medium); },
@@ -659,7 +671,6 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             requestInventoryQuery(model, .drivers);
             rebuildDriverFilter(model);
         },
-        .toggle_process_rows => model.show_all_processes = !model.show_all_processes,
         .sort_process_cpu => setProcessSort(model, .cpu),
         .sort_process_memory => setProcessSort(model, .memory),
         .sort_process_pid => setProcessSort(model, .pid),
@@ -1559,7 +1570,7 @@ pub fn warmCarbonChrome(model: *const Model, builder: *canvas.Builder, size: geo
         } },
     });
 
-    const content_left = @min(size.width, 220);
+    const content_left = @min(size.width, 196);
     const content_top = @min(size.height, 88);
     const content_bottom = @max(content_top, size.height - 32);
     const content_width = @max(0, size.width - content_left);

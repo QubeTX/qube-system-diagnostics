@@ -13,12 +13,13 @@
 
 ## Active
 - [ ] **Implement and qualify SD-300 v4 monitoring** - measurement, adaptive TUI, optional setup and bounded privileged reads implemented; qualifying native interaction, performance and composite lifecycle before the single public release (ms #v4m) (owner codex) #v4a
-  - [ ] Correct measurement semantics, sampling metadata, and histories
-  - [ ] Isolate slow probes and bound cancellation, output, and shutdown
-  - [ ] Expand Windows, Linux, and macOS providers with deterministic fixtures
-  - [ ] Redesign the adaptive TUI and add guided inspection and filtering
-  - [ ] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup (native setup and synthetic privileged-worker checks pass; final lifecycle qualification remains)
-  - [ ] Wire GUI parity, versioned exports, settings, and documentation
+  - [x] Correct measurement semantics, sampling metadata, and histories
+  - [x] Isolate slow probes and bound cancellation, output, and shutdown
+  - [x] Expand Windows, Linux, and macOS providers with deterministic fixtures
+  - [x] Redesign the adaptive TUI and add guided inspection and filtering
+  - [x] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup (native setup and synthetic privileged-worker checks pass; final lifecycle qualification remains)
+  - [x] Wire GUI parity, versioned exports, settings, and architecture documentation
+  - [ ] Review and improve GUI layout, clarity, navigation, and diagnostic flows (operator added 2026-09-23)
   - [ ] Qualify performance, six native targets, and composite lifecycle
   - [ ] Publish once and verify exact public artifacts and installation
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k

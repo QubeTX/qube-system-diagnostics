@@ -1,6 +1,6 @@
 ## v4 implementation contract (2026-09-23)
 
-The accepted v4 plan supersedes the v3 TUI layout and scheduler freeze below.
+The accepted v4 plan governs the collection, terminal and compatibility contracts below.
 `presentation.rs` prepares inventory sorting, filtering, identity selection and inspection;
 `ui/dashboard.rs` renders only visible rows. `Monitor` owns independent bounded lanes in
 both frontends. Space freezes terminal presentation while collection continues; `/`,
@@ -20,18 +20,19 @@ monitor. The binary is `sd300`; the crates.io package is `tr300-tui`; the GUI
 loads a bundle-relative Rust `cdylib` that reuses the same collectors without
 sharing the TUI process or event loop.
 
-The v3.0.0 worktree is a qualification candidate, not a published release.
-Release completion requires preserved v2.0.6 CLI/TUI behavior, the complete
+The public product remains v3.1.3. This v4 worktree is an unpublished
+qualification candidate. Release completion requires preserved v2.0.6 CLI and
+lifecycle compatibility, the complete
 composite installer/update/uninstall lifecycle, performance gates, and native or
 hosted evidence for all six release targets. Do not describe local builds as
 proof that the public release or another operating system has passed.
 
 ## Compatibility contract
 
-- Bare `sd300` always opens the existing User/Technician chooser. Current TUI
-  sections, keybindings, cadence, styling, sorting, scrolling, warnings,
-  commands, flags, help, JSON, exit codes, and terminal behavior remain
-  compatible.
+- Bare `sd300` opens the User/Technician chooser. Preserve the mode flags,
+  nine section shortcuts, lifecycle commands, schema-1 JSON default, exit
+  contracts and terminal restoration. ADRs 0006/0007 describe the intentional
+  adaptive dashboard, filtering, inspection, pause-view and scheduler changes.
 - `sd300 gui` is additive. It launches or focuses an installed GUI and gives an
   install/update repair instruction when the companion is absent. Install and
   update never launch the app, except the v3.1.0 GUI-initiated coordinator:
@@ -51,7 +52,7 @@ proof that the public release or another operating system has passed.
   redaction, and shared configuration must reach both applicable frontends in
   the same product update.
 
-## Current v3 candidate architecture
+## Current candidate architecture
 
 - Primary command paths:
   - `sd300` opens interactive mode selection.
@@ -62,20 +63,23 @@ proof that the public release or another operating system has passed.
   - `sd300 uninstall` delegates to the proven owner for complete product cleanup.
   - `sd300 snapshot --json` and `sd300 capabilities --json` expose redacted
     automation contracts.
-- The TUI retains its current non-cloneable `SystemSnapshot` and `tokio::select!`
-  loop: fast refresh at 1 second, connections at 3 seconds, slow at 5 seconds,
-  diagnostics at 15 seconds, disk health at 60 seconds, and asynchronous driver
-  scanning.
-- The GUI engine owns a separate `SystemSnapshot` and Tokio runtime on a
-  dedicated Rust thread. It publishes versioned, latest-only projections for
-  static, fast, medium, slow, diagnostics, health, drivers, warnings, and
-  capabilities so renderer delay cannot create an unbounded collector backlog.
+- Each frontend creates an independent `Monitor`. The TUI draws immediately
+  and polls completed samples alongside input. CPU/memory/process work stays in
+  the fast lane; potentially blocking native/helper probes use bounded owned
+  CLI worker processes. Cadences remain one second for fast/activity, three
+  for connections, five for slow, fifteen for diagnostics, sixty for health,
+  and five minutes for static/driver inventory. Overdue ticks are skipped.
+- The GUI engine owns its separate snapshot on a Rust thread with a Condvar
+  wake. Versioned latest-only projections and sequence-driven finite histories
+  prevent renderer delays from creating an unbounded queue. Every worker is
+  cancelled and joined before the engine library unloads.
 - The Native SDK app is declarative `app.native` plus Zig `Model`/tagged
   `Msg`/`update` logic. It contains no application WebView or JavaScript runtime.
   It loads `sd300_engine.dll`, `libsd300_engine.dylib`, or
   `libsd300_engine.so` only from an absolute bundle-relative path and rejects
   ABI, schema, version, product, or target mismatches before collection.
-- Settings are a versioned document with `shared` and `gui` namespaces. GUI
+- Settings are a versioned document with `shared`, `tui` and `gui` namespaces. Shared
+  helper choices and terminal preferences are explicit; GUI
   mode/unit, geometry, chart density, navigation, tray, close behavior,
   launch-at-login, and reduced motion cannot change TUI startup or session
   defaults.
@@ -95,7 +99,7 @@ proof that the public release or another operating system has passed.
 
 The exact six-target contract is:
 
-| Platform | Rust target | Composite v3 requirement |
+| Platform | Rust target | Composite release requirement |
 |----------|-------------|--------------------------|
 | Windows x86_64 | `x86_64-pc-windows-msvc` | CLI/TUI, GUI, engine, managed wrapper, Global/Corporate MSI+EXE |
 | macOS x86_64 | `x86_64-apple-darwin` | CLI/TUI and GUI in the signed/notarized universal PKG |

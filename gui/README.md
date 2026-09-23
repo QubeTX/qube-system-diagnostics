@@ -1,7 +1,7 @@
 # SD-300 native GUI
 
 This directory contains the additive Vercel Native SDK desktop monitor for
-SD-300 v3. It is a native-rendered application: the view is declarative
+SD-300. It is a native-rendered application: the view is declarative
 `src/app.native`, behavior is a Zig `Model`/tagged `Msg`/`update` loop in
 `src/main.zig`, and live diagnostics come from the bundle-relative Rust engine.
 There is no application WebView or JavaScript runtime.
@@ -12,14 +12,14 @@ model** section in `AGENTS.md` (identical in `CLAUDE.md`): it defines what the
 two frontends share, the step-by-step recipe for wiring a field into both, and
 the release-blocking parity invariant.
 
-The v3 app is still in qualification. A successful local build or strict test
-does not prove another target, native installer, physical interaction,
+The v4 candidate is unpublished and remains in qualification. A successful
+local build or strict test does not prove another target, native installer, physical interaction,
 performance soak, or public release.
 
 ## Product contract
 
 - This GUI is additive. Bare `sd300` keeps the existing User/Technician chooser
-  and unchanged Ratatui flow; `sd300 gui` launches or focuses this app.
+  and independent Ratatui session; `sd300 gui` launches or focuses this app.
 - Managed wrappers and native installers package the CLI/TUI, GUI, engine, and
   platform integrations together, but installation and update never open the
   app automatically. The one deliberate exception is the app's own "Update
@@ -43,6 +43,14 @@ performance soak, or public release.
 
 ## Runtime model
 
+The v4 GUI review keeps the Warm Carbon visual identity while placing live
+readings, histories and findings first. The header switches audience mode;
+network scans, bandwidth tests and storage setup have separate contextual
+controls. Process pages show every returned row and follow the current full
+inventory rank. See [ADR 0013](../docs/adr/0013-gui-monitoring-hierarchy.md) and
+the [review evidence](../docs/qualification/v4/gui-ux-review.md) for intentional
+presentation changes and remaining acceptance limits.
+
 The GUI dynamically loads one target engine from the application bundle:
 
 - Windows: `sd300_engine.dll`
@@ -56,7 +64,10 @@ mismatches before starting. The engine owns a dedicated Rust thread
 non-cloneable `SystemSnapshot`; it never shares state with the TUI.
 No Rust panic, allocation, reference, or borrowed buffer may cross the C ABI.
 
-The engine preserves the 1/3/5/15/60-second collector cadences and exposes
+Each frontend owns an independent `Monitor` session. Potentially blocking
+native probes run in bounded owned CLI worker processes, with cancellation and
+joined shutdown before engine unload. The engine preserves the live collector
+cadences, refreshes static/driver inventories every five minutes, and exposes
 bounded, latest-only versioned topics. Zig consumes sequence changes, keeps
 bounded histories, and does not queue every missed render. A visible GUI must
 present fast-topic samples at least once per second after renderer optimization;
@@ -133,8 +144,9 @@ manifest or Zig's content-addressed package cache.
 
 ## Settings, tray, and startup
 
-The settings document has separate `shared` and `gui` namespaces. The GUI owns
-its remembered mode and unit, geometry, chart density, navigation, tray,
+The settings document has separate `shared`, `tui` and `gui` namespaces.
+Shared helper paths and terminal presentation preferences have explicit owners.
+The GUI owns its remembered mode and unit, geometry, chart density, navigation, tray,
 close behavior, launch-at-login, and reduced-motion settings. None of these may
 change the next TUI launch, its chooser, or existing terminal defaults.
 

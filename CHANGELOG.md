@@ -6,6 +6,10 @@ All notable changes to SD-300 will be documented in this file.
 
 - Retain bounded process-role, state and parent evidence when native GUI shutdown leaves a helper, without logging executable paths or arguments. Run macOS CPU attribution independently after failed shutdown qualification so both failures remain diagnosable; profiling never substitutes for resource acceptance.
 
+- Review the native GUI across all nine sections and Settings. Prioritize live readings/history, add direct audience switching, wrap explanations and consent, separate optional network scans from bandwidth tests, and place SMART setup with storage. Preserve current process rank on every captured page, avoid startup-zero interpretations, remove synthetic pending detail from available observations, and expose unified/shared GPU memory categories. Record source and live visual evidence separately from accessibility and cross-platform acceptance.
+
+- Reconcile project and contributor documentation with the implemented v4 monitor lanes, isolated workers, adaptive dashboard and independent settings namespaces. Remove obsolete v3 scheduler/layout freezes and distinguish implemented behavior from still-pending native performance/lifecycle qualification.
+
 - Select Cairo before GTK initialization for the Linux CPU-rendered GUI, preserving explicit renderer overrides. Route external quit through close-request so SDK widget cleanup precedes destruction; add native backend, override and lifecycle fixtures. Keep GNU GL smoke coverage and musl repeated shutdown diagnostics. Add separately bounded Apple `sample` runs for native TUI/hidden-GUI CPU attribution; debugger/profile reports cannot qualify performance gates.
 
 - Add an opt-in bounded native backtrace after Alpine GUI shutdown fails with SIGSEGV. Repeat unchanged artifacts only for diagnosis, attach after the sampling window, retain the original failure, and prohibit treating debugger runs as resource qualification. After an unchanged rerun passes, exercise three foreground/hidden shutdown pairs with traces to investigate the intermittent fault.
