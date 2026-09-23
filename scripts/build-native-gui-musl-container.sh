@@ -19,10 +19,10 @@ grep -Eq '^3\.20([.]|$)' /etc/alpine-release || {
 
 apk add --no-cache \
   bash build-base ca-certificates curl findutils git gtk4.0-dev nodejs npm \
-  lddtreepax patchelf pkgconf scanelf spdx-licenses-text tar xz xvfb xauth xdotool dbus
-for command in lddtreepax scanelf; do
+  lddtreepax patchelf pkgconf scanelf spdx-licenses-text tar xz xvfb xvfb-run xauth xdotool dbus
+for command in lddtreepax scanelf xvfb-run dbus-run-session xdotool; do
   command -v "$command" >/dev/null || {
-    echo "the Alpine private-runtime packager requires $command" >&2
+    echo "the Alpine native qualification environment requires $command" >&2
     exit 1
   }
 done

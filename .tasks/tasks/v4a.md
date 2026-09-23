@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: musl job 107210414630 in run 35869747344 passes Rust/engine/native GUI tests and distribution build, then exits 127 because Alpine packages xvfb-run separately from xvfb. Verify Alpine 3.20's official package, install the wrapper and fail early if display tools are absent. Next oracle: native Alpine display fixture, GUI smoke and before/after resources. Slow-worker optimization separately passes Windows worker integration and Windows/Apple Silicon clippy before commit dec210e.
+
 - 2026-09-23 — codex: 9dc7575 Apple Silicon profiling attributes 15.1 ms CPU per slow disk collection to repeatedly recreated sysinfo disk state, including unused I/O discovery. Retain the worker's discovery containers and request only capacity/kind fields; preserve list refresh, cadence and explicit reset. Next oracle: native slow-stage comparison and worker lifecycle fixtures; whole-product CPU improvement remains unproven until measured.
 
 - 2026-09-23 — codex: clock/capture correction passes 229 root tests (six child fixtures), eight CLI contracts, three worker integrations, 16 engine tests, 55 native GUI tests (two skips), strict bindings, clippy and coordinated version checks. Keep ABI 2, advance the nullable topic envelope to schema 2, and align installer/verifier expectations. Next oracle: native six-target runtime and installer checks on this candidate.

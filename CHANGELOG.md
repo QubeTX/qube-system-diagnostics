@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Install Alpine's separate `xvfb-run` package and check native GUI qualification tools before compilation. The musl lane previously built successfully but could not launch its virtual display fixture.
+
 - Retain slow-worker disk/sensor discovery containers and omit unused sysinfo disk I/O collection, following native Mac stage profiling. Refresh device lists and capacities at the existing cadence; retry/resume still resets discovery state. Physical disk activity remains an independent one-second provider.
 
 - Treat future or absent capture timestamps as unavailable age instead of measured zero, restart histories across clock rollback and accept the next genuine sample. Add explicit freshness to schema-2 reports and nullable age to engine schema 2; coordinate GUI parsing and installer checks, and fix the CLI companion verifier's obsolete ABI expectation.

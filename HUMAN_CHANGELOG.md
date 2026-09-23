@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Behind the scenes: minimal Linux testing now installs and checks its display test tools before the long build, so missing test dependencies are reported promptly.
+
 - Storage and temperature checks reuse hardware discovery work and avoid reading disk activity twice. Live readings still refresh as often, including when disks appear or disappear.
 
 - A clock adjustment no longer makes an old reading look brand new. Both views explain when capture age is unknown, charts restart across the clock change, and richer exports preserve that distinction. Behind the scenes, installation checks recognize the updated app and engine together.
