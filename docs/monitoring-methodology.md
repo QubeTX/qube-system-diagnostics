@@ -113,10 +113,12 @@ manifest and selects only x64, smartctl, drivedb and documentation components.
 RunAsInvoker keeps the caller's token; it grants no privilege. macOS uses the
 existing Homebrew formula without starting services. Debian/Ubuntu use apt's
 authenticated download and dpkg-deb extraction; Alpine explicitly verifies the
-package checksum/signature before extraction. Missing runtime dependencies are
+package checksum/signature before extraction and fetches repository indexes without a system cache. Missing runtime dependencies are
 reported rather than silently modifying the host package database.
 
 Primary references: [smartmontools installer component contract](https://github.com/smartmontools/smartmontools/blob/RELEASE_7_5/smartmontools/os_win32/installer.nsi),
 [reviewed Windows checksum](https://github.com/microsoft/winget-pkgs/blob/master/manifests/s/smartmontools/smartmontools/7.5/smartmontools.smartmontools.installer.yaml),
 [Homebrew formula](https://formulae.brew.sh/formula/smartmontools),
 [Alpine package verification](https://github.com/alpinelinux/apk-tools/blob/v2.14.4/doc/apk-verify.8.scd).
+
+Alpine index behavior follows the [apk no-cache contract](https://github.com/alpinelinux/apk-tools/blob/v2.14.4/doc/apk.8.scd) and its [signed index loader](https://github.com/alpinelinux/apk-tools/blob/v2.14.4/src/database.c).

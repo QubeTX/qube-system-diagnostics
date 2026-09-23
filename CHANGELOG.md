@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Fetch signed Alpine package indexes without requiring or modifying a system cache during confirmed SMART setup.
+
 - Capture bounded native Alpine package-manager diagnostics when optional SMART qualification fails, without printing downloaded archive bytes.
 
 - Add separately confirmed SMART helper setup through checksum-pinned Windows component extraction, existing macOS Homebrew, and authenticated Debian/Ubuntu or Alpine package extraction. Preserve independent ownership, verify the JSON interface, avoid package service scripts, and retry ordinary health collection after successful setup. Native qualification exercises installation without device probes.

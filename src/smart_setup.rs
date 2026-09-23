@@ -235,11 +235,19 @@ fn install_platform(cancel: &AtomicBool) -> Result<PathBuf, String> {
             .map_err(|e| e.to_string())?,
         )?;
     } else if Path::new("/sbin/apk").is_file() {
+        // Clean Alpine hosts may have no cached indexes. Fetch signed indexes
+        // in memory; never update the system cache or installed database.
         let bytes = successful(
             "Smartmontools package download",
             command::run_memory(
                 "/sbin/apk",
-                ["fetch", "--stdout", "smartmontools"],
+                [
+                    "--no-cache",
+                    "--quiet",
+                    "fetch",
+                    "--stdout",
+                    "smartmontools",
+                ],
                 CommandTimeout::Custom(Duration::from_secs(120)),
                 cancel,
             )

@@ -80,7 +80,13 @@ fn smart_helper_setup_verifies_version_and_preserves_repeat_ownership() {
         // failed before a product fix is chosen. Never print the archive bytes.
         let mut diagnostic = Command::new("/sbin/apk");
         diagnostic
-            .args(["fetch", "--stdout", "smartmontools"])
+            .args([
+                "--no-cache",
+                "--quiet",
+                "fetch",
+                "--stdout",
+                "smartmontools",
+            ])
             .env("HOME", temp.path())
             .env("XDG_CONFIG_HOME", temp.path().join("config"));
         let output = sd_300::collectors::command::run_memory_command(
