@@ -11,8 +11,16 @@ mod windows_gui;
 #[cfg(target_os = "windows")]
 pub use windows_gui::GuiProcessSampler;
 
+#[cfg(any(target_os = "macos", test))]
+#[path = "processes_macos.rs"]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::Sampler as GuiProcessSampler;
+
 #[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct ProcessData {
+    #[serde(default)]
+    pub observation: crate::observation::Observation,
     pub list: Vec<ProcessInfo>,
     pub total_count: usize,
     pub total_threads: usize,
@@ -148,6 +156,7 @@ pub fn collect(sys: &System) -> ProcessData {
     // operate before a frontend applies its presentation bound.
 
     ProcessData {
+        observation: crate::observation::Observation::available("sysinfo process inventory"),
         list: processes,
         total_count,
         total_threads: 0,
@@ -243,6 +252,7 @@ pub fn collect_limited(sys: &System, limit: usize, sort: ProcessSortKey) -> Proc
         .collect();
 
     ProcessData {
+        observation: crate::observation::Observation::available("sysinfo process inventory"),
         list,
         total_count,
         total_threads: 0,

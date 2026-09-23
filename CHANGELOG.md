@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Replace macOS process CPU percentages with checked libproc counters, Mach timebase conversion and per-instance monotonic deltas. Preserve measured idle zero, microsecond creation identity, inaccessible fields and full inventory before ranking. Expose inventory failure/recovery in both frontends and capabilities; use the reserved ABI-2 process-summary word without changing layout. Add native getrusage comparison, identity/reset/unit fixtures and GUI status tests.
+
 - Install Alpine's separate `xvfb-run` package and check native GUI qualification tools before compilation. The musl lane previously built successfully but could not launch its virtual display fixture.
 
 - Retain slow-worker disk/sensor discovery containers and omit unused sysinfo disk I/O collection, following native Mac stage profiling. Refresh device lists and capacities at the existing cadence; retry/resume still resets discovery state. Physical disk activity remains an independent one-second provider.

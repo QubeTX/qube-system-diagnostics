@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Mac process readings now distinguish an idle application from an unreadable one and stop carrying a previous busy reading into an idle interval. Both views explain when the process inventory cannot be read and recover when access returns.
+
 - Behind the scenes: minimal Linux testing now installs and checks its display test tools before the long build, so missing test dependencies are reported promptly.
 
 - Storage and temperature checks reuse hardware discovery work and avoid reading disk activity twice. Live readings still refresh as often, including when disks appear or disappear.

@@ -172,6 +172,9 @@ impl GuiProcessSampler {
             })
             .collect();
         Some(ProcessData {
+            observation: crate::observation::Observation::available(
+                "Windows system process information",
+            ),
             list: rows,
             total_count,
             total_threads,
@@ -274,6 +277,9 @@ impl GuiProcessSampler {
             populate_memory(&self.handles, &mut rows, total_memory);
         }
         ProcessData {
+            observation: crate::observation::Observation::available(
+                "Windows Toolhelp process inventory",
+            ),
             list: rows,
             total_count,
             total_threads,

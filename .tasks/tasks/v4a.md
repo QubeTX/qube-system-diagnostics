@@ -50,6 +50,10 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: Mac process candidate passes 230 Windows library tests (six child fixtures), eight CLI contracts, three worker tests, engine suite plus new inventory-state ABI fixture, 56 GUI tests (two skips), strict bindings, Windows/Apple Silicon clippy and musl test compilation. Native Mac CPU/getrusage comparison and before/after provider cost are the next hosted oracles; no measured performance claim yet.
+
+- 2026-09-23 — codex: native Mac stage audit exposes sysinfo's retained CPU value after zero delta and unchecked libproc failure. Replace this path in both frontends with checked combined process records, Mach-tick conversion, per-instance monotonic rates and explicit inventory/field observations. Pure units/reset/idle fixtures and Windows root/engine tests pass; native getrusage workload and full inventory run on Intel/Apple Silicon after push. Stage and whole-product performance remain separate acceptance checks.
+
 - 2026-09-23 — codex: musl job 107210414630 in run 35869747344 passes Rust/engine/native GUI tests and distribution build, then exits 127 because Alpine packages xvfb-run separately from xvfb. Verify Alpine 3.20's official package, install the wrapper and fail early if display tools are absent. Next oracle: native Alpine display fixture, GUI smoke and before/after resources. Slow-worker optimization separately passes Windows worker integration and Windows/Apple Silicon clippy before commit dec210e.
 
 - 2026-09-23 — codex: 9dc7575 Apple Silicon profiling attributes 15.1 ms CPU per slow disk collection to repeatedly recreated sysinfo disk state, including unused I/O discovery. Retain the worker's discovery containers and request only capacity/kind fields; preserve list refresh, cadence and explicit reset. Next oracle: native slow-stage comparison and worker lifecycle fixtures; whole-product CPU improvement remains unproven until measured.

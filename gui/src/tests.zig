@@ -1632,3 +1632,15 @@ test "full inventory pages preserve counts and missing process identity" {
     try testing.expect(model.driverNextDisabled());
     try testing.expect(!model.driverPreviousDisabled());
 }
+
+test "process inventory denial remains distinct and recovery removes it" {
+    var model = main.initialModel();
+    const summary_type = @import("engine.zig").ProcessSummary;
+    model.detail.applyProcessSummary(summary_type{ .sequence = 1, .observation_status = 3 });
+    try testing.expectEqualStrings("permission_denied", model.detail.process_observation.status());
+    try testing.expect(!model.detail.process_observation.available);
+    try testing.expect(!model.detail.process_values_warmed);
+    model.detail.applyProcessSummary(summary_type{ .sequence = 2, .observation_status = 0 });
+    try testing.expect(model.detail.process_observation.available);
+    try testing.expectEqualStrings("available", model.detail.process_observation.status());
+}

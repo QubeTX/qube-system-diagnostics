@@ -468,14 +468,7 @@ pub fn capabilities_for(snapshot: &SystemSnapshot) -> Vec<CapabilityRecord> {
                 "Connectivity checks did not run",
             ),
         ),
-        capability(
-            "processes",
-            available_or(
-                snapshot.processes.total_count > 0,
-                "sysinfo",
-                "No processes were returned",
-            ),
-        ),
+        capability("processes", snapshot.processes.observation.clone()),
         capability(
             "drivers",
             match &snapshot.drivers.scan_status {

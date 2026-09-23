@@ -553,6 +553,7 @@ pub const Projection = struct {
     total_upload_kib_s: f64 = 0,
     process_total_count: u32 = 0,
     process_total_threads: u32 = 0,
+    process_observation: ObservationView = .{},
     process_samples_observed: u8 = 0,
     process_values_warmed: bool = false,
     cpu_temperature_celsius: f64 = 0,
@@ -1098,6 +1099,7 @@ pub const Projection = struct {
         }
 
         const candidate_count = @min(data.processes.list.len, max_processes);
+        setObservation(&self.process_observation, data.processes.observation);
         var candidate_rows = [_]ProcessRow{.{}} ** max_processes;
         for (data.processes.list[0..candidate_count], 0..) |item, index| {
             candidate_rows[index] = processRow(item);
@@ -1120,6 +1122,10 @@ pub const Projection = struct {
         meta.topic_buffer.set("fast");
         meta.availability_buffer.set("available");
         meta.provenance_buffer.set("SD-300 platform process collector");
+        const status: []const u8 = switch (summary.observation_status) {
+            0 => "available", 1 => "unavailable", 2 => "unsupported", 3 => "permission_denied", 5 => "contradictory", else => "error",
+        };
+        setObservation(&self.process_observation, .{ .status = status, .source = "platform process inventory", .detail = if (summary.observation_status == 0) "CPU is percent of one logical processor; unreadable fields remain unavailable" else "The inventory could not be read. Inspect capabilities for provider details and retry." });
         if (!self.topic_meta[1].ready) {
             meta.target_buffer.set(if (self.topic_meta[0].ready) self.topic_meta[0].target() else "active target");
         }
@@ -1160,6 +1166,9 @@ pub const Projection = struct {
         if (total_count > 0) {
             self.process_samples_observed +|= 1;
             self.process_values_warmed = self.process_samples_observed >= 2;
+        } else {
+            self.process_samples_observed = 0;
+            self.process_values_warmed = false;
         }
         const candidate_count = candidates.len;
         const reorder_due = self.process_count == 0 or
@@ -1650,6 +1659,7 @@ const ProcessJson = struct {
     status: []const u8 = "unknown",
 };
 const ProcessesJson = struct {
+    observation: ObservationJson = .{},
     list: []const ProcessJson = &.{},
     total_count: usize = 0,
     total_threads: usize = 0,

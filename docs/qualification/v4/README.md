@@ -4,6 +4,31 @@ These initial measurements are diagnostic runs, not release acceptance. The
 foreground/hidden/soak matrix, native comparisons and installer qualification
 remain open. Do not infer hardware accuracy from parser fixtures or builds.
 
+## macOS process counters
+
+The pinned sysinfo implementation can retain the previous percentage when its
+CPU delta is zero and discards libproc read failures. The shared replacement
+uses one `PROC_PIDTASKALLINFO` query per process, checks the returned byte count,
+and preserves denied/error fields. The combined BSD/task record binds creation
+identity and counters to the same process. A failed inventory clears baselines;
+PID reuse, counter rollback, retry/resume and long gaps require a new baseline.
+
+Apple's [proc_info interface](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/proc_info.h)
+defines resident bytes and BSD creation seconds/microseconds.
+[proc_pidtaskinfo](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/proc_info.c)
+copies [fill_taskprocinfo's Mach absolute CPU ticks](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/bsd_kern.c).
+Convert with `mach_timebase_info`, then divide by the actual monotonic interval;
+100 percent means one logical processor, without machine-core normalization.
+Zero counter delta is a measured zero, not a reason to retain the prior value.
+
+Native Intel and Apple Silicon tests run an isolated CPU workload and compare
+converted CPU seconds against `getrusage(RUSAGE_SELF)` over bracketed windows.
+The declared tolerance is 20 ms for accounting granularity and call boundaries;
+the following idle interval must consume less than 20 ms. This proves the
+kernel-counter conversion on hosted machines, not physical-device telemetry.
+Stage profiles use the same sampler as both frontends. Whole-product CPU gates
+remain separate from this calculation check.
+
 ## Windows TUI process-tree measurements
 
 The CI workflow accepts an explicit `resource_seconds` dispatch input for

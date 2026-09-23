@@ -85,7 +85,7 @@ pub const ProcessSummary = extern struct {
     row_count: u32 = 0,
     matched_count: u32 = 0,
     page_offset: u32 = 0,
-    reserved: u32 = 0,
+    observation_status: u32 = 1,
     rows: [process_summary_rows]ProcessRowSummary = [_]ProcessRowSummary{.{}} ** process_summary_rows,
 };
 

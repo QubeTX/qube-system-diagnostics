@@ -38,7 +38,7 @@ mod windows_network;
 
 use serde::Serialize;
 use sysinfo::{Components, Disks, Networks, System};
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate};
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
@@ -180,9 +180,9 @@ pub struct SystemSnapshot {
     network_sampler: network::NetworkSampler,
     disks: Disks,
     components: Components,
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     process_instances: std::collections::HashSet<(u32, u64)>,
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     gui_process_sampler: processes::GuiProcessSampler,
 }
 
@@ -212,9 +212,9 @@ impl Default for SystemSnapshot {
             network_sampler: network::NetworkSampler::default(),
             disks: Disks::new(),
             components: Components::new(),
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "macos")))]
             process_instances: Default::default(),
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             gui_process_sampler: processes::GuiProcessSampler::default(),
         }
     }
@@ -223,11 +223,11 @@ impl Default for SystemSnapshot {
 impl SystemSnapshot {
     pub fn invalidate_rate_baselines(&mut self) {
         self.network_sampler = network::NetworkSampler::default();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             self.gui_process_sampler = processes::GuiProcessSampler::default();
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             self.process_instances.clear();
         }
@@ -272,7 +272,7 @@ impl SystemSnapshot {
     pub fn refresh_fast(&mut self) {
         self.sys.refresh_cpu_all();
         self.sys.refresh_memory();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         self.sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
@@ -292,7 +292,7 @@ impl SystemSnapshot {
         self.network = self.network_sampler.collect(&mut self.networks);
         self.network.adapters = adapters;
         self.network.adapter_status = adapter_status;
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             self.processes = self.gui_process_sampler.collect(
                 self.memory.total_bytes,
@@ -300,7 +300,7 @@ impl SystemSnapshot {
                 crate::types::ProcessSortKey::Cpu,
             );
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             self.processes = processes::collect(&self.sys);
             self.mark_process_baselines();
@@ -344,7 +344,7 @@ impl SystemSnapshot {
     /// the persistent header/tray never freezes while Processes is selected.
     /// Unrelated network and command-backed collectors stay dormant as before.
     pub fn refresh_processes_gui(&mut self, sort: crate::types::ProcessSortKey) {
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         {
             self.sys.refresh_cpu_usage();
             self.cpu.total_usage = self.sys.global_cpu_usage();
@@ -354,7 +354,7 @@ impl SystemSnapshot {
                 self.gui_process_sampler
                     .collect(self.memory.total_bytes, usize::MAX, sort);
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
             self.sys.refresh_cpu_usage();
             self.sys.refresh_memory();
@@ -370,7 +370,7 @@ impl SystemSnapshot {
         }
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     fn mark_process_baselines(&mut self) {
         let mut observed = std::collections::HashSet::new();
         for process in &mut self.processes.list {

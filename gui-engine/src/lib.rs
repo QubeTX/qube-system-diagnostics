@@ -89,7 +89,7 @@ impl Topic {
     fn provenance(self) -> &'static str {
         match self {
             Self::Static => "SD-300 system, display, memory, and network collectors",
-            Self::Fast => "SD-300 sysinfo-backed live collectors",
+            Self::Fast => "SD-300 platform live collectors",
             Self::Medium => "SD-300 platform connection collector",
             Self::Slow => "SD-300 disk, GPU, and thermal collectors",
             Self::Diagnostics => "SD-300 gateway, DNS, and internet collectors",
@@ -172,7 +172,8 @@ pub struct ProcessSummary {
     pub row_count: u32,
     pub matched_count: u32,
     pub page_offset: u32,
-    pub reserved: u32,
+    /// 0 available, 1 unavailable, 2 unsupported, 3 denied, 4 error, 5 contradictory.
+    pub observation_status: u32,
     pub rows: [ProcessRowSummary; PROCESS_SUMMARY_ROWS],
 }
 
@@ -184,7 +185,7 @@ impl Default for ProcessSummary {
             total_count: 0,
             total_threads: 0,
             row_count: 0,
-            reserved: 0,
+            observation_status: 1,
             matched_count: 0,
             page_offset: 0,
             rows: [ProcessRowSummary::default(); PROCESS_SUMMARY_ROWS],
@@ -344,6 +345,7 @@ struct FastProjection<'a> {
 
 #[derive(Serialize)]
 struct ProcessProjection<'a> {
+    observation: &'a sd_300::observation::Observation,
     list: &'a [collectors::processes::ProcessInfo],
     total_count: usize,
     total_threads: usize,
@@ -492,6 +494,7 @@ fn publish_fast(shared: &Shared, snapshot: &SystemSnapshot) {
             memory: &snapshot.memory,
             network: &snapshot.network,
             processes: ProcessProjection {
+                observation: &snapshot.processes.observation,
                 list: &snapshot.processes.list
                     [..snapshot.processes.list.len().min(PROCESS_SUMMARY_ROWS)],
                 total_count: snapshot.processes.total_count,
@@ -617,6 +620,14 @@ fn update_process_summary(shared: &Shared, snapshot: &SystemSnapshot) {
             .unwrap_or(u32::MAX),
         matched_count: rows.len().try_into().unwrap_or(u32::MAX),
         page_offset: offset.try_into().unwrap_or(u32::MAX),
+        observation_status: match snapshot.processes.observation.status {
+            sd_300::observation::ObservationStatus::Available => 0,
+            sd_300::observation::ObservationStatus::Unavailable => 1,
+            sd_300::observation::ObservationStatus::Unsupported => 2,
+            sd_300::observation::ObservationStatus::PermissionDenied => 3,
+            sd_300::observation::ObservationStatus::Error => 4,
+            sd_300::observation::ObservationStatus::Contradictory => 5,
+        },
         row_count: rows.len().saturating_sub(offset).min(PROCESS_SUMMARY_ROWS) as u32,
         ..ProcessSummary::default()
     };
@@ -1784,6 +1795,18 @@ mod tests {
             sd300_engine_read_process_summary(handle, 11, &mut destination),
             STATUS_UNCHANGED
         );
+    }
+
+    #[test]
+    fn process_inventory_failure_and_recovery_cross_the_fixed_summary() {
+        let shared = Shared::default();
+        let mut snapshot = SystemSnapshot::default();
+        snapshot.processes.observation = sd_300::observation::Observation::permission_denied("fixture", "Denied");
+        update_process_summary(&shared, &snapshot);
+        assert_eq!(shared.process_summary.lock().unwrap().observation_status, 3);
+        snapshot.processes.observation = sd_300::observation::Observation::available("fixture");
+        update_process_summary(&shared, &snapshot);
+        assert_eq!(shared.process_summary.lock().unwrap().observation_status, 0);
     }
 
     #[test]

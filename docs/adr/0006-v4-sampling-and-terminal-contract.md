@@ -11,6 +11,12 @@ Native calls on detached Rust threads also made shutdown depend on the provider.
 
 ## Decision
 
+The ABI-2 process summary's reserved word now carries inventory observation
+status (available/unavailable/unsupported/denied/error/contradictory). Layout,
+ownership and bounds remain unchanged; both unpublished v4 consumers change
+together. Nullable topic age uses engine schema 2. Process field availability
+remains separate from inventory availability and aggregate CPU/memory.
+
 Both frontends instantiate the shared `Monitor` implementation independently.
 Each provider lane owns one worker, one replaceable result, and its next deadline.
 Sampling retains the established fast/connection/slow/diagnostic/health cadences.

@@ -143,7 +143,7 @@ fn main() {
     let mut sys = sysinfo::System::new();
     let mut networks = sysinfo::Networks::new();
     let mut network = collectors::network::NetworkSampler::default();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let mut processes = collectors::processes::GuiProcessSampler::default();
     let mut app = App::new(Some(DiagnosticMode::User));
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
@@ -159,13 +159,13 @@ fn main() {
         app.snapshot.network = timings.measure("network.refresh_and_project", || {
             network.collect(&mut networks)
         });
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             app.snapshot.processes = timings.measure("processes.refresh_and_project", || {
                 processes.collect(sys.total_memory(), usize::MAX, ProcessSortKey::Cpu)
             });
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             timings.measure("processes.refresh", || {
                 sys.refresh_processes_specifics(

@@ -587,6 +587,9 @@ impl Presentation {
                 s.processes.total_count,
                 v.rows.len()
             );
+            if !s.processes.observation.is_available() {
+                v.summary[0] = observation(&s.processes.observation);
+            }
         }
         v.selection_lost = v
             .selected_id

@@ -25,6 +25,17 @@ pub struct Finding {
 pub fn for_snapshot(snapshot: &SystemSnapshot) -> Vec<Finding> {
     let mut findings = Vec::new();
     let now = crate::collectors::sampling::unix_ms();
+    if snapshot.processes.observation.source != "not_collected"
+        && !snapshot.processes.observation.is_available()
+    {
+        findings.push(Finding {
+            id: "process-inventory".into(), kind: FindingKind::IncompleteObservation,
+            severity: "info".into(), title: "Process inventory is incomplete".into(),
+            evidence: snapshot.processes.observation.detail.clone().unwrap_or_else(|| "The process provider returned no readable inventory".into()),
+            next_step: "Inspect process provider availability and retry; aggregate monitoring remains available".into(),
+            source: snapshot.processes.observation.source.clone(),
+        });
+    }
     let fast_valid = snapshot
         .samples
         .get("fast")
