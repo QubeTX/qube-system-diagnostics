@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Correlate Windows disk health by unique serial and PnP identity, and retrieve reliability counters through the documented physical-disk association. Reject ambiguous joins and SMART device replacements; preserve conflicting fault evidence instead of letting later healthy readings erase it.
+
 - Fetch signed Alpine package indexes without requiring or modifying a system cache during confirmed SMART setup.
 
 - Capture bounded native Alpine package-manager diagnostics when optional SMART qualification fails, without printing downloaded archive bytes.

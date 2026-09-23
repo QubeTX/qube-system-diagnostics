@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: storage identity audit replaces numeric cross-provider guesses with unique serial/PnP joins and the documented reliability association. Seven storage fixtures cover duplicate identities, reordered devices, instance boundaries, replacement and conflicting health. All 171 library tests pass (four child fixtures exercised by parent tests), root clippy passes, and live Windows health matches a unique inventory serial. Independent CIM confirms zero exposed reliability rows on this local device; missing counters remain unavailable. Next oracle: hosted native suite and composite qualification.
+
 - 2026-09-23 — codex: instrumentation at 15e099b in CI 35838931734 job 107109429230 proves both Alpine repository indexes were absent from cache. The focused fix uses apk --no-cache --quiet fetch, retaining signed index/package validation and avoiding system cache/database writes. Local musl test cross-check validates compilation; the same native setup test is the runtime oracle. No extraction or dependency workaround was mixed into this cycle.
 
 - 2026-09-23 — codex: 464dffd passes optional ND and SMART setup on Windows, both Macs and GNU Linux x86/ARM. Musl CI 35838152015 job 107106500672 fails at apk fetch before extraction with exit 1; the payload lacks the package-manager reason. This cycle adds bounded native stderr instrumentation before selecting a product fix. Next hypothesis: distinguish missing repository indexes from transport or signature failure on the same Alpine runtime.

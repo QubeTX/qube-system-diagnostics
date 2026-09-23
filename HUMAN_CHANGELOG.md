@@ -8,6 +8,8 @@ The newest section is work in progress. It is deliberately candid about what has
 
 ## In progress — more trustworthy monitoring
 
+- Storage health stays attached to the correct drive, including systems with identical models. Conflicting checks remain visible, and a reassuring response no longer hides a fault reported by another check.
+
 - Optional storage-health setup works on fresh Alpine Linux systems even when their package cache is empty.
 
 - Behind the scenes: optional-tool checks now reveal why a Linux package download failed, so a fix can target the actual cause.

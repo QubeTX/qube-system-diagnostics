@@ -122,3 +122,18 @@ Primary references: [smartmontools installer component contract](https://github.
 [Alpine package verification](https://github.com/alpinelinux/apk-tools/blob/v2.14.4/doc/apk-verify.8.scd).
 
 Alpine index behavior follows the [apk no-cache contract](https://github.com/alpinelinux/apk-tools/blob/v2.14.4/doc/apk.8.scd) and its [signed index loader](https://github.com/alpinelinux/apk-tools/blob/v2.14.4/src/database.c).
+
+Windows storage-health providers use distinct identifier namespaces. Physical-disk
+health joins the inventory only when its nonempty serial is unique in both
+providers. Reliability reads use the physical-disk association, rather than
+assuming a subsystem identifier is an OS disk number. Failure-prediction WMI
+instances match unique PnP device paths with only a bounded numeric instance
+suffix. Ambiguous identities remain unobserved. SMART results with a different
+serial are rejected as a device replacement. Conflicting fresh provider health
+retains the fault and reports a contradictory observation in both frontends.
+
+Primary references: [physical-disk identity](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-physicaldisk),
+[hardware serial semantics](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-storagefaultdomain),
+[reliability identity namespaces](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-storagereliabilitycounter),
+[physical-disk reliability association](https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/msft-physicaldisktostoragereliabilitycounter),
+[WMI device-instance naming](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wmistr/ns-wmistr-wmiregguidw).
