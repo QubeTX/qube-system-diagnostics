@@ -360,6 +360,7 @@ struct DiagnosticsProjection<'a> {
     network: &'a collectors::network_diag::NetworkDiagData,
     companion: &'a sd_300::companion::State,
     companion_lines: Vec<String>,
+    optional_setup: &'a sd_300::optional_tools::State,
 }
 fn publish_diagnostics(shared: &Shared, snapshot: &SystemSnapshot) {
     publish_sample(
@@ -369,6 +370,7 @@ fn publish_diagnostics(shared: &Shared, snapshot: &SystemSnapshot) {
             network: &snapshot.network_diag,
             companion: &snapshot.companion,
             companion_lines: snapshot.companion.lines(),
+            optional_setup: &snapshot.optional_setup,
         },
         &snapshot.warnings,
         snapshot.samples.get("diagnostics"),
@@ -694,6 +696,7 @@ fn collect_loop(shared: &Shared) {
     };
     let monitor = Monitor::start(profile());
     let mut companion = sd_300::companion::Controller::default();
+    let mut optional_setup = sd_300::optional_tools::Controller::default();
     let mut snapshot = SystemSnapshot::default();
     while !shared.stop.load(Ordering::Acquire) {
         let request = shared.companion_request.swap(0, Ordering::AcqRel);
@@ -706,16 +709,22 @@ fn collect_loop(shared: &Shared) {
             4 => Some(Action::SpeedDeep),
             _ => None,
         };
+        if request == 5 {
+            optional_setup.start_network(true);
+        }
         if let Some(action) = action {
             companion.start(action, consent);
         }
         if shared.companion_cancel.swap(false, Ordering::AcqRel) {
             companion.cancel();
+            optional_setup.cancel();
         }
         let changed_companion = companion.poll();
-        if action.is_some() || changed_companion {
+        let changed_setup = optional_setup.poll();
+        if request != 0 || changed_companion || changed_setup {
             snapshot.companion = companion.state.clone();
-            if !companion.state.running {
+            snapshot.optional_setup = optional_setup.state.clone();
+            if !companion.state.running && !optional_setup.state.running {
                 shared.companion_busy.store(false, Ordering::Release);
             }
             publish_diagnostics(shared, &snapshot);
@@ -812,6 +821,7 @@ fn collect_loop(shared: &Shared) {
         wait_for_wake(shared, Duration::from_millis(50));
     }
     drop(companion);
+    drop(optional_setup);
     shared.companion_busy.store(false, Ordering::Release);
     shared.companion_request.store(0, Ordering::Release);
     shared.companion_cancel.store(false, Ordering::Release);
@@ -1243,7 +1253,7 @@ pub extern "C" fn sd300_engine_set_process_query(
     .unwrap_or(STATUS_PANIC)
 }
 
-/// 0 cancels; 1/2 diagnostics; 3/4 explicitly confirmed bandwidth tests.
+/// 0 cancels; 1/2 diagnostics; 3/4 confirmed bandwidth tests; 5 confirmed ND setup.
 /// M-Lab consent is session-only and never inferred from another action.
 #[no_mangle]
 pub extern "C" fn sd300_engine_request_companion(
@@ -1255,7 +1265,7 @@ pub extern "C" fn sd300_engine_request_companion(
         let Some(engine) = engine_from_handle(handle) else {
             return STATUS_INVALID_ARGUMENT;
         };
-        if action > 4 || mlab_consent > 1 || (action < 3 && mlab_consent != 0) {
+        if action > 5 || mlab_consent > 1 || (!(3..=4).contains(&action) && mlab_consent != 0) {
             return STATUS_INVALID_ARGUMENT;
         }
         if action == 0 {
@@ -1763,6 +1773,10 @@ mod tests {
         );
         assert_eq!(
             sd300_engine_request_companion(handle, 99, 0),
+            STATUS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            sd300_engine_request_companion(handle, 5, 1),
             STATUS_INVALID_ARGUMENT
         );
         assert_eq!(sd300_engine_request_companion(handle, 3, 0), STATUS_OK);

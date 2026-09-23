@@ -15,7 +15,28 @@ const MAX_SETTINGS_BYTES: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
-pub struct SharedSettings {}
+pub struct SharedSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nd300_path: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smartctl_path: Option<PathBuf>,
+}
+
+pub fn shared_preferences() -> SharedSettings {
+    settings_path()
+        .ok()
+        .and_then(|p| load_from_path(&p).ok())
+        .unwrap_or_default()
+        .shared
+}
+
+pub fn select_network_companion(path: PathBuf) -> Result<(), String> {
+    let settings = settings_path()?;
+    let _lock = settings_lock(&settings)?;
+    let mut document = load_from_path(&settings)?;
+    document.shared.nd300_path = Some(path);
+    save_to_path(&settings, &document)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
@@ -122,17 +143,47 @@ pub fn read_json() -> Result<Vec<u8>, String> {
 }
 
 pub fn write_json(bytes: &[u8]) -> Result<(), String> {
+    let path = settings_path()?;
+    let _lock = settings_lock(&path)?;
+    write_json_to_path(bytes, &path)
+}
+
+fn write_json_to_path(bytes: &[u8], path: &Path) -> Result<(), String> {
     if bytes.is_empty() || bytes.len() as u64 > MAX_SETTINGS_BYTES {
         return Err("settings input was empty or exceeded the 256 KiB limit".into());
     }
     let mut document: SettingsDocument = serde_json::from_slice(bytes)
         .map_err(|error| format!("settings JSON was invalid: {error}"))?;
     let input: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    let previous = load_from_path(path)?;
     if input.get("tui").is_none() {
-        document.tui = load_from_path(&settings_path()?)?.tui;
+        document.tui = previous.tui;
+    }
+    // Older GUI builds serialize shared: {}. Omitted provider keys preserve
+    // deliberate choices; explicit null clears a choice.
+    if input.pointer("/shared/nd300_path").is_none() {
+        document.shared.nd300_path = previous.shared.nd300_path;
+    }
+    if input.pointer("/shared/smartctl_path").is_none() {
+        document.shared.smartctl_path = previous.shared.smartctl_path;
     }
     validate(&document)?;
-    save_to_path(&settings_path()?, &document)
+    save_to_path(path, &document)
+}
+
+fn settings_lock(path: &Path) -> Result<fs::File, String> {
+    let parent = path.parent().ok_or("settings directory is missing")?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(parent.join("settings.lock"))
+        .map_err(|e| e.to_string())?;
+    file.try_lock()
+        .map_err(|error| format!("settings are busy or could not be locked: {error}"))?;
+    Ok(file)
 }
 
 pub fn settings_path() -> Result<PathBuf, String> {
@@ -216,6 +267,7 @@ fn remove_settings_files_at(path: &Path) -> Result<(), String> {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         let owned = name == SETTINGS_FILE
+            || name == "settings.lock"
             || (name.starts_with("settings.corrupt-") && name.ends_with(".json"))
             || (name.starts_with("settings.unsupported-") && name.ends_with(".json"))
             || (name.starts_with(".settings-") && name.ends_with(".tmp"));
@@ -513,6 +565,14 @@ fn desktop_exec_escape(value: &str) -> String {
 }
 
 fn validate(document: &SettingsDocument) -> Result<(), String> {
+    for path in [&document.shared.nd300_path, &document.shared.smartctl_path]
+        .into_iter()
+        .flatten()
+    {
+        if !path.is_absolute() {
+            return Err("shared provider paths must be absolute".into());
+        }
+    }
     if document.schema_version != SETTINGS_SCHEMA_VERSION {
         return Err(format!(
             "unsupported settings schema {}; expected {}",
@@ -656,6 +716,43 @@ fn sync_parent(_path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gui_settings_preserve_provider_choices_and_explicit_null_clears() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        let mut document = SettingsDocument::default();
+        document.shared.nd300_path = Some(temp.path().join("nd300"));
+        document.tui.ascii = true;
+        save_to_path(&path, &document).unwrap();
+        write_json_to_path(
+            br#"{"schema_version":1,"shared":{},"gui":{"last_section":3}}"#,
+            &path,
+        )
+        .unwrap();
+        let saved = load_from_path(&path).unwrap();
+        assert_eq!(saved.shared, document.shared);
+        assert!(saved.tui.ascii);
+        assert_eq!(saved.gui.last_section, 3);
+        write_json_to_path(
+            br#"{"schema_version":1,"shared":{"nd300_path":null}}"#,
+            &path,
+        )
+        .unwrap();
+        assert!(load_from_path(&path).unwrap().shared.nd300_path.is_none());
+    }
+
+    #[test]
+    fn settings_cleanup_does_not_own_the_network_companion() {
+        let temp = tempfile::tempdir().unwrap();
+        let settings = temp.path().join("SD-300/settings.json");
+        save_to_path(&settings, &SettingsDocument::default()).unwrap();
+        let nd = temp.path().join("nd300/standalone-4.0.1");
+        fs::create_dir_all(&nd).unwrap();
+        fs::write(nd.join("nd300"), b"independently owned").unwrap();
+        remove_settings_files_at(&settings).unwrap();
+        assert_eq!(fs::read(nd.join("nd300")).unwrap(), b"independently owned");
+    }
 
     #[test]
     fn defaults_keep_terminal_and_gui_preferences_independent() {

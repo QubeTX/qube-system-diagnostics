@@ -17,3 +17,4 @@ pub mod update;
 pub mod presentation;
 
 pub mod companion;
+pub mod optional_tools;

@@ -61,6 +61,9 @@ pub const Msg = union(enum) {
     select_processes,
     show_cpu_processes,
     show_memory_processes,
+    companion_setup,
+    companion_confirm_setup,
+    companion_dismiss_setup,
     companion_standard,
     companion_deep,
     companion_speed_quick,
@@ -137,6 +140,7 @@ pub const Model = struct {
     process_matches: u32 = 0,
     process_query_active: bool = false,
     companion_ui: companion_model.Projection = .{},
+    companion_setup_confirmation: bool = false,
     companion_confirmation: u32 = 0,
     companion_mlab_consent: bool = false,
     process_filter_buffer: canvas.TextBuffer(64) = .{},
@@ -198,6 +202,7 @@ pub const Model = struct {
         "process_matches",
         "process_query_active",
         "companion_ui",
+        "companion_setup_confirmation",
         "companion_confirmation",
         "companion_mlab_consent",
         "processHasPrevious",
@@ -345,6 +350,8 @@ pub const Model = struct {
     }
     pub fn processPreviousDisabled(model: *const Model) bool { return !model.processHasPrevious(); }
     pub fn processNextDisabled(model: *const Model) bool { return !model.processHasNext(); }
+    pub fn companionSetupConfirming(model: *const Model) bool { return model.companion_setup_confirmation; }
+    pub fn companionSetupMessage(model: *const Model) []const u8 { return model.companion_ui.setup_message.text(); }
     pub fn companionLines(model: *const Model) []const companion_model.Line { return model.companion_ui.lines(); }
     pub fn companionDetails(model: *const Model) []const companion_model.DetailLine { return model.companion_ui.details(); }
     pub fn companionRunning(model: *const Model) bool { return model.companion_ui.running; }
@@ -535,6 +542,9 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
             selectSection(model, 6);
             setProcessSort(model, .memory);
         },
+        .companion_setup => { model.companion_setup_confirmation = true; model.companion_confirmation = 0; model.companion_mlab_consent = false; },
+        .companion_dismiss_setup => { model.companion_setup_confirmation = false; },
+        .companion_confirm_setup => { if (model.companion_setup_confirmation) requestCompanion(model, 5, false); model.companion_setup_confirmation = false; },
         .companion_standard => requestCompanion(model, 1, false),
         .companion_deep => requestCompanion(model, 2, false),
         .companion_cancel => requestCompanion(model, 0, false),

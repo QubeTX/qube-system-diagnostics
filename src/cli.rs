@@ -28,6 +28,8 @@ pub enum Command {
     Capabilities(ReportArgs),
     /// Open or focus the installed SD-300 desktop monitor.
     Gui,
+    /// Inspect or explicitly install an independently owned optional companion.
+    Tools(OptionalToolArgs),
     /// Installer-only cleanup used to make a fresh native install authoritative.
     #[command(alias = "mc", hide = true)]
     MigrateCleanup(MigrateArgs),
@@ -49,6 +51,24 @@ pub enum Command {
     /// Perform an elevated, proven-owner Global Windows uninstall.
     #[command(hide = true)]
     UninstallWorker(UninstallWorkerArgs),
+}
+
+#[derive(Args, Debug, Clone, PartialEq, Eq)]
+pub struct OptionalToolArgs {
+    #[arg(value_enum)]
+    pub tool: OptionalTool,
+    /// Install the verified official distribution; requires explicit acceptance.
+    #[arg(long)]
+    pub install: bool,
+    /// Consent to the exact operation described by `sd300 tools nd300`.
+    #[arg(long, requires = "install")]
+    pub accept: bool,
+    #[arg(long)]
+    pub json: bool,
+}
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionalTool {
+    Nd300,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]

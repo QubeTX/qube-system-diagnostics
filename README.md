@@ -360,4 +360,13 @@ tests. SpeedQX is a separate bandwidth-consuming action with a displayed budget
 and a fresh, optional M-Lab consent choice. Monitoring continues during scans;
 cancellation never invokes network repairs. Unknown companion versions are
 reported separately. Results stay in memory until exported, and redacted exports
-omit imported free-form details. Optional installation is still being qualified.
+omit imported free-form details.
+
+Optional setup is a separate confirmation in both interfaces. The TUI uses **i**
+inside the **N** panel; the GUI provides **Install optional ND-300**. The CLI
+`sd300 tools nd300` describes the exact operation; `--install --accept` consents.
+Setup uses the official release archive with a platform-specific pinned checksum,
+keeps existing installations, and verifies both executables. The independent
+per-user ND-300 directory survives SD-300 removal and carries its own standalone
+receipt. No PATH changes, elevated install, diagnostic, repair or bandwidth test
+is implied by setup. Lifecycle qualification of this candidate remains open.

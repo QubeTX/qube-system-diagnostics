@@ -78,10 +78,19 @@ fn render_content(frame: &mut Frame, app: &App) {
 
     if app.show_companion {
         let mut lines = vec![
-            "s standard scan · d deep scan · b SpeedQX Quick · B Deep · x cancel · Esc close"
+            "s standard scan · d deep scan · b SpeedQX Quick · B Deep · i install ND-300 · x cancel · Esc close"
                 .into(),
         ];
-        if let Some(action) = app.speed_confirmation {
+        if app.setup_confirmation {
+            lines.push(crate::optional_tools::NETWORK_NOTICE.into());
+            lines.push(format!(
+                "Destination: {}",
+                crate::optional_tools::network_directory()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|e| e)
+            ));
+            lines.push("Y consents to this installation · Esc declines and closes".into());
+        } else if let Some(action) = app.speed_confirmation {
             lines.push(format!(
                 "Confirm {}: up to {} seconds / {} GB payload",
                 action.label(),
@@ -95,6 +104,9 @@ fn render_content(frame: &mut Frame, app: &App) {
                 if app.mlab_consent { "ENABLED" } else { "OFF" }
             ));
         } else {
+            if !app.optional_setup.state.message.is_empty() {
+                lines.push(app.optional_setup.state.message.clone());
+            }
             lines.extend(app.companion.state.lines());
             if app.mode == Some(crate::types::DiagnosticMode::Technician) {
                 if let Some(result) = &app.companion.state.result {

@@ -139,6 +139,10 @@ jobs:
           set -euo pipefail
           cargo test --locked
           cargo test --locked --manifest-path gui-engine/Cargo.toml
+      - name: Qualify optional companion setup on the native host
+        timeout-minutes: 5
+        shell: bash
+        run: cargo test --locked --test optional_setup -- --ignored --nocapture
       - id: product
         name: Resolve product version
         shell: bash

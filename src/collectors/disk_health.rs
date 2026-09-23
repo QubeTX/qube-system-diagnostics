@@ -558,8 +558,9 @@ fn collect_smart(drive: &mut DriveHealth) -> Option<Observation> {
     let device = physical_drive_number(&device)
         .map(|i| format!("/dev/pd{i}"))
         .unwrap_or(device);
+    let executable = crate::optional_tools::detect("smartctl")?;
     match run_checked(
-        "smartctl",
+        executable,
         ["--json", "--all", "--nocheck=standby,3", &device],
         CommandTimeout::Slow,
         &std::sync::atomic::AtomicBool::new(false),

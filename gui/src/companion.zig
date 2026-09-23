@@ -13,6 +13,7 @@ pub const DetailLine = struct {
 };
 pub const Projection = struct {
     running: bool = false,
+    setup_message: canvas.TextBuffer(2048) = .{},
     line_count: usize = 0,
     detail_count: usize = 0,
     detail_rows: [255]DetailLine = [_]DetailLine{.{}} ** 255,
@@ -23,10 +24,12 @@ pub const Projection = struct {
         const Envelope = struct { data: struct {
             companion: struct { running: bool = false, result: ?struct { detail_lines: []const []const u8 = &.{} } = null } = .{},
             companion_lines: []const []const u8 = &.{},
+            optional_setup: struct { running: bool = false, message: []const u8 = "" } = .{},
         } };
         const parsed = try std.json.parseFromSlice(Envelope, allocator, bytes, .{ .ignore_unknown_fields = true });
         defer parsed.deinit();
-        self.running = parsed.value.data.companion.running;
+        self.running = parsed.value.data.companion.running or parsed.value.data.optional_setup.running;
+        self.setup_message.set(parsed.value.data.optional_setup.message);
         const captured_details = if (parsed.value.data.companion.result) |result| result.detail_lines else &.{};
         self.detail_count = @min(captured_details.len, self.detail_rows.len);
         for (captured_details[0..self.detail_count], 0..) |line, index| {

@@ -26,6 +26,8 @@ pub struct App {
     pub show_findings: bool,
     pub show_companion: bool,
     pub companion: crate::companion::Controller,
+    pub optional_setup: crate::optional_tools::Controller,
+    pub setup_confirmation: bool,
     pub speed_confirmation: Option<crate::companion::Action>,
     pub mlab_consent: bool,
     /// Exceptional Cargo v2-to-v3 state: the second update still needs to
@@ -104,6 +106,8 @@ impl App {
             show_findings: false,
             show_companion: false,
             companion: Default::default(),
+            optional_setup: Default::default(),
+            setup_confirmation: false,
             speed_confirmation: None,
             mlab_consent: false,
             cargo_gui_completion_notice: false,
@@ -172,6 +176,7 @@ impl App {
             }
             tokio::select! {
                 _ = poll.tick() => {
+                    if self.optional_setup.poll() { dirty = true; }
                     if self.companion.poll() {
                         self.live_while_paused.as_mut().unwrap_or(&mut self.snapshot).companion = self.companion.state.clone();
                         dirty = true;
@@ -380,21 +385,44 @@ impl App {
             match key.code {
                 KeyCode::Esc | KeyCode::Char('N') => {
                     self.show_companion = false;
+                    self.setup_confirmation = false;
                     self.speed_confirmation = None;
                     self.mlab_consent = false;
                 }
-                KeyCode::Char('x' | 'X') => self.companion.cancel(),
-                KeyCode::Char('s') if self.speed_confirmation.is_none() => {
+                KeyCode::Char('x' | 'X') => {
+                    self.companion.cancel();
+                    self.optional_setup.cancel();
+                }
+                KeyCode::Char('i')
+                    if !self.companion.state.running && !self.optional_setup.state.running =>
+                {
+                    self.setup_confirmation = true;
+                    self.speed_confirmation = None;
+                    self.mlab_consent = false;
+                }
+                KeyCode::Char('s')
+                    if self.speed_confirmation.is_none()
+                        && !self.setup_confirmation
+                        && !self.optional_setup.state.running =>
+                {
                     self.companion.start(Action::Standard, false);
                 }
-                KeyCode::Char('d') if self.speed_confirmation.is_none() => {
+                KeyCode::Char('d')
+                    if self.speed_confirmation.is_none()
+                        && !self.setup_confirmation
+                        && !self.optional_setup.state.running =>
+                {
                     self.companion.start(Action::Deep, false);
                 }
-                KeyCode::Char('b') => {
+                KeyCode::Char('b')
+                    if !self.setup_confirmation && !self.optional_setup.state.running =>
+                {
                     self.speed_confirmation = Some(Action::SpeedQuick);
                     self.mlab_consent = false;
                 }
-                KeyCode::Char('B') => {
+                KeyCode::Char('B')
+                    if !self.setup_confirmation && !self.optional_setup.state.running =>
+                {
                     self.speed_confirmation = Some(Action::SpeedDeep);
                     self.mlab_consent = false;
                 }
@@ -402,7 +430,10 @@ impl App {
                     self.mlab_consent = !self.mlab_consent
                 }
                 KeyCode::Char('y' | 'Y') => {
-                    if let Some(action) = self.speed_confirmation.take() {
+                    if self.setup_confirmation {
+                        self.setup_confirmation = false;
+                        self.optional_setup.start_network(true);
+                    } else if let Some(action) = self.speed_confirmation.take() {
                         self.companion.start(action, self.mlab_consent);
                         self.mlab_consent = false;
                     }
@@ -668,6 +699,22 @@ mod compatibility_tests {
         assert!(!app.show_companion);
         assert!(!app.mlab_consent);
         assert!(!app.companion.state.running);
+    }
+
+    #[test]
+    fn optional_setup_opens_without_consent_and_escape_declines() {
+        let mut app = App::new(Some(DiagnosticMode::User));
+        press(&mut app, KeyCode::Char('N'));
+        press(&mut app, KeyCode::Char('b'));
+        press(&mut app, KeyCode::Char('m'));
+        press(&mut app, KeyCode::Char('i'));
+        assert!(app.setup_confirmation);
+        assert!(app.speed_confirmation.is_none());
+        assert!(!app.mlab_consent);
+        assert!(!app.optional_setup.state.running);
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.setup_confirmation);
+        assert!(!app.optional_setup.state.running);
     }
 
     #[test]

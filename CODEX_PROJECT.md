@@ -201,3 +201,10 @@ that possession of a font file proves redistribution rights.
 ├── Cargo.toml and Cargo.lock
 └── README.md, AGENTS.md, CLAUDE.md, CHANGELOG.md
 ```
+
+
+V4 optional setup contract: `sd300 tools nd300` is read-only; installation requires
+`--install --accept` or the separate frontend confirmation. Official archives are
+pinned for all six targets. Preserve existing ND-300 owners, leave its standalone
+directory outside SD-300 uninstall ownership, and never infer diagnostic or M-Lab
+consent from setup. Shared provider paths survive older GUI settings writes.

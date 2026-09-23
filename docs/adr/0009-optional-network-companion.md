@@ -45,7 +45,25 @@ They do not attempt to sanitize arbitrary ND-300 strings with address regexes.
 Setup is a separate consent flow. It must detect existing owners first, use the
 official immutable distribution with verified hashes, verify the installed
 executable, and leave ND-300 installed when SD-300 is removed. This ADR does not
-declare setup or release qualification complete.
+declare release qualification complete.
+
+Setup uses the official archive with a reviewed SHA-256 pin for each of the six
+product targets. The official Windows installer performs fresh-install takeover,
+so it is not invoked by this optional flow. Instead, a new independent ND-300
+standalone directory is reserved without replacement. Executables are checked
+before and after activation, license/readme are retained, and a receipt explains
+independent removal. Existing executables, receipts or registered Windows owners
+stop setup. There is no PATH mutation or elevation. The directory is under
+LocalAppData on Windows, Application Support on macOS, and XDG data on Linux;
+it is outside all SD-300 uninstall-owned paths. A failed copy rolls back only
+exact files created by that attempt. Settings-save failure leaves the complete
+standalone installation available through normal discovery.
+
+`sd300 tools nd300` describes the action. `--install --accept` is explicit
+noninteractive consent; both frontends require a separate confirmation. No
+setup request implies consent to diagnostics, M-Lab or a bandwidth test.
+Shared `nd300_path` and `smartctl_path` choices must be absolute; omission from
+a GUI settings write preserves them, while explicit null clears a choice.
 
 Sources:
 

@@ -458,20 +458,7 @@ pub fn verify_executable(path: &Path, speed: bool, cancel: &AtomicBool) -> Resul
 
 /// Resolve PATH explicitly, avoiding implicit current-directory search on Windows.
 pub fn detect(speed: bool) -> Result<PathBuf, Failure> {
-    let name = if speed { "speedqx" } else { "nd300" };
-    let name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
-    for directory in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
-        if !directory.is_absolute() {
-            continue;
-        }
-        let candidate = directory.join(&name);
-        if candidate.is_file() {
-            return candidate
-                .canonicalize()
-                .map_err(|_| Failure::PermissionDenied);
-        }
-    }
-    Err(Failure::Missing)
+    crate::optional_tools::detect(if speed { "speedqx" } else { "nd300" }).ok_or(Failure::Missing)
 }
 pub fn run(action: Action, mlab_consent: bool, cancel: &AtomicBool) -> Result<ResultData, Failure> {
     let executable = detect(action.is_speed())?;

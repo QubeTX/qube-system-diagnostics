@@ -69,6 +69,9 @@ async fn run(cli: Cli) -> Result<()> {
             Command::Gui => {
                 std::process::exit(sd_300::gui::launch());
             }
+            Command::Tools(args) => {
+                std::process::exit(sd_300::optional_tools::run_cli(&args));
+            }
             Command::MigrateCleanup(args) => {
                 let exit_code = sd_300::migrate::run(&args);
                 std::process::exit(exit_code);

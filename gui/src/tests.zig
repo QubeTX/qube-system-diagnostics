@@ -1509,3 +1509,21 @@ test "bandwidth actions require a distinct confirmation and reset M-Lab consent"
     const tree = try buildTree(arena_state.allocator(), &model);
     _ = try expectByText(tree.root, .button, "Start bandwidth test");
 }
+
+
+test "optional setup requires a distinct confirmation and dismissal preserves monitoring" {
+    var model = main.Model{};
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    fx.executor = .fake;
+    main.update(&model, .companion_speed_quick, &fx);
+    main.update(&model, .companion_toggle_mlab, &fx);
+    main.update(&model, .companion_setup, &fx);
+    try testing.expect(model.companionSetupConfirming());
+    try testing.expect(!model.companionConfirming());
+    try testing.expect(!model.companion_mlab_consent);
+    try testing.expect(!model.companionRunning());
+    main.update(&model, .companion_dismiss_setup, &fx);
+    try testing.expect(!model.companionSetupConfirming());
+    try testing.expect(!model.companionRunning());
+}

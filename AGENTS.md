@@ -490,3 +490,10 @@ opacity-faded grid rather than generic purple “AI” styling. Makira is primar
 for body copy, headings, and major numerals; IBM Plex Mono is secondary for
 technical labels and compact values. Do not silently substitute or redistribute
 fonts without preserving the applicable embedding-license evidence.
+
+
+V4 optional setup contract: `sd300 tools nd300` is read-only; installation requires
+`--install --accept` or the separate frontend confirmation. Official archives are
+pinned for all six targets. Preserve existing ND-300 owners, leave its standalone
+directory outside SD-300 uninstall ownership, and never infer diagnostic or M-Lab
+consent from setup. Shared provider paths survive older GUI settings writes.

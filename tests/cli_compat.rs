@@ -60,6 +60,7 @@ fn strip_additive_gui_help(text: &str) -> String {
             let trimmed = line.trim_start();
             !trimmed.starts_with("gui ")
                 && !trimmed.starts_with("sd300 gui ")
+                && trimmed != "tools         Inspect or explicitly install an independently owned optional companion"
                 && ![
                     "/            Filter the complete inventory",
                     "Enter        Inspect selected row",
@@ -158,7 +159,7 @@ fn long_help_preserves_v2_commands_with_explicit_v4_interaction_additions() {
 }
 
 #[test]
-fn short_help_is_the_v2_0_6_golden_plus_only_the_additive_gui_command() {
+fn short_help_preserves_v2_golden_with_explicit_additive_commands() {
     let output = run(&["-h"]);
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
@@ -411,4 +412,15 @@ fn capabilities_json_preserves_v2_0_6_order_shape_and_single_value_stdout() {
         })
         .collect::<Vec<_>>();
     assert_eq!(actual_ids, expected_ids);
+}
+
+#[test]
+fn optional_install_without_acceptance_is_refused_before_any_changes() {
+    let output = run(&["tools", "nd300", "--install", "--json"]);
+    assert_eq!(output.status.code(), Some(1));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["success"], false);
+    assert_eq!(value["installed"], false);
+    assert!(value["message"].as_str().unwrap().contains("declined"));
+    assert!(output.stderr.is_empty());
 }

@@ -17,7 +17,7 @@
   - [ ] Isolate slow probes and bound cancellation, output, and shutdown
   - [ ] Expand Windows, Linux, and macOS providers with deterministic fixtures
   - [ ] Redesign the adaptive TUI and add guided inspection and filtering
-  - [ ] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup
+  - [ ] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup (native ND setup qualification active; SMART remains)
   - [ ] Wire GUI parity, versioned exports, settings, and documentation
   - [ ] Qualify performance, six native targets, and composite lifecycle
   - [ ] Publish once and verify exact public artifacts and installation
