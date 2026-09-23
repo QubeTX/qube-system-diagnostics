@@ -39,3 +39,19 @@ rendering, large inventories, PID reuse, missing rows, filters, pause and timest
 A Windows PTY exercised startup, process filtering, pause/resume, inspection and clean
 terminal exit. Native platform, performance and full interaction qualification remain
 required for the final release; unit tests do not establish latency or hardware accuracy.
+
+## macOS terminal readiness, 2026-09-23
+
+The native Apple Silicon PTY repeatedly retained the old section after the first
+key immediately following a resize, while collection, repaint and terminal decoding
+continued. Structural failure artifacts identify this separately from provider hangs.
+The default crossterm event source returns early from a batch of edge-triggered mio
+events when it encounters SIGWINCH; another input readiness in that batch can be lost.
+
+On macOS enable crossterm's documented `use-dev-tty` backend, which uses ordinary
+file-descriptor polling and re-observes pending input. The upstream
+[feature documentation](https://docs.rs/crossterm/0.29.0/crossterm/)
+and [macOS kqueue discussion](https://github.com/crossterm-rs/crossterm/issues/500)
+support this choice. Windows and Linux retain their current backends. No dependency
+cache is modified. Native PTY qualification includes thirty immediate resize/key
+pairs without settling delays or key retries; both Mac architectures are the oracle.

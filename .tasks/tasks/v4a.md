@@ -50,6 +50,8 @@ ACTIVE on codex/sd300-v4-monitoring. Measurement and bounded-worker foundations 
 
 ## Activity
 
+- 2026-09-23 — codex: 526cf84 Apple Silicon artifact proves the Tech/compact post-resize key stalls while rendering and collection continue. The documented macOS-only crossterm polling backend cross-checks on Intel and ARM, including the engine; lock changes only add the existing filedescriptor dependency edge. Thirty immediate resize/key pairs pass locally on Windows (input p95 16 ms, restoration verified). Next oracle: unchanged native PTY on both Macs. Windows network stage timing at 5fa678f improves from 4.41 to 1.30 ms mean; the whole-process resource run remains required.
+
 - 2026-09-23 — codex: direct Windows interface tables pass native counter bracketing, complete identity/address/unit fixtures, shared interval/replacement/failure tests, 204 root library tests (six child fixtures), eight CLI contracts, two worker tests, all 15 engine tests and 51 GUI tests (two skips). Strict bindings, clippy and Mac/musl test cross-checks pass. Next: unchanged native matrix and release-stage/resource measurements. Mac PTY failure now proves key input stalls immediately after resize while collection and rendering continue; test the documented alternative terminal polling backend as a separate candidate.
 
 - 2026-09-23 — codex: 9dbdec6 Apple Silicon job 107159226591 fails before PTY qualification in the new noisy/oversized pipe fixture. The assertion omitted the actual error and topic, so this cycle adds those plus elapsed time without changing product behavior or deadlines. Next oracle: distinguish an early output-limit error, native I/O failure and a finite deadline on the same Mac runtime.

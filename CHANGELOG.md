@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Use crossterm's file-descriptor polling backend on macOS to retain pending input when resize and keyboard readiness arrive together. Extend real PTY qualification with immediate resize/key pairs without delays or retries.
+
 - Read Windows interface octets and addresses through bounded native tables using full GUID/LUID identities. Remove repeated address enumeration and partial-GUID grouping; preserve native failures and recovery warmup. Define hardware-only aggregate scope while retaining virtual/tunnel rows, and expose per-interface rate/address availability in both frontends and schema-2 exports.
 
 - Report the native pipe fixture's actual failure category and elapsed time before asserting its expected outcome, so hosted failures distinguish output limits from deadlines and I/O errors.

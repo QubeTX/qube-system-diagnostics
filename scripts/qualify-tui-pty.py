@@ -250,6 +250,12 @@ def main():
             for _ in range(30):
                 latencies.append(terminal.action("?", contains("Keybindings"), "help input"))
                 latencies.append(terminal.action("?", lambda lines: "Keybindings" not in "\n".join(lines), "close help"))
+            # Input must survive arrival alongside SIGWINCH; do not insert a
+            # settling sleep or resend keys to hide a readiness race.
+            for index in range(30):
+                columns, rows, key, label = (80,24,"2","CPU") if index % 2 == 0 else (140,40,"6","Net")
+                terminal.resize(columns,rows)
+                terminal.action(key, lambda lines: label in lines[2], "immediate input after resize " + label)
             terminal.resize(60,18)
             terminal.wait(contains("too small"), "small terminal guidance")
             terminal.resize(80,24)
