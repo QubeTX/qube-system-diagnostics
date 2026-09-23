@@ -52,7 +52,7 @@ jobs:
           if [[ '${{ runner.os }}' == Linux ]]; then
             pkg-config --modversion gtk4 || dpkg-query -W libgtk-4-1
             ldd "$SD300_DIAGNOSTIC_GUI" | grep -E 'LLVM|vulkan|GL|gtk|sd300'
-            GDK_BACKEND=x11 GDK_DEBUG=gl-disable,vulkan-disable LD_DEBUG=files xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/graphics-loader-diagnostic.json" --revision "$revision" --seconds 30 2>/dev/null
+            GDK_BACKEND=x11 GDK_DEBUG=gl-disable,vulkan-disable SD300_GRAPHICS_LOADER_DIAGNOSTIC=1 xvfb-run -a dbus-run-session -- python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/graphics-loader-diagnostic.json" --revision "$revision" --seconds 30 --section Overview
           else
             NATIVE_SDK_GPU_FRAME_TRACE=1 python scripts/measure-gui-unix.py "$SD300_DIAGNOSTIC_GUI" --output "$out/hidden-frame-trace-diagnostic.json" --revision "$revision" --seconds 90 --hidden --profile-cpu
           fi

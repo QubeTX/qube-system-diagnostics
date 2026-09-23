@@ -166,6 +166,8 @@ def main():
             env = dict(os.environ, HOME=directory, XDG_CONFIG_HOME=str(home / "config"), XDG_RUNTIME_DIR=str(home / "runtime"))
             report["renderer_override"] = env.get("GSK_RENDERER") if env.get("GSK_RENDERER") in ("cairo", "gl") else "none_or_external"
             report["diagnostic_gtk_flags"] = env.get("GDK_DEBUG") if env.get("GDK_DEBUG") in ("gl-disable", "gl-disable,vulkan-disable") else "none_or_external"
+            if os.environ.get("SD300_GRAPHICS_LOADER_DIAGNOSTIC") == "1":
+                env["LD_DEBUG"] = "files"
             begin = time.monotonic()
             process = subprocess.Popen([str(launcher)] + (["--startup", "--hidden"] if args.hidden and sys.platform == "darwin" else []),
                                        env=env, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -293,6 +295,8 @@ def main():
             process.wait(timeout=5)
         if reader:
             reader.join(timeout=2)
+        report["graphics_dependency_edges"] = sorted(graphics_dependencies)
+        report["unsupported_gtk_flags"] = sorted(unsupported_flags)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(report, indent=2))
