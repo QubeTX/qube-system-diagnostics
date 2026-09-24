@@ -491,6 +491,13 @@ jobs:
           predicate-type: https://qubetx.dev/attestations/sd300-release/v1
           predicate-path: qualification/sd300-release-manifest.json
 
+      - name: Require exact-candidate CI before any publication
+        if: ${{ steps.meta.outputs.ready == 'true' && steps.meta.outputs.published != 'true' }}
+        timeout-minutes: 62
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/require-release-ci.py --repo '${{ github.repository }}' --sha '${{ steps.meta.outputs.source_sha }}'
+
       - name: Publish qualified crate to crates.io
         if: ${{ steps.meta.outputs.ready == 'true' && steps.meta.outputs.published != 'true' }}
         env:

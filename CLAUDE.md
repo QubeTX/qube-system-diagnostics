@@ -264,6 +264,10 @@ test rather than by Computer Use.
 
 The standard deploy path is a push to the repository default branch (`main`) with a new, unreleased `Cargo.toml` version. `.github/workflows/release.yml` is intentionally customized from cargo-dist output; do not overwrite it with a generated workflow unless you preserve the main-branch deployment gate, unpublished qualification draft, native matrices, and final crates.io/latest publish gate.
 
+Before either publication step, the qualifier requires the newest push or
+workflow-dispatch CI run on the exact candidate SHA to succeed. Pending, failed,
+missing or PR merge-ref-only evidence cannot unlock publication (ADR 0019).
+
 For product work, keep implementation and qualification on a `codex/` feature
 branch first. Build and exercise the composite Windows MSI before merging to
 `main`; a successful compile is not installer acceptance.

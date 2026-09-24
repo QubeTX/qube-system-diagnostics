@@ -133,6 +133,8 @@ compatibility, GUI strict/self-tests, target/ABI checks, running-app handoff,
 same-version repair, rollback, Cargo two-update migration, complete uninstall,
 application discovery, Linux private-runtime isolation, path-leak scans, and
 native matrices before either crates.io publication or `latest` promotion.
+The publisher additionally waits for the newest exact-candidate push/manual CI
+run to pass; installer completion cannot outrun a late CI failure (ADR 0019).
 Implementation remains on a `codex/` feature branch until the composite Windows
 MSI has been built and exercised; compiling its inputs alone is not sufficient.
 

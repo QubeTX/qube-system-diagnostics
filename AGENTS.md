@@ -378,6 +378,10 @@ native installers, then `Qualify and Publish Release` verifies and publishes.
   push moves the branch head and desynchronizes the whole chain from the
   release's commit, breaking the qualify identity check
   (`release vX targets <A>, but this qualification checkout is <B>`).
+- **Require exact-candidate CI before publication.** The qualifier waits for the
+  newest push/workflow-dispatch CI run on the candidate SHA before publishing
+  either the crate or draft. A pending or failed newer run cannot fall back to
+  an older success; a PR merge-ref run alone is insufficient (ADR 0019).
 - **`workflow_run` producers are associated with the branch head at trigger
   time, not the release's commit.** The real release's producers can appear in
   `gh run list` under a newer SHA. That is normal — do **not** cancel a producer
