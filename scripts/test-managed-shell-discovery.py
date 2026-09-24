@@ -256,6 +256,92 @@ class ManagedShellDiscovery(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), fixture_path)
 
+    def make_directory_link(self, link, target):
+        try:
+            os.symlink(target, link, target_is_directory=True)
+        except OSError as error:
+            if os.name == "nt":
+                self.skipTest(f"Windows cannot create the native directory symlink fixture: {error.errno}")
+            raise
+
+    def check_existing_directory_link(self, level):
+        _, xdg, _ = self.prepare_profiles()
+        target = self.root / "actual fish configuration"
+        target.mkdir()
+        if level == "config":
+            link = xdg
+            profile = target / "fish/conf.d/sd300.env.fish"
+        elif level == "fish":
+            xdg.mkdir()
+            link = xdg / "fish"
+            profile = target / "conf.d/sd300.env.fish"
+        else:
+            (xdg / "fish").mkdir(parents=True)
+            link = xdg / "fish/conf.d"
+            profile = target / "sd300.env.fish"
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"# preserve linked fish settings")
+        sibling = target / "unrelated settings"
+        sibling.write_bytes(b"preserve sibling")
+        self.make_directory_link(link, target)
+        original_link = os.readlink(link)
+        result = self.run_shell(self.profile_setup + self.profile_complete + "sd300_restore_user_path_state")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(os.readlink(link), original_link)
+        self.assertEqual(profile.read_bytes(), b"# preserve linked fish settings")
+        self.assertEqual(sibling.read_bytes(), b"preserve sibling")
+
+    def test_existing_xdg_directory_link_is_preserved(self):
+        self.check_existing_directory_link("config")
+
+    def test_existing_fish_directory_link_is_preserved(self):
+        self.check_existing_directory_link("fish")
+
+    def test_existing_fish_conf_directory_link_is_preserved(self):
+        self.check_existing_directory_link("conf")
+
+    def test_changed_directory_link_is_rejected_and_replacement_is_preserved(self):
+        _, xdg, _ = self.prepare_profiles()
+        prior = self.root / "prior linked configuration"
+        replacement = self.root / "replacement linked configuration"
+        for target in (prior, replacement):
+            (target / "fish/conf.d").mkdir(parents=True)
+            (target / "fish/conf.d/sd300.env.fish").write_bytes(b"# preserve this target")
+        self.make_directory_link(xdg, prior)
+        self.env["FIXTURE_REPLACEMENT"] = shell_path(replacement)
+        result = self.run_shell(self.profile_setup + self.profile_complete +
+            'test -L "$XDG_CONFIG_HOME" || exit 98; rm "$XDG_CONFIG_HOME" || exit $?; '
+            'ln -s "$FIXTURE_REPLACEMENT" "$XDG_CONFIG_HOME" || exit $?; '
+            'if sd300_capture_user_path_written_state; then exit 99; fi; '
+            "sd300_restore_user_path_state")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(xdg.is_symlink())
+        self.assertEqual(Path(os.readlink(xdg)), replacement)
+        self.assertEqual((replacement / "fish/conf.d/sd300.env.fish").read_bytes(), b"# preserve this target")
+        self.assertTrue((prior / "fish/conf.d/sd300.env.fish").read_bytes().startswith(b"# preserve this target\n"))
+        self.assertIn("changed directory link", result.stderr)
+
+    def test_new_directory_link_is_rejected_without_taking_ownership(self):
+        _, xdg, _ = self.prepare_profiles()
+        target = self.root / "newly linked configuration"
+        (target / "fish/conf.d").mkdir(parents=True)
+        profile = target / "fish/conf.d/sd300.env.fish"
+        profile.write_bytes(b"# never touch this target")
+        probe = self.root / "symlink capability check"
+        self.make_directory_link(probe, target)
+        probe.unlink()
+        self.env["FIXTURE_LINK_TARGET"] = shell_path(target)
+        result = self.run_shell(self.profile_setup +
+            'ln -s "$FIXTURE_LINK_TARGET" "$XDG_CONFIG_HOME" || exit $?; '
+            'if sd300_complete_shell_discovery; then exit 98; fi; '
+            'if sd300_capture_user_path_written_state; then exit 99; fi; '
+            "sd300_restore_user_path_state")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(xdg.is_symlink())
+        self.assertEqual(profile.read_bytes(), b"# never touch this target")
+        self.assertIn("changed directory link", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

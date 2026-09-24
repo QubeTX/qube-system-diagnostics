@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.1] - 2026-09-23
 
+- Preserve pre-existing symlinked shell-configuration directories by recording their link identity. Reject new or retargeted links before completing profile integration, and skip rollback below changed links instead of touching a replacement target. Add native symlink fixtures for config/fish/conf.d targets and sibling preservation.
+
 - Record the expanded discovery candidate's successful Windows composite matrix and native Linux Bash/fish tests, preserving native timing reports and the Apple Silicon refresh overrun separately from the corrected PowerShell test-wrapper status.
 
 - Report successful Windows discovery fixtures explicitly after expected child failures and cleanup, so GitHub's PowerShell wrapper cannot mistake an intentionally exercised child exit for the test suite's result. Preserve terminating assertion and cleanup failures.

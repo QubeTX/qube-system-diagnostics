@@ -8,6 +8,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## September 23, 2026 — Reliable update checks
 
+- Fixed: terminal setup accepts configuration folders linked to another location and preserves those folders during rollback. If a link changes during setup, recovery leaves its new destination alone.
+
 - Behind the scenes: keep the successful Windows installation and Linux terminal-startup results alongside the remaining Mac drawing delay, so publication status reflects the actual checks.
 
 - Behind the scenes: installer tests correctly distinguish an expected failure case from a failed test, keeping release results reliable without hiding real errors.

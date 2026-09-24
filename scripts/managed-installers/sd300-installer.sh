@@ -609,7 +609,12 @@ sd300_capture_user_path_file() {
 sd300_save_user_path_dir() {
     key=$1
     path=$2
-    if [ -d "$path" ]; then
+    if [ -L "$path" ]; then
+        [ -d "$path" ] || sd300_fail "PATH/profile parent is a dangling or non-directory symbolic link: $path"
+        printf '%s\n' symlink > "$sd300_temp/user-path-dir-$key"
+        readlink "$path" > "$sd300_temp/user-path-dir-$key-link" ||
+            sd300_fail "could not record PATH/profile parent symbolic link: $path"
+    elif [ -d "$path" ]; then
         printf '%s\n' present > "$sd300_temp/user-path-dir-$key"
     elif [ -e "$path" ] || [ -L "$path" ]; then
         sd300_fail "PATH/profile parent is not a directory: $path"
@@ -617,6 +622,33 @@ sd300_save_user_path_dir() {
         printf '%s\n' absent > "$sd300_temp/user-path-dir-$key"
     fi
 }
+
+sd300_user_path_dir_link_unchanged() (
+    prior_kind=$(cat "$sd300_temp/user-path-dir-$1") || return 1
+    if [ "$prior_kind" = symlink ]; then
+        [ -L "$2" ] && [ -d "$2" ] &&
+            readlink "$2" | cmp -s - "$sd300_temp/user-path-dir-$1-link"
+    else
+        [ ! -L "$2" ]
+    fi
+)
+
+sd300_fish_path_links_unchanged() (
+    sd300_user_path_dir_link_unchanged "${1}config" "$2" &&
+        sd300_user_path_dir_link_unchanged "${1}fish" "$2/fish" &&
+        sd300_user_path_dir_link_unchanged "${1}fish_conf_d" "$2/fish/conf.d"
+)
+
+sd300_restore_fish_path_state() (
+    if ! sd300_fish_path_links_unchanged "$1" "$2"; then
+        printf '%s\n' "SD-300 warning: preserving PATH/profile files below a changed directory link: $2" >&2
+        return 0
+    fi
+    sd300_restore_user_path_file "$3" "$2/fish/conf.d/sd300.env.fish" &&
+        sd300_restore_user_path_dir "${1}fish_conf_d" "$2/fish/conf.d" &&
+        sd300_restore_user_path_dir "${1}fish" "$2/fish" &&
+        sd300_restore_user_path_dir "${1}config" "$2"
+)
 
 sd300_restore_user_path_dir() {
     key=$1
@@ -658,7 +690,10 @@ sd300_capture_user_path_dir() {
     key=$1
     path=$2
     state="$sd300_temp/user-path-dir-$key-written"
-    if [ -d "$path" ] && [ ! -L "$path" ]; then
+    sd300_user_path_dir_link_unchanged "$key" "$path" || return 1
+    if [ -L "$path" ]; then
+        printf '%s\n' symlink > "$state"
+    elif [ -d "$path" ]; then
         printf '%s\n' present > "$state"
     elif [ -e "$path" ] || [ -L "$path" ]; then
         return 1
@@ -739,6 +774,10 @@ sd300_set_path_mutation_expectation() {
 
 sd300_capture_user_path_written_state() {
     [ "$sd300_user_path_state_saved" -eq 1 ] || return 0
+    sd300_fish_path_links_unchanged '' "$sd300_user_home/.config" || return 1
+    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
+        sd300_fish_path_links_unchanged xdg_ "$sd300_user_fish_home" || return 1
+    fi
     sd300_capture_user_path_file profile "$sd300_user_home/.profile" || return 1
     sd300_capture_user_path_file bashrc "$sd300_user_home/.bashrc" || return 1
     sd300_capture_user_path_file bash_profile "$sd300_user_home/.bash_profile" || return 1
@@ -770,13 +809,6 @@ sd300_restore_user_path_state() {
     sd300_restore_user_path_file bash_login "$sd300_user_home/.bash_login" || return 1
     sd300_restore_user_path_file zshrc "$sd300_user_zsh_home/.zshrc" || return 1
     sd300_restore_user_path_file zshenv "$sd300_user_zsh_home/.zshenv" || return 1
-    sd300_restore_user_path_file fish "$sd300_user_home/.config/fish/conf.d/sd300.env.fish" || return 1
-    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
-        sd300_restore_user_path_file fish_xdg "$sd300_user_fish_home/fish/conf.d/sd300.env.fish" || return 1
-        sd300_restore_user_path_dir xdg_fish_conf_d "$sd300_user_fish_home/fish/conf.d" || return 1
-        sd300_restore_user_path_dir xdg_fish "$sd300_user_fish_home/fish" || return 1
-        sd300_restore_user_path_dir xdg_config "$sd300_user_fish_home" || return 1
-    fi
     sd300_restore_user_path_file env "$sd300_intended_prefix/env" || return 1
     sd300_restore_user_path_file env_fish "$sd300_intended_prefix/env.fish" || return 1
     if [ "$(cat "$sd300_temp/user-path-github-path-enabled")" = present ]; then
@@ -785,13 +817,18 @@ sd300_restore_user_path_state() {
     # cargo-dist may create this hierarchy solely to add its fish startup file.
     # Remove only directories proven absent before the inner install, and only
     # when they remain empty so concurrent user changes are preserved.
-    sd300_restore_user_path_dir fish_conf_d "$sd300_user_home/.config/fish/conf.d" || return 1
-    sd300_restore_user_path_dir fish "$sd300_user_home/.config/fish" || return 1
-    sd300_restore_user_path_dir config "$sd300_user_home/.config" || return 1
+    sd300_restore_fish_path_state '' "$sd300_user_home/.config" fish || return 1
+    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
+        sd300_restore_fish_path_state xdg_ "$sd300_user_fish_home" fish_xdg || return 1
+    fi
 }
 
 sd300_complete_shell_discovery() (
     [ "$sd300_path_mutation_allowed" -eq 1 ] || return 0
+    sd300_fish_path_links_unchanged '' "$sd300_user_home/.config" || return 1
+    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
+        sd300_fish_path_links_unchanged xdg_ "$sd300_user_fish_home" || return 1
+    fi
     # cargo-dist creates .profile, but only edits an existing .bashrc. A new
     # non-login terminal reads .bashrc instead. Never replace an existing file
     # or symbolic link, including one created while the child was running.

@@ -71,6 +71,18 @@ The exact wrapper reproduces that reporting failure locally. A test-only correct
 sets success after assertions and cleanup; both PowerShell hosts then return zero
 under the same wrapper. Assertion/cleanup exceptions still terminate before that
 success assignment. This is separate from the product updater defect.
+Follow-up CI `36037050150` confirms both PowerShell 5.1 and 7 discovery steps pass
+on the hosted Windows runtime after this correction.
+
+The final bounded shell review found an inconsistent directory-link contract:
+backup accepted existing configuration-directory symlinks while capture rejected
+them. Custom XDG roots now encounter that pre-existing limitation too. The follow-up
+records and verifies link identity, preserves original linked directories during
+rollback, and rejects new or changed links before profile completion/capture.
+Rollback skips a changed linked subtree rather than modifying its replacement.
+Five native symlink cases supplement the earlier shell fixtures. Their Windows
+skip is explicit because this filesystem cannot create the links; Ubuntu/macOS
+must exercise them before publication.
 
 The discovery candidate's native timing reports are retained in
 [a separate record](native-interaction-discovery-d18a4e5.json). GNU x86-64 passes
