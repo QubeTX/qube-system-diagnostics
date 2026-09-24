@@ -75,6 +75,10 @@ additional numeric limits for measures that had none in the accepted plan.
   targets. Qualify install, update, rollback, repair and uninstall as a composite
   CLI plus branded clickable application. Preserve settings and optional-tool
   ownership. Verify public bytes, checksums, attestations, crate and stable routes.
+- Exercise the actual last public updater across engine ABI/schema changes as
+  well as synthetic-prior fixtures. Public 4.0.0 verification found the real
+  3.1.3 ABI-1 rejection and a Windows PowerShell update-check defect; preserve
+  the recovery instructions and track correction/qualification in #p4h.
 - Keep unavailable physical-device, screen-reader and tray acceptance explicit;
   hosted runs do not replace physical-device proof. Formal Lean/TLA+ exploration
   remains a separate future-version task (#frm), as requested by the operator.

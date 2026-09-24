@@ -8,6 +8,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## In progress — Windows helper reliability
 
+- Behind the scenes: record the public release, verified installed app, preserved settings and live website screenshots. Explain the official installer route for older installations and the Windows update-check issue found during the final local check.
+
 - Fixed: prepare a correction for Windows background commands that could silently do nothing, including automatic update checks. The official installer remains the available upgrade route while this correction awaits publication.
 
 ---

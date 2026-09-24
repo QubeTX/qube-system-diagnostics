@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [Unreleased]
 
+- Record the immutable 4.0.0 public release, six native lifecycle workflows, exact-asset verification, deployed desktop/TUI screenshots and the actual managed Windows installation. Document the real 3.1.3 ABI-1 rejection and current Windows update-check workaround without claiming those automatic paths passed.
+
 - Launch Windows PowerShell and PowerShell 7 helpers with a hidden console while retaining suspended job assignment, deadlines, output limits and owned-descendant cleanup. Public 4.0.0 verification reproduced successful empty exits under DETACHED_PROCESS, including failed automatic update checks. Native monitoring workers remain detached. Add real-host file/pipe capture and exit-status regression coverage; correction is not in immutable 4.0.0 assets.
 
 ## [4.0.0] - 2026-09-23

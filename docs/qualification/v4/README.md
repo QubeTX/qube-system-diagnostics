@@ -1,5 +1,10 @@
 # SD-300 v4 qualification evidence
 
+The [public verification record](public-verification.md) identifies the released
+artifacts, production screenshots and actual installed-copy proof. It also
+retains the old-updater ABI rejection and the Windows PowerShell update-check
+defect discovered after publication; neither is silently treated as passing.
+
 The operator's 2026-09-23 release decision is recorded in
 [ADR 0016](../../adr/0016-v4-responsiveness-release-decision.md): for 4.0.0 on
 all six targets, frame/input p95 and ordinary-refresh maximum may reach 100 ms.

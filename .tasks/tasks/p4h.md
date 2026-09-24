@@ -32,4 +32,6 @@ ACTIVE, owner Codex. Source correction prepared after public 4.0.0 verification.
 
 ## Activity
 
+- 2026-09-23 — codex: pushed e5b7b08 in PR #11 and dispatched native CI 35938397261. macOS/Linux root and security checks pass; remaining native jobs are running. Website upgrade guidance PR #17 merged as a63b90c, production 6627424406 succeeds, and actual desktop/mobile gallery plus upgrade-copy checks pass. Installed public payload hashes and saved settings remain unchanged; GUI is open on the actual public app. Next: operator decision and completion of hosted checks before any corrective publication.
+
 - 2026-09-23 — codex: public install verification isolated the failure; real PowerShell regression and full root/engine suites pass. Requested explicit approval for a 4.0.1 corrective release with the same v4 ceilings because it changes both the one-release plan and version-scoped exceptions. Next oracle is hosted native CI.

@@ -68,6 +68,23 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diag
 
 Download them from the [latest release](https://github.com/QubeTX/qube-system-diagnostics/releases/latest). Global Windows installers use `%ProgramFiles%`; Corporate installers use `%LocalAppData%\Programs` and do not require elevation.
 
+### Upgrading an existing installation to v4
+
+For a **3.x-to-4 upgrade**, run the current official installer in the same
+format as the existing installation. Managed users can repeat the matching
+PowerShell/shell command above; Windows native users should keep the same
+MSI/EXE and Global/Corporate edition, and macOS PKG users should use the current
+PKG. There is no need to uninstall first. The immutable 3.1.3 updater rejects
+the v4 GUI's ABI/schema change and can restore the previous CLI; running the
+official installer directly completes the composite upgrade.
+
+**Known Windows 4.0.0 issue:** automatic update checks can receive empty output
+from a silently exiting PowerShell helper. The official managed installer and
+native installer downloads remain the recovery route. A tested source
+correction is pending; it is not part of the immutable 4.0.0 artifacts. Check
+the [current release notes](https://github.com/QubeTX/qube-system-diagnostics/releases/latest)
+for its publication status.
+
 ### Cargo (advanced/unmanaged)
 
 ```sh
