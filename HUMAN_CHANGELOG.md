@@ -6,11 +6,16 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ---
 
-## In progress — Windows helper reliability
+## September 23, 2026 — Reliable update checks
+
+- Fixed: update checks correctly read release information containing international characters, try another supported download method when a response is unusable, and report connection or server failures clearly.
+- Improved: update errors explain what failed and where to recover. A failed release check explicitly says that the installation was not changed.
+- Fixed: future major upgrades can verify the new desktop app without mistakenly demanding the older app's internal engine format.
+- Behind the scenes: keep the approved monitoring performance limits for this corrective update while preserving the stricter goals for subsequent work. Add a real online update check to release testing.
 
 - Behind the scenes: record the public release, verified installed app, preserved settings and live website screenshots. Explain the official installer route for older installations and the Windows update-check issue found during the final local check.
 
-- Fixed: prepare a correction for Windows background commands that could silently do nothing, including automatic update checks. The official installer remains the available upgrade route while this correction awaits publication.
+- Fixed: Windows background commands now execute reliably, including automatic update checks. Existing affected installations need the official installer once to acquire the corrected updater.
 
 ---
 

@@ -80,8 +80,9 @@ official installer directly completes the composite upgrade.
 
 **Known Windows 4.0.0 issue:** automatic update checks can receive empty output
 from a silently exiting PowerShell helper. The official managed installer and
-native installer downloads remain the recovery route. A tested source
-correction is pending; it is not part of the immutable 4.0.0 artifacts. Check
+native installer downloads remain the recovery route. The 4.0.1 correction restores update checks, uses explicit UTF-8 and provides
+actionable failures. Use the official installer once to acquire it; the old
+4.0.0 executable cannot repair its own release check. Check
 the [current release notes](https://github.com/QubeTX/qube-system-diagnostics/releases/latest)
 for its publication status.
 

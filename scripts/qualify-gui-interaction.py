@@ -26,7 +26,7 @@ import psutil
 
 def timing_verdict(cohorts, product_version, platform):
     """Keep engineering targets visible alongside the version-scoped release bar."""
-    approved = product_version == "4.0.0" and platform in ("win32", "linux", "darwin")
+    approved = product_version in ("4.0.0", "4.0.1") and platform in ("win32", "linux", "darwin")
     frame_limit = 100000 if approved else 16700
     input_limit = 100000 if approved else 50000
     inputs = [row for row in cohorts if row["kind"] != "refresh"]

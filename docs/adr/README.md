@@ -17,6 +17,9 @@ Rules:
 
 ## Index
 
+[0018](0018-updater-recovery-and-corrective-release.md) records the updater
+correction, real transport checks and the operator-authorized corrective release.
+
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-soak-early-exit-attribution.md) | Soak early-exit attribution: operator window close, not a product defect | Accepted |

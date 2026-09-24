@@ -71,10 +71,15 @@ class TimingPolicyTests(unittest.TestCase):
             self.assertEqual(result["timing_limits_us"]["frame_p95"], 100000)
 
     def test_future_versions_and_unknown_platforms_keep_original_limits(self):
-        for version, platform in (("4.0.1", "darwin"), ("4.1.0", "win32"), ("4.0.0-rc.1", "linux"), ("4.0.0", "unknown")):
+        for version, platform in (("4.0.2", "darwin"), ("4.1.0", "win32"), ("4.0.0-rc.1", "linux"), ("4.0.0", "unknown")):
             result = interaction.timing_verdict(self.cohorts(), version, platform)
             self.assertFalse(result["timing_passed"])
             self.assertEqual(result["timing_policy"], "original-targets")
+
+    def test_authorized_updater_correction_keeps_the_same_bounded_policy(self):
+        for platform in ("win32", "linux", "darwin"):
+            self.assertTrue(interaction.timing_verdict(self.cohorts(), "4.0.1", platform)["timing_passed"])
+            self.assertFalse(interaction.timing_verdict(self.cohorts(input_latency=100001), "4.0.1", platform)["timing_passed"])
 
     def test_each_release_limit_remains_enforced(self):
         for cohorts in (self.cohorts(frame=100001), self.cohorts(input_latency=100001), self.cohorts(refresh=100001)):

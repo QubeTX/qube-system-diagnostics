@@ -5,7 +5,7 @@ import math
 def resource_verdict(report, version, *, frontend, hidden=False, windows=False, seconds=900):
     if frontend not in ("tui", "gui") or (frontend == "tui" and hidden):
         raise ValueError("Invalid resource measurement mode")
-    exception = version == "4.0.0"
+    exception = version in ("4.0.0", "4.0.1")
     limits = {
         "cpu_percent_one_core": (3 if hidden else 4) if exception else (1 if hidden else 2),
         "rss_mib_max": 200 if exception else 150,
@@ -45,7 +45,7 @@ def resource_verdict(report, version, *, frontend, hidden=False, windows=False, 
     elif report.get("clean_shutdown") is not True:
         failures.append("clean_shutdown")
     return {
-        "policy": "v4.0.0-operator-resource-ceilings" if exception else "original-resource-targets",
+        "policy": f"v{version}-operator-resource-ceilings" if exception else "original-resource-targets",
         "limits": limits,
         "original_gates": original,
         "failures": failures,

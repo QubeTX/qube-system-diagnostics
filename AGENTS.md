@@ -9,9 +9,9 @@ namespaces. Histories use capture timestamps and preserve missing time buckets. 
 [ADR 0006](docs/adr/0006-v4-sampling-and-terminal-contract.md) and
 [ADR 0007](docs/adr/0007-adaptive-presentation-and-time-buckets.md).
 Every candidate remains unpublished until its accepted gates pass. ADRs 0016/0017
-record the operator-approved 4.0.0-only performance ceilings. All original goals
-are preserved in [Next-version targets](docs/next-version-targets.md) and automatically
-apply to later versions; track responsiveness in #r16 and resources in #r17.
+record the original v4 performance decision; ADR 0018 extends those same ceilings
+to the operator-authorized 4.0.1 updater correction. All original goals remain in
+[Next-version targets](docs/next-version-targets.md) and automatically apply after 4.0.1; track responsiveness in #r16 and resources in #r17.
 
 # AGENTS.md
 
