@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.1] - 2026-09-23
 
+- Post-release qualification: record the operator's 2026-09-24 acceptance of the measured Intel Mac 116.583 ms refresh for 4.0.1 only (ADR 0020), preserving the failed 100 ms verdict and original future targets. Separately authenticate the opt-in Windows CI release check with the step-scoped read-only Actions token and report allowlisted numeric quota headers on HTTP failure. CI 36056348704 returned HTTP 403 through both shells without enough evidence to establish its cause; all six GUI jobs passed. Customer update behavior and immutable published artifacts are unchanged.
+
 - Verify immutable public 4.0.1 across 59 assets, 28 checksums, 26 attestations, six stable routes and crates.io. Install the public wrapper on the identified Windows machine; 12 payload files match, settings are byte-identical, GUI self-test and Start/PATH discovery pass, and actual JSON/text update checks succeed. Verify deployed website guidance and screenshot interaction on desktop/mobile. Retain the separate failed merged-CI Intel refresh result; public lifecycle success does not waive performance acceptance.
 
 - Post-release operations: add an exact-candidate CI barrier before crates.io or GitHub publication. The independent merged-commit CI reported an Intel refresh maximum of 116.583 ms twenty seconds before the installer-driven chain published 4.0.1. Retain this failed second matrix alongside the passing pre-merge matrix; do not waive the limit or alter immutable artifacts. Nine gate fixtures and a live read-only rejection of the failed source run verify newest-run precedence and bounded waiting (ADR 0019).

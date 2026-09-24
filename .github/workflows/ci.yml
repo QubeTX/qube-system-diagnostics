@@ -68,6 +68,8 @@ jobs:
 
       - name: Exercise the real public release-check transport on Windows
         if: runner.os == 'Windows'
+        env:
+          SD300_TEST_GITHUB_TOKEN: ${{ github.token }}
         run: cargo test --locked --lib update::tests::public_release_check_uses_real_transport_without_candidate_override -- --ignored --exact --nocapture
 
       - name: Verify installer discovery and PATH on Windows PowerShell 5.1

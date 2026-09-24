@@ -20,7 +20,9 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 
 ## Verification
 
-- [ ] Resolve the additional merged-commit Intel refresh maximum failure (116.583 ms against 100 ms), or record an explicit operator decision; no waiver is assumed
+- [~] Intel refresh maximum 116.583 ms against 100 ms (waived 2026-09-24 — operator: this observed result is acceptable for 4.0.1; ADR 0020, future improvement #r16)
+- [ ] Qualify the test-only Windows live-request authentication/diagnostics change after CI 36056348704 returned HTTP 403
+- [ ] Verify the expanded installation-method website guidance in production
 
 - [x] Windows discovery/PATH fixtures pass on PowerShell 5.1 and 7 without modifying the actual installation or persistent user PATH
 - [x] Hosted composite installer matrix qualifies the redirected-discovery/PATH changes (36034296828, d18a4e5)
@@ -37,9 +39,11 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 
 ## Status
 
-ACTIVE / PARTIAL overall performance acceptance, owner Codex. Public 4.0.1, the actual Windows installation/updater, Linux public lifecycle and deployed website are verified. PR #12 merged the exact-candidate CI publication barrier as 430e6c1; its nine cases pass locally and on hosted Ubuntu, and a live read-only invocation rejects the actual failed merged CI. No application or installed bytes changed. The original same-tree six-target timing run passed, but the additional merged-commit CI later fails Intel refresh maximum at 116.583 ms. That finding remains open under #r16 with no waiver; do not describe the later matrix or overall performance acceptance as passing.
+ACTIVE, owner Codex. Public 4.0.1 and the actual Windows installation/updater are verified. The operator accepted the specific 116.583 ms Intel refresh result on 2026-09-24 (ADR 0020); the raw failed verdict and stricter future targets remain under #r16. The later post-release CI 36056348704 passes all six GUI targets but receives HTTP 403 in the Windows live release check. Qualify the test-only scoped authentication and numeric-header diagnostics on a hosted Windows runner. Website installation-method PR #19 is merged as c5827b3; production verification remains. No product version or immutable artifact changes.
 
 ## Activity
+
+- 2026-09-24 — codex: operator accepts the specific Intel refresh result, recorded in ADR 0020. Latest CI failure is separately identified as HTTP 403 through both Windows shells; its missing response headers prevent historical attribution. Test-only Actions authentication and safe numeric-header reporting pass local fixtures and a real anonymous public check. Next oracle: hosted Windows CI; the new website guide also needs production readback.
 
 - 2026-09-24 — codex: publication barrier and complete evidence merged in PR #12 as 430e6c1 after hosted Ubuntu and Release-plan success. Main's same-version Release run 36056348598 skips publication successfully; v4.0.1 still points to ae5a8995. Windows update/install and website work is delivered, but leave this task open for the explicit additional Intel refresh finding rather than silently completing a failed performance criterion. No new product release, tag movement, threshold change or background follow-up is promised.
 

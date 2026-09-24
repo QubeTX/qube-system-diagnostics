@@ -8,6 +8,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## September 23, 2026 — Reliable update checks
 
+- Behind the scenes: accept the observed Mac refresh delay for this release while retaining the original goals for future improvements. Give the automated update check its own limited GitHub access and clearer rejection details, so shared test infrastructure is less likely to interrupt validation. Installed apps and downloads stay unchanged.
+
 - Verified the published downloads and the real Windows update, including preserved settings, the desktop shortcut and terminal command. The website's installation guidance and screenshot gallery are live and checked on desktop and mobile. A later Mac refresh delay remains documented for follow-up.
 
 - Behind the scenes: make publishing wait for the final checks on the exact release source, so installer tests finishing first cannot hide a later performance failure. Keep a slower Mac refresh visible as unfinished follow-up work and preserve the already-published downloads.

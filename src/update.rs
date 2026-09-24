@@ -4474,6 +4474,16 @@ mod tests {
     #[ignore = "bounded live GitHub check; explicitly run by native Windows qualification"]
     fn public_release_check_uses_real_transport_without_candidate_override() {
         let release = fetch_latest_release_with(|program, args| {
+            // Only this opt-in test authenticates in Actions. Customer builds
+            // neither read CI credentials nor require a GitHub account. Keep the
+            // real endpoint, PowerShell process, capture, and parser under test.
+            #[cfg(windows)]
+            let args = live_release_check_args(
+                args,
+                std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+                    && std::env::var_os("SD300_TEST_GITHUB_TOKEN")
+                        .is_some_and(|value| !value.is_empty()),
+            );
             run_output(
                 program,
                 args,
@@ -4483,6 +4493,68 @@ mod tests {
         .expect("The real release transport must execute and return valid public release metadata");
         assert!(is_worker_release_version(&release.version));
         println!("Native release check returned {}", release.tag);
+    }
+
+    #[cfg(windows)]
+    fn live_release_check_args(mut args: Vec<String>, authenticate: bool) -> Vec<String> {
+        let script = args.last_mut().expect("PowerShell release-check script");
+        assert!(script.contains(RELEASES_URL));
+        if authenticate {
+            const HEADERS: &str = "-Headers @{";
+            assert_eq!(script.matches(HEADERS).count(), 1);
+            *script = script.replacen(
+                HEADERS,
+                "-Headers @{'Authorization'=('Bearer ' + $env:SD300_TEST_GITHUB_TOKEN);",
+                1,
+            );
+        }
+        // Status alone cannot distinguish exhausted anonymous-IP quota from
+        // permission/policy rejection. Print only allowlisted numeric headers;
+        // never print request headers, credentials, or arbitrary response text.
+        const STATUS: &str =
+            "[Console]::Error.WriteLine('HTTP ' + [int]$_.Exception.Response.StatusCode)";
+        assert_eq!(script.matches(STATUS).count(), 1);
+        *script = script.replacen(
+            STATUS,
+            concat!(
+                "[Console]::Error.WriteLine('HTTP ' + [int]$_.Exception.Response.StatusCode); ",
+                "$response=$_.Exception.Response; ",
+                "foreach ($name in @('x-ratelimit-limit','x-ratelimit-remaining','x-ratelimit-reset','retry-after')) { ",
+                "try { $value=($response.Headers.GetValues($name) -join ','); ",
+                "if ($value -match '^[0-9]{1,12}$') { [Console]::Error.WriteLine($name + '=' + $value) } } catch {} }"
+            ),
+            1,
+        );
+        args
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn live_release_check_auth_is_test_only_and_keeps_the_real_transport() {
+        let mut checked = 0;
+        fetch_latest_release_with(|program, args| {
+            assert_eq!(program, "powershell.exe");
+            for authenticate in [false, true] {
+                let prepared = live_release_check_args(args.clone(), authenticate);
+                assert_eq!(prepared.len(), args.len());
+                assert_eq!(&prepared[..5], &args[..5]);
+                let script = prepared.last().unwrap();
+                assert!(script.contains(RELEASES_URL));
+                assert!(script.contains("Invoke-RestMethod -TimeoutSec 15"));
+                assert!(script.contains("ConvertTo-Json"));
+                assert!(script.contains("x-ratelimit-remaining"));
+                assert!(!script.contains("SD300_CI_RELEASE_TAG"));
+                assert_eq!(
+                    script.contains("$env:SD300_TEST_GITHUB_TOKEN"),
+                    authenticate
+                );
+                assert!(!args.last().unwrap().contains("Authorization"));
+                checked += 1;
+            }
+            Ok(release_output(0, br#"{"tag_name":"v4.0.1"}"#, b""))
+        })
+        .unwrap();
+        assert_eq!(checked, 2);
     }
 
     #[test]
