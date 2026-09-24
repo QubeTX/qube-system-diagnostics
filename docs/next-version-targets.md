@@ -18,7 +18,11 @@ claim that every target has already been achieved.
 | Private memory / commit | ≤300 MiB | Unchanged |
 | Frame-work p95 | ≤16.7 ms | ≤100 ms |
 | Input receipt-to-presentation p95 | ≤50 ms | ≤100 ms |
-| Ordinary refresh maximum | ≤100 ms | Unchanged |
+| Ordinary refresh maximum | ≤100 ms | ≤100 ms; observed 4.0.1 Intel 116.583 ms accepted in ADR 0020 |
+
+ADR 0020 records the operator's acceptance of the specific published 4.0.1 Intel
+refresh result on 2026-09-24. It does not create a broader ceiling or change the
+original target, benchmark verdicts or future release policy.
 
 The exceptions in ADRs 0016/0017 and the corrective extension in ADR 0018 apply
 to **4.0.0 and 4.0.1 only**, including on macOS. The test policies automatically

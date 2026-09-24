@@ -153,3 +153,16 @@ concurrent exact-commit CI. [ADR 0019](../../adr/0019-exact-candidate-ci-publica
 adds that missing barrier for future publication. Preserve immutable 4.0.1
 artifacts and disclose the later failure in release notes. The public and local
 verification below does not turn this timing result into a pass.
+
+## Operator acceptance on 2026-09-24
+
+The operator subsequently accepted the observed 116.583 ms Intel refresh for
+this release: "And that 116 millisecond refresh, that's totally fine."
+[ADR 0020](../../adr/0020-accept-published-intel-refresh.md) records the narrow
+exception. Preserve the failed benchmark verdict above; release acceptance is
+now satisfied by the operator's decision. The measurement is not a claimed fix,
+and #r16 retains the original targets and further attribution for future versions.
+
+The later post-release CI 36056348704 passes all six native GUI jobs. Its failure
+is an unrelated HTTP 403 in the Windows public release-check test; the existing
+log cannot establish the reason. That HTTP failure is not waived by this decision.

@@ -10,7 +10,8 @@ namespaces. Histories use capture timestamps and preserve missing time buckets. 
 [ADR 0007](docs/adr/0007-adaptive-presentation-and-time-buckets.md).
 Every candidate remains unpublished until its accepted gates pass. ADRs 0016/0017
 record the original v4 performance decision; ADR 0018 extends those same ceilings
-to the operator-authorized 4.0.1 updater correction. All original goals remain in
+to the operator-authorized 4.0.1 updater correction. ADR 0020 records acceptance
+of the specific observed 116.583 ms Intel refresh for 4.0.1 only. All original goals remain in
 [Next-version targets](docs/next-version-targets.md) and automatically apply after 4.0.1; track responsiveness in #r16 and resources in #r17.
 
 # SD-300 / SD300 Project Context
