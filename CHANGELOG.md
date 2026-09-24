@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.2] - 2026-09-24
 
+- Verify production release abf55bd: all native producers and exact-merge CI pass under ADR 0021; final publication and public lifecycle run 36072546804 passes. Confirm 59 public assets, crates.io/latest identity, and the complete EULA in Global, Corporate and compatibility MSI downloads with matching ProductVersion, SHA-256 sidecars and attestations. Both latest MSI routes resolve to the verified bytes.
+
 - Record the operator-authorized EULA-only performance exception (ADR 0021). Keep numeric thresholds and failed timing reports unchanged; separately accept complete functional interaction/shutdown evidence for exactly 4.0.2. Retain the exact-candidate CI publication barrier and all installer/signing/integrity checks.
 
 - Replace the WiX placeholder EULA in Global and Corporate MSI installers with the complete PolyForm Noncommercial 1.0.0 license generated from LICENSE.md. Check source parity and the embedded LicenseAgreementDlg text during Windows packaging; preserve the acceptance checkbox and navigation.

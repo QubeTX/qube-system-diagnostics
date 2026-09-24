@@ -8,6 +8,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## September 24, 2026 — Correct Windows installer license
 
+- Verified the public Windows downloads show the complete license and that the usual download links deliver the corrected installers. Installation, upgrades, removal, and download integrity checks passed.
+
 - The Windows setup license page now shows the actual noncommercial license instead of placeholder text, in both installer editions. The license terms themselves are unchanged.
 
 - Behind the scenes: authorize this license-only correction without requiring unrelated performance improvements. Keep the measured delays and improvement goals visible, while still requiring the app and installers to work correctly before publication.

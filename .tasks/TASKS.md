@@ -15,7 +15,6 @@
 ## To-Do
 
 ## Active
-- [ ] **Replace the Windows MSI placeholder license and release the correction** - EULA and full Windows lifecycle verified in PR #14; operator-authorized 4.0.2-only exception in validation; deployment next (owner codex) #eul
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k
   - [x] Reconstruct the current artwork and Windows icon-delivery failure
     > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.
@@ -32,6 +31,7 @@
   - [ ] Qualify toggle, close, reopen, tooltip, update, and tray Quit behavior
 
 ## Done
+- [x] **Replace the Windows MSI placeholder license and release the correction** - Public 4.0.2 verified: both MSI license pages, checksums, attestations and latest links; final publication/lifecycle passed, ADR 0021 preserves the authorized performance exception (done 2026-09-24) (owner codex) #eul
 - [x] **Correct Windows update and installer discovery failures** - Public/local 4.0.1, updater/discovery and website verified; Intel refresh explicitly accepted in ADR 0020; CI HTTP correction merged in #13/f36eeeb (done 2026-09-24) (owner codex) #p4h
 - [x] **Implement and qualify SD-300 v4 monitoring** - Public 4.0.0 plus authorized 4.0.1 correction, screenshots, install guidance and local installation verified; original future goals retained in #r16/#r17 (done 2026-09-24) (ms #v4m) (owner codex) #v4a
   - [x] Correct measurement semantics, sampling metadata, and histories
