@@ -46,6 +46,25 @@ def timing_verdict(cohorts, product_version, platform):
     }
 
 
+def apply_release_acceptance(report, product_version, platform):
+    """ADR 0021: retain failed timing verdicts; waive timing only for EULA 4.0.2."""
+    report["passed"] = bool(report.get("timing_passed") and report.get("clean_shutdown")
+                            and "failure_type" not in report)
+    expected = {(kind, width, 760, mode)
+                for kind in ("navigation", "keyboard", "refresh")
+                for width in (1180, 950)
+                for mode in ("User mode", "Technician mode")}
+    cohorts = report.get("cohorts", [])
+    complete = len(cohorts) == len(expected) and {
+        (row.get("kind"), row.get("width"), row.get("height"), row.get("mode"))
+        for row in cohorts} == expected
+    waived = (product_version == "4.0.2" and platform in ("win32", "linux", "darwin")
+              and complete and report.get("timing_passed") is False
+              and report.get("clean_shutdown") is True and "failure_type" not in report)
+    report["release_exception"] = "ADR-0021-eula-4.0.2" if waived else None
+    report["release_accepted"] = report["passed"] or waived
+
+
 def require_input_count(metrics, expected):
     actual = metrics.get("input_latency_n")
     if actual != expected:
@@ -333,15 +352,18 @@ def main():
                 report["input_trace"] = session.input_trace
                 session.close()
                 report["clean_shutdown"] = session.closed
-            report["passed"] = bool(report.get("timing_passed") and report.get("clean_shutdown") and "failure_type" not in report)
+            apply_release_acceptance(report, product_version, sys.platform)
         except BaseException as error:
             report.update(passed=False, failure_type=type(error).__name__, failure=str(error))
             raise
         finally:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    if not report["passed"]:
+    if not report.get("release_accepted"):
         raise SystemExit("Interaction performance gates did not pass")
+    if report.get("release_exception"):
+        print("Timing gates FAILED; release accepted only under the operator's "
+              "4.0.2 EULA exception (ADR 0021). Measurements and thresholds are unchanged.")
 
 
 if __name__ == "__main__":

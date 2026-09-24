@@ -1,5 +1,6 @@
 """Privacy and identity fixtures for retained native interaction diagnostics."""
 import importlib.util
+import copy
 from pathlib import Path
 import unittest
 
@@ -101,6 +102,52 @@ class TimingPolicyTests(unittest.TestCase):
             self.assertFalse(interaction.timing_verdict(cohorts, "4.0.0", "linux")["timing_passed"])
         with self.assertRaises(KeyError):
             interaction.timing_verdict([{"kind": "navigation"}], "4.0.0", "linux")
+
+
+class EulaReleaseAcceptanceTests(unittest.TestCase):
+    def report(self):
+        return {"timing_passed": False, "clean_shutdown": True, "frame_gate": False,
+                "cohorts": [{"kind": kind, "width": width, "height": 760, "mode": mode}
+                            for kind in ("navigation", "keyboard", "refresh")
+                            for width in (1180, 950)
+                            for mode in ("User mode", "Technician mode")]}
+
+    def test_eula_exception_preserves_failed_verdicts_and_measurements(self):
+        for platform in ("win32", "linux", "darwin"):
+            report = self.report()
+            original = copy.deepcopy(report)
+            interaction.apply_release_acceptance(report, "4.0.2", platform)
+            self.assertTrue(report["release_accepted"])
+            self.assertFalse(report["passed"])
+            self.assertEqual(report["release_exception"], "ADR-0021-eula-4.0.2")
+            for key, value in original.items():
+                self.assertEqual(report[key], value)
+
+    def test_exception_never_covers_functional_failure_or_missing_evidence(self):
+        cases = []
+        for key, value in (("failure_type", "RuntimeError"), ("clean_shutdown", False),
+                           ("timing_passed", None)):
+            report = self.report()
+            report[key] = value
+            cases.append(report)
+        report = self.report()
+        report["cohorts"].pop()
+        cases.append(report)
+        report = self.report()
+        report["cohorts"][-1] = report["cohorts"][0]
+        cases.append(report)
+        for report in cases:
+            interaction.apply_release_acceptance(report, "4.0.2", "win32")
+            self.assertFalse(report["release_accepted"])
+            self.assertIsNone(report["release_exception"])
+
+    def test_other_versions_and_platforms_still_fail(self):
+        for version, platform in (("4.0.1", "darwin"), ("4.0.3", "win32"),
+                                  ("4.1.0", "linux"), ("4.0.2-rc.1", "linux"),
+                                  ("4.0.2", "unknown")):
+            report = self.report()
+            interaction.apply_release_acceptance(report, version, platform)
+            self.assertFalse(report["release_accepted"])
 
 
 if __name__ == "__main__":

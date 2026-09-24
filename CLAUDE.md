@@ -8,7 +8,7 @@ Enter, page navigation and optional mouse are additive. GUI and TUI settings are
 namespaces. Histories use capture timestamps and preserve missing time buckets. See
 [ADR 0006](docs/adr/0006-v4-sampling-and-terminal-contract.md) and
 [ADR 0007](docs/adr/0007-adaptive-presentation-and-time-buckets.md).
-Every candidate remains unpublished until its accepted gates pass. ADRs 0016/0017
+Every candidate remains unpublished until its accepted gates pass. ADR 0021 authorizes a 4.0.2-only EULA release exception: preserve failed timing verdicts and thresholds, require complete functional checks, and keep exact-candidate CI mandatory. ADRs 0016/0017
 record the original v4 performance decision; ADR 0018 extends those same ceilings
 to the operator-authorized 4.0.1 updater correction. ADR 0020 records acceptance
 of the specific observed 116.583 ms Intel refresh for 4.0.1 only. All original goals remain in
