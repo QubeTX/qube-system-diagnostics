@@ -56,6 +56,10 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
+      - name: Test exact-revision publication barrier
+        if: runner.os == 'Linux'
+        run: python3 scripts/test-release-ci-gate.py
+
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 

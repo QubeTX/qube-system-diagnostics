@@ -83,3 +83,73 @@ test stack, without increasing stack limits or moving the fixture to a worker.
 The final local suite passes 74 native tests (two platform skips), including
 deferred publication, exactly one completion wake, no-repaint liveness,
 preserved frame numbering and unchanged ordinary-build lifecycle behavior.
+
+## Final candidate: 08b7fe5
+
+[Native CI 36045921364](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36045921364)
+passes all six targets. Each completes all 171 interactions and clean shutdown.
+The [retained report](native-interaction-latency-08b7fe5.json) includes exact
+artifact IDs, executable/engine/collector hashes, every cohort and individual
+inputs exceeding 50 ms. No failed historical report or threshold was removed.
+
+| Platform | Input p95 | Frame p95 | Maximum ordinary refresh |
+| --- | ---: | ---: | ---: |
+| Windows x86-64 | 45.134 ms | 18.862 ms | 6.119 ms |
+| macOS Intel | 79.142 ms | 60.162 ms | 80.841 ms |
+| macOS Apple Silicon | 64.327 ms | 51.251 ms | 34.044 ms |
+| Linux GNU x86-64 | 16.107 ms | 11.856 ms | 7.422 ms |
+| Linux GNU ARM64 | 26.111 ms | 17.674 ms | 8.647 ms |
+| Linux musl x86-64 | 38.210 ms | 23.467 ms | 9.270 ms |
+
+Intel retains one 121.092 ms navigation response. Its short frame wait and
+publication duration differ from the previously attributed publication stalls;
+do not discard it or claim every input is below 100 ms. All targets meet the
+accepted input/frame p95 and ordinary-refresh maximum; stricter targets remain
+in #r16. The other five targets' maximum individual inputs are below 66 ms.
+
+The local Windows run separately passes all 171 interactions and shutdown, with
+input p95 50.239 ms, frame p95 27.277 ms and refresh maximum 13.438 ms. Windows
+was already below the release limit; do not claim a Windows speedup from
+different runs. The corrected ordering addresses observer interference, not
+ordinary-build rendering or a newly qualified two-hour resource soak.
+
+CI uses PR merge ref `a70a55c23133b0cb2707ec3308abc93f05ea8c48`; its tree is
+`a90c1cfbecff2388abd6c6dcedc383b549a91b72`, exactly the feature candidate tree.
+PR #11 merged as `ae5a8995f819472601df559d69d731f6eda4b66e`, preserving that tree.
+[Windows composite qualification 36046014017](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36046014017)
+also passes every installer/legacy transition/rollback case. Release workflow
+36050405168 now owns publication; these pre-merge results alone do not claim
+that public artifacts or the operator's installation have been verified.
+
+## Additional merged-commit result and publication
+
+The automatic CI run on ae5a8995,
+[36050405161](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36050405161),
+has a later **failed** Intel ordinary-refresh verdict. Preserve the complete
+[second matrix](native-interaction-published-ae5a8995.json), including all
+cohorts, numeric delayed inputs and exact artifact IDs. Each platform still
+completes all 171 inputs and clean shutdown.
+
+| Platform | Input p95 | Frame p95 | Maximum ordinary refresh | Verdict |
+| --- | ---: | ---: | ---: | --- |
+| Windows x86-64 | 39.070 ms | 11.084 ms | 6.615 ms | Pass |
+| macOS Intel | 61.758 ms | 52.100 ms | **116.583 ms** | **Fail: refresh** |
+| macOS Apple Silicon | 32.005 ms | 26.619 ms | 24.849 ms | Pass |
+| Linux GNU x86-64 | 31.439 ms | 20.607 ms | 9.721 ms | Pass |
+| Linux GNU ARM64 | 26.588 ms | 18.453 ms | 10.426 ms | Pass |
+| Linux musl x86-64 | 41.243 ms | 26.094 ms | 11.687 ms | Pass |
+
+The failed cohort is compact User-mode ordinary refresh. Its frame p95 is
+20.495 ms; the maximum is 116.583 ms. Publication maximum is 15.775 ms, layout
+maximum 32.007 ms, and present maximum 52.503 ms. These independent maxima do
+not establish the exact critical path and must not be summed. This differs
+from the attributed input/publication problem; no root cause or timing waiver
+is claimed. Further attribution belongs to #r16.
+
+The timing step failed at 20:21:29 UTC; the independent installer-driven
+publication chain made 4.0.1 public at 20:21:49 UTC. The pre-merge same-tree CI
+and native lifecycle gates passed, but the publisher did not depend on the
+concurrent exact-commit CI. [ADR 0019](../../adr/0019-exact-candidate-ci-publication-barrier.md)
+adds that missing barrier for future publication. Preserve immutable 4.0.1
+artifacts and disclose the later failure in release notes. The public and local
+verification below does not turn this timing result into a pass.

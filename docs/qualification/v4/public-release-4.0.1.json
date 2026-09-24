@@ -1,0 +1,343 @@
+{
+  "schema": 1,
+  "public": {
+    "version": "4.0.1",
+    "source_sha": "ae5a8995f819472601df559d69d731f6eda4b66e",
+    "published_at": "2026-09-24T20:21:49Z",
+    "release_url": "https://github.com/QubeTX/qube-system-diagnostics/releases/tag/v4.0.1",
+    "asset_count": 59,
+    "checksums": [
+      "SD300-installer.ps1",
+      "SD300-installer.sh",
+      "dist-manifest.json",
+      "sd300-4.0.1.spdx.json",
+      "sd300-cli-installer.ps1",
+      "sd300-cli-installer.sh",
+      "sd300-dist-installer.ps1",
+      "sd300-dist-installer.sh",
+      "sd300-gui-linux-gnu-arm64.tar.xz",
+      "sd300-gui-linux-gnu-x86_64.tar.xz",
+      "sd300-gui-linux-musl-x86_64.tar.xz",
+      "sd300-gui-macos-universal.zip",
+      "sd300-gui-windows-x86_64.zip",
+      "sd300-macos-universal.pkg",
+      "sd300-release-manifest.json",
+      "sd300-windows-x64-corporate.exe",
+      "sd300-windows-x64-corporate.msi",
+      "sd300-windows-x64-global.exe",
+      "sd300-windows-x64-global.msi",
+      "tr300-tui-aarch64-apple-darwin.tar.xz",
+      "tr300-tui-aarch64-unknown-linux-gnu.tar.xz",
+      "tr300-tui-installer.ps1",
+      "tr300-tui-installer.sh",
+      "tr300-tui-x86_64-apple-darwin.tar.xz",
+      "tr300-tui-x86_64-pc-windows-msvc.msi",
+      "tr300-tui-x86_64-pc-windows-msvc.zip",
+      "tr300-tui-x86_64-unknown-linux-gnu.tar.xz",
+      "tr300-tui-x86_64-unknown-linux-musl.tar.xz"
+    ],
+    "sidecars": [
+      "SD300-installer.ps1.sha256",
+      "SD300-installer.sh.sha256",
+      "sd300-cli-installer.ps1.sha256",
+      "sd300-cli-installer.sh.sha256",
+      "sd300-dist-installer.ps1.sha256",
+      "sd300-dist-installer.sh.sha256",
+      "sd300-gui-linux-gnu-arm64.tar.xz.sha256",
+      "sd300-gui-linux-gnu-x86_64.tar.xz.sha256",
+      "sd300-gui-linux-musl-x86_64.tar.xz.sha256",
+      "sd300-gui-macos-universal.zip.sha256",
+      "sd300-gui-windows-x86_64.zip.sha256",
+      "sd300-macos-universal.pkg.sha256",
+      "sd300-windows-x64-corporate.exe.sha256",
+      "sd300-windows-x64-corporate.msi.sha256",
+      "sd300-windows-x64-global.exe.sha256",
+      "sd300-windows-x64-global.msi.sha256",
+      "tr300-tui-aarch64-apple-darwin.tar.xz.sha256",
+      "tr300-tui-aarch64-unknown-linux-gnu.tar.xz.sha256",
+      "tr300-tui-installer.ps1.sha256",
+      "tr300-tui-installer.sh.sha256",
+      "tr300-tui-x86_64-apple-darwin.tar.xz.sha256",
+      "tr300-tui-x86_64-pc-windows-msvc.msi.sha256",
+      "tr300-tui-x86_64-pc-windows-msvc.zip.sha256",
+      "tr300-tui-x86_64-unknown-linux-gnu.tar.xz.sha256",
+      "tr300-tui-x86_64-unknown-linux-musl.tar.xz.sha256"
+    ],
+    "attestations": [
+      {
+        "name": "SD300-installer.ps1",
+        "sha256": "4a7bbc707c8307ce624d762e7c10f95453dd85dcf6795b651906ebfc3d91a906",
+        "verified": true
+      },
+      {
+        "name": "SD300-installer.sh",
+        "sha256": "83f78fe87877d7b039210e9f890be81ce7701ff6d911b94e0a9c2cde978604ca",
+        "verified": true
+      },
+      {
+        "name": "dist-manifest.json",
+        "sha256": "4539caaa0a56f3b7bce086097d2eecde61077c8d23a727c25ea0b0f0d1694f72",
+        "verified": true
+      },
+      {
+        "name": "sd300-cli-installer.ps1",
+        "sha256": "2ccc85b86d243e3c4db2a15a86c2c25940f25ca63277109a58c786c17e9be37e",
+        "verified": true
+      },
+      {
+        "name": "sd300-cli-installer.sh",
+        "sha256": "e76b1044be4541889552f271c2f8346a9621280adc06d4d758290d9f4e191db9",
+        "verified": true
+      },
+      {
+        "name": "sd300-dist-installer.ps1",
+        "sha256": "848831b38ee643856158ed5599b882fa5b0dfc77d328afcd22a1c1b23134fbf0",
+        "verified": true
+      },
+      {
+        "name": "sd300-dist-installer.sh",
+        "sha256": "9880f9ca40126e1583212af352752e028ccd279976bbfd13da2a518b06cded44",
+        "verified": true
+      },
+      {
+        "name": "sd300-gui-linux-gnu-arm64.tar.xz",
+        "sha256": "34df04af2cc9d437242846dc021c1cd0b4925619743dc820ceee2b712733e72e",
+        "verified": true
+      },
+      {
+        "name": "sd300-gui-linux-gnu-x86_64.tar.xz",
+        "sha256": "26b7572e17296024a157e56b95505fd11252ce9f677e39c1ee12d17eefeeb1c3",
+        "verified": true
+      },
+      {
+        "name": "sd300-gui-linux-musl-x86_64.tar.xz",
+        "sha256": "a8e614e3b376c1ca1478238b8b108ba7f0867248c6b44aa20e2f5b72ff73448c",
+        "verified": true
+      },
+      {
+        "name": "sd300-gui-macos-universal.zip",
+        "sha256": "54387bab37538142132ef660a8a50d9caebad03afbf2f5e1f4d7e0087a119dda",
+        "verified": true
+      },
+      {
+        "name": "sd300-gui-windows-x86_64.zip",
+        "sha256": "be558d82648e090dde331ccf75ba65790b676c59c850270f080275054ed24544",
+        "verified": true
+      },
+      {
+        "name": "sd300-macos-universal.pkg",
+        "sha256": "65dfb906415add161ab854f16978c7bafb72b56131925d937322c7fc9a6417b5",
+        "verified": true
+      },
+      {
+        "name": "sd300-windows-x64-corporate.exe",
+        "sha256": "4a7619cc7fd528f405324eebe1a476c9e5cbf13233ca86a9781ac3a295bc6b2a",
+        "verified": true
+      },
+      {
+        "name": "sd300-windows-x64-corporate.msi",
+        "sha256": "07a2fc40d60c398a61ac9e60e32876d5abef5148ac9c334984c630f6b5626598",
+        "verified": true
+      },
+      {
+        "name": "sd300-windows-x64-global.exe",
+        "sha256": "d22c7218670242893444eece02276f7ac49d3204527865ddb2b711af99411edb",
+        "verified": true
+      },
+      {
+        "name": "sd300-windows-x64-global.msi",
+        "sha256": "7fd6570533a5cb6e842fc5353c8f05c97f65d3c8602dae8658eab45b4f66cca8",
+        "verified": true
+      },
+      {
+        "name": "tr300-tui-aarch64-apple-darwin.tar.xz",
+        "sha256": "1036ce9a94fd8a00b15059ef9121d567fe2a3d745b7cbd6c76bbd424240bf681",
+        "verified": true
+      },
+      {
+        "name": "tr300-tui-aarch64-unknown-linux-gnu.tar.xz",
+        "sha256": "f33a8539e756797092e506ee4719ea5caf0eb1d846a91995325daff88796d66c",
+        "verified": true
+      },
+      {
+        "name": "tr300-tui-installer.ps1",
+        "sha256": "4a7bbc707c8307ce624d762e7c10f95453dd85dcf6795b651906ebfc3d91a906",
+        "verified": true
+      },
+      {
+        "name": "tr300-tui-installer.sh",
+        "sha256": "83f78fe87877d7b039210e9f890be81ce7701ff6d911b94e0a9c2cde978604ca",
+        "verified": true
+      },
+      {
+        "name": "tr300-tui-x86_64-apple-darwin.tar.xz",
+        "sha256": "7e711ff70f02602ffd11f6af9312f029a745668c3471f0a2c48d647ef3dddd22",
+        "verified": true
+      },
+      {
+        "name": "tr300-tui-x86_64-pc-windows-msvc.msi",
+        "sha256": "7fd6570533a5cb6e842fc5353c8f05c97f65d3c8602dae8658eab45b4f66cca8",
+        "verified": true
+      },
+      {
+        "name": "tr300-tui-x86_64-pc-windows-msvc.zip",
+        "sha256": "21c5a37a6e06125618afe00d9797c4d73fa3572bfb5b9061f5598be35d2dff5a",
+        "verified": true
+      },
+      {
+        "name": "tr300-tui-x86_64-unknown-linux-gnu.tar.xz",
+        "sha256": "d623a9d4fc8c42838f7b5c92f8d977f166daa461ad967ded3ecc19f9a7be5e25",
+        "verified": true
+      },
+      {
+        "name": "tr300-tui-x86_64-unknown-linux-musl.tar.xz",
+        "sha256": "57fa06f1c3da2ee6a5b4f3a7fee714eea2f2a109186aa727f13fc30762c3bcd8",
+        "verified": true
+      }
+    ],
+    "stable_routers": [
+      "sd300-cli-installer.ps1",
+      "sd300-cli-installer.sh",
+      "tr300-tui-installer.ps1",
+      "tr300-tui-installer.sh",
+      "SD300-installer.ps1",
+      "SD300-installer.sh"
+    ],
+    "crate_checksum": "233b7dd613889fedce555f1535c1e95b2a07e3669a056a448dc3fd14e4e2300e",
+    "crate_unyanked": true,
+    "passed": true
+  },
+  "local_windows": {
+    "version": "4.0.1",
+    "passed": true,
+    "files": [
+      {
+        "file": "sd300.exe",
+        "sha256": "8364b06c83baed9257d4c05cd310424f4ae1d7b23966e3c0d65dad49132b2f94",
+        "matches": true
+      },
+      {
+        "file": "assets/app-icon.ico",
+        "sha256": "09f97d8bfcd55d7db728bc8ea4617909935a4bb8343062465cbd5c51af7abd76",
+        "matches": true
+      },
+      {
+        "file": "assets/app-icon.png",
+        "sha256": "7bf875e9520d22199a28d97159cbcf264cbec8dffc4c7daf5183f96540634c75",
+        "matches": true
+      },
+      {
+        "file": "assets/tray-icon-dark.ico",
+        "sha256": "048fb8cc9b33316b2342d03d4f82c9e45cff093b4332fd480dfcb587ea599aad",
+        "matches": true
+      },
+      {
+        "file": "assets/tray-icon-light.ico",
+        "sha256": "b40325e7c9a3a598a4eec6863e694a81518a2a2792f67862a070ea37d5a7b8e4",
+        "matches": true
+      },
+      {
+        "file": "assets/tray-icon.ico",
+        "sha256": "048fb8cc9b33316b2342d03d4f82c9e45cff093b4332fd480dfcb587ea599aad",
+        "matches": true
+      },
+      {
+        "file": "licenses/IBM-PLEX-OFL-1.1.txt",
+        "sha256": "3ff4395aeb203050b3d4e775861cf0b93b598e0a6d2b16f0eb41df3350b15695",
+        "matches": true
+      },
+      {
+        "file": "licenses/NATIVE-SDK-APACHE-2.0.txt",
+        "sha256": "9568a2b155e66ac3e0ba1fd80b52b827b9460e6cf6f233125e7cbca8e206ddc3",
+        "matches": true
+      },
+      {
+        "file": "licenses/PRODUCT-LICENSE.md",
+        "sha256": "a40ee43da1356dfbd05948ef725040ba9cf2bbac2eaf2f5933fc6bc5cbd010bc",
+        "matches": true
+      },
+      {
+        "file": "install-manifest.json",
+        "sha256": "5cc53f05272b593ca76d7cc15637235639fc29656a832d9df54a482a67a2ed59",
+        "matches": true
+      },
+      {
+        "file": "sd300_engine.dll",
+        "sha256": "5c4e47c60c43294434a93a7d51a2533d7382f6aac24ef627d53d09eb62cacfb3",
+        "matches": true
+      },
+      {
+        "file": "sd300-gui.exe",
+        "sha256": "4932ef080d5dd725476b756d1cbc44abd74b235d4700bbde91ea4173b2ce28e2",
+        "matches": true
+      }
+    ],
+    "settings_preserved": true,
+    "gui_self_test": {
+      "success": true,
+      "product_version": "4.0.1",
+      "abi_version": 2,
+      "engine_schema_version": 2
+    },
+    "update_json": {
+      "action": "update",
+      "current_version": "4.0.1",
+      "install_channel": "powershell-installer",
+      "message": "SD-300 4.0.1 is already current",
+      "recovery_url": "https://github.com/QubeTX/qube-system-diagnostics/releases",
+      "requires_user_action": false,
+      "strategy": "current",
+      "success": true,
+      "target_version": "4.0.1"
+    },
+    "text_update": "SD-300 4.0.1 is already current",
+    "start_menu_target_icon_and_saved_path_verified": true,
+    "command_discovery_powershell_versions": [
+      "5.1",
+      "7"
+    ]
+  },
+  "website": {
+    "commit": "86e0ec9c3a1b102b5a3ffdbd2df5db8b6c3f4ba0",
+    "deployment_id": 6647472298,
+    "url": "https://reports.qubetx.com/sd300",
+    "checks": {
+      "passed": true,
+      "results": [
+        {
+          "name": "desktop",
+          "label": "Desktop app",
+          "w": 1182,
+          "h": 792,
+          "width": "1182",
+          "height": "792"
+        },
+        {
+          "name": "desktop",
+          "label": "Terminal dashboard",
+          "w": 1368,
+          "h": 816,
+          "width": "1368",
+          "height": "816"
+        },
+        {
+          "name": "mobile",
+          "label": "Desktop app",
+          "w": 1182,
+          "h": 792,
+          "width": "1182",
+          "height": "792"
+        },
+        {
+          "name": "mobile",
+          "label": "Terminal dashboard",
+          "w": 1368,
+          "h": 816,
+          "width": "1368",
+          "height": "816"
+        }
+      ],
+      "errors": []
+    }
+  }
+}

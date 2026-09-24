@@ -225,6 +225,11 @@ secret or the standalone font file.
 
 ## Performance and release qualification
 
+The release publisher requires the newest CI run on the exact candidate commit
+to pass before publishing either the crate or release. Installer qualification
+alone cannot bypass a pending or failed GUI timing run; see
+[ADR 0019](../docs/adr/0019-exact-candidate-ci-publication-barrier.md).
+
 Release binaries must pass Native SDK strict checks, GUI `--self-test --json`,
 path/debug-symbol leakage scans, target and engine mismatch tests, lifecycle
 tests, and the full platform matrix. Required performance runs are 15 minutes

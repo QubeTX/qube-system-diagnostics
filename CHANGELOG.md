@@ -4,6 +4,12 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.1] - 2026-09-23
 
+- Verify immutable public 4.0.1 across 59 assets, 28 checksums, 26 attestations, six stable routes and crates.io. Install the public wrapper on the identified Windows machine; 12 payload files match, settings are byte-identical, GUI self-test and Start/PATH discovery pass, and actual JSON/text update checks succeed. Verify deployed website guidance and screenshot interaction on desktop/mobile. Retain the separate failed merged-CI Intel refresh result; public lifecycle success does not waive performance acceptance.
+
+- Post-release operations: add an exact-candidate CI barrier before crates.io or GitHub publication. The independent merged-commit CI reported an Intel refresh maximum of 116.583 ms twenty seconds before the installer-driven chain published 4.0.1. Retain this failed second matrix alongside the passing pre-merge matrix; do not waive the limit or alter immutable artifacts. Nine gate fixtures and a live read-only rejection of the failed source run verify newest-run precedence and bounded waiting (ADR 0019).
+
+- Retain final six-target observer-ordering qualification for 08b7fe5: all 171 inputs per target, clean shutdown, unchanged 100 ms input/frame p95 and ordinary-refresh maximum pass. Preserve Intel's individual 121.092 ms navigation response and original next-version targets. Windows composite lifecycle 36046014017 passes; PR #11 merges with source-tree identity intact. Public-release and installed-byte verification remain separate required steps.
+
 - Defer filesystem-backed automation publication until a pending input's requested GPU frame completes, then enqueue one publication turn. Native profiling attributes large Linux and Intel Mac input delays to snapshot preparation/I/O on the UI thread. Preserve full latency measurements, frame numbering/lifecycle callbacks, command acknowledgment, no-repaint liveness and the non-automation product path. Walk large retained views by reference in the two read-only frame checks, avoiding Debug stack overflow. Retain all six attribution reports; do not label observer interference as an ordinary-release renderer defect.
 
 - Add profiling-only monotonic input-dispatch/frame-wait and automation-publication attribution with bounded latest-sample metadata. Preserve end-to-end latency, original/approved limits and failed results. The operator selected latency correction before publication; this diagnostic cycle does not claim a fix.

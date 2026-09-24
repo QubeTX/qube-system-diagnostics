@@ -345,6 +345,10 @@ word “ARM” and are not part of this release matrix.
 
 ## Performance and Release Trust
 
+Publishing waits for successful CI on the exact release commit as well as
+native installer qualification. A later failed or pending run cannot be
+replaced with an older success. See [ADR 0019](docs/adr/0019-exact-candidate-ci-publication-barrier.md).
+
 The GUI keeps collector sampling live while publishing bounded, latest-only
 projections so a slow renderer cannot create work backlog. In a visible window,
 fast-topic samples must reach the GUI at least once per second after renderer

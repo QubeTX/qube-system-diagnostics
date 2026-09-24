@@ -17,6 +17,9 @@ Rules:
 
 ## Index
 
+[0019](0019-exact-candidate-ci-publication-barrier.md) requires the newest
+exact-revision CI result before publication and retains the late Intel refresh finding.
+
 [0018](0018-updater-recovery-and-corrective-release.md) records the updater
 correction, real transport checks and the operator-authorized corrective release.
 

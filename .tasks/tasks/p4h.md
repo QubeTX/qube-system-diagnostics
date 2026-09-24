@@ -23,21 +23,27 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 - [x] Windows discovery/PATH fixtures pass on PowerShell 5.1 and 7 without modifying the actual installation or persistent user PATH
 - [x] Hosted composite installer matrix qualifies the redirected-discovery/PATH changes (36034296828, d18a4e5)
 - [x] Native Linux Bash/fish startup fixtures prove reopened-shell command discovery (19 tests, 36034285985)
-- [ ] Actual Linux composite archive install proves reopened-shell command discovery before publication
+- [x] Actual Linux composite archive install proves reopened-shell command discovery before publication (36053995736)
 
 - [x] Reproduce failure on immutable public 4.0.0 and isolate both PowerShell hosts with direct launch-flag comparison
 - [x] Root suite: 235 library tests, eight CLI compatibility tests and three worker integration tests pass; child-only/native opt-in fixtures retain documented skips
 - [x] Separate engine suite: 17 tests pass; formatting and clippy pass
 - [x] Real PowerShell 5.1/7 file and pipe capture, command execution and nonzero exits pass after correction
-- [ ] Hosted qualification of the correction
+- [x] Hosted qualification of the correction: native CI 36045921364 and complete Windows lifecycle 36046014017
 - [x] Operator authorized the corrective update after the explicit 4.0.1/same-v4-ceilings proposal; ADR 0018 records scope
-- [ ] Verify public corrected bytes and actual local update route after any publication
+- [x] Verify public corrected bytes and actual local update route after publication, including byte-identical settings and app discovery
 
 ## Status
 
-ACTIVE, owner Codex. The operator chose to fix GUI latency first, preserving the 100 ms gate. Native diagnostic CI 36042261345 attributes large Mac/Linux input delays to automation publication before the pending frame. The tested observer-ordering correction now needs all-six-target before/after qualification. Windows updater/discovery and shell fixes remain in PR #11; public/local 4.0.0 and website PR #18 stay unchanged until qualification. No timing waiver applies.
+ACTIVE, owner Codex. Public 4.0.1, the actual Windows installation/updater, Linux public lifecycle and deployed website are verified. The original same-tree six-target CI passed, but the additional merged-commit CI later fails Intel refresh maximum at 116.583 ms. That performance finding remains open under #r16 with no waiver. The release publisher lacked a dependency on concurrent exact-commit CI; ADR 0019 adds the barrier, with nine fixtures and a live rejection passing. Finish landing this operational correction without changing published artifacts; do not describe the later matrix as passing.
 
 ## Activity
+
+- 2026-09-24 — codex: production website deployment 6647472298 at 86e0ec9 passes live desktop/mobile install-copy and screenshot-gallery checks, with no page errors or overflow. Retain sanitized public/local/site evidence and all six additional merged-CI reports. Public and local update acceptance is complete; the Intel refresh performance miss remains open and the CI/publication barrier is the remaining release-operations change. No additional product version or policy waiver is inferred.
+
+- 2026-09-24 — codex: public 4.0.1 publishes as ae5a8995 at 20:21:49 UTC after all native installers and the draft Linux lifecycle pass. Independent public verification passes 59 assets, 28 checksums, 26 attestations, six stable routes and crates.io. The real Windows installation is updated through verified public bytes; all 12 installed payload files match, settings are byte-identical, GUI self-test passes, Start/custom icon/saved PATH are verified, and both JSON and text `sd300 update` return already-current success. The additional merged CI 36050405161 fails Intel refresh maximum at 116.583 ms despite passing input/frame p95 and other five targets. That failure arrived just before publication; retain it under #r16, add it to release notes, and close the missing CI/publication dependency with ADR 0019. Nine barrier cases and a live read-only rejection pass. Website PR #18 is merged; production verification remains next.
+
+- 2026-09-24 — codex: 08b7fe5 passes all six native timing/functional/shutdown checks and the complete Windows installer matrix. Input p95 spans 16.107–79.142 ms; maximum ordinary refresh is 80.841 ms. Retain the individual Intel 121.092 ms navigation response and all historical failures. PR #11 merged as ae5a8995 with exact tree equality to the CI merge ref and candidate. Release 36050405168 starts; hold every further main push until publication. Next oracle: exact public release/lifecycle qualification, then public bytes, local same-owner installation and website production checks.
 
 - 2026-09-24 — codex: all six diagnostic reports from 9718301 / CI 36042261345 are retained. Intel confirms the same contributor: its two worst keys take 126–127 ms with about 123 ms of intervening automation publication; GNU ARM64 retains its 500.707 ms p95 failure. The final fix defers only publication, preserving frame numbers/lifecycle callbacks and command progress. Reference-based view walks remove Debug stack overflow without raising stack limits. Local 74 native tests (two skips), 12 report fixtures and strict/distribution checks pass. Next oracle: push this focused fix and compare native results against unchanged limits, including individual delayed inputs that p95 may conceal.
 

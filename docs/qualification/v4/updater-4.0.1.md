@@ -1,7 +1,50 @@
 # SD-300 4.0.1 updater correction
 
-Recorded 2026-09-23 (Central time). Publication and installed-copy checks are
-pending; this document must be completed before closing task #p4h.
+Recorded 2026-09-23, updated 2026-09-24 (Central time). Public 4.0.1, the actual
+Windows installation, updater and website are verified below. A later Intel
+refresh failure remains open; do not equate successful update/lifecycle checks
+with complete performance acceptance. Earlier pending/failed entries below are
+retained history, superseded only by the explicitly identified later evidence.
+
+## Published and locally verified result
+
+[4.0.1](https://github.com/QubeTX/qube-system-diagnostics/releases/tag/v4.0.1)
+is public from immutable source `ae5a8995f819472601df559d69d731f6eda4b66e`.
+Release 36050405168, Windows native 36051229556, macOS native 36051229541,
+Linux native 36051229464 and final qualifier 36053995736 all pass. The qualifier
+exercises the actual draft Linux composite installation with fresh-shell lookup
+and then repeats the public Cargo migration and managed lifecycle after publish.
+
+Independent checks verify all 59 public assets, 28 checksums, 26 provenance
+attestations, six stable routes and the unyanked crates.io version. The
+[retained verification](public-release-4.0.1.json) includes exact hashes and
+sanitized installed/website results; private settings, receipts and machine
+paths remain outside the repository.
+
+On the identified Windows machine, a fresh backup precedes installation through
+the verified public wrapper using Windows PowerShell 5.1. All 12 installed
+CLI/GUI/runtime files match the public archives, the owner/receipt report 4.0.1,
+settings are byte-identical, and the installed GUI self-test succeeds with
+ABI/schema 2. `sd300 update --json` and ordinary `sd300 update` both return
+successful already-current results through the real public release check.
+The configured Start shortcut, GUI target, working directory, custom icon,
+saved user PATH and command discovery in PowerShell 5.1 and 7 are verified.
+This does not claim access to or diagnosis of the separate work computer.
+
+Website PR #18 merges as `86e0ec9c3a1b102b5a3ffdbd2df5db8b6c3f4ba0`;
+production deployment 6647472298 succeeds. Live desktop/mobile browser checks
+verify current install/recovery guidance, both real app/TUI screenshots,
+keyboard gallery selection, image dimensions, full-size links and no horizontal
+overflow or page errors. The existing v4 screenshots remain representative;
+the updater correction makes no visible dashboard redesign.
+
+Pre-merge CI 36045921364 passed all six accepted timing gates. Additional
+merged-commit CI 36050405161 later fails Intel ordinary refresh at 116.583 ms,
+with input/frame p95 passing and other five targets passing. Both matrices are
+retained in the [latency record](latency-4.0.1.md). The release publisher raced
+that independent CI; ADR 0019 requires newest exact-revision CI before either
+publication step. No timing waiver, retagging, replacement artifact or claim
+of a new resource soak applies.
 
 ## Installer discovery audit (2026-09-24)
 
