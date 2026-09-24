@@ -8,6 +8,11 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## September 23, 2026 — Reliable update checks
 
+- Fixed: Linux terminal setup covers fresh home directories and custom fish settings locations, so opening a new shell can find the installed command. Custom installation folders are handled consistently. Existing shell settings and changes made during installation are preserved, with clearer guidance for finding the desktop app.
+
+- Improved: Windows setup checks that the terminal command and desktop app are registered before saying installation is complete. The app follows Windows' configured Start-menu location, including work-computer redirection, and shows its custom icon. Setup refreshes the installing shell, respects requests to leave command search settings alone, handles custom installation folders consistently, and explains which step failed.
+- Clarified: the recommended installers include both the terminal tools and desktop app. The installation guide explains where to find the app on each operating system and how to distinguish command-search problems from an incomplete installation.
+
 - Behind the scenes: preserve the update-fix test results, including the Linux response delays that still need a release decision. Passing Windows upgrade checks are kept separate from the remaining cross-platform performance issue.
 
 - Fixed: update checks correctly read release information containing international characters, try another supported download method when a response is unusable, and report connection or server failures clearly.

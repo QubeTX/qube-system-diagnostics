@@ -4,6 +4,10 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.1] - 2026-09-23
 
+- Repair managed shell command discovery: align custom-prefix resolution with the generated child, prevent a temporary process PATH entry from suppressing persistent setup, create startup integration for a missing Bash rcfile and relocated fish configuration, preserve PATH opt-outs and existing profiles, and track exact additions for rollback without overwriting concurrent edits. Require native Linux fish startup fixtures and exercise a fresh Bash session in the actual Linux composite install lifecycle. Installation completion on every platform now identifies the desktop app as well as the CLI.
+
+- Verify managed Windows CLI PATH and GUI discovery before reporting complete installation. Resolve redirected Programs folders for shortcut creation and uninstall, create missing shortcut parents, verify target/working directory/custom icon, and refresh only the installer process PATH. Honor PATH opt-outs explicitly, align custom-prefix backup and cargo-dist destinations, fix rollback attribution when the bin directory existed only in process PATH, retain the prior Installed Apps icon during rollback, and identify the failed install stage. Add safe real-COM and child-PowerShell regression fixtures on PowerShell 5.1 and 7 and installer-matrix shortcut assertions.
+
 - Retain corrective-release qualification: the complete Windows installer matrix and five native interaction targets pass. Preserve both GNU x86-64 input-timing failures and all eight first/repeat reports, without claiming publication or a waived gate. Document the public-install verification still required.
 
 - Fix Windows automatic release checks end to end: emit UTF-8, fail explicitly on HTTP errors, reject empty/malformed/unusable responses before transport selection, and retain bounded fallback diagnostics. Add a real public-API Windows CI check that cannot use the candidate-release override.

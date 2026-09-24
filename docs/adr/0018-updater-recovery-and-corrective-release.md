@@ -67,6 +67,14 @@ checks and composite lifecycle qualification, including real public HTTP checks
 outside the synthetic candidate override. Public installed-byte and updater
 verification remain required before completion.
 
+On 2026-09-24 the operator extended the correction to investigate missing CLI
+PATH and GUI discovery on a separate work computer, and requested an equivalent
+Linux audit. The installer fixes cover configured application-menu locations,
+verified discovery, custom-prefix consistency and clear failures; they do not
+change monitoring, rendering or scheduling. Requalify the affected lifecycle
+paths on the resulting candidate. This extension does not waive the unresolved
+GNU x86-64 input gate or claim access to the work PC's endpoint-security evidence.
+
 ## Verification
 
 Real PowerShell file/pipe capture proves execution, stdout, stderr and nonzero

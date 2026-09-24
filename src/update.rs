@@ -3657,13 +3657,52 @@ fn prove_windows_managed_gui_root() -> std::result::Result<Option<PathBuf>, Stri
 
 #[cfg(windows)]
 fn windows_managed_gui_shortcut() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(PathBuf::from).map(|root| {
-        root.join("Microsoft")
-            .join("Windows")
-            .join("Start Menu")
-            .join("Programs")
-            .join("SD-300.lnk")
-    })
+    windows_programs_folder(false).map(|root| root.join("SD-300.lnk"))
+}
+
+#[cfg(windows)]
+fn windows_programs_folder(common: bool) -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{
+        FOLDERID_CommonPrograms, FOLDERID_Programs, SHGetKnownFolderPath, KF_FLAG_DONT_VERIFY,
+    };
+
+    let folder = if common {
+        &FOLDERID_CommonPrograms
+    } else {
+        &FOLDERID_Programs
+    };
+    let mut raw = std::ptr::null_mut();
+    // Use the configured known folder, including enterprise redirection. Do
+    // not create it while resolving an uninstall/verification path.
+    let result = unsafe {
+        SHGetKnownFolderPath(
+            folder,
+            KF_FLAG_DONT_VERIFY as u32,
+            std::ptr::null_mut(),
+            &mut raw,
+        )
+    };
+    if raw.is_null() {
+        return None;
+    }
+    let path = if result >= 0 {
+        let mut len = 0;
+        // Windows returns a task-allocated, NUL-terminated UTF-16 string.
+        unsafe {
+            while *raw.add(len) != 0 {
+                len += 1;
+            }
+            Some(PathBuf::from(std::ffi::OsString::from_wide(
+                std::slice::from_raw_parts(raw, len),
+            )))
+        }
+    } else {
+        None
+    };
+    unsafe { CoTaskMemFree(raw.cast()) };
+    path.filter(|path| path.is_absolute())
 }
 
 #[cfg(windows)]
@@ -4044,21 +4083,9 @@ fn verify_windows_native_uninstalled(
 #[cfg(windows)]
 fn windows_native_gui_shortcut(channel: InstallChannel) -> Option<PathBuf> {
     let programs = match channel {
-        InstallChannel::MsiGlobal | InstallChannel::ExeGlobal => std::env::var_os("ProgramData")
-            .map(PathBuf::from)
-            .map(|root| {
-                root.join("Microsoft")
-                    .join("Windows")
-                    .join("Start Menu")
-                    .join("Programs")
-            }),
+        InstallChannel::MsiGlobal | InstallChannel::ExeGlobal => windows_programs_folder(true),
         InstallChannel::MsiCorporate | InstallChannel::ExeCorporate => {
-            std::env::var_os("APPDATA").map(PathBuf::from).map(|root| {
-                root.join("Microsoft")
-                    .join("Windows")
-                    .join("Start Menu")
-                    .join("Programs")
-            })
+            windows_programs_folder(false)
         }
         _ => None,
     }?;

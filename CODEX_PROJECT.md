@@ -32,6 +32,12 @@ proof that the public release or another operating system has passed.
 
 ## Compatibility contract
 
+- Managed Windows installation uses the configured Programs known folder, verifies
+  the GUI shortcut/icon and saved user PATH, and refreshes only the installing
+  PowerShell process. Honor PATH opt-outs and preserve unrelated PATH entries.
+  Backup, child destination and rollback must agree for custom install prefixes.
+  Uninstall resolves the same known folder; errors name the failed installation step.
+
 - Bare `sd300` opens the User/Technician chooser. Preserve the mode flags,
   nine section shortcuts, lifecycle commands, schema-1 JSON default, exit
   contracts and terminal restoration. ADRs 0006/0007 describe the intentional

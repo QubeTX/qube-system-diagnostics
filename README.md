@@ -52,11 +52,37 @@ which reopens the monitor only after a successful update (see
 irm https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-cli-installer.ps1 | iex
 ```
 
+This installs both the terminal tools and the desktop app. Open **Start > SD-300**
+or run `sd300 gui`; installation does not open the app automatically. The managed
+app files live under `%LOCALAPPDATA%\Programs\SD-300`, and the shortcut uses the
+current user's Windows Programs folder, including folder redirection.
+
+The 4.0.1 installer verifies the saved user PATH and refreshes the PowerShell
+process running it before reporting complete success. An explicit `-NoModifyPath`
+or no-modify environment setting is honored and reported. Other running terminal
+apps can retain their old environment; close the entire terminal app and reopen
+it. PowerShell and Command Prompt use the same Windows PATH settings, and command
+names are case-insensitive. If a fresh shell still cannot find `sd300`, retain the
+installer's error and failed step. On a managed work device, IT can check blocked
+execution or quarantine events; a missing command alone does not prove endpoint
+security blocked it. Do not disable security controls to install SD-300.
+
 ### macOS and Linux (recommended)
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diagnostics/releases/latest/download/sd300-cli-installer.sh | sh
 ```
+
+On macOS, the managed shell installer places **SD-300.app** in `~/Applications`;
+the native PKG uses `/Applications`. On Linux, it adds **SD-300** to the user's
+desktop application menu using an XDG desktop entry and the bundled custom icon.
+Both include the CLI/TUI; a graphical desktop is needed to display the GUI.
+The 4.0.1 wrapper also covers a missing Bash `.bashrc` and fish configuration
+under `XDG_CONFIG_HOME`, while honoring `--no-modify-path`. Since a piped `sh`
+installer cannot change the calling terminal's environment, open a new shell
+after installation or follow its printed source command. Custom CLI prefixes
+use `SD300_INSTALL_DIR` or `TR300_TUI_INSTALL_DIR` consistently for installation,
+verification and rollback; the managed wrapper requires its ownership receipt.
 
 ### Native installer options
 
@@ -67,6 +93,10 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/QubeTX/qube-system-diag
 - macOS universal signed package: `sd300-macos-universal.pkg`
 
 Download them from the [latest release](https://github.com/QubeTX/qube-system-diagnostics/releases/latest). Global Windows installers use `%ProgramFiles%`; Corporate installers use `%LocalAppData%\Programs` and do not require elevation.
+
+MSI, EXE and PKG are installation formats, not GUI-only editions: these packages
+also install the CLI/TUI. SD-300's macOS native installer is a PKG; a DMG, used by
+some other apps, is a disk image rather than an installation format by itself.
 
 ### Upgrading an existing installation to v4
 

@@ -6,6 +6,8 @@ Both Windows PowerShell and PowerShell 7 exit successfully without executing a c
 
 ## Scope
 
+2026-09-24 extension: audit the operator's separate work-PC report of no discoverable GUI and no command after restarting PowerShell. Confirm composite install behavior; repair Windows known-folder discovery, persistent/session PATH checks, custom-prefix consistency and actionable failure output. Endpoint blocking is unconfirmed; this host's public installation is healthy apart from the known updater defect.
+
 Use a hidden console only for PowerShell hosts. Preserve suspended job ownership, bounded output/deadlines/cancellation and detached native monitoring workers. Add real Windows-host regression coverage for file/pipe capture and nonzero command outcomes. Document the separate immutable 3.x updater's ABI-1 check, which rejects the ABI-2 v4 companion and requires the official installer for this major upgrade.
 
 ## Plan
@@ -17,6 +19,10 @@ Publish the operator-authorized 4.0.1 correction after native and composite qual
 Real PowerShell commands execute with redirected handles, retain output/exit codes, and remain bounded. Native workers retain console-free behavior. Public update checks succeed after any corrective publication. Both frontends and existing install ownership/settings remain intact.
 
 ## Verification
+
+- [x] Windows discovery/PATH fixtures pass on PowerShell 5.1 and 7 without modifying the actual installation or persistent user PATH
+- [ ] Hosted composite installer matrix qualifies the redirected-discovery/PATH changes
+- [ ] Native Linux Bash/fish startup fixtures and composite install prove reopened-shell command discovery
 
 - [x] Reproduce failure on immutable public 4.0.0 and isolate both PowerShell hosts with direct launch-flag comparison
 - [x] Root suite: 235 library tests, eight CLI compatibility tests and three worker integration tests pass; child-only/native opt-in fixtures retain documented skips
@@ -31,6 +37,10 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 ACTIVE, owner Codex. Source correction prepared after public 4.0.0 verification. User's installed CLI/GUI/engine match public artifacts, the GUI launches, and settings are preserved. The correction is authorized and being qualified as 4.0.1. It is not installed locally or published yet; the actual public copy remains 4.0.0.
 
 ## Activity
+
+- 2026-09-24 — codex: final shell suite passes 18/19 locally, with native fish explicitly skipped on Windows; CI now requires fish on Linux. Corrected the child PATH shortcut so a temporary bin entry cannot suppress persistent setup, without changing the parent environment or explicit opt-outs. Linux composite qualification now opens a fresh Bash session after a real PATH-enabled install. Preparing one combined installer candidate for hosted qualification; earlier performance failures remain recorded and are not waived.
+
+- 2026-09-24 — codex: source audit confirms composite GUI delivery already exists on all supported platforms. This host has a working public GUI shortcut and persistent PATH; the work PC is separate and unavailable. Corrected hard-coded Programs location, missing shortcut readback/current-shell PATH refresh, custom-prefix mismatch, and rollback PATH attribution. Added persistent-PATH verification, explicit custom-icon registration and phase-specific failures. Both real PowerShell hosts pass 33 safe fixtures; root 235 tests, eight CLI tests, three workers, 17 engine tests, clippy, release build and package dry-run pass. The requested delegated Linux audit found additional fresh-Bash/custom-fish startup gaps and repaired them with rollback fixtures. Native installer and startup qualification are next; no WatchGuard cause or public corrective release is claimed.
 
 - 2026-09-23 — codex: musl attempt 2 PASSES (worst input p95 34.714 ms), leaving only GNU x86-64 input timing unresolved. Verified repeat reports by artifact ID 10786419374 (musl) and 10786918994 (GNU); downloading by shared artifact name can return the prior attempt. Both first and repeat results remain saved, and no third blind repeat is scheduled. Publication still awaits the specific gate decision or a demonstrated fix.
 

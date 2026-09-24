@@ -358,7 +358,7 @@ jobs:
           @'
           param([switch]$NoModifyPath)
           $ErrorActionPreference = 'Stop'
-          $prefix = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
+          $prefix = if ($env:TR300_TUI_INSTALL_DIR) { $env:TR300_TUI_INSTALL_DIR } elseif ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
           $binary = Join-Path $prefix 'bin\sd300.exe'
           $configRoot = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { $env:LOCALAPPDATA }
           $receipt = Join-Path $configRoot 'sd300\sd300-receipt.json'
@@ -371,6 +371,16 @@ jobs:
             version = $env:SD300_CI_RELEASE_TAG.TrimStart('v')
           }
           [IO.File]::WriteAllText($receipt, ($fixtureReceipt | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+          if (-not $NoModifyPath) {
+            $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+            try {
+              $prior = $key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+              $bin = Split-Path -Parent $binary
+              if ($bin -notin @($prior -split ';' -ne '')) {
+                $key.SetValue('Path', ((@($bin) + @($prior -split ';' -ne '')) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
+              }
+            } finally { $key.Dispose() }
+          }
           '@ | Set-Content target\candidate-assets\sd300-dist-installer.ps1 -Encoding utf8
           $fixtureHash = (Get-FileHash target\candidate-assets\sd300-dist-installer.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
           "$fixtureHash *sd300-dist-installer.ps1" | Set-Content target\candidate-assets\sd300-dist-installer.ps1.sha256 -Encoding ascii
@@ -836,7 +846,7 @@ jobs:
           if (Test-Path $binary) { throw 'Cargo migration uninstall left the CLI behind' }
           if (Test-Path $guiRoot) { throw 'Cargo migration uninstall left the GUI behind' }
           if (Test-Path $receipt) { throw 'Cargo migration uninstall left the receipt behind' }
-          $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\SD-300.lnk'
+          $shortcut = Join-Path ([Environment]::GetFolderPath('Programs', 'DoNotVerify')) 'SD-300.lnk'
           if (Test-Path $shortcut) { throw 'Cargo migration uninstall left the Start menu shortcut behind' }
 
       - uses: actions/upload-artifact@v6

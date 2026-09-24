@@ -138,6 +138,13 @@ The binary is named `sd300` (not `sd-300`). The crates.io package name is `tr300
 
 ## CLI/TUI/GUI compatibility contract
 
+- Windows managed setup verifies saved user PATH and GUI shortcut/icon before
+  complete success, refreshes the installing PowerShell process, and honors PATH
+  opt-outs. Use the Windows Programs known folder for both install and uninstall,
+  including enterprise redirection. Custom-prefix backup, child installation and
+  rollback paths must agree. Run `scripts/test-managed-windows-discovery.ps1` on
+  both Windows PowerShell 5.1 and PowerShell 7 after changing these contracts.
+
 - Bare `sd300` continues to open the User/Technician chooser. Preserve lifecycle
   commands, mode flags, nine section shortcuts, schema-1 JSON defaults, exit
   contracts and terminal restoration. The accepted v4 plan deliberately changes

@@ -3,6 +3,60 @@
 Recorded 2026-09-23 (Central time). Publication and installed-copy checks are
 pending; this document must be completed before closing task #p4h.
 
+## Installer discovery audit (2026-09-24)
+
+The operator reports a separate work PC installed through PowerShell but has no
+discoverable desktop app or `sd300` command even after reopening PowerShell. That
+host and its security logs are unavailable; WatchGuard blocking is a hypothesis,
+not a diagnosis. The available Windows host has a valid public 4.0.0 CLI, saved
+user PATH, GUI payload and Start-menu entry. These are separate observations.
+
+Code review found a hard-coded Programs path instead of the configured Windows
+known folder, no final shortcut/PATH verification, no installing-process PATH
+refresh, and disagreement about custom-prefix environment variables between the
+wrapper and cargo-dist. The candidate now uses the configured Programs folder for
+installation and removal, reads back target/working directory/icon, verifies saved
+user PATH, preserves explicit PATH opt-outs and refreshes the installing process.
+Child destination, backup and rollback now agree. Unmanaged mode is rejected
+before mutation because this wrapper requires a receipt. Failures name the stage
+and report restoration separately rather than promising that every failure was safe.
+
+Safe fixtures create real COM shortcuts only in a unique temporary directory and
+exercise child execution on Windows PowerShell 5.1 and PowerShell 7. Persistent
+PATH is mocked, and the real saved user PATH is checked unchanged. Root tests,
+clippy, release build, package dry-run and the separately scoped engine tests pass.
+Hosted installer and cross-platform results for this expanded candidate are pending;
+earlier d8a6f87 reports below are not proof of these later installer changes.
+
+Windows folder redirection is documented by [Microsoft](https://learn.microsoft.com/en-us/windows/win32/shell/known-folders).
+Process and persistent environment scopes are documented in
+[PowerShell's environment reference](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables).
+
+The requested Linux audit found the same custom-prefix disagreement plus shell
+startup gaps when `.bashrc` is absent or fish uses a relocated `XDG_CONFIG_HOME`.
+The wrapper now creates only the missing Bash startup integration, adds fish's
+source line in its actual configuration directory, and tracks exact profile
+contents and newly created directories for rollback. Existing profiles and
+concurrent edits are preserved; explicit PATH opt-outs remain authoritative.
+These shell changes also apply to the managed macOS installer. Linux desktop
+entry path, executable quoting and custom-icon registration were already present.
+
+Local shell fixtures use Git Bash with isolated home directories, not a native
+Linux desktop. Native CI now installs fish and requires its fresh-shell lookup;
+the Linux composite lifecycle now enables PATH integration and invokes the actual
+installed command from a fresh Bash session. Previously it always opted out of
+PATH and used an absolute executable path, which could not detect this symptom.
+Native evidence must be recorded separately from the local fixture results.
+
+Final local installer fixtures: 33 checks pass on each of Windows PowerShell
+5.1.26100.9444 and PowerShell 7.6.6. The shell suite runs 19 cases under Git Bash:
+18 pass and native fish is explicitly skipped. It covers a fresh interactive Bash,
+literal path quoting, custom-prefix precedence, child/parent environment isolation,
+PATH opt-outs, idempotence, failure propagation, exact rollback and preservation of
+concurrent profile edits. A temporary selected-bin PATH entry is removed only from
+the non-opt-out child environment so cargo-dist cannot mistake it for persistent
+integration; all other entries and the parent PATH are preserved.
+
 ## Reproduced failures and correction
 
 Public Windows 4.0.0 failed its automatic release check on the operator's actual
