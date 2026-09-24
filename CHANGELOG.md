@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.1] - 2026-09-23
 
+- Record the expanded discovery candidate's successful Windows composite matrix and native Linux Bash/fish tests, preserving native timing reports and the Apple Silicon refresh overrun separately from the corrected PowerShell test-wrapper status.
+
 - Report successful Windows discovery fixtures explicitly after expected child failures and cleanup, so GitHub's PowerShell wrapper cannot mistake an intentionally exercised child exit for the test suite's result. Preserve terminating assertion and cleanup failures.
 
 - Repair managed shell command discovery: align custom-prefix resolution with the generated child, prevent a temporary process PATH entry from suppressing persistent setup, create startup integration for a missing Bash rcfile and relocated fish configuration, preserve PATH opt-outs and existing profiles, and track exact additions for rollback without overwriting concurrent edits. Require native Linux fish startup fixtures and exercise a fresh Bash session in the actual Linux composite install lifecycle. Installation completion on every platform now identifies the desktop app as well as the CLI.

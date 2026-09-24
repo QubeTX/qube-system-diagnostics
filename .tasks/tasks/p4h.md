@@ -21,8 +21,9 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 ## Verification
 
 - [x] Windows discovery/PATH fixtures pass on PowerShell 5.1 and 7 without modifying the actual installation or persistent user PATH
-- [ ] Hosted composite installer matrix qualifies the redirected-discovery/PATH changes
-- [ ] Native Linux Bash/fish startup fixtures and composite install prove reopened-shell command discovery
+- [x] Hosted composite installer matrix qualifies the redirected-discovery/PATH changes (36034296828, d18a4e5)
+- [x] Native Linux Bash/fish startup fixtures prove reopened-shell command discovery (19 tests, 36034285985)
+- [ ] Actual Linux composite archive install proves reopened-shell command discovery before publication
 
 - [x] Reproduce failure on immutable public 4.0.0 and isolate both PowerShell hosts with direct launch-flag comparison
 - [x] Root suite: 235 library tests, eight CLI compatibility tests and three worker integration tests pass; child-only/native opt-in fixtures retain documented skips
@@ -37,6 +38,8 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 ACTIVE, owner Codex. Source correction prepared after public 4.0.0 verification. User's installed CLI/GUI/engine match public artifacts, the GUI launches, and settings are preserved. The correction is authorized and being qualified as 4.0.1. It is not installed locally or published yet; the actual public copy remains 4.0.0.
 
 ## Activity
+
+- 2026-09-24 — codex: d18a4e5 Windows composite matrix 36034296828 PASSES in full. CI 36034285985 completes with Windows and all three Linux GUI targets passing, native Linux Bash/fish 19/19 passing, and macOS shell fixtures passing. Preserve Apple Silicon refresh maximum 130.670 ms and Intel input p95 100.875 ms as failed 100 ms gates; both shut down cleanly and retain all functional results. Saved all six reports with exact artifact IDs. Follow-up 9d0adc5 changes only successful test completion reporting and passes the exact GitHub wrapper on both local PowerShell runtimes. Push this correction with evidence for the next native oracle; no threshold or product rendering changes. Website discovery guidance b88992c passes lint/build and desktop/mobile browser checks, held in PR #18 for app publication.
 
 - 2026-09-24 — codex: pushed installer candidate d18a4e5 and started CI 36034285985 plus unpublished Windows matrix 36034296828. Native Ubuntu and macOS shell fixtures pass, including required real fish on Ubuntu. Windows hosted fixtures pass all 33 assertions but GitHub's wrapper propagates the deliberately exercised child exit; reproduced the exact wrapper locally and corrected only test completion status. Product/GUI candidate is unchanged; preserve the running matrix and native timing results before the next push.
 

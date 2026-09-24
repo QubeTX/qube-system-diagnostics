@@ -8,6 +8,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## September 23, 2026 — Reliable update checks
 
+- Behind the scenes: keep the successful Windows installation and Linux terminal-startup results alongside the remaining Mac drawing delay, so publication status reflects the actual checks.
+
 - Behind the scenes: installer tests correctly distinguish an expected failure case from a failed test, keeping release results reliable without hiding real errors.
 
 - Fixed: Linux terminal setup covers fresh home directories and custom fish settings locations, so opening a new shell can find the installed command. Custom installation folders are handled consistently. Existing shell settings and changes made during installation are preserved, with clearer guidance for finding the desktop app.

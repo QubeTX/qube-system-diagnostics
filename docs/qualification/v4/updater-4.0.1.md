@@ -59,6 +59,31 @@ integration; all other entries and the parent PATH are preserved.
 
 ## Reproduced failures and correction
 
+The expanded discovery candidate `d18a4e58a0a690aaf15c741d4baede77b72758b9`
+passes [the complete Windows composite matrix](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36034296828),
+including all four native channels, same-channel upgrades, legacy rollback/commit,
+immutable-v2 transitions and managed CLI/GUI completion. In
+[native CI](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36034285985),
+Ubuntu passes all 19 shell discovery cases with real fish required; macOS also
+passes its shell suite. Windows passes all 33 discovery assertions on PowerShell
+5.1, but GitHub's wrapper then propagates the intentionally exercised child exit.
+The exact wrapper reproduces that reporting failure locally. A test-only correction
+sets success after assertions and cleanup; both PowerShell hosts then return zero
+under the same wrapper. Assertion/cleanup exceptions still terminate before that
+success assignment. This is separate from the product updater defect.
+
+The discovery candidate's native timing reports are retained in
+[a separate record](native-interaction-discovery-d18a4e5.json). GNU x86-64 passes
+with worst input p95 18.082 ms, frame p95 12.414 ms and refresh maximum 6.534 ms.
+This does not establish why its earlier unchanged-GUI runs were slower. Apple
+Silicon has one 130.670 ms refresh maximum, with 121.935 ms maximum native drawing;
+input/frame p95 pass the accepted ceilings and shutdown is clean. Retain that
+failed refresh verdict when qualifying the test-only follow-up. Intel Mac input
+p95 is 100.875 ms, narrowly over the same 100 ms gate; frame p95 is 54.155 ms and
+refresh maximum 62.790 ms, with clean shutdown. Windows and all three Linux
+native GUI targets pass. No drawing or input code changed in this installer
+candidate, and no new performance exception is assumed.
+
 Public Windows 4.0.0 failed its automatic release check on the operator's actual
 managed installation. Eight direct process-launch cases isolated a successful
 but empty exit in both Windows PowerShell 5.1 and PowerShell 7 when detached
