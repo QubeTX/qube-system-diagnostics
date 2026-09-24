@@ -124,3 +124,8 @@ param([switch]$NoModifyPath)
         Remove-Item -LiteralPath $resolved -Recurse -Force
     }
 }
+# GitHub's PowerShell wrapper exits with LASTEXITCODE after this script returns.
+# The expected exit-23 child is a passed assertion, not the suite's exit status.
+# Set success only after all assertions and cleanup have completed; exceptions
+# above still terminate the test before reaching this point.
+$global:LASTEXITCODE = 0

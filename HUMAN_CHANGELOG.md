@@ -8,6 +8,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## September 23, 2026 — Reliable update checks
 
+- Behind the scenes: installer tests correctly distinguish an expected failure case from a failed test, keeping release results reliable without hiding real errors.
+
 - Fixed: Linux terminal setup covers fresh home directories and custom fish settings locations, so opening a new shell can find the installed command. Custom installation folders are handled consistently. Existing shell settings and changes made during installation are preserved, with clearer guidance for finding the desktop app.
 
 - Improved: Windows setup checks that the terminal command and desktop app are registered before saying installation is complete. The app follows Windows' configured Start-menu location, including work-computer redirection, and shows its custom icon. Setup refreshes the installing shell, respects requests to leave command search settings alone, handles custom installation folders consistently, and explains which step failed.
