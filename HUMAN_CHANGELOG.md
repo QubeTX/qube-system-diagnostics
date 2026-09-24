@@ -8,6 +8,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## September 23, 2026 — Reliable update checks
 
+- Verified the published downloads and the real Windows update, including preserved settings, the desktop shortcut and terminal command. The website's installation guidance and screenshot gallery are live and checked on desktop and mobile. A later Mac refresh delay remains documented for follow-up.
+
 - Behind the scenes: make publishing wait for the final checks on the exact release source, so installer tests finishing first cannot hide a later performance failure. Keep a slower Mac refresh visible as unfinished follow-up work and preserve the already-published downloads.
 
 - Behind the scenes: the corrected interaction checks pass across all supported platforms, and the complete Windows installer tests pass. Keep occasional slower responses and the stricter future goals visible, while separately verifying the published downloads and real installation.

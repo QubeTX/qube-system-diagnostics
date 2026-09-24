@@ -15,7 +15,7 @@
 ## To-Do
 
 ## Active
-- [ ] **Correct Windows update and installer discovery failures** - Six native targets and Windows composite pass unchanged timing/lifecycle gates. PR #11 merged as ae5a8995; release 36050405168 builds the unpublished candidate. Verify public bytes, local update and website after publication; retain Intel's individual outlier and stricter future targets (owner codex) #p4h
+- [ ] **Correct Windows update and installer discovery failures** - Public/local 4.0.1, updater, application discovery and website are verified. Land exact-CI publication barrier; retain the later Intel refresh failure under #r16 without waiver or artifact changes (owner codex) #p4h
 - [ ] **Implement and qualify SD-300 v4 monitoring** - PUBLIC 4.0.0 with screenshots and local installation verified; final automatic-update defect and corrective-release decision tracked in #p4h (ms #v4m) (owner codex) #v4a
   - [x] Correct measurement semantics, sampling metadata, and histories
   - [x] Isolate slow probes and bound cancellation, output, and shutdown

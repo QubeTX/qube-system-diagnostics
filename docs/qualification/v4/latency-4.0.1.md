@@ -120,3 +120,36 @@ PR #11 merged as `ae5a8995f819472601df559d69d731f6eda4b66e`, preserving that tre
 also passes every installer/legacy transition/rollback case. Release workflow
 36050405168 now owns publication; these pre-merge results alone do not claim
 that public artifacts or the operator's installation have been verified.
+
+## Additional merged-commit result and publication
+
+The automatic CI run on ae5a8995,
+[36050405161](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36050405161),
+has a later **failed** Intel ordinary-refresh verdict. Preserve the complete
+[second matrix](native-interaction-published-ae5a8995.json), including all
+cohorts, numeric delayed inputs and exact artifact IDs. Each platform still
+completes all 171 inputs and clean shutdown.
+
+| Platform | Input p95 | Frame p95 | Maximum ordinary refresh | Verdict |
+| --- | ---: | ---: | ---: | --- |
+| Windows x86-64 | 39.070 ms | 11.084 ms | 6.615 ms | Pass |
+| macOS Intel | 61.758 ms | 52.100 ms | **116.583 ms** | **Fail: refresh** |
+| macOS Apple Silicon | 32.005 ms | 26.619 ms | 24.849 ms | Pass |
+| Linux GNU x86-64 | 31.439 ms | 20.607 ms | 9.721 ms | Pass |
+| Linux GNU ARM64 | 26.588 ms | 18.453 ms | 10.426 ms | Pass |
+| Linux musl x86-64 | 41.243 ms | 26.094 ms | 11.687 ms | Pass |
+
+The failed cohort is compact User-mode ordinary refresh. Its frame p95 is
+20.495 ms; the maximum is 116.583 ms. Publication maximum is 15.775 ms, layout
+maximum 32.007 ms, and present maximum 52.503 ms. These independent maxima do
+not establish the exact critical path and must not be summed. This differs
+from the attributed input/publication problem; no root cause or timing waiver
+is claimed. Further attribution belongs to #r16.
+
+The timing step failed at 20:21:29 UTC; the independent installer-driven
+publication chain made 4.0.1 public at 20:21:49 UTC. The pre-merge same-tree CI
+and native lifecycle gates passed, but the publisher did not depend on the
+concurrent exact-commit CI. [ADR 0019](../../adr/0019-exact-candidate-ci-publication-barrier.md)
+adds that missing barrier for future publication. Preserve immutable 4.0.1
+artifacts and disclose the later failure in release notes. The public and local
+verification below does not turn this timing result into a pass.
