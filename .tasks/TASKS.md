@@ -15,7 +15,7 @@
 ## To-Do
 
 ## Active
-- [ ] **Correct Windows update and installer discovery failures** - Windows composite and native shell discovery pass. Native profiling identifies snapshot publication delaying Mac/Linux input. Fix observer ordering and qualify all six targets under the unchanged 100 ms gate; preserve failures and hold publication/local installation (owner codex) #p4h
+- [ ] **Correct Windows update and installer discovery failures** - Six native targets and Windows composite pass unchanged timing/lifecycle gates. PR #11 merged as ae5a8995; release 36050405168 builds the unpublished candidate. Verify public bytes, local update and website after publication; retain Intel's individual outlier and stricter future targets (owner codex) #p4h
 - [ ] **Implement and qualify SD-300 v4 monitoring** - PUBLIC 4.0.0 with screenshots and local installation verified; final automatic-update defect and corrective-release decision tracked in #p4h (ms #v4m) (owner codex) #v4a
   - [x] Correct measurement semantics, sampling metadata, and histories
   - [x] Isolate slow probes and bound cancellation, output, and shutdown

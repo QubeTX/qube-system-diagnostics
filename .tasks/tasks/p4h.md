@@ -29,15 +29,17 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 - [x] Root suite: 235 library tests, eight CLI compatibility tests and three worker integration tests pass; child-only/native opt-in fixtures retain documented skips
 - [x] Separate engine suite: 17 tests pass; formatting and clippy pass
 - [x] Real PowerShell 5.1/7 file and pipe capture, command execution and nonzero exits pass after correction
-- [ ] Hosted qualification of the correction
+- [x] Hosted qualification of the correction: native CI 36045921364 and complete Windows lifecycle 36046014017
 - [x] Operator authorized the corrective update after the explicit 4.0.1/same-v4-ceilings proposal; ADR 0018 records scope
 - [ ] Verify public corrected bytes and actual local update route after any publication
 
 ## Status
 
-ACTIVE, owner Codex. The operator chose to fix GUI latency first, preserving the 100 ms gate. Native diagnostic CI 36042261345 attributes large Mac/Linux input delays to automation publication before the pending frame. The tested observer-ordering correction now needs all-six-target before/after qualification. Windows updater/discovery and shell fixes remain in PR #11; public/local 4.0.0 and website PR #18 stay unchanged until qualification. No timing waiver applies.
+ACTIVE, owner Codex. All six native targets pass the unchanged timing limits in CI 36045921364; Windows composite lifecycle 36046014017 passes. PR #11 merged as ae5a8995, with the same qualified source tree. Release workflow 36050405168 is building the unpublished 4.0.1 candidate. Public/local 4.0.0 and website PR #18 remain unchanged until publication and public verification. No timing waiver applies; Intel's individual 121.092 ms input remains documented separately from the passing p95 gate.
 
 ## Activity
+
+- 2026-09-24 — codex: 08b7fe5 passes all six native timing/functional/shutdown checks and the complete Windows installer matrix. Input p95 spans 16.107–79.142 ms; maximum ordinary refresh is 80.841 ms. Retain the individual Intel 121.092 ms navigation response and all historical failures. PR #11 merged as ae5a8995 with exact tree equality to the CI merge ref and candidate. Release 36050405168 starts; hold every further main push until publication. Next oracle: exact public release/lifecycle qualification, then public bytes, local same-owner installation and website production checks.
 
 - 2026-09-24 — codex: all six diagnostic reports from 9718301 / CI 36042261345 are retained. Intel confirms the same contributor: its two worst keys take 126–127 ms with about 123 ms of intervening automation publication; GNU ARM64 retains its 500.707 ms p95 failure. The final fix defers only publication, preserving frame numbers/lifecycle callbacks and command progress. Reference-based view walks remove Debug stack overflow without raising stack limits. Local 74 native tests (two skips), 12 report fixtures and strict/distribution checks pass. Next oracle: push this focused fix and compare native results against unchanged limits, including individual delayed inputs that p95 may conceal.
 
