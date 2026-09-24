@@ -20,6 +20,8 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 
 ## Verification
 
+- [ ] Resolve the additional merged-commit Intel refresh maximum failure (116.583 ms against 100 ms), or record an explicit operator decision; no waiver is assumed
+
 - [x] Windows discovery/PATH fixtures pass on PowerShell 5.1 and 7 without modifying the actual installation or persistent user PATH
 - [x] Hosted composite installer matrix qualifies the redirected-discovery/PATH changes (36034296828, d18a4e5)
 - [x] Native Linux Bash/fish startup fixtures prove reopened-shell command discovery (19 tests, 36034285985)
@@ -35,9 +37,11 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 
 ## Status
 
-ACTIVE, owner Codex. Public 4.0.1, the actual Windows installation/updater, Linux public lifecycle and deployed website are verified. The original same-tree six-target CI passed, but the additional merged-commit CI later fails Intel refresh maximum at 116.583 ms. That performance finding remains open under #r16 with no waiver. The release publisher lacked a dependency on concurrent exact-commit CI; ADR 0019 adds the barrier, with nine fixtures and a live rejection passing. Finish landing this operational correction without changing published artifacts; do not describe the later matrix as passing.
+ACTIVE / PARTIAL overall performance acceptance, owner Codex. Public 4.0.1, the actual Windows installation/updater, Linux public lifecycle and deployed website are verified. PR #12 merged the exact-candidate CI publication barrier as 430e6c1; its nine cases pass locally and on hosted Ubuntu, and a live read-only invocation rejects the actual failed merged CI. No application or installed bytes changed. The original same-tree six-target timing run passed, but the additional merged-commit CI later fails Intel refresh maximum at 116.583 ms. That finding remains open under #r16 with no waiver; do not describe the later matrix or overall performance acceptance as passing.
 
 ## Activity
+
+- 2026-09-24 — codex: publication barrier and complete evidence merged in PR #12 as 430e6c1 after hosted Ubuntu and Release-plan success. Main's same-version Release run 36056348598 skips publication successfully; v4.0.1 still points to ae5a8995. Windows update/install and website work is delivered, but leave this task open for the explicit additional Intel refresh finding rather than silently completing a failed performance criterion. No new product release, tag movement, threshold change or background follow-up is promised.
 
 - 2026-09-24 — codex: production website deployment 6647472298 at 86e0ec9 passes live desktop/mobile install-copy and screenshot-gallery checks, with no page errors or overflow. Retain sanitized public/local/site evidence and all six additional merged-CI reports. Public and local update acceptance is complete; the Intel refresh performance miss remains open and the CI/publication barrier is the remaining release-operations change. No additional product version or policy waiver is inferred.
 
