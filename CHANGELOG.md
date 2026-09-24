@@ -2,6 +2,10 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [Unreleased]
+
+- Launch Windows PowerShell and PowerShell 7 helpers with a hidden console while retaining suspended job assignment, deadlines, output limits and owned-descendant cleanup. Public 4.0.0 verification reproduced successful empty exits under DETACHED_PROCESS, including failed automatic update checks. Native monitoring workers remain detached. Add real-host file/pipe capture and exit-status regression coverage; correction is not in immutable 4.0.0 assets.
+
 ## [4.0.0] - 2026-09-23
 
 - Record the operator-approved 4.0.0-only resource ceilings (4% foreground CPU, 3% hidden CPU, 200 MiB RSS); retain the 300 MiB private-memory limit, original failed verdicts, and all functional gates. Add version-expiring resource assessment and boundary/failure tests. Preserve every original goal for the next version in docs/next-version-targets.md and owned tasks #r16/#r17 (ADR 0017).

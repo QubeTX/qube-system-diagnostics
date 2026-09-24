@@ -15,6 +15,7 @@
 ## To-Do
 
 ## Active
+- [ ] **Correct silent Windows PowerShell helper exits** - public-copy verification reproduced failed update checks; narrow host-launch correction passes local Rust, engine and real PowerShell tests; corrective publication and performance-policy scope await operator decision (owner codex) #p4h
 - [ ] **Implement and qualify SD-300 v4 monitoring** - measurement, adaptive TUI, optional setup and bounded privileged reads implemented; qualifying native interaction, performance and composite lifecycle before the single public release (ms #v4m) (owner codex) #v4a
   - [x] Correct measurement semantics, sampling metadata, and histories
   - [x] Isolate slow probes and bound cancellation, output, and shutdown

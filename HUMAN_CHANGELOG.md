@@ -6,6 +6,12 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ---
 
+## In progress — Windows helper reliability
+
+- Fixed: prepare a correction for Windows background commands that could silently do nothing, including automatic update checks. The official installer remains the available upgrade route while this correction awaits publication.
+
+---
+
 ## September 23, 2026 — More trustworthy monitoring
 
 - Behind the scenes: record the owner-approved resource headroom for this release while keeping the original goals as next-release targets. Missing measurements, input/accessibility bugs and failed shutdowns still fail qualification.
