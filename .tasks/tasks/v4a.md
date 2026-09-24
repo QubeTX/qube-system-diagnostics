@@ -46,9 +46,11 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 
 ## Status
 
-PUBLIC 4.0.0, with final update-path corrections tracked in #p4h. CLI/TUI/GUI, six native targets, approved performance evidence, composite lifecycle, public release, website screenshots and the operator's public installation are delivered. Full closure awaits the decision on the reproduced Windows automatic-update defect; do not label it fixed in public 4.0.0. ND-300 public 4.0.1 remains the integration baseline.
+COMPLETE: public 4.0.0 and the explicitly authorized corrective 4.0.1 are delivered and verified, including the local Windows installation and production website screenshots/guidance. The reproduced old-updater defect is corrected in 4.0.1; immutable older clients retain the matching-installer recovery path. #p4h records final verification and ADR 0020 records acceptance of the observed Intel refresh. Original future goals stay in #r16/#r17 and docs/next-version-targets.md. ND-300 public 4.0.1 remains the integration baseline.
 
 ## Activity
+
+- 2026-09-24 — codex: close the v4 milestone after public/local 4.0.1 and deployed website verification, correction of the CI-only HTTP request path in PR #13/f36eeeb, and explicit operator acceptance of the observed Intel refresh (ADR 0020). Original measurements, strict future targets and physical-device limitations remain documented.
 
 - 2026-09-23 — codex: final Release 35934279035, native producers and Qualify/Publish 35936902455 all passed. Public tag/crate/59 assets/28 checksums/26 attestations/26 sidecars/six stable routes verified. Website PR #16 deployed; desktop/mobile image and keyboard checks pass. Actual local public installer recovery preserves settings and every installed payload hash; live GUI inspected. Real old-updater ABI rejection and v4 PowerShell silent exits are retained in docs/qualification/v4/public-verification.md and #p4h. Next: hosted correction and operator decision, without rewriting immutable assets.
 

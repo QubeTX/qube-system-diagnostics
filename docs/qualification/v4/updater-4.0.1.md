@@ -1,10 +1,13 @@
 # SD-300 4.0.1 updater correction
 
 Recorded 2026-09-23, updated 2026-09-24 (Central time). Public 4.0.1, the actual
-Windows installation, updater and website are verified below. A later Intel
-refresh failure remains open; do not equate successful update/lifecycle checks
-with complete performance acceptance. Earlier pending/failed entries below are
-retained history, superseded only by the explicitly identified later evidence.
+Windows installation, updater and website are verified below. The operator
+accepted the specific later Intel refresh result on 2026-09-24 (ADR 0020);
+original performance targets and raw failed verdicts remain for future work.
+The separate post-release CI HTTP 403 and its validated test-only correction
+are recorded in [the CI follow-up](post-release-ci-403.md). Earlier pending/failed
+entries below are retained history, superseded only by explicitly identified
+later evidence or operator decisions.
 
 ## Published and locally verified result
 

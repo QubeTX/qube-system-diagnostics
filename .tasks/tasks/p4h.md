@@ -21,8 +21,8 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 ## Verification
 
 - [~] Intel refresh maximum 116.583 ms against 100 ms (waived 2026-09-24 — operator: this observed result is acceptable for 4.0.1; ADR 0020, future improvement #r16)
-- [ ] Qualify the test-only Windows live-request authentication/diagnostics change after CI 36056348704 returned HTTP 403
-- [ ] Verify the expanded installation-method website guidance in production
+- [x] Test-only live-request authentication/diagnostics passes the complete hosted Windows job in CI 36059748041; PR #13 merged as f36eeeb
+- [x] Website PR #19 deployed as c5827b3 / deployment 6648171772; production browser checks pass at 1440, 390 and 320 pixels
 
 - [x] Windows discovery/PATH fixtures pass on PowerShell 5.1 and 7 without modifying the actual installation or persistent user PATH
 - [x] Hosted composite installer matrix qualifies the redirected-discovery/PATH changes (36034296828, d18a4e5)
@@ -39,9 +39,21 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 
 ## Status
 
-ACTIVE, owner Codex. Public 4.0.1 and the actual Windows installation/updater are verified. The operator accepted the specific 116.583 ms Intel refresh result on 2026-09-24 (ADR 0020); the raw failed verdict and stricter future targets remain under #r16. The later post-release CI 36056348704 passes all six GUI targets but receives HTTP 403 in the Windows live release check. Qualify the test-only scoped authentication and numeric-header diagnostics on a hosted Windows runner. Website installation-method PR #19 is merged as c5827b3; production verification remains. No product version or immutable artifact changes.
+COMPLETE under the operator-approved release policy. Public/local 4.0.1, actual updater behavior, composite lifecycle and application discovery are verified. ADR 0020 accepts the specific Intel refresh observation; original targets remain in #r16/#r17. The separate CI HTTP rejection is addressed by test-only scoped authentication and diagnostic headers, validated by the complete Windows core job in CI 36059748041 and merged as f36eeeb (PR #13). Website installation guidance is deployed and verified. The routine six-GUI matrix for this CI-only follow-up is still running at closure; this does not claim its overall workflow has finished. No production code, version, tag or installed bytes changed.
+
+## Evidence
+
+| Criterion | Oracle and evidence | Interpretation | Limitation | Status |
+| --- | --- | --- | --- | --- |
+| Public/local corrective release | docs/qualification/v4/public-release-4.0.1.json; actual installed `sd300 update --json` repeated 2026-09-24 | Published 4.0.1 and current Windows installation work; settings retained | Separate work computer is not accessible | PASS |
+| Intel refresh acceptance | ADR 0020; operator's explicit 2026-09-24 statement | Accept the observed 116.583 ms result for 4.0.1 | Original benchmark remains failed; future targets unchanged | WAIVED |
+| CI HTTP follow-up | docs/qualification/v4/post-release-ci-403.md; Windows job 107835538990 in CI 36059748041 | Real authenticated request, root tests, both discovery shells, release build and target checks pass | Historical 403 cause lacks headers; no claim the full new GUI matrix has finished | PASS |
+| Website install guidance | Website PR #19 / c5827b3; production deployment 6648171772; headless checks of live reports.qubetx.com/sd300 | Nine viewport/platform combinations, exact clipboard commands, native links, keyboard selection, screenshots, no errors or overflow | Browser evidence, not new OS installer qualification | PASS |
+
 
 ## Activity
+
+- 2026-09-24 — codex: close after PR #13 merges as f36eeeb with the corrected Windows live request and full Windows core job passing (36059748041), alongside Linux/macOS root, security and release-plan success. Production website #19/c5827b3 passes all nine viewport/platform combinations. Actual public local update reports current 4.0.1. Record the specific Intel waiver and retain stricter goals in #r16/#r17; the routine six-GUI rerun is still running, without any product change or new release.
 
 - 2026-09-24 — codex: operator accepts the specific Intel refresh result, recorded in ADR 0020. Latest CI failure is separately identified as HTTP 403 through both Windows shells; its missing response headers prevent historical attribution. Test-only Actions authentication and safe numeric-header reporting pass local fixtures and a real anonymous public check. Next oracle: hosted Windows CI; the new website guide also needs production readback.
 

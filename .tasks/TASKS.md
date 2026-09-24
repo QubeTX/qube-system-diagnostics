@@ -15,19 +15,6 @@
 ## To-Do
 
 ## Active
-- [ ] **Correct Windows update and installer discovery failures** - Public/local 4.0.1, updater, discovery and website are verified; exact-CI publication barrier merged in #12. The operator accepted the specific Intel refresh result (ADR 0020); investigate the separate later CI HTTP 403 and qualify the test-only authentication correction (owner codex) #p4h
-- [ ] **Implement and qualify SD-300 v4 monitoring** - PUBLIC 4.0.0 with screenshots and local installation verified; final automatic-update defect and corrective-release decision tracked in #p4h (ms #v4m) (owner codex) #v4a
-  - [x] Correct measurement semantics, sampling metadata, and histories
-  - [x] Isolate slow probes and bound cancellation, output, and shutdown
-  - [x] Expand Windows, Linux, and macOS providers with deterministic fixtures
-  - [x] Redesign the adaptive TUI and add guided inspection and filtering
-  - [x] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup (native setup and synthetic privileged-worker checks pass; final lifecycle qualification remains)
-  - [x] Wire GUI parity, versioned exports, settings, and architecture documentation
-  - [x] Review and improve GUI layout, clarity, navigation, and diagnostic flows (Windows live review and bounded fixtures complete; native platform/performance qualification continues below)
-  - [x] Apply requested Makira/Gail Rock font pairing and verify native layouts (local tests and Windows live compact/default checks pass; all-target qualification below)
-  - [x] Qualify performance, six native targets, and hosted composite lifecycle; actual old-version update defect tracked in #p4h
-  - [x] Publish once and verify exact public artifacts and actual installation; follow-up correction decision tracked in #p4h
-  - [x] Add reviewed app screenshots to the website SD-300 page and verify deployment
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k
   - [x] Reconstruct the current artwork and Windows icon-delivery failure
     > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.
@@ -44,6 +31,20 @@
   - [ ] Qualify toggle, close, reopen, tooltip, update, and tray Quit behavior
 
 ## Done
+- [x] **Correct Windows update and installer discovery failures** - Public/local 4.0.1, updater/discovery and website verified; Intel refresh explicitly accepted in ADR 0020; CI HTTP correction merged in #13/f36eeeb (done 2026-09-24) (owner codex) #p4h
+- [x] **Implement and qualify SD-300 v4 monitoring** - Public 4.0.0 plus authorized 4.0.1 correction, screenshots, install guidance and local installation verified; original future goals retained in #r16/#r17 (done 2026-09-24) (ms #v4m) (owner codex) #v4a
+  - [x] Correct measurement semantics, sampling metadata, and histories
+  - [x] Isolate slow probes and bound cancellation, output, and shutdown
+  - [x] Expand Windows, Linux, and macOS providers with deterministic fixtures
+  - [x] Redesign the adaptive TUI and add guided inspection and filtering
+  - [x] Integrate optional ND-300, SpeedQX, and explicit-consent provider setup (native setup and synthetic privileged-worker checks pass; final lifecycle qualification remains)
+  - [x] Wire GUI parity, versioned exports, settings, and architecture documentation
+  - [x] Review and improve GUI layout, clarity, navigation, and diagnostic flows (Windows live review and bounded fixtures complete; native platform/performance qualification continues below)
+  - [x] Apply requested Makira/Gail Rock font pairing and verify native layouts (local tests and Windows live compact/default checks pass; all-target qualification below)
+  - [x] Qualify performance, six native targets, and hosted composite lifecycle; actual old-version update defect tracked in #p4h
+  - [x] Publish once and verify exact public artifacts and actual installation; follow-up correction decision tracked in #p4h
+  - [x] Add reviewed app screenshots to the website SD-300 page and verify deployment
+
 - [x] **Release-workflow hygiene: skip cleanly on post-release same-version main pushes** - PUBLIC as v3.1.1 2026-07-23 02:10 UTC (tag 4c612be). Refined release.yml source-check so an already-fully-published version whose main source commit differs from its immutable tag SKIPS deploy cleanly (green) instead of failing; guard still fires on real deploy-path conflicts (fresh version with a conflicting tag, or crate-published/release-missing repair from the wrong commit). All four branches simulated before shipping; documented as a warn-and-investigate note in AGENTS.md. Shipped the v3.1.0 post-release docs (ADRs 0004/0005, README pass, gui-engine testing-doc fix). Verified public: crate installs to `sd300 3.1.1`, release promoted to latest (59 assets, 26 sidecars, SBOM), `gh attestation verify` returns two SLSA attestations bound to 4c612be. Release recovery note: a mis-timed board push during the release split the branch head from the draft target (eba3195 vs 4c612be) and I wrongly canceled two workflow_run producers (they branch-head-associate) — recovered by deleting the draft and re-running Release from 4c612be so all provenance is single-commit; lessons recorded in operator memory (done 2026-07-23) (ms #v3n) (agent: opus)
 - [x] **Add safe in-app and tray-driven updates** - PUBLIC as v3.1.0 2026-07-23 00:25 UTC (merge 2b4c9a5, PR #5): Settings/tray "Update now" spawns the installed CLI as a detached coordinator running the existing owner-preserving transaction; hidden --relaunch-gui reopens only after success; architecture committed in ADR 0005. Crate live (`cargo install tr300-tui --version 3.1.0` -> sd300 3.1.0), release promoted to latest with 59 assets + SHA-256 sidecars + SPDX SBOM, `gh attestation verify` returns two SLSA attestations bound to 2b4c9a5. Carried the two post-release fixes (sidebar label, crate convergence poll) (done 2026-07-23) (ms #v3n) #giu
   - [x] Implement the update trigger in settings and tray with a detached engine-spawned coordinator
