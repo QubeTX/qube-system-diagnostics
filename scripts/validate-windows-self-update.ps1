@@ -27,7 +27,7 @@ $corporateRoot = Join-Path $env:LOCALAPPDATA 'Programs\sd300'
 $managedRoot = Join-Path $env:USERPROFILE '.cargo'
 $managedBinary = Join-Path $managedRoot 'bin\sd300.exe'
 $managedGuiRoot = Join-Path $env:LOCALAPPDATA 'Programs\SD-300'
-$managedGuiShortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\SD-300.lnk'
+$managedGuiShortcut = Join-Path ([Environment]::GetFolderPath('Programs', 'DoNotVerify')) 'SD-300.lnk'
 $managedGuiRegistration = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Uninstall\SD-300-Managed'
 $guiStateRoot = Join-Path $env:APPDATA 'SD-300'
 $guiRunKey = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -224,6 +224,11 @@ function Assert-GuiCompanion([string]$Root, [string]$Channel) {
         $displayIcon = (Get-ItemProperty -LiteralPath $managedGuiRegistration).DisplayIcon
         if ($displayIcon -ne (Join-Path $managedGuiRoot 'app\assets\app-icon.ico')) {
             throw 'managed PowerShell update did not register the selected SD-300 icon for Installed Apps'
+        }
+        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($managedGuiShortcut)
+        if ($shortcut.TargetPath -ne (Join-Path $managedGuiRoot 'app\sd300-gui.exe') -or
+            $shortcut.IconLocation -ne ((Join-Path $managedGuiRoot 'app\assets\app-icon.ico') + ',0')) {
+            throw 'managed PowerShell update did not register a usable Start menu app and custom icon'
         }
     }
 }

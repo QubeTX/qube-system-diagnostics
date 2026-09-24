@@ -12,7 +12,7 @@ All six existing product targets, shared collectors, TUI redesign, GUI data/acti
 
 Measurement foundations -> bounded collection -> platform coverage -> adaptive TUI -> companion integration and GUI parity -> performance/lifecycle qualification -> one public release.
 
-Current cycle: 4.0.0 remains unpublished. All-six native CI 35926413084 on ce77ebf passes the approved 100 ms timing policy and native input/accessibility checks. Windows composite installers (35911237866), two-hour Processes soak, fifteen-minute Thermals and thirty-minute hidden windows pass. All four final hosted resource lanes completed in 35923985086: every session shuts down cleanly, but original CPU/RSS overruns remain on Apple Silicon, Intel hidden and GNU x86-64; musl's prior slight CPU overrun is retained. Operator approved the v4-only resource ceilings on 2026-09-23; all nineteen retained windows pass the separate release assessment. Original targets are recorded for the next version in docs/next-version-targets.md and #r16/#r17. Publication is fully authorized. Final Mac/Linux composite lifecycle, public verification and website deployment remain open. Diagnostic-only branch codex/sd300-v4-platform-probes must never be merged wholesale.
+Current cycle: public 4.0.0 is delivered from immutable 170f70f with all 59 assets, crate, native lifecycle workflows and independent checksum/attestation verification. The website screenshots are deployed and the operator's actual managed CLI/GUI/engine match public bytes with settings preserved. Final local checks exposed two update limitations: old 3.1.3 rejects the new engine ABI, and public Windows 4.0.0 PowerShell helpers can exit silently. The verified official installer completed the local upgrade. Source correction e5b7b08 / PR #11 is under hosted qualification; task #p4h tracks a corrective-release decision and explicit policy scope. Keep these failures visible; do not claim the automatic update route passed. All original goals remain in docs/next-version-targets.md and #r16/#r17.
 
 ## Impact
 
@@ -40,15 +40,19 @@ Bounded convergence: one candidate per failing lane. After two cycles without ne
 
 - [x] Performance and soak acceptance pass under the approved 4.0.0-only policy; original verdicts retained
 
-- [ ] Composite install/update/repair/rollback/uninstall passes
+- [x] Hosted composite install/update/repair/rollback/uninstall qualification passes; actual 3.1.3 upgrade limitation discovered afterward is explicitly tracked in #p4h
 
-- [ ] Public release and exact bytes verified
+- [x] Public release and exact bytes verified; actual local install and production screenshots verified
 
 ## Status
 
-ACTIVE on codex/sd300-v4-monitoring. Measurement, bounded workers, provider fixtures, adaptive TUI, optional companion/actions, GUI parity and the expanded GUI design/interaction review are implemented. Remaining work is native performance/shutdown qualification, composite lifecycle and publication. Product metadata is coordinated at 4.0.0, verified unused at 2026-09-23 19:25 UTC; the candidate remains unpublished. ND-300 public 4.0.1 is the integration baseline; its local 4.0.2 work is independent.
+PUBLIC 4.0.0, with final update-path corrections tracked in #p4h. CLI/TUI/GUI, six native targets, approved performance evidence, composite lifecycle, public release, website screenshots and the operator's public installation are delivered. Full closure awaits the decision on the reproduced Windows automatic-update defect; do not label it fixed in public 4.0.0. ND-300 public 4.0.1 remains the integration baseline.
 
 ## Activity
+
+- 2026-09-23 — codex: final Release 35934279035, native producers and Qualify/Publish 35936902455 all passed. Public tag/crate/59 assets/28 checksums/26 attestations/26 sidecars/six stable routes verified. Website PR #16 deployed; desktop/mobile image and keyboard checks pass. Actual local public installer recovery preserves settings and every installed payload hash; live GUI inspected. Real old-updater ABI rejection and v4 PowerShell silent exits are retained in docs/qualification/v4/public-verification.md and #p4h. Next: hosted correction and operator decision, without rewriting immutable assets.
+
+- 2026-09-23 — codex: final policy/documentation commit d1aec05 passes seven resource-policy tests, four baseline tests, ten interaction-report tests and resource-counter tests (one native Mac-only skip locally). PR #10 merged as 170f70f; Release 35934279035 and main CI 35934278681 now own the exact source. Superseded PR-only runs cancelled to free runners; no native release producer was cancelled. Next: qualify draft installers and verify public release, then merge website #16. No main push until completion.
 
 - 2026-09-23 — codex: operator approved 4.0.0-only resource ceilings and explicitly requested every original goal be recorded for the next version. Added ADR 0017, docs/next-version-targets.md, #r17 and expiring policy tests. All nineteen retained windows pass the approved policy without rewriting original verdicts. Final evidence commit 4aeaea4 passes every job in CI 35930409409. Next: final policy checks, merge and the authorized composite release chain, then public verification and website production.
 

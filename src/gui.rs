@@ -55,6 +55,7 @@ pub fn launch() -> i32 {
 
 #[derive(Debug, Deserialize)]
 struct SelfTestResult {
+    schema: u32,
     success: bool,
     product: String,
     product_version: String,
@@ -103,11 +104,19 @@ fn validate_self_test(
     result: &SelfTestResult,
     expected_version: &str,
 ) -> std::result::Result<(), String> {
-    if !result.success
+    // The newly installed GUI loads and validates its own adjacent engine.
+    // An older updater must not impose its private ABI on a newer product.
+    // Same-version repair still checks this build's exact ABI/schema pair.
+    let current_contract = expected_version != env!("CARGO_PKG_VERSION")
+        || (result.abi_version == ENGINE_ABI_VERSION
+            && result.engine_schema_version == ENGINE_SCHEMA_VERSION);
+    if result.schema != 1
+        || !result.success
         || result.product != "SD-300"
         || result.product_version != expected_version
-        || result.abi_version != ENGINE_ABI_VERSION
-        || result.engine_schema_version != ENGINE_SCHEMA_VERSION
+        || result.abi_version == 0
+        || result.engine_schema_version == 0
+        || !current_contract
     {
         return Err(format!(
             "the GUI companion reported an incompatible identity (product={}, version={}, ABI={}, schema={})",
@@ -539,6 +548,7 @@ mod tests {
     #[test]
     fn installed_companion_validation_uses_the_current_engine_contract() {
         let mut result = SelfTestResult {
+            schema: 1,
             success: true,
             product: "SD-300".into(),
             product_version: env!("CARGO_PKG_VERSION").into(),
@@ -553,6 +563,34 @@ mod tests {
         assert!(validate_self_test(&result, env!("CARGO_PKG_VERSION")).is_err());
         result.engine_schema_version = ENGINE_SCHEMA_VERSION;
         assert!(validate_self_test(&result, "0.0.0").is_err());
+    }
+
+    #[test]
+    fn newer_companion_validates_its_own_engine_without_inheriting_old_updater_abi() {
+        let mut result = SelfTestResult {
+            schema: 1,
+            success: true,
+            product: "SD-300".into(),
+            product_version: "99.0.0".into(),
+            abi_version: ENGINE_ABI_VERSION + 1,
+            engine_schema_version: ENGINE_SCHEMA_VERSION + 1,
+        };
+        assert!(validate_self_test(&result, "99.0.0").is_ok());
+        result.success = false;
+        assert!(validate_self_test(&result, "99.0.0").is_err());
+        result.success = true;
+        result.product = "another product".into();
+        assert!(validate_self_test(&result, "99.0.0").is_err());
+        result.product = "SD-300".into();
+        assert!(validate_self_test(&result, "99.0.1").is_err());
+        result.abi_version = 0;
+        assert!(validate_self_test(&result, "99.0.0").is_err());
+        result.abi_version = ENGINE_ABI_VERSION + 1;
+        result.engine_schema_version = 0;
+        assert!(validate_self_test(&result, "99.0.0").is_err());
+        result.engine_schema_version = ENGINE_SCHEMA_VERSION + 1;
+        result.schema = 2;
+        assert!(validate_self_test(&result, "99.0.0").is_err());
     }
 
     #[test]

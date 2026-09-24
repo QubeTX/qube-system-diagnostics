@@ -231,13 +231,24 @@ jobs:
           mkdir -p "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"
 
-          sh "$assets/sd300-cli-installer.sh" --no-modify-path
+          # Exercise actual startup integration in this isolated, initially
+          # empty home. Absolute-path execution alone cannot prove discovery.
+          unset SD300_INSTALL_DIR TR300_TUI_INSTALL_DIR CARGO_DIST_FORCE_INSTALL_DIR
+          unset TR300_TUI_NO_MODIFY_PATH INSTALLER_NO_MODIFY_PATH TR300_TUI_UNMANAGED_INSTALL
+          sh "$assets/sd300-cli-installer.sh"
           binary="$CARGO_HOME/bin/sd300"
           gui="$XDG_DATA_HOME/sd300/bin/sd300-gui"
           engine="$XDG_DATA_HOME/sd300/libexec/libsd300_engine.so"
           desktop="$XDG_DATA_HOME/applications/sd300.desktop"
           receipt="$XDG_CONFIG_HOME/sd300/sd300-receipt.json"
           test -x "$binary" && test -x "$gui" && test -f "$engine"
+          PATH=/usr/bin:/bin /bin/bash --noprofile -ic \
+            'test "$(command -v sd300)" = "$CARGO_HOME/bin/sd300" && sd300 --version' \
+            > "$lifecycle_home/fresh-bash.out" 2> "$lifecycle_home/fresh-bash.err" || {
+              cat "$lifecycle_home/fresh-bash.err" >&2
+              exit 1
+            }
+          grep -Fxq 'sd300 ${{ needs.draft-check.outputs.version }}' "$lifecycle_home/fresh-bash.out"
           test -f "$desktop" && test -f "$receipt"
           grep -Fxq "Icon=$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png" "$desktop"
           test -s "$XDG_DATA_HOME/sd300/libexec/assets/app-icon.png"

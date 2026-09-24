@@ -9,9 +9,9 @@ namespaces. Histories use capture timestamps and preserve missing time buckets. 
 [ADR 0006](docs/adr/0006-v4-sampling-and-terminal-contract.md) and
 [ADR 0007](docs/adr/0007-adaptive-presentation-and-time-buckets.md).
 Every candidate remains unpublished until its accepted gates pass. ADRs 0016/0017
-record the operator-approved 4.0.0-only performance ceilings. All original goals
-are preserved in [Next-version targets](docs/next-version-targets.md) and automatically
-apply to later versions; track responsiveness in #r16 and resources in #r17.
+record the original v4 performance decision; ADR 0018 extends those same ceilings
+to the operator-authorized 4.0.1 updater correction. All original goals remain in
+[Next-version targets](docs/next-version-targets.md) and automatically apply after 4.0.1; track responsiveness in #r16 and resources in #r17.
 
 # SD-300 / SD300 Project Context
 
@@ -31,6 +31,12 @@ hosted evidence for all six release targets. Do not describe local builds as
 proof that the public release or another operating system has passed.
 
 ## Compatibility contract
+
+- Managed Windows installation uses the configured Programs known folder, verifies
+  the GUI shortcut/icon and saved user PATH, and refreshes only the installing
+  PowerShell process. Honor PATH opt-outs and preserve unrelated PATH entries.
+  Backup, child destination and rollback must agree for custom install prefixes.
+  Uninstall resolves the same known folder; errors name the failed installation step.
 
 - Bare `sd300` opens the User/Technician chooser. Preserve the mode flags,
   nine section shortcuts, lifecycle commands, schema-1 JSON default, exit

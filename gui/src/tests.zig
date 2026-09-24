@@ -11,6 +11,63 @@ test { _ = @import("settings_writer.zig"); }
 
 const AppMarkup = canvas.MarkupView(main.Model, main.Msg);
 
+test "automation publication yields to input presentation and wakes afterward" {
+    const harness = try native_sdk.runtime.TestHarness().create(testing.allocator, .{});
+    defer harness.destroy(testing.allocator);
+    harness.null_platform.gpu_surfaces = true;
+    var context: u8 = 0;
+    const app = native_sdk.runtime.App{ .context = &context, .name = "observer-deferral" };
+    try harness.start(app);
+    _ = try harness.runtime.createView(.{
+        .window_id = 1, .label = "canvas", .kind = .gpu_surface,
+        .frame = native_sdk.geometry.RectF.init(0, 0, 320, 240),
+    });
+    const view_index = harness.runtime.view_count - 1;
+    const io = testing.io;
+    const directory = ".zig-cache/sd300-observer-deferral";
+    var cwd = std.Io.Dir.cwd();
+    cwd.deleteTree(io, directory) catch {};
+    try cwd.createDirPath(io, directory);
+    defer cwd.deleteTree(io, directory) catch {};
+    harness.runtime.options.automation = native_sdk.automation.Server.init(io, directory, "Observer");
+    harness.runtime.views[view_index].gpu_pending_input_timestamp_ns = 100;
+    harness.runtime.views[view_index].gpu_canvas_frame_requested = true;
+    harness.runtime.invalidate();
+    const requested_frame = harness.runtime.frame_index;
+    try harness.runtime.dispatchPlatformEvent(app, .frame_requested);
+    try testing.expectEqual(requested_frame + 1, harness.runtime.frame_index);
+    try testing.expect(harness.runtime.automation_publish_deferred);
+    try testing.expect(harness.runtime.invalidated);
+    try testing.expectError(error.FileNotFound, cwd.access(io, directory ++ "/snapshot.txt", .{}));
+    // A requested frame completes even though its diagnostic acknowledgment
+    // has not been written. Exactly one later publication wake follows it.
+    const wakes = harness.null_platform.frame_request_count.load(.acquire);
+    try harness.runtime.dispatchPlatformEvent(app, .{ .gpu_surface_frame = .{
+        .label = "canvas", .size = native_sdk.geometry.SizeF.init(320, 240),
+        .scale_factor = 1, .frame_index = 1, .timestamp_ns = 200, .nonblank = true,
+    } });
+    try testing.expect(!harness.runtime.automation_publish_deferred);
+    try testing.expectEqual(wakes + 1, harness.null_platform.frame_request_count.load(.acquire));
+    try testing.expectEqual(@as(u64, 100), harness.runtime.views[view_index].gpu_input_latency_ns);
+    try harness.runtime.dispatchPlatformEvent(app, .frame_requested);
+    try cwd.access(io, directory ++ "/snapshot.txt", .{});
+    try testing.expect(!harness.runtime.invalidated);
+    // An input with no requested repaint cannot strand publication forever.
+    harness.runtime.views[view_index].gpu_pending_input_timestamp_ns = 300;
+    harness.runtime.invalidate();
+    try harness.runtime.dispatchPlatformEvent(app, .frame_requested);
+    try testing.expect(!harness.runtime.automation_publish_deferred);
+    try testing.expect(!harness.runtime.invalidated);
+    // Ordinary product builds retain their existing lifecycle-frame behavior.
+    harness.runtime.options.automation = null;
+    harness.runtime.views[view_index].gpu_canvas_frame_requested = true;
+    harness.runtime.invalidate();
+    const frame_index = harness.runtime.frame_index;
+    try harness.runtime.dispatchPlatformEvent(app, .frame_requested);
+    try testing.expectEqual(frame_index + 1, harness.runtime.frame_index);
+    try testing.expect(!harness.runtime.automation_publish_deferred);
+}
+
 test "frame work counts nested events once and excludes queue wait" {
     var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
     profile.beginWorkAt(100_000);
@@ -29,6 +86,29 @@ test "frame work counts nested events once and excludes queue wait" {
     profile.beginWorkAt(1);
     profile.endWorkAt(100_000);
     try testing.expectEqual(@as(u64, 0), profile.stats(.frame_work).total);
+}
+
+test "input attribution separates dispatch from wait without hiding latency" {
+    var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
+    profile.endInputAt(100_000, 2_100_000);
+    profile.inputFrameAt(602_100_000);
+    profile.recordNs(.input_latency, 609_000_000);
+    try testing.expectEqual(@as(u64, 2000), profile.stats(.input_dispatch).latest_us);
+    try testing.expectEqual(@as(u64, 600000), profile.stats(.input_wait).latest_us);
+    try testing.expectEqual(@as(u64, 609000), profile.stats(.input_latency).latest_us);
+    profile.inputFrameAt(702_100_000);
+    try testing.expectEqual(@as(u64, 1), profile.stats(.input_wait).total);
+    // The latest sample stays distinct from the maximum, including ring wrap.
+    for (0..native_sdk.runtime.max_frame_profile_samples + 1) |_| profile.recordNs(.input_wait, 1_000);
+    try testing.expectEqual(@as(u64, 1), profile.stats(.input_wait).latest_us);
+    try testing.expectEqual(@as(u64, 600000), profile.stats(.input_wait).total_max_us);
+    profile.endInputAt(800_000_000, 801_000_000);
+    profile.reset();
+    profile.inputFrameAt(900_000_000);
+    try testing.expectEqual(@as(u64, 0), profile.stats(.input_wait).total);
+    profile.enabled = false;
+    profile.endInputAt(1, 1_000_000);
+    try testing.expectEqual(@as(u64, 0), profile.input_dispatch_end_ns);
 }
 
 test "profile keeps percentile coverage and lifetime stalls explicit" {

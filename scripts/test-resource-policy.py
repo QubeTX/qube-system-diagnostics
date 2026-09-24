@@ -31,11 +31,16 @@ class ResourcePolicyTests(unittest.TestCase):
         report["cpu_percent_one_core"] = 3.001
         self.assertFalse(self.assess(report, hidden=True)["passed"])
 
+    def test_authorized_updater_correction_keeps_the_v4_bar(self):
+        for version in ("4.0.0", "4.0.1"):
+            self.assertTrue(resource_verdict(self.report(), version, frontend="gui")["passed"])
+            self.assertFalse(resource_verdict({**self.report(), "clean_shutdown": False}, version, frontend="gui")["passed"])
+
     def test_exception_expires_for_every_other_version(self):
-        for version in ("3.1.3", "4.0.1", "4.1.0", "4.0.0-rc.1", ""):
+        for version in ("3.1.3", "4.0.2", "4.1.0", "4.0.0-rc.1", ""):
             self.assertFalse(resource_verdict(self.report(), version, frontend="gui")["passed"])
         report = {**self.report(), "cpu_percent_one_core": 1, "rss_mib_max": 150}
-        self.assertTrue(resource_verdict(report, "4.0.1", frontend="gui", hidden=True)["passed"])
+        self.assertTrue(resource_verdict(report, "4.0.2", frontend="gui", hidden=True)["passed"])
 
     def test_invalid_or_missing_numbers_never_pass(self):
         for key in ("cpu_percent_one_core", "rss_mib_max", "private_mib_max", "measured_seconds"):

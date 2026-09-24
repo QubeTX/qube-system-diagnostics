@@ -34,6 +34,7 @@ sd300_user_path_state_saved=0
 sd300_path_mutation_allowed=1
 sd300_user_home=''
 sd300_user_zsh_home=''
+sd300_user_fish_home=''
 
 sd300_cleanup() {
     if [ "$sd300_transaction_started" -eq 1 ] && [ "$sd300_committed" -eq 0 ]; then
@@ -191,8 +192,12 @@ sd300_verify_gui_manifest() {
 }
 
 sd300_install_prefix() {
+    [ -z "${TR300_TUI_UNMANAGED_INSTALL:-}" ] ||
+        sd300_fail 'TR300_TUI_UNMANAGED_INSTALL disables the receipt required by this managed installer; use SD300_INSTALL_DIR for a custom prefix'
     if [ -n "${SD300_INSTALL_DIR:-}" ]; then
         printf '%s\n' "$SD300_INSTALL_DIR"
+    elif [ -n "${TR300_TUI_INSTALL_DIR:-}" ]; then
+        printf '%s\n' "$TR300_TUI_INSTALL_DIR"
     elif [ -n "${CARGO_DIST_FORCE_INSTALL_DIR:-}" ]; then
         printf '%s\n' "$CARGO_DIST_FORCE_INSTALL_DIR"
     elif [ -n "${CARGO_HOME:-}" ]; then
@@ -203,6 +208,44 @@ sd300_install_prefix() {
         sd300_fail 'HOME or CARGO_HOME is required to verify the managed install'
     fi
 }
+
+sd300_run_dist_installer() (
+    # Use the same cargo-home layout for backup, installation, receipt checks
+    # and rollback. The generated installer does not understand SD300_INSTALL_DIR.
+    # Resolve sh before changing the child's search path. A temporary bin entry
+    # in this process does not prove that a newly opened shell can find sd300.
+    # The pinned child otherwise skips all persistent integration in that case.
+    installer_shell=$(command -v sh) || return 1
+    case "$installer_shell" in
+        /*) ;;
+        *) installer_shell="$(CDPATH= cd -- "$(dirname "$installer_shell")" && pwd)/$(basename "$installer_shell")" || return 1 ;;
+    esac
+    sd300_set_path_mutation_expectation "$@"
+    if [ "$sd300_path_mutation_allowed" -eq 1 ]; then
+        path_remainder=${PATH:-}
+        child_path=''
+        child_path_first=1
+        selected_bin="${sd300_intended_prefix%/}/bin"
+        while :; do
+            case "$path_remainder" in
+                *:*) path_entry=${path_remainder%%:*}; path_remainder=${path_remainder#*:}; path_more=1 ;;
+                *) path_entry=$path_remainder; path_more=0 ;;
+            esac
+            if [ "$path_entry" != "$selected_bin" ]; then
+                if [ "$child_path_first" -eq 1 ]; then
+                    child_path=$path_entry
+                    child_path_first=0
+                else
+                    child_path="${child_path}:$path_entry"
+                fi
+            fi
+            [ "$path_more" -eq 1 ] || break
+        done
+        PATH=$child_path
+        export PATH
+    fi
+    TR300_TUI_INSTALL_DIR="$sd300_intended_prefix" "$installer_shell" "$@"
+)
 
 sd300_receipt_path() {
     if [ -n "${XDG_CONFIG_HOME:-}" ]; then
@@ -325,6 +368,19 @@ sd300_path_expression() {
     esac
 }
 
+sd300_profile_source_line() (
+    # Single-quoted literals with an escaped quote between segments work in
+    # both POSIX shells and fish, without expanding user-controlled path text.
+    profile_env="${sd300_intended_prefix%/}/env"
+    profile_source=.
+    if [ "$1" = fish ]; then
+        profile_env="${profile_env}.fish"
+        profile_source=source
+    fi
+    profile_quoted=$(printf '%s' "$profile_env" | sed "s/'/'\\\\''/g") || return 1
+    printf "%s '%s'\n" "$profile_source" "$profile_quoted"
+)
+
 sd300_written_user_path_has_appended_line() {
     state=$1
     line=$2
@@ -421,7 +477,15 @@ sd300_recognize_written_user_path_file() {
         profile)
             sd300_written_user_path_has_appended_line "$state" ". \"$env_expr\"" && recognized=0
             ;;
-        bashrc|bash_profile|bash_login)
+        bashrc)
+            if [ "$(cat "$state/kind")" = absent ]; then
+                wrapper_line=$(sd300_profile_source_line sh) || return 1
+                sd300_written_user_path_has_appended_line "$state" "$wrapper_line" && recognized=0
+            else
+                sd300_written_user_path_has_appended_line "$state" ". \"$env_expr\"" && recognized=0
+            fi
+            ;;
+        bash_profile|bash_login)
             if [ "$(cat "$state/kind")" != absent ]; then
                 sd300_written_user_path_has_appended_line "$state" ". \"$env_expr\"" && recognized=0
             fi
@@ -440,6 +504,10 @@ sd300_recognize_written_user_path_file() {
             ;;
         fish)
             sd300_written_user_path_has_appended_line "$state" "source \"${env_expr}.fish\"" && recognized=0
+            ;;
+        fish_xdg)
+            wrapper_line=$(sd300_profile_source_line fish) || return 1
+            sd300_written_user_path_has_appended_line "$state" "$wrapper_line" && recognized=0
             ;;
         env)
             sd300_written_user_path_is_generated_env "$state" sh && recognized=0
@@ -472,7 +540,7 @@ sd300_restore_user_path_file() {
         return 0
     fi
     if [ "$(cat "$state/written-recognized")" != yes ]; then
-        printf '%s\n' "SD-300 warning: preserving a PATH/profile change not attributable solely to cargo-dist: $path" >&2
+        printf '%s\n' "SD-300 warning: preserving a PATH/profile change not attributable solely to this installer: $path" >&2
         return 0
     fi
     written_kind=$(cat "$state/written-kind") || return 1
@@ -541,7 +609,12 @@ sd300_capture_user_path_file() {
 sd300_save_user_path_dir() {
     key=$1
     path=$2
-    if [ -d "$path" ]; then
+    if [ -L "$path" ]; then
+        [ -d "$path" ] || sd300_fail "PATH/profile parent is a dangling or non-directory symbolic link: $path"
+        printf '%s\n' symlink > "$sd300_temp/user-path-dir-$key"
+        readlink "$path" > "$sd300_temp/user-path-dir-$key-link" ||
+            sd300_fail "could not record PATH/profile parent symbolic link: $path"
+    elif [ -d "$path" ]; then
         printf '%s\n' present > "$sd300_temp/user-path-dir-$key"
     elif [ -e "$path" ] || [ -L "$path" ]; then
         sd300_fail "PATH/profile parent is not a directory: $path"
@@ -549,6 +622,33 @@ sd300_save_user_path_dir() {
         printf '%s\n' absent > "$sd300_temp/user-path-dir-$key"
     fi
 }
+
+sd300_user_path_dir_link_unchanged() (
+    prior_kind=$(cat "$sd300_temp/user-path-dir-$1") || return 1
+    if [ "$prior_kind" = symlink ]; then
+        [ -L "$2" ] && [ -d "$2" ] &&
+            readlink "$2" | cmp -s - "$sd300_temp/user-path-dir-$1-link"
+    else
+        [ ! -L "$2" ]
+    fi
+)
+
+sd300_fish_path_links_unchanged() (
+    sd300_user_path_dir_link_unchanged "${1}config" "$2" &&
+        sd300_user_path_dir_link_unchanged "${1}fish" "$2/fish" &&
+        sd300_user_path_dir_link_unchanged "${1}fish_conf_d" "$2/fish/conf.d"
+)
+
+sd300_restore_fish_path_state() (
+    if ! sd300_fish_path_links_unchanged "$1" "$2"; then
+        printf '%s\n' "SD-300 warning: preserving PATH/profile files below a changed directory link: $2" >&2
+        return 0
+    fi
+    sd300_restore_user_path_file "$3" "$2/fish/conf.d/sd300.env.fish" &&
+        sd300_restore_user_path_dir "${1}fish_conf_d" "$2/fish/conf.d" &&
+        sd300_restore_user_path_dir "${1}fish" "$2/fish" &&
+        sd300_restore_user_path_dir "${1}config" "$2"
+)
 
 sd300_restore_user_path_dir() {
     key=$1
@@ -560,7 +660,7 @@ sd300_restore_user_path_dir() {
         return 0
     fi
     if [ "$(cat "$state-written-recognized")" != yes ]; then
-        printf '%s\n' "SD-300 warning: preserving a PATH/profile parent change not attributable solely to cargo-dist: $path" >&2
+        printf '%s\n' "SD-300 warning: preserving a PATH/profile parent change not attributable solely to this installer: $path" >&2
         return 0
     fi
     written_kind=$(cat "$state-written") || return 1
@@ -590,7 +690,10 @@ sd300_capture_user_path_dir() {
     key=$1
     path=$2
     state="$sd300_temp/user-path-dir-$key-written"
-    if [ -d "$path" ] && [ ! -L "$path" ]; then
+    sd300_user_path_dir_link_unchanged "$key" "$path" || return 1
+    if [ -L "$path" ]; then
+        printf '%s\n' symlink > "$state"
+    elif [ -d "$path" ]; then
         printf '%s\n' present > "$state"
     elif [ -e "$path" ] || [ -L "$path" ]; then
         return 1
@@ -599,11 +702,15 @@ sd300_capture_user_path_dir() {
     fi
     prior_kind=$(cat "$sd300_temp/user-path-dir-$key") || return 1
     written_kind=$(cat "$state") || return 1
+    case "$key" in
+        xdg_*) directory_source=fish_xdg ;;
+        *) directory_source=fish ;;
+    esac
     if [ "$prior_kind" = "$written_kind" ]; then
         printf '%s\n' yes > "$state-recognized"
     elif [ "$prior_kind:$written_kind" = absent:present ] &&
-        [ "$(cat "$sd300_temp/user-path-fish/written-recognized")" = yes ] &&
-        [ "$(cat "$sd300_temp/user-path-fish/written-changed")" = yes ]; then
+        [ "$(cat "$sd300_temp/user-path-$directory_source/written-recognized")" = yes ] &&
+        [ "$(cat "$sd300_temp/user-path-$directory_source/written-changed")" = yes ]; then
         printf '%s\n' yes > "$state-recognized"
     else
         printf '%s\n' no > "$state-recognized"
@@ -622,6 +729,9 @@ sd300_save_user_path_state() {
     fi
     [ -n "$sd300_user_home" ] || sd300_fail 'could not resolve the home used for shell profile changes'
     sd300_user_zsh_home=${ZDOTDIR:-$sd300_user_home}
+    sd300_user_fish_home=${XDG_CONFIG_HOME:-$sd300_user_home/.config}
+    if [ "$sd300_user_fish_home" != / ]; then sd300_user_fish_home=${sd300_user_fish_home%/}; fi
+    case "$sd300_user_fish_home" in /*) ;; *) sd300_fail 'XDG_CONFIG_HOME must be an absolute path' ;; esac
     sd300_save_user_path_file profile "$sd300_user_home/.profile"
     sd300_save_user_path_file bashrc "$sd300_user_home/.bashrc"
     sd300_save_user_path_file bash_profile "$sd300_user_home/.bash_profile"
@@ -634,6 +744,12 @@ sd300_save_user_path_state() {
     sd300_save_user_path_dir fish_conf_d "$sd300_user_home/.config/fish/conf.d"
     sd300_save_user_path_dir fish "$sd300_user_home/.config/fish"
     sd300_save_user_path_dir config "$sd300_user_home/.config"
+    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
+        sd300_save_user_path_file fish_xdg "$sd300_user_fish_home/fish/conf.d/sd300.env.fish"
+        sd300_save_user_path_dir xdg_fish_conf_d "$sd300_user_fish_home/fish/conf.d"
+        sd300_save_user_path_dir xdg_fish "$sd300_user_fish_home/fish"
+        sd300_save_user_path_dir xdg_config "$sd300_user_fish_home"
+    fi
     if [ -n "${GITHUB_PATH:-}" ]; then
         sd300_save_user_path_file github_path "$GITHUB_PATH"
         printf '%s\n' present > "$sd300_temp/user-path-github-path-enabled"
@@ -649,11 +765,6 @@ sd300_set_path_mutation_expectation() {
     if [ "$configured_no_modify" != 0 ] || [ -n "${TR300_TUI_UNMANAGED_INSTALL:-}" ]; then
         sd300_path_mutation_allowed=0
     fi
-    owned_bin="${sd300_intended_prefix%/}/bin"
-    case ":${PATH:-}:" in
-        *:"$owned_bin":*) sd300_path_mutation_allowed=0 ;;
-        *) ;;
-    esac
     for argument in "$@"; do
         if [ "$argument" = --no-modify-path ]; then
             sd300_path_mutation_allowed=0
@@ -663,6 +774,10 @@ sd300_set_path_mutation_expectation() {
 
 sd300_capture_user_path_written_state() {
     [ "$sd300_user_path_state_saved" -eq 1 ] || return 0
+    sd300_fish_path_links_unchanged '' "$sd300_user_home/.config" || return 1
+    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
+        sd300_fish_path_links_unchanged xdg_ "$sd300_user_fish_home" || return 1
+    fi
     sd300_capture_user_path_file profile "$sd300_user_home/.profile" || return 1
     sd300_capture_user_path_file bashrc "$sd300_user_home/.bashrc" || return 1
     sd300_capture_user_path_file bash_profile "$sd300_user_home/.bash_profile" || return 1
@@ -670,6 +785,12 @@ sd300_capture_user_path_written_state() {
     sd300_capture_user_path_file zshrc "$sd300_user_zsh_home/.zshrc" || return 1
     sd300_capture_user_path_file zshenv "$sd300_user_zsh_home/.zshenv" || return 1
     sd300_capture_user_path_file fish "$sd300_user_home/.config/fish/conf.d/sd300.env.fish" || return 1
+    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
+        sd300_capture_user_path_file fish_xdg "$sd300_user_fish_home/fish/conf.d/sd300.env.fish" || return 1
+        sd300_capture_user_path_dir xdg_fish_conf_d "$sd300_user_fish_home/fish/conf.d" || return 1
+        sd300_capture_user_path_dir xdg_fish "$sd300_user_fish_home/fish" || return 1
+        sd300_capture_user_path_dir xdg_config "$sd300_user_fish_home" || return 1
+    fi
     sd300_capture_user_path_file env "$sd300_intended_prefix/env" || return 1
     sd300_capture_user_path_file env_fish "$sd300_intended_prefix/env.fish" || return 1
     if [ "$(cat "$sd300_temp/user-path-github-path-enabled")" = present ]; then
@@ -688,7 +809,6 @@ sd300_restore_user_path_state() {
     sd300_restore_user_path_file bash_login "$sd300_user_home/.bash_login" || return 1
     sd300_restore_user_path_file zshrc "$sd300_user_zsh_home/.zshrc" || return 1
     sd300_restore_user_path_file zshenv "$sd300_user_zsh_home/.zshenv" || return 1
-    sd300_restore_user_path_file fish "$sd300_user_home/.config/fish/conf.d/sd300.env.fish" || return 1
     sd300_restore_user_path_file env "$sd300_intended_prefix/env" || return 1
     sd300_restore_user_path_file env_fish "$sd300_intended_prefix/env.fish" || return 1
     if [ "$(cat "$sd300_temp/user-path-github-path-enabled")" = present ]; then
@@ -697,10 +817,45 @@ sd300_restore_user_path_state() {
     # cargo-dist may create this hierarchy solely to add its fish startup file.
     # Remove only directories proven absent before the inner install, and only
     # when they remain empty so concurrent user changes are preserved.
-    sd300_restore_user_path_dir fish_conf_d "$sd300_user_home/.config/fish/conf.d" || return 1
-    sd300_restore_user_path_dir fish "$sd300_user_home/.config/fish" || return 1
-    sd300_restore_user_path_dir config "$sd300_user_home/.config" || return 1
+    sd300_restore_fish_path_state '' "$sd300_user_home/.config" fish || return 1
+    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
+        sd300_restore_fish_path_state xdg_ "$sd300_user_fish_home" fish_xdg || return 1
+    fi
 }
+
+sd300_complete_shell_discovery() (
+    [ "$sd300_path_mutation_allowed" -eq 1 ] || return 0
+    sd300_fish_path_links_unchanged '' "$sd300_user_home/.config" || return 1
+    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
+        sd300_fish_path_links_unchanged xdg_ "$sd300_user_fish_home" || return 1
+    fi
+    # cargo-dist creates .profile, but only edits an existing .bashrc. A new
+    # non-login terminal reads .bashrc instead. Never replace an existing file
+    # or symbolic link, including one created while the child was running.
+    bashrc="$sd300_user_home/.bashrc"
+    if [ "$(cat "$sd300_temp/user-path-bashrc/kind")" = absent ] &&
+        [ ! -e "$bashrc" ] && [ ! -L "$bashrc" ]; then
+        [ -f "$sd300_intended_prefix/env" ] || return 1
+        source_line=$(sd300_profile_source_line sh) || return 1
+        (set -C; printf '\n%s\n' "$source_line" > "$bashrc") || return 1
+    fi
+
+    # The pinned child still targets ~/.config for fish. Retain its rollback
+    # tracking, and add the same source to fish's actual XDG configuration.
+    if [ "$sd300_user_fish_home" != "$sd300_user_home/.config" ]; then
+        [ -f "$sd300_intended_prefix/env.fish" ] || return 1
+        fish_file="$sd300_user_fish_home/fish/conf.d/sd300.env.fish"
+        source_line=$(sd300_profile_source_line fish) || return 1
+        if [ -e "$fish_file" ] || [ -L "$fish_file" ]; then
+            [ -f "$fish_file" ] || return 1
+            grep -Fqx "$source_line" "$fish_file" && return 0
+            printf '\n%s\n' "$source_line" >> "$fish_file" || return 1
+        else
+            mkdir -p "$(dirname "$fish_file")" || return 1
+            (set -C; printf '\n%s\n' "$source_line" > "$fish_file") || return 1
+        fi
+    fi
+)
 
 sd300_restore_one_binary() {
     path=$1
@@ -1120,12 +1275,18 @@ chmod 700 "$dist_installer" || sd300_fail 'could not protect the managed install
 
 sd300_transaction_started=1
 sd300_dist_status=0
-sh "$dist_installer" "$@" || sd300_dist_status=$?
+sd300_run_dist_installer "$dist_installer" "$@" || sd300_dist_status=$?
 sd300_capture_user_path_written_state ||
     sd300_fail 'could not capture the PATH/profile state written by cargo-dist'
 [ "$sd300_dist_status" -eq 0 ] || sd300_fail 'cargo-dist installation did not complete'
 sd300_verify_receipt
 managed_binary=$(sd300_verify_binary) || sd300_fail 'managed SD-300 verification did not complete'
+sd300_discovery_status=0
+sd300_complete_shell_discovery || sd300_discovery_status=$?
+sd300_capture_user_path_written_state ||
+    sd300_fail 'could not capture the completed shell discovery changes'
+[ "$sd300_discovery_status" -eq 0 ] ||
+    sd300_fail 'could not configure Bash/fish command discovery; check shell profile permissions'
 sd300_install_gui_payload
 if [ -n "$sd300_prior_binary" ] && [ "$sd300_prior_binary" != "$managed_binary" ]; then
     rm -f "$sd300_prior_binary" || sd300_fail 'could not remove the prior managed install path'
@@ -1134,4 +1295,10 @@ sd300_verify_receipt
 sd300_verify_binary >/dev/null || sd300_fail 'final managed SD-300 verification did not complete'
 sd300_take_over_macos_pkg
 sd300_committed=1
-printf '%s\n' "SD-300 ${sd300_version} is installed through the managed shell channel: ${managed_binary}"
+printf '%s\n' "SD-300 ${sd300_version} CLI/TUI and desktop app are installed through the managed shell channel."
+printf '%s\n' "CLI/TUI: ${managed_binary}"
+case "$sd300_gui_target" in
+    macos-*) printf '%s\n' "Desktop app in your Applications folder: ${sd300_gui_root}" ;;
+    linux-*) printf '%s\n' "Desktop app in your application menu: SD-300 (${sd300_gui_desktop})" ;;
+esac
+printf '%s\n' 'Open the desktop app with sd300 gui, or use its application entry.'

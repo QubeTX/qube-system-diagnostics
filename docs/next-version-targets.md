@@ -1,14 +1,16 @@
 # Next-version targets: preserve the original SD-300 goals
 
 Recorded at the operator's explicit request on 2026-09-23. These are the goals
-for the version after 4.0.0, including targets temporarily relaxed for v4.
+for the next development version, including targets temporarily relaxed for v4.
+ADR 0018 records the subsequent operator-authorized 4.0.1 updater correction;
+the same ceilings apply to that patch and expire immediately afterward.
 Owner: Codex; progress is tracked by #r16 (responsiveness), #r17 (resources),
 and the existing physical-device/accessibility tasks. This document does not
 claim that every target has already been achieved.
 
 ## Performance acceptance
 
-| Measurement | Original target, restored after 4.0.0 | Temporary 4.0.0 ceiling |
+| Measurement | Original target, restored after 4.0.1 | Temporary 4.0.0 / 4.0.1 ceiling |
 |---|---:|---:|
 | Foreground CPU, CLI/TUI/GUI including owned children | ≤2% of one logical core | ≤4% |
 | Hidden GUI CPU including owned children | ≤1% of one logical core | ≤3% |
@@ -18,9 +20,9 @@ claim that every target has already been achieved.
 | Input receipt-to-presentation p95 | ≤50 ms | ≤100 ms |
 | Ordinary refresh maximum | ≤100 ms | Unchanged |
 
-The exceptions in ADRs 0016/0017 apply to **4.0.0 only**, including on macOS.
-The test policies automatically restore the original limits for every other
-version, including 4.0.1. Preserve original verdicts as well as release-policy
+The exceptions in ADRs 0016/0017 and the corrective extension in ADR 0018 apply
+to **4.0.0 and 4.0.1 only**, including on macOS. The test policies automatically
+restore the original limits for every other version, including 4.0.2. Preserve original verdicts as well as release-policy
 verdicts; a waived overrun remains an overrun against the long-term target.
 
 Measure release builds with exact GUI/engine/CLI identities and native runtimes.
@@ -75,6 +77,10 @@ additional numeric limits for measures that had none in the accepted plan.
   targets. Qualify install, update, rollback, repair and uninstall as a composite
   CLI plus branded clickable application. Preserve settings and optional-tool
   ownership. Verify public bytes, checksums, attestations, crate and stable routes.
+- Exercise the actual last public updater across engine ABI/schema changes as
+  well as synthetic-prior fixtures. Public 4.0.0 verification found the real
+  3.1.3 ABI-1 rejection and a Windows PowerShell update-check defect; preserve
+  the recovery instructions and track correction/qualification in #p4h.
 - Keep unavailable physical-device, screen-reader and tray acceptance explicit;
   hosted runs do not replace physical-device proof. Formal Lean/TLA+ exploration
   remains a separate future-version task (#frm), as requested by the operator.

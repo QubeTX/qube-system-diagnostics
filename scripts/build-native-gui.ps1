@@ -224,7 +224,7 @@ $stageZon = @'
 .{
     .name = .gui,
     .fingerprint = 0xd4ff50f85a707070,
-    .version = "4.0.0",
+    .version = "4.0.1",
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .native_sdk = .{ .path = "../sdk" },

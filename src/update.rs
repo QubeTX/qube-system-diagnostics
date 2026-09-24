@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::collectors::command::{run_output, CommandTimeout};
+use crate::collectors::command::{run_output, CommandError, CommandTimeout};
 use crate::error::Result;
 
 pub const RELEASES_URL: &str =
@@ -700,9 +700,16 @@ fn emit(json: bool, result: LifecycleResult<'_>, exit_code: i32) -> Result<i32> 
     } else if result.success {
         println!("{}", result.message);
     } else {
-        eprintln!("SD-300 {} failed safely: {}", result.action, result.message);
+        eprintln!("{}", lifecycle_failure_text(&result));
     }
     Ok(exit_code)
+}
+
+fn lifecycle_failure_text(result: &LifecycleResult<'_>) -> String {
+    format!(
+        "SD-300 {} failed: {}\nRecovery downloads: {RELEASES_PAGE}",
+        result.action, result.message
+    )
 }
 
 fn serialize_lifecycle_result(result: &LifecycleResult<'_>, exit_code: i32) -> String {
@@ -2241,22 +2248,38 @@ fn fetch_latest_release() -> std::result::Result<Release, String> {
     if let Some(release) = ci_release_override()? {
         return Ok(release);
     }
-    let json = fetch_latest_release_json()?;
-    let body: serde_json::Value = serde_json::from_str(&json)
-        .map_err(|error| format!("Release response was invalid JSON: {error}"))?;
+    fetch_latest_release_with(|program, args| {
+        run_output(
+            program,
+            args,
+            CommandTimeout::Custom(std::time::Duration::from_secs(20)),
+        )
+    })
+}
+
+fn parse_release_response(bytes: &[u8]) -> std::result::Result<Release, String> {
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return Err("the release-check helper exited without returning a response".into());
+    }
+    let json = std::str::from_utf8(bytes)
+        .map_err(|_| "the release-check helper returned invalid UTF-8 text".to_string())?;
+    let body: serde_json::Value = serde_json::from_str(json).map_err(|error| {
+        format!(
+            "the release-check helper returned malformed JSON (line {}, column {})",
+            error.line(),
+            error.column()
+        )
+    })?;
+    if body["draft"].as_bool() == Some(true) || body["prerelease"].as_bool() == Some(true) {
+        return Err("the response describes an unpublished or prerelease build".into());
+    }
     let tag = body["tag_name"]
         .as_str()
-        .ok_or_else(|| "Latest release response had no tag_name".to_string())?
+        .ok_or_else(|| "the release response did not include a release tag".to_string())?
         .to_string();
     let version = tag.strip_prefix('v').unwrap_or(&tag).to_string();
-    if version.is_empty()
-        || version.split('.').any(|part| {
-            part.is_empty() || !part.chars().all(|character| character.is_ascii_digit())
-        })
-    {
-        return Err(format!(
-            "Latest release tag is not a stable semantic version: {tag}"
-        ));
+    if !is_worker_release_version(&version) {
+        return Err("the release tag is not a supported stable version (major.minor.patch)".into());
     }
     Ok(Release { tag, version })
 }
@@ -2281,7 +2304,12 @@ fn ci_release_override() -> std::result::Result<Option<Release>, String> {
     Ok(Some(Release { tag, version }))
 }
 
-fn fetch_latest_release_json() -> std::result::Result<String, String> {
+fn fetch_latest_release_with(
+    mut execute: impl FnMut(
+        &str,
+        Vec<String>,
+    ) -> std::result::Result<std::process::Output, CommandError>,
+) -> std::result::Result<Release, String> {
     #[cfg(windows)]
     let candidates = ["powershell.exe", "pwsh.exe"];
     #[cfg(not(windows))]
@@ -2297,7 +2325,7 @@ fn fetch_latest_release_json() -> std::result::Result<String, String> {
             "Bypass".into(),
             "-Command".into(),
             format!(
-                "$ProgressPreference='SilentlyContinue'; Invoke-RestMethod -Headers @{{'User-Agent'='sd300/{VERSION}';'Accept'='application/vnd.github+json'}} -Uri '{RELEASES_URL}' | ConvertTo-Json -Depth 20 -Compress"
+                "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; try {{ [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $release=Invoke-RestMethod -TimeoutSec 15 -Headers @{{'User-Agent'='sd300/{VERSION}';'Accept'='application/vnd.github+json'}} -Uri '{RELEASES_URL}'; $json=ConvertTo-Json -InputObject $release -Depth 20 -Compress; [Console]::Out.Write($json); exit 0 }} catch {{ if ($_.Exception.Response) {{ [Console]::Error.WriteLine('HTTP ' + [int]$_.Exception.Response.StatusCode) }} else {{ [Console]::Error.WriteLine($_.Exception.GetType().Name) }}; exit 1 }}"
             ),
         ];
         #[cfg(not(windows))]
@@ -2319,23 +2347,31 @@ fn fetch_latest_release_json() -> std::result::Result<String, String> {
             ]
         };
 
-        match run_output(
-            program,
-            args,
-            CommandTimeout::Custom(std::time::Duration::from_secs(20)),
-        ) {
-            Ok(output) if output.status.success() => {
-                return Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        match execute(program, args) {
+            Ok(output) if output.status.success() => match parse_release_response(&output.stdout) {
+                Ok(release) => return Ok(release),
+                Err(reason) => failures.push(format!("{program}: {reason}")),
+            },
+            Ok(output) => {
+                // Errors are diagnostic text, never trusted terminal control
+                // sequences, unbounded output, or release metadata.
+                let detail: String = String::from_utf8_lossy(&output.stderr)
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(384)
+                    .collect();
+                failures.push(format!(
+                    "{program} exited {}{}{}",
+                    output.status.code().unwrap_or(-1),
+                    if detail.is_empty() { "" } else { ": " },
+                    detail
+                ));
             }
-            Ok(output) => failures.push(format!(
-                "{program} exited {}",
-                output.status.code().unwrap_or(-1)
-            )),
             Err(error) => failures.push(format!("{program}: {error}")),
         }
     }
     Err(format!(
-        "No release-check transport succeeded ({})",
+        "Could not check the latest SD-300 release at api.github.com. No installation files were changed. Check your connection or proxy and retry `sd300 update`, or run the matching official installer from {RELEASES_PAGE}. Details: {}",
         failures.join("; ")
     ))
 }
@@ -3621,13 +3657,52 @@ fn prove_windows_managed_gui_root() -> std::result::Result<Option<PathBuf>, Stri
 
 #[cfg(windows)]
 fn windows_managed_gui_shortcut() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(PathBuf::from).map(|root| {
-        root.join("Microsoft")
-            .join("Windows")
-            .join("Start Menu")
-            .join("Programs")
-            .join("SD-300.lnk")
-    })
+    windows_programs_folder(false).map(|root| root.join("SD-300.lnk"))
+}
+
+#[cfg(windows)]
+fn windows_programs_folder(common: bool) -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{
+        FOLDERID_CommonPrograms, FOLDERID_Programs, SHGetKnownFolderPath, KF_FLAG_DONT_VERIFY,
+    };
+
+    let folder = if common {
+        &FOLDERID_CommonPrograms
+    } else {
+        &FOLDERID_Programs
+    };
+    let mut raw = std::ptr::null_mut();
+    // Use the configured known folder, including enterprise redirection. Do
+    // not create it while resolving an uninstall/verification path.
+    let result = unsafe {
+        SHGetKnownFolderPath(
+            folder,
+            KF_FLAG_DONT_VERIFY as u32,
+            std::ptr::null_mut(),
+            &mut raw,
+        )
+    };
+    if raw.is_null() {
+        return None;
+    }
+    let path = if result >= 0 {
+        let mut len = 0;
+        // Windows returns a task-allocated, NUL-terminated UTF-16 string.
+        unsafe {
+            while *raw.add(len) != 0 {
+                len += 1;
+            }
+            Some(PathBuf::from(std::ffi::OsString::from_wide(
+                std::slice::from_raw_parts(raw, len),
+            )))
+        }
+    } else {
+        None
+    };
+    unsafe { CoTaskMemFree(raw.cast()) };
+    path.filter(|path| path.is_absolute())
 }
 
 #[cfg(windows)]
@@ -4008,21 +4083,9 @@ fn verify_windows_native_uninstalled(
 #[cfg(windows)]
 fn windows_native_gui_shortcut(channel: InstallChannel) -> Option<PathBuf> {
     let programs = match channel {
-        InstallChannel::MsiGlobal | InstallChannel::ExeGlobal => std::env::var_os("ProgramData")
-            .map(PathBuf::from)
-            .map(|root| {
-                root.join("Microsoft")
-                    .join("Windows")
-                    .join("Start Menu")
-                    .join("Programs")
-            }),
+        InstallChannel::MsiGlobal | InstallChannel::ExeGlobal => windows_programs_folder(true),
         InstallChannel::MsiCorporate | InstallChannel::ExeCorporate => {
-            std::env::var_os("APPDATA").map(PathBuf::from).map(|root| {
-                root.join("Microsoft")
-                    .join("Windows")
-                    .join("Start Menu")
-                    .join("Programs")
-            })
+            windows_programs_folder(false)
         }
         _ => None,
     }?;
@@ -4300,6 +4363,126 @@ mod tests {
                 .and_then(|value| value.as_bool()),
             Some(false)
         );
+    }
+
+    fn release_output(code: i32, stdout: &[u8], stderr: &[u8]) -> std::process::Output {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+        #[cfg(windows)]
+        let status = std::process::ExitStatus::from_raw(code as u32);
+        #[cfg(unix)]
+        let status = std::process::ExitStatus::from_raw(code << 8);
+        std::process::Output {
+            status,
+            stdout: stdout.to_vec(),
+            stderr: stderr.to_vec(),
+        }
+    }
+
+    #[test]
+    fn release_checks_fall_back_after_empty_malformed_or_invalid_success() {
+        for first in [
+            b"".as_slice(),
+            b" \r\n\t",
+            b"\xff",
+            b"<html>proxy sign-in</html>",
+            br#"{"tag_name":"v4.0.1""#,
+            br#"{"message":"API rate limit exceeded"}"#,
+            br#"{"tag_name":"v4.0"}"#,
+            br#"{"tag_name":"v4.0.1-rc.1"}"#,
+            br#"{"tag_name":"v4.0.1","draft":true}"#,
+            br#"{"tag_name":"v4.0.1","prerelease":true}"#,
+        ] {
+            let mut calls = 0;
+            let result = fetch_latest_release_with(|_, _| {
+                calls += 1;
+                Ok(release_output(
+                    0,
+                    if calls == 1 {
+                        first
+                    } else {
+                        br#"{"tag_name":"v4.0.1"}"#
+                    },
+                    b"",
+                ))
+            })
+            .unwrap();
+            assert_eq!(calls, 2, "first response: {first:?}");
+            assert_eq!(result.version, "4.0.1");
+        }
+    }
+
+    #[test]
+    fn release_checks_preserve_execution_failures_and_give_actionable_recovery() {
+        let mut calls = 0;
+        let error = fetch_latest_release_with(|_, _| {
+            calls += 1;
+            if calls == 1 {
+                Err(CommandError::NotFound)
+            } else {
+                Err(CommandError::Timeout)
+            }
+        })
+        .unwrap_err();
+        assert_eq!(calls, 2);
+        for expected in [
+            "api.github.com",
+            "not found",
+            "deadline",
+            "No installation files were changed",
+            "sd300 update",
+            RELEASES_PAGE,
+        ] {
+            assert!(error.contains(expected), "{error}");
+        }
+        let rendered = lifecycle_failure_text(&LifecycleResult {
+            action: "update",
+            success: false,
+            current_version: VERSION,
+            target_version: None,
+            install_channel: Some(InstallChannel::PowerShellInstaller),
+            strategy: None,
+            message: error,
+        });
+        assert!(rendered.starts_with("SD-300 update failed: Could not check"));
+        assert!(rendered.contains("Recovery downloads:"));
+        assert!(!rendered.contains("failed safely"));
+    }
+
+    #[test]
+    fn failed_release_transport_never_accepts_stdout_and_bounds_error_details() {
+        let stderr = format!("HTTP 403\u{1b}\r\n{}", "x".repeat(20_000));
+        let error = fetch_latest_release_with(|_, _| {
+            Ok(release_output(
+                1,
+                br#"{"tag_name":"v4.0.1"}"#,
+                stderr.as_bytes(),
+            ))
+        })
+        .unwrap_err();
+        assert!(error.contains("HTTP 403"));
+        assert!(error.len() < 1500);
+        assert!(!error.contains(['\u{1b}', '\r', '\n']));
+        let empty = fetch_latest_release_with(|_, _| Ok(release_output(0, b"", b""))).unwrap_err();
+        assert!(empty.contains("without returning a response"));
+        assert!(!empty.contains("EOF"));
+    }
+
+    #[test]
+    #[ignore = "bounded live GitHub check; explicitly run by native Windows qualification"]
+    fn public_release_check_uses_real_transport_without_candidate_override() {
+        let release = fetch_latest_release_with(|program, args| {
+            run_output(
+                program,
+                args,
+                CommandTimeout::Custom(std::time::Duration::from_secs(20)),
+            )
+        })
+        .expect("The real release transport must execute and return valid public release metadata");
+        assert!(is_worker_release_version(&release.version));
+        println!("Native release check returned {}", release.tag);
     }
 
     #[test]

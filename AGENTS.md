@@ -9,9 +9,9 @@ namespaces. Histories use capture timestamps and preserve missing time buckets. 
 [ADR 0006](docs/adr/0006-v4-sampling-and-terminal-contract.md) and
 [ADR 0007](docs/adr/0007-adaptive-presentation-and-time-buckets.md).
 Every candidate remains unpublished until its accepted gates pass. ADRs 0016/0017
-record the operator-approved 4.0.0-only performance ceilings. All original goals
-are preserved in [Next-version targets](docs/next-version-targets.md) and automatically
-apply to later versions; track responsiveness in #r16 and resources in #r17.
+record the original v4 performance decision; ADR 0018 extends those same ceilings
+to the operator-authorized 4.0.1 updater correction. All original goals remain in
+[Next-version targets](docs/next-version-targets.md) and automatically apply after 4.0.1; track responsiveness in #r16 and resources in #r17.
 
 # AGENTS.md
 
@@ -137,6 +137,13 @@ scripts/build-native-gui.ps1 -Target windows-x86_64 # Release-style GUI build
 The binary is named `sd300` (not `sd-300`). The crates.io package name is `tr300-tui`; use `cargo install tr300-tui` for Cargo installs. The Rust library target is `sd_300`.
 
 ## CLI/TUI/GUI compatibility contract
+
+- Windows managed setup verifies saved user PATH and GUI shortcut/icon before
+  complete success, refreshes the installing PowerShell process, and honors PATH
+  opt-outs. Use the Windows Programs known folder for both install and uninstall,
+  including enterprise redirection. Custom-prefix backup, child installation and
+  rollback paths must agree. Run `scripts/test-managed-windows-discovery.ps1` on
+  both Windows PowerShell 5.1 and PowerShell 7 after changing these contracts.
 
 - Bare `sd300` continues to open the User/Technician chooser. Preserve lifecycle
   commands, mode flags, nine section shortcuts, schema-1 JSON defaults, exit

@@ -6,6 +6,38 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ---
 
+## September 23, 2026 — Reliable update checks
+
+- Behind the scenes: stop the test observer from holding up an input response while it saves diagnostic information. Keep the original timing checks so they measure the app more faithfully.
+
+- Behind the scenes: separate the causes of delayed input responses so the next fix addresses the measured problem. Keep publication on hold while investigating, with the same responsiveness requirements.
+
+- Behind the scenes: save the successful installation checks together with the remaining keyboard-response delays on Intel Mac and one Linux variant. Keep the release on hold until those delays are fixed or explicitly deferred, without discarding failed results.
+
+- Fixed: terminal setup accepts configuration folders linked to another location and preserves those folders during rollback. If a link changes during setup, recovery leaves its new destination alone.
+
+- Behind the scenes: keep the successful Windows installation and Linux terminal-startup results alongside the remaining Mac drawing delay, so publication status reflects the actual checks.
+
+- Behind the scenes: installer tests correctly distinguish an expected failure case from a failed test, keeping release results reliable without hiding real errors.
+
+- Fixed: Linux terminal setup covers fresh home directories and custom fish settings locations, so opening a new shell can find the installed command. Custom installation folders are handled consistently. Existing shell settings and changes made during installation are preserved, with clearer guidance for finding the desktop app.
+
+- Improved: Windows setup checks that the terminal command and desktop app are registered before saying installation is complete. The app follows Windows' configured Start-menu location, including work-computer redirection, and shows its custom icon. Setup refreshes the installing shell, respects requests to leave command search settings alone, handles custom installation folders consistently, and explains which step failed.
+- Clarified: the recommended installers include both the terminal tools and desktop app. The installation guide explains where to find the app on each operating system and how to distinguish command-search problems from an incomplete installation.
+
+- Behind the scenes: preserve the update-fix test results, including the Linux response delays that still need a release decision. Passing Windows upgrade checks are kept separate from the remaining cross-platform performance issue.
+
+- Fixed: update checks correctly read release information containing international characters, try another supported download method when a response is unusable, and report connection or server failures clearly.
+- Improved: update errors explain what failed and where to recover. A failed release check explicitly says that the installation was not changed.
+- Fixed: future major upgrades can verify the new desktop app without mistakenly demanding the older app's internal engine format.
+- Behind the scenes: keep the approved monitoring performance limits for this corrective update while preserving the stricter goals for subsequent work. Add a real online update check to release testing.
+
+- Behind the scenes: record the public release, verified installed app, preserved settings and live website screenshots. Explain the official installer route for older installations and the Windows update-check issue found during the final local check.
+
+- Fixed: Windows background commands now execute reliably, including automatic update checks. Existing affected installations need the official installer once to acquire the corrected updater.
+
+---
+
 ## September 23, 2026 — More trustworthy monitoring
 
 - Behind the scenes: record the owner-approved resource headroom for this release while keeping the original goals as next-release targets. Missing measurements, input/accessibility bugs and failed shutdowns still fail qualification.

@@ -15,9 +15,19 @@ the release-blocking parity invariant.
 The [v4 qualification record](../docs/qualification/v4/README.md) distinguishes
 native tests, resource measurements, installer evidence and physical-device limits.
 The [original next-version goals](../docs/next-version-targets.md) remain binding
-after the operator-approved 4.0.0-only performance exceptions.
+after the operator-approved v4 exceptions, extended to the 4.0.1 updater correction
+by ADR 0018. That correction applies to the GUI update coordinator as well as the
+terminal command; an existing Windows 4.0.0 installation needs the official
+installer once to acquire the corrected updater.
 
 ## Product contract
+
+Managed CLI installation also installs this desktop app and its discovery entry:
+Windows Start > SD-300 (the configured Programs known folder), macOS
+`~/Applications/SD-300.app` (`/Applications` for PKG), and the Linux XDG application
+menu. Windows 4.0.1 verifies shortcut target/icon and persistent user PATH, refreshes
+the installing PowerShell process, and reports the failed stage if setup fails.
+Raw Cargo/source installation remains CLI-only. Installation does not launch the GUI.
 
 - This GUI is additive. Bare `sd300` keeps the existing User/Technician chooser
   and independent Ratatui session; `sd300 gui` launches or focuses this app.

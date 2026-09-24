@@ -15,7 +15,7 @@ $requiredVersion = "0.5.4"
 $requiredTarball = "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz"
 $requiredIntegrity = "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA=="
 $requiredZigHash = "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb"
-$requiredPatchHash = "fae0ae9c7ead8bdb21275ae7506002ba160d902528b26d251bc7bbb4e779fc8e"
+$requiredPatchHash = "8888f02cae3a2154676fd2f1fab275459ab9d501942a30d24538532ae741b121"
 
 if (-not (Test-Path -LiteralPath $sdkRoot -PathType Container)) {
     throw "The project-local Native SDK is missing. Run npm ci in '$gui' first."
@@ -45,23 +45,23 @@ if ($sdkPackage.version -ne $requiredVersion) {
 $files = [ordered]@{
     "src/runtime/frame_profile.zig" = @{
         Pristine = "d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528"
-        Patched = "d719316514e4976b0d48b8b7e8a2549ac6c606428815cb2a05585768f0e210f7"
+        Patched = "443d84663f01d03423eef9b645e748818a5531c07763add12b592fadc30d7252"
     }
     "src/runtime/flow.zig" = @{
         Pristine = "e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78"
-        Patched = "04846249519d3f8fd6cd5f8d0f17e64501247dadedc6a4e264d1eb0ba7051488"
+        Patched = "f584ddb37c6e42aaf466bccf821305497f6a66b58b099a01ad96ec4429002891"
     }
     "src/runtime/gpu_surface_events.zig" = @{
         Pristine = "9ed40fbfb87ec9ad5011815e9d5ab760b8aff270516a2f77eec32e2a66acc439"
-        Patched = "f2d4aa53e0e7b9672b2a3d555c59845b09cf5cc93ba34bdb82614ce792da43af"
+        Patched = "0a236f16201f7486be6db3e4fe216a2eecb9c4d14cb0c6e32ef6e3e75a998290"
     }
     "src/runtime/automation_snapshot.zig" = @{
         Pristine = "5112c477f7032f19f3f2e0ee118215d394271d1fdb9780163ad599c7ee6be0e6"
-        Patched = "848029310701f43626f5acbb34973f9d9439f0dde537c68a235e17405029727c"
+        Patched = "5bf2342771107c2e47796b985bff04e558b0c377e1a85bb7edd36eca910d7cb3"
     }
     "src/automation/snapshot.zig" = @{
         Pristine = "f1e5adaaa62857a7f1411184f9e57413eddb085f201497e37927fc4da0b98a24"
-        Patched = "3f128e758dfcd6fad5cdc1fc929d0a3fdd8cbc7b413dcca3afcaf71eca948f53"
+        Patched = "8c2bc9a6432e09ab90d935f92d9e2474d6e6bb62e5ec7880182b242acfcc9852"
     }
     "src/primitives/canvas/tokens.zig" = @{
         Pristine = "90820897f491d1fad04671ad3ffbfda8cbe0b2fc7804b55f28a21bfd03b6ddae"
@@ -153,7 +153,7 @@ $files = [ordered]@{
     }
     "src/runtime/core.zig" = @{
         Pristine = "47ec8939f1be3be8808360627f26a41135398a5cb52d36c8785414b9b195e193"
-        Patched = "d897d14a9a59ef19dfa5ab720788b7af4bd322206afc09273533a19ed33f6e5b"
+        Patched = "16541e30e483336dc542ff11796ca66deda217bb49479ea8603c6a03eb100f4a"
     }
     "src/runtime/system_services.zig" = @{
         Pristine = "69ed09c968796645c03276f4fa6e7065350a63bf9926070c255d41ab8c09e46e"

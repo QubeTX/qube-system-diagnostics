@@ -31,6 +31,26 @@ pub const MAX_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
 const HELPER_CREATION_FLAGS: u32 =
     winapi::um::winbase::DETACHED_PROCESS | winapi::um::winbase::CREATE_SUSPENDED;
 
+#[cfg(windows)]
+fn helper_creation_flags(program: &OsStr) -> u32 {
+    let name = std::path::Path::new(program)
+        .file_name()
+        .unwrap_or(program)
+        .to_string_lossy();
+    if ["powershell", "powershell.exe", "pwsh", "pwsh.exe"]
+        .iter()
+        .any(|shell| name.eq_ignore_ascii_case(shell))
+    {
+        // Both PowerShell hosts can exit successfully without executing their
+        // command when detached with a null stdin. Give only these hosts a
+        // hidden console; native monitoring workers remain detached. Suspension
+        // still assigns the process tree to our job before any code executes.
+        winapi::um::winbase::CREATE_NO_WINDOW | winapi::um::winbase::CREATE_SUSPENDED
+    } else {
+        HELPER_CREATION_FLAGS
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
     #[error("provider executable was not found")]
@@ -103,7 +123,8 @@ where
     {
         use std::os::windows::process::CommandExt;
         // Assign the job before resuming so even fast descendants are owned.
-        command.creation_flags(HELPER_CREATION_FLAGS);
+        let flags = helper_creation_flags(command.get_program());
+        command.creation_flags(flags);
     }
     let mut child = command.spawn().map_err(classify)?;
     let owned = match OwnedProcess::new(&child) {
@@ -252,7 +273,8 @@ pub fn run_memory_command(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        command.creation_flags(HELPER_CREATION_FLAGS);
+        let flags = helper_creation_flags(command.get_program());
+        command.creation_flags(flags);
     }
     let mut child = command.spawn().map_err(classify)?;
     let owned = match OwnedProcess::new(&child) {
@@ -376,7 +398,8 @@ impl WorkerProcess {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            command.creation_flags(HELPER_CREATION_FLAGS);
+            let flags = helper_creation_flags(command.get_program());
+            command.creation_flags(flags);
         }
         let mut child = command.spawn().map_err(classify)?;
         let owned = match OwnedProcess::new(&child) {
@@ -953,6 +976,48 @@ mod tests {
         assert!(output.status.is_some_and(|s| s.success()));
         assert!(String::from_utf8_lossy(&output.stdout).contains("redirected stdout works"));
         assert!(String::from_utf8_lossy(&output.stderr).contains("redirected stderr works"));
+    }
+    #[cfg(windows)]
+    #[test]
+    fn powershell_hosts_execute_commands_with_null_stdin_and_redirected_output() {
+        let _guard = TEST_PROCESS_GUARD.lock().unwrap_or_else(|p| p.into_inner());
+        for program in ["powershell.exe", "pwsh.exe"] {
+            let args = [
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::Error.WriteLine('stderr-sentinel'); @{executed=$true} | ConvertTo-Json -Compress; exit 17",
+            ];
+            let result = run_checked(
+                program,
+                args,
+                CommandTimeout::Custom(Duration::from_secs(20)),
+                &AtomicBool::new(false),
+            );
+            // Windows PowerShell is part of the supported OS; PowerShell 7 is
+            // optional locally. CI installs both and exercises both hosts.
+            if program == "pwsh.exe" && matches!(result, Err(CommandError::NotFound)) {
+                continue;
+            }
+            let output = result.unwrap();
+            assert_eq!(output.status.code(), Some(17), "{program}: {output:?}");
+            let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(payload["executed"], true, "{program}");
+            assert!(String::from_utf8_lossy(&output.stderr).contains("stderr-sentinel"));
+
+            let output = run_memory(
+                program,
+                args,
+                CommandTimeout::Custom(Duration::from_secs(20)),
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert!(output.failure.is_none(), "{program}: {output:?}");
+            assert_eq!(output.status.and_then(|s| s.code()), Some(17));
+            let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(payload["executed"], true, "{program}");
+            assert!(String::from_utf8_lossy(&output.stderr).contains("stderr-sentinel"));
+        }
     }
     #[cfg(windows)]
     #[test]

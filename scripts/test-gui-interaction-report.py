@@ -33,6 +33,16 @@ frame_profile input_latency_n=2 frame_work_n=4 present_n=3
     def test_missing_measurements_remain_absent(self):
         self.assertEqual(interaction.numeric_observation(""), {"focus": []})
 
+    def test_latency_splits_are_numeric_and_do_not_replace_end_to_end_latency(self):
+        result = interaction.numeric_observation(
+            'gpu_input_latency_ns=650000000 input_dispatch_latest_us=3000 '
+            'input_wait_latest_us=640000 automation_publish_latest_us=600000 '
+            'automation_publish_total_max_us=620000 private_detail="secret"')
+        self.assertEqual(result['gpu_input_latency_ns'], 650000000)
+        self.assertEqual(result['input_wait_latest_us'], 640000)
+        self.assertEqual(result['automation_publish_latest_us'], 600000)
+        self.assertNotIn('secret', str(result))
+
 
 class SnapshotReadTests(unittest.TestCase):
     valid = b"ready=true protocol=7 publisher_pid=27 runtime_uptime_ns=8000 dispatch_errors=0\n"
@@ -71,10 +81,15 @@ class TimingPolicyTests(unittest.TestCase):
             self.assertEqual(result["timing_limits_us"]["frame_p95"], 100000)
 
     def test_future_versions_and_unknown_platforms_keep_original_limits(self):
-        for version, platform in (("4.0.1", "darwin"), ("4.1.0", "win32"), ("4.0.0-rc.1", "linux"), ("4.0.0", "unknown")):
+        for version, platform in (("4.0.2", "darwin"), ("4.1.0", "win32"), ("4.0.0-rc.1", "linux"), ("4.0.0", "unknown")):
             result = interaction.timing_verdict(self.cohorts(), version, platform)
             self.assertFalse(result["timing_passed"])
             self.assertEqual(result["timing_policy"], "original-targets")
+
+    def test_authorized_updater_correction_keeps_the_same_bounded_policy(self):
+        for platform in ("win32", "linux", "darwin"):
+            self.assertTrue(interaction.timing_verdict(self.cohorts(), "4.0.1", platform)["timing_passed"])
+            self.assertFalse(interaction.timing_verdict(self.cohorts(input_latency=100001), "4.0.1", platform)["timing_passed"])
 
     def test_each_release_limit_remains_enforced(self):
         for cohorts in (self.cohorts(frame=100001), self.cohorts(input_latency=100001), self.cohorts(refresh=100001)):

@@ -2,6 +2,35 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [4.0.1] - 2026-09-23
+
+- Defer filesystem-backed automation publication until a pending input's requested GPU frame completes, then enqueue one publication turn. Native profiling attributes large Linux and Intel Mac input delays to snapshot preparation/I/O on the UI thread. Preserve full latency measurements, frame numbering/lifecycle callbacks, command acknowledgment, no-repaint liveness and the non-automation product path. Walk large retained views by reference in the two read-only frame checks, avoiding Debug stack overflow. Retain all six attribution reports; do not label observer interference as an ordinary-release renderer defect.
+
+- Add profiling-only monotonic input-dispatch/frame-wait and automation-publication attribution with bounded latest-sample metadata. Preserve end-to-end latency, original/approved limits and failed results. The operator selected latency correction before publication; this diagnostic cycle does not claim a fix.
+
+- Retain final native shell discovery and six-target timing evidence for efbab9e. Linux passes 24 shell cases; macOS passes 23 with fish skipped. Preserve Intel/musl input-gate failures and bounded delayed-input trace data, while separating successful Windows lifecycle and all-target functional/shutdown checks. Hold publication and local installation pending the explicit gate-owner decision or an attributed GUI correction; do not restart unchanged qualification solely to save evidence.
+
+- Preserve pre-existing symlinked shell-configuration directories by recording their link identity. Reject new or retargeted links before completing profile integration, and skip rollback below changed links instead of touching a replacement target. Add native symlink fixtures for config/fish/conf.d targets and sibling preservation.
+
+- Record the expanded discovery candidate's successful Windows composite matrix and native Linux Bash/fish tests, preserving native timing reports and the Apple Silicon refresh overrun separately from the corrected PowerShell test-wrapper status.
+
+- Report successful Windows discovery fixtures explicitly after expected child failures and cleanup, so GitHub's PowerShell wrapper cannot mistake an intentionally exercised child exit for the test suite's result. Preserve terminating assertion and cleanup failures.
+
+- Repair managed shell command discovery: align custom-prefix resolution with the generated child, prevent a temporary process PATH entry from suppressing persistent setup, create startup integration for a missing Bash rcfile and relocated fish configuration, preserve PATH opt-outs and existing profiles, and track exact additions for rollback without overwriting concurrent edits. Require native Linux fish startup fixtures and exercise a fresh Bash session in the actual Linux composite install lifecycle. Installation completion on every platform now identifies the desktop app as well as the CLI.
+
+- Verify managed Windows CLI PATH and GUI discovery before reporting complete installation. Resolve redirected Programs folders for shortcut creation and uninstall, create missing shortcut parents, verify target/working directory/custom icon, and refresh only the installer process PATH. Honor PATH opt-outs explicitly, align custom-prefix backup and cargo-dist destinations, fix rollback attribution when the bin directory existed only in process PATH, retain the prior Installed Apps icon during rollback, and identify the failed install stage. Add safe real-COM and child-PowerShell regression fixtures on PowerShell 5.1 and 7 and installer-matrix shortcut assertions.
+
+- Retain corrective-release qualification: the complete Windows installer matrix and five native interaction targets pass. Preserve both GNU x86-64 input-timing failures and all eight first/repeat reports, without claiming publication or a waived gate. Document the public-install verification still required.
+
+- Fix Windows automatic release checks end to end: emit UTF-8, fail explicitly on HTTP errors, reject empty/malformed/unusable responses before transport selection, and retain bounded fallback diagnostics. Add a real public-API Windows CI check that cannot use the candidate-release override.
+- Replace vague lifecycle failure headings with the failed operation and recovery downloads while preserving lifecycle JSON schema and exit contracts. Release-check errors state that installation files are unchanged and suggest concrete next actions.
+- Validate a newly installed companion through its stable self-test envelope and its own engine contract, avoiding a repeat of the older-updater ABI rejection on future major upgrades. Retain exact same-version ABI checks and reject failed/wrong-product/wrong-version/unknown-envelope results.
+- Record the operator-authorized corrective release and extend the existing v4 performance ceilings to 4.0.1 only (ADR 0018). Original targets resume for 4.0.2 and later; preserve all prior measurements and their artifact identities.
+
+- Record the immutable 4.0.0 public release, six native lifecycle workflows, exact-asset verification, deployed desktop/TUI screenshots and the actual managed Windows installation. Document the real 3.1.3 ABI-1 rejection and current Windows update-check workaround without claiming those automatic paths passed.
+
+- Launch Windows PowerShell and PowerShell 7 helpers with a hidden console while retaining suspended job assignment, deadlines, output limits and owned-descendant cleanup. Public 4.0.0 verification reproduced successful empty exits under DETACHED_PROCESS, including failed automatic update checks. Native monitoring workers remain detached. Add real-host file/pipe capture and exit-status regression coverage; correction is not in immutable 4.0.0 assets.
+
 ## [4.0.0] - 2026-09-23
 
 - Record the operator-approved 4.0.0-only resource ceilings (4% foreground CPU, 3% hidden CPU, 200 MiB RSS); retain the 300 MiB private-memory limit, original failed verdicts, and all functional gates. Add version-expiring resource assessment and boundary/failure tests. Preserve every original goal for the next version in docs/next-version-targets.md and owned tasks #r16/#r17 (ADR 0017).

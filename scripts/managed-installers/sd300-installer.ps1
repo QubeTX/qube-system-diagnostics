@@ -20,7 +20,7 @@ $Sd300RecoveryUrl = 'https://github.com/QubeTX/qube-system-diagnostics/releases/
 
 if ($Help) {
     Write-Information 'SD-300 managed PowerShell installer'
-    Write-Information 'Installs the latest managed CLI channel and safely supersedes recognized SD-300 MSI/EXE installs.'
+    Write-Information 'Installs the CLI/TUI and desktop app, adds SD-300 to Start, and safely supersedes recognized SD-300 MSI/EXE installs.'
     return
 }
 
@@ -176,10 +176,117 @@ function Get-Sd300ReceiptPath {
 
 function Get-Sd300InstallPrefix {
     if ($env:SD300_INSTALL_DIR) { return [IO.Path]::GetFullPath($env:SD300_INSTALL_DIR) }
+    if ($env:TR300_TUI_INSTALL_DIR) { return [IO.Path]::GetFullPath($env:TR300_TUI_INSTALL_DIR) }
     if ($env:CARGO_DIST_FORCE_INSTALL_DIR) { return [IO.Path]::GetFullPath($env:CARGO_DIST_FORCE_INSTALL_DIR) }
     if ($env:CARGO_HOME) { return [IO.Path]::GetFullPath($env:CARGO_HOME) }
     if (-not $env:USERPROFILE) { throw 'USERPROFILE is unavailable; cannot resolve the managed install prefix' }
     return [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE '.cargo'))
+}
+
+function Get-Sd300GuiShortcut {
+    # Programs can be redirected independently of APPDATA by enterprise policy.
+    $programs = [Environment]::GetFolderPath(
+        [Environment+SpecialFolder]::Programs,
+        [Environment+SpecialFolderOption]::DoNotVerify
+    )
+    if ([string]::IsNullOrWhiteSpace($programs) -or -not [IO.Path]::IsPathRooted($programs)) {
+        throw 'Windows did not provide a Start menu Programs folder for this user'
+    }
+    return Join-Path $programs 'SD-300.lnk'
+}
+
+function Install-Sd300GuiShortcut([string]$Root) {
+    $shortcut = Get-Sd300GuiShortcut
+    $programs = Split-Path -Parent $shortcut
+    $null = New-Item -ItemType Directory -Path $programs -Force
+    if (-not (Test-Path -LiteralPath $programs -PathType Container)) {
+        throw "Windows Start menu Programs location is not a directory: $programs"
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    $link = $shell.CreateShortcut($shortcut)
+    $link.TargetPath = Join-Path $Root 'app\sd300-gui.exe'
+    $link.WorkingDirectory = Join-Path $Root 'app'
+    $link.IconLocation = (Join-Path $Root 'app\assets\app-icon.ico') + ',0'
+    $link.Description = 'SD300 system monitor - open the SD-300 desktop app'
+    $link.Save()
+    Assert-Sd300GuiShortcut $Root
+}
+
+function Assert-Sd300GuiShortcut([string]$Root) {
+    $shortcut = Get-Sd300GuiShortcut
+    if (-not (Test-Path -LiteralPath $shortcut -PathType Leaf)) {
+        throw "Windows Start menu shortcut was not created: $shortcut"
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    $link = $shell.CreateShortcut($shortcut)
+    if ($link.TargetPath -ne (Join-Path $Root 'app\sd300-gui.exe') -or
+        $link.WorkingDirectory -ne (Join-Path $Root 'app') -or
+        $link.IconLocation -ne ((Join-Path $Root 'app\assets\app-icon.ico') + ',0')) {
+        throw "Windows Start menu shortcut does not point to the installed SD-300 app and icon: $shortcut"
+    }
+}
+
+function Test-Sd300ModifyPath {
+    return -not ($NoModifyPath -or $env:TR300_TUI_NO_MODIFY_PATH -or
+        $env:INSTALLER_NO_MODIFY_PATH -or $env:TR300_TUI_UNMANAGED_INSTALL)
+}
+
+function Assert-Sd300ManagedOptions {
+    if ($env:TR300_TUI_UNMANAGED_INSTALL) {
+        throw 'TR300_TUI_UNMANAGED_INSTALL disables the receipt required for a managed CLI+GUI installation. Remove that setting to use this installer, or use a raw CLI archive for an unmanaged installation.'
+    }
+}
+
+function Test-Sd300PathContains([string]$Value, [string]$Directory) {
+    foreach ($entry in ($Value -split ';')) {
+        $expanded = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"'))
+        if ([string]::IsNullOrWhiteSpace($expanded)) { continue }
+        try {
+            if ([IO.Path]::IsPathRooted($expanded) -and
+                [IO.Path]::GetFullPath($expanded).TrimEnd('\').Equals(
+                    [IO.Path]::GetFullPath($Directory).TrimEnd('\'),
+                    [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        } catch { continue }
+    }
+    return $false
+}
+
+function Assert-Sd300PersistentPath([string]$Binary) {
+    if (-not (Test-Sd300ModifyPath)) { return }
+    $directory = Split-Path -Parent $Binary
+    $pathState = Get-Sd300UserPathState
+    if (-not (Test-Sd300PathContains ([string]$pathState.PathValue) $directory)) {
+        throw "The CLI was copied but its folder was not added to your persistent user PATH: $directory. Check Windows user-environment permissions or your organization's application policy."
+    }
+}
+
+function Update-Sd300SessionPath([string]$Binary) {
+    if ((Test-Sd300ModifyPath) -and
+        -not (Test-Sd300PathContains $env:Path (Split-Path -Parent $Binary))) {
+        # The cargo-dist child cannot update this PowerShell process. Preserve
+        # its other entries instead of rebuilding PATH from the registry.
+        $env:Path = (Split-Path -Parent $Binary) + ';' + $env:Path
+    }
+}
+
+function Invoke-Sd300DistInstaller([string]$Script) {
+    $launcher = if ($PSVersionTable.PSEdition -eq 'Core') {
+        Join-Path $PSHOME 'pwsh.exe'
+    } else {
+        Join-Path $PSHOME 'powershell.exe'
+    }
+    $childArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $Script)
+    if (-not (Test-Sd300ModifyPath)) { $childArgs += '-NoModifyPath' }
+    $priorPrefix = $env:TR300_TUI_INSTALL_DIR
+    try {
+        # Keep cargo-dist's destination identical to the wrapper's backup and
+        # rollback destination, including the public SD300_INSTALL_DIR override.
+        $env:TR300_TUI_INSTALL_DIR = Get-Sd300InstallPrefix
+        & $launcher @childArgs
+        if ($LASTEXITCODE -ne 0) { throw "CLI installer exited with code $LASTEXITCODE" }
+    } finally {
+        $env:TR300_TUI_INSTALL_DIR = $priorPrefix
+    }
 }
 
 function Get-Sd300GuiRoot {
@@ -387,14 +494,7 @@ function Install-Sd300GuiPayload([string]$StagedRoot, [string]$CliBinary) {
         [Text.UTF8Encoding]::new($false)
     )
 
-    $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
-    $shortcut = Join-Path $programs 'SD-300.lnk'
-    $shell = New-Object -ComObject WScript.Shell
-    $link = $shell.CreateShortcut($shortcut)
-    $link.TargetPath = Join-Path $root 'app\sd300-gui.exe'
-    $link.WorkingDirectory = Join-Path $root 'app'
-    $link.Description = 'Open the SD-300 native system monitor'
-    $link.Save()
+    Install-Sd300GuiShortcut $root
 
     $uninstallKey = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Uninstall\SD-300-Managed'
     $null = New-Item -Path $uninstallKey -Force
@@ -455,7 +555,7 @@ function Save-Sd300ManagedState([string]$BackupRoot, [object[]]$NativeProducts) 
     if ($guiRootExisted) {
         Copy-Item -LiteralPath $guiRoot -Destination $guiBackup -Recurse
     }
-    $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\SD-300.lnk'
+    $shortcut = Get-Sd300GuiShortcut
     $shortcutExisted = Test-Path -LiteralPath $shortcut -PathType Leaf
     $shortcutBackup = Join-Path $BackupRoot 'SD-300.lnk'
     if ($shortcutExisted) {
@@ -470,6 +570,7 @@ function Save-Sd300ManagedState([string]$BackupRoot, [object[]]$NativeProducts) 
             DisplayVersion = [string]$property.DisplayVersion
             Publisher = [string]$property.Publisher
             InstallLocation = [string]$property.InstallLocation
+            DisplayIcon = [string]$property.DisplayIcon
             UninstallString = [string]$property.UninstallString
             NoModify = [int]$property.NoModify
             NoRepair = [int]$property.NoRepair
@@ -479,12 +580,7 @@ function Save-Sd300ManagedState([string]$BackupRoot, [object[]]$NativeProducts) 
     }
 
     $userPathState = Get-Sd300UserPathState
-    $ownedBin = Join-Path (Get-Sd300InstallPrefix) 'bin'
-    $pathMutationAllowed = -not ($NoModifyPath -or
-        $env:TR300_TUI_NO_MODIFY_PATH -or
-        $env:INSTALLER_NO_MODIFY_PATH -or
-        $env:TR300_TUI_UNMANAGED_INSTALL -or
-        ($ownedBin -in @([string]$env:Path -split ';' -ne '')))
+    $pathMutationAllowed = Test-Sd300ModifyPath
 
     $githubPath = if ([string]::IsNullOrWhiteSpace($env:GITHUB_PATH)) {
         $null
@@ -883,6 +979,9 @@ function Restore-Sd300ManagedState($State) {
         New-ItemProperty -Path $State.UninstallKey -Name DisplayVersion -Value $State.UninstallProperties.DisplayVersion -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $State.UninstallKey -Name Publisher -Value $State.UninstallProperties.Publisher -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $State.UninstallKey -Name InstallLocation -Value $State.UninstallProperties.InstallLocation -PropertyType String -Force | Out-Null
+        if ($State.UninstallProperties.DisplayIcon) {
+            New-ItemProperty -Path $State.UninstallKey -Name DisplayIcon -Value $State.UninstallProperties.DisplayIcon -PropertyType String -Force | Out-Null
+        }
         New-ItemProperty -Path $State.UninstallKey -Name UninstallString -Value $State.UninstallProperties.UninstallString -PropertyType String -Force | Out-Null
         New-ItemProperty -Path $State.UninstallKey -Name NoModify -Value $State.UninstallProperties.NoModify -PropertyType DWord -Force | Out-Null
         New-ItemProperty -Path $State.UninstallKey -Name NoRepair -Value $State.UninstallProperties.NoRepair -PropertyType DWord -Force | Out-Null
@@ -945,7 +1044,9 @@ $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("sd300-managed-install-" + [gu
 $managedState = $null
 $transactionStarted = $false
 $committed = $false
+$installStage = 'preparing the installation'
 try {
+    Assert-Sd300ManagedOptions
     $null = New-Item -ItemType Directory -Path $tempRoot -Force
     $native = @(Get-Sd300NativeProducts)
     $distInstaller = Join-Path $tempRoot 'sd300-dist-installer.ps1'
@@ -962,11 +1063,13 @@ try {
         $null
     }
     if ($token) { $headers.Authorization = "Bearer $token" }
+    $installStage = 'downloading and verifying the CLI installer'
     $distSidecar = "$distInstaller.sha256"
     Get-Sd300ReleaseFile 'sd300-dist-installer.ps1' $distInstaller $headers
     Get-Sd300ReleaseFile 'sd300-dist-installer.ps1.sha256' $distSidecar $headers
     Assert-Sd300Sha256 $distInstaller $distSidecar
 
+    $installStage = 'downloading and verifying the desktop app'
     $guiArchive = Join-Path $tempRoot 'sd300-gui-windows-x86_64.zip'
     $guiSidecar = "$guiArchive.sha256"
     Get-Sd300ReleaseFile 'sd300-gui-windows-x86_64.zip' $guiArchive $headers
@@ -974,28 +1077,23 @@ try {
     Assert-Sd300Sha256 $guiArchive $guiSidecar
     $guiStage = Join-Path $tempRoot 'gui-payload'
     $null = Expand-Sd300GuiPayload $guiArchive $guiStage
+    $installStage = 'testing the downloaded desktop app and engine'
     Test-Sd300GuiPayload $guiStage
 
+    $installStage = 'saving the existing installation and application registration'
     $managedState = Save-Sd300ManagedState $tempRoot $native
     $ownedGuiRoots = @($managedState.GuiRoot) + @($native | ForEach-Object { $_.Root })
     Stop-Sd300OwnedGui $ownedGuiRoots
 
     $transactionStarted = $true
-    $launcher = if ($PSVersionTable.PSEdition -eq 'Core') {
-        Join-Path $PSHOME 'pwsh.exe'
-    } else {
-        Join-Path $PSHOME 'powershell.exe'
-    }
-    $childArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $distInstaller)
-    if ($NoModifyPath) { $childArgs += '-NoModifyPath' }
-    & $launcher @childArgs
-    $distExitCode = $LASTEXITCODE
-    Set-Sd300ManagedWrittenState $managedState
-    if ($distExitCode -ne 0) {
-        throw "cargo-dist installation exited with code $distExitCode"
-    }
+    $installStage = 'installing the CLI and saving its PATH entry'
+    try { Invoke-Sd300DistInstaller $distInstaller }
+    finally { Set-Sd300ManagedWrittenState $managedState }
 
+    $installStage = 'verifying the installed CLI and persistent PATH'
     $binary = Get-Sd300ManagedBinary
+    Assert-Sd300PersistentPath $binary
+    $installStage = 'transferring existing native installer ownership'
     foreach ($product in $native) {
         Remove-Sd300NativeProduct $product
     }
@@ -1004,6 +1102,7 @@ try {
         throw "native installer takeover is incomplete: $($remaining.Channel -join ', ') remains registered"
     }
 
+    $installStage = 'installing the desktop app and registering it in Windows Start'
     Install-Sd300GuiPayload $guiStage $binary
 
     if ($native.Count -gt 0) {
@@ -1022,19 +1121,37 @@ try {
             Remove-Item -LiteralPath $priorBinary -Force -ErrorAction Stop
         }
     }
+    $installStage = 'verifying the complete CLI, desktop app and Start menu registration'
+    $null = Get-Sd300ManagedBinary
+    Assert-Sd300PersistentPath $binary
     Test-Sd300GuiPayload (Join-Path (Get-Sd300GuiRoot) 'app')
+    Assert-Sd300GuiShortcut (Get-Sd300GuiRoot)
+    Update-Sd300SessionPath $binary
     $committed = $true
-    Write-Information "SD-300 $Sd300Version is installed through the managed PowerShell channel: $binary"
+    Write-Information "SD-300 $Sd300Version installation complete (CLI/TUI and desktop app)."
+    Write-Information "CLI: $binary"
+    Write-Information "Desktop app: Start > SD-300, or run sd300 gui."
+    Write-Information "Start menu shortcut: $(Get-Sd300GuiShortcut)"
+    if (Test-Sd300ModifyPath) {
+        Write-Information 'PATH verified for this user and refreshed in this PowerShell process. Other open terminal apps may need a full restart.'
+    } else {
+        Write-Information 'PATH changes were disabled by an installer option or environment setting; invoke the CLI by its full path.'
+    }
 } catch {
     $failure = $_.Exception.Message
+    $rollback = 'Installation files were not changed.'
     if ($transactionStarted -and -not $committed -and $managedState) {
         try {
             Restore-Sd300ManagedState $managedState
+            $rollback = 'The previous managed files were restored where safe; review any rollback warnings above.'
         } catch {
             $failure += "; restoring the prior managed/Cargo path also failed: $($_.Exception.Message)"
+            $rollback = 'Restoration was incomplete. Keep this error output for recovery.'
         }
     }
-    [Console]::Error.WriteLine("SD-300 managed install failed safely: $failure")
+    [Console]::Error.WriteLine("SD-300 installation failed while ${installStage}: $failure")
+    [Console]::Error.WriteLine($rollback)
+    [Console]::Error.WriteLine('On a managed work computer, ask IT to check application-control or quarantine events for the named file or operation. This error alone does not identify a security product as the cause.')
     [Console]::Error.WriteLine("Download a fresh installer: $Sd300RecoveryUrl")
     exit 1
 } finally {
