@@ -1,6 +1,6 @@
 {
   "name": "@qubetx/sd300-native-gui",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "private": true,
   "scripts": {
     "prepare:font": "node ../scripts/prepare-gui-fonts.mjs",

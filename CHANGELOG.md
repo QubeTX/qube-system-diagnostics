@@ -2,6 +2,12 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [4.0.2] - 2026-09-24
+
+- Record the operator-authorized EULA-only performance exception (ADR 0021). Keep numeric thresholds and failed timing reports unchanged; separately accept complete functional interaction/shutdown evidence for exactly 4.0.2. Retain the exact-candidate CI publication barrier and all installer/signing/integrity checks.
+
+- Replace the WiX placeholder EULA in Global and Corporate MSI installers with the complete PolyForm Noncommercial 1.0.0 license generated from LICENSE.md. Check source parity and the embedded LicenseAgreementDlg text during Windows packaging; preserve the acceptance checkbox and navigation.
+
 ## [4.0.1] - 2026-09-23
 
 - Close v4 and corrective-update delivery records after the explicit refresh acceptance, deployed installation-method guidance (website #19), and validated CI request correction (#13). The complete hosted Windows core job returns real public v4.0.1 metadata with the scoped test token; the installed public CLI separately passes an anonymous already-current check. Preserve the historical 403's unknown cause and distinguish this focused verification from the routine ongoing GUI rerun.

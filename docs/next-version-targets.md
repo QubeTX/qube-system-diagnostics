@@ -8,6 +8,8 @@ Owner: Codex; progress is tracked by #r16 (responsiveness), #r17 (resources),
 and the existing physical-device/accessibility tasks. This document does not
 claim that every target has already been achieved.
 
+ADR 0021 separately authorizes nonblocking performance evidence for the EULA-only 4.0.2 release. Numeric targets and failed benchmark verdicts stay unchanged; the exception expires after exactly 4.0.2. Codex retains #r16/#r17 as the owned follow-up.
+
 ## Performance acceptance
 
 | Measurement | Original target, restored after 4.0.1 | Temporary 4.0.0 / 4.0.1 ceiling |
