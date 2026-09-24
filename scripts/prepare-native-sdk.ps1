@@ -15,7 +15,7 @@ $requiredVersion = "0.5.4"
 $requiredTarball = "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz"
 $requiredIntegrity = "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA=="
 $requiredZigHash = "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb"
-$requiredPatchHash = "bda9fc7bcc880f90c483cfa345a3e7ee0666c6935bf6504dc9ed157b0ec58973"
+$requiredPatchHash = "8888f02cae3a2154676fd2f1fab275459ab9d501942a30d24538532ae741b121"
 
 if (-not (Test-Path -LiteralPath $sdkRoot -PathType Container)) {
     throw "The project-local Native SDK is missing. Run npm ci in '$gui' first."
@@ -49,11 +49,11 @@ $files = [ordered]@{
     }
     "src/runtime/flow.zig" = @{
         Pristine = "e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78"
-        Patched = "b95268d2c7d2614e37701eebfe580c58f64141c673018b259b14756471cb1a09"
+        Patched = "f584ddb37c6e42aaf466bccf821305497f6a66b58b099a01ad96ec4429002891"
     }
     "src/runtime/gpu_surface_events.zig" = @{
         Pristine = "9ed40fbfb87ec9ad5011815e9d5ab760b8aff270516a2f77eec32e2a66acc439"
-        Patched = "bd91e508a890abe9c8075a77f352f0dea0268b5682156270e1d4b5834c580230"
+        Patched = "0a236f16201f7486be6db3e4fe216a2eecb9c4d14cb0c6e32ef6e3e75a998290"
     }
     "src/runtime/automation_snapshot.zig" = @{
         Pristine = "5112c477f7032f19f3f2e0ee118215d394271d1fdb9780163ad599c7ee6be0e6"
@@ -153,7 +153,7 @@ $files = [ordered]@{
     }
     "src/runtime/core.zig" = @{
         Pristine = "47ec8939f1be3be8808360627f26a41135398a5cb52d36c8785414b9b195e193"
-        Patched = "d897d14a9a59ef19dfa5ab720788b7af4bd322206afc09273533a19ed33f6e5b"
+        Patched = "16541e30e483336dc542ff11796ca66deda217bb49479ea8603c6a03eb100f4a"
     }
     "src/runtime/system_services.zig" = @{
         Pristine = "69ed09c968796645c03276f4fa6e7065350a63bf9926070c255d41ab8c09e46e"

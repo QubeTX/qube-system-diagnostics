@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.1] - 2026-09-23
 
+- Defer filesystem-backed automation publication until a pending input's requested GPU frame completes, then enqueue one publication turn. Native profiling attributes large Linux and Intel Mac input delays to snapshot preparation/I/O on the UI thread. Preserve full latency measurements, frame numbering/lifecycle callbacks, command acknowledgment, no-repaint liveness and the non-automation product path. Walk large retained views by reference in the two read-only frame checks, avoiding Debug stack overflow. Retain all six attribution reports; do not label observer interference as an ordinary-release renderer defect.
+
 - Add profiling-only monotonic input-dispatch/frame-wait and automation-publication attribution with bounded latest-sample metadata. Preserve end-to-end latency, original/approved limits and failed results. The operator selected latency correction before publication; this diagnostic cycle does not claim a fix.
 
 - Retain final native shell discovery and six-target timing evidence for efbab9e. Linux passes 24 shell cases; macOS passes 23 with fish skipped. Preserve Intel/musl input-gate failures and bounded delayed-input trace data, while separating successful Windows lifecycle and all-target functional/shutdown checks. Hold publication and local installation pending the explicit gate-owner decision or an attributed GUI correction; do not restart unchanged qualification solely to save evidence.

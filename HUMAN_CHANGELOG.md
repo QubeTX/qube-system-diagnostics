@@ -8,6 +8,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## September 23, 2026 — Reliable update checks
 
+- Behind the scenes: stop the test observer from holding up an input response while it saves diagnostic information. Keep the original timing checks so they measure the app more faithfully.
+
 - Behind the scenes: separate the causes of delayed input responses so the next fix addresses the measured problem. Keep publication on hold while investigating, with the same responsiveness requirements.
 
 - Behind the scenes: save the successful installation checks together with the remaining keyboard-response delays on Intel Mac and one Linux variant. Keep the release on hold until those delays are fixed or explicitly deferred, without discarding failed results.
