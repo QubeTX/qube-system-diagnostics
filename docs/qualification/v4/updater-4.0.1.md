@@ -170,6 +170,48 @@ the corrective-release scope; all original future targets remain in
 
 ## Public and local verification
 
+### Final discovery candidate: efbab9e
+
+[CI 36037699515](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36037699515)
+finishes with all root Windows/macOS/Linux jobs, security and packaging plan
+passing. Native Ubuntu runs **24/24** shell discovery/rollback cases, including
+real fish and all five directory-symlink cases. Native macOS runs 24 cases with
+23 passing and only fish skipped. Both hosted PowerShell runtimes pass the 33
+Windows discovery assertions and return successful suite status. The expanded
+Windows composite lifecycle remains qualified by run `36034296828`; the final
+follow-up changes no Windows product or installer source.
+
+All six native GUI targets complete their functional checks and clean shutdown.
+Final timing results below use the approved 100 ms ceilings; an input or refresh
+failure still fails qualification. The complete retained report is
+[native-interaction-discovery-efbab9e.json](native-interaction-discovery-efbab9e.json).
+
+| Target | Worst input p95 | Worst frame p95 | Worst ordinary refresh | Timing verdict |
+| --- | ---: | ---: | ---: | --- |
+| Windows x86-64 | 44.093 ms | 18.447 ms | 7.171 ms | Pass |
+| macOS Apple Silicon | 35.990 ms | 34.232 ms | 97.786 ms | Pass |
+| macOS Intel | 104.133 ms | 50.630 ms | 23.001 ms | Fail: input |
+| Linux GNU x86-64 | 37.222 ms | 23.341 ms | 8.993 ms | Pass |
+| Linux GNU ARM64 | 27.113 ms | 17.656 ms | 6.224 ms | Pass |
+| Linux musl x86-64 | 498.065 ms | 16.956 ms | 4.852 ms | Fail: input |
+
+The musl wide Technician keyboard trace contains six consecutive delayed inputs
+with latencies from 115.605 to 666.377 ms; each advances the input count exactly
+once. Runtime-uptime and frame deltas corroborate a real response delay rather
+than a percentile arithmetic error. The affected cohort's frame p95 is 7.608 ms
+and maximum synchronous frame work is 10.488 ms. Attribution to event scheduling,
+collector contention or runner load remains unproved. Do not label it runner
+noise, change the measurement interval, or run a third blind repetition.
+
+The earlier Mac-only exception question is superseded by the final Intel/musl
+measurements. An explicit owner decision is pending between publishing this
+installer/updater correction with documented GUI timing deferrals and holding
+publication for a separate GUI latency fix. Existing publication authorization
+does not waive the numeric gate. The production release and local installation
+remain immutable 4.0.0; website PR #18 remains held. The final evidence is saved on
+`codex/sd300-401-qualification-evidence` without starting another unchanged GUI CI
+run on product PR #11.
+
 Pending publication, exact public asset/checksum/attestation checks, real
 production update checks, same-owner local installation with settings
 preservation, and production website verification. No candidate binary is

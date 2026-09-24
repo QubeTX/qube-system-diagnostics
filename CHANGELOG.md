@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.1] - 2026-09-23
 
+- Retain final native shell discovery and six-target timing evidence for efbab9e. Linux passes 24 shell cases; macOS passes 23 with fish skipped. Preserve Intel/musl input-gate failures and bounded delayed-input trace data, while separating successful Windows lifecycle and all-target functional/shutdown checks. Hold publication and local installation pending the explicit gate-owner decision or an attributed GUI correction; do not restart unchanged qualification solely to save evidence.
+
 - Preserve pre-existing symlinked shell-configuration directories by recording their link identity. Reject new or retargeted links before completing profile integration, and skip rollback below changed links instead of touching a replacement target. Add native symlink fixtures for config/fish/conf.d targets and sibling preservation.
 
 - Record the expanded discovery candidate's successful Windows composite matrix and native Linux Bash/fish tests, preserving native timing reports and the Apple Silicon refresh overrun separately from the corrected PowerShell test-wrapper status.

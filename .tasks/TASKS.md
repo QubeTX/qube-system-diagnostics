@@ -15,7 +15,7 @@
 ## To-Do
 
 ## Active
-- [ ] **Correct Windows update and installer discovery failures** - expanded Windows composite matrix and native Linux shell/GUI checks pass; test-only PowerShell exit-status correction validated. Preserve Mac refresh/input timing overruns while qualifying the follow-up before publication/local installation (owner codex) #p4h
+- [ ] **Correct Windows update and installer discovery failures** - Windows composite and native Linux/macOS shell discovery checks pass. Final GUI timing fails Intel input p95 104.133 ms and musl 498.065 ms; all input-completion/shutdown checks pass. Await explicit timing deferral or separate GUI fix before publication/local installation (owner codex) #p4h
 - [ ] **Implement and qualify SD-300 v4 monitoring** - PUBLIC 4.0.0 with screenshots and local installation verified; final automatic-update defect and corrective-release decision tracked in #p4h (ms #v4m) (owner codex) #v4a
   - [x] Correct measurement semantics, sampling metadata, and histories
   - [x] Isolate slow probes and bound cancellation, output, and shutdown
