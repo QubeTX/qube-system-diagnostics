@@ -6,6 +6,10 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ---
 
+## Upcoming — Correct Windows installer license
+
+- The Windows setup license page now shows the actual noncommercial license instead of placeholder text, in both installer editions. The license terms themselves are unchanged.
+
 ## September 23, 2026 — Reliable update checks
 
 - Behind the scenes: finish the release records after the accepted Mac timing result, clearer live installation guide and successful Windows update checks on both the test service and the installed app. Keep the original measurements and future improvement goals available.

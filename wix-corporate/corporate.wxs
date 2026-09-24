@@ -479,6 +479,9 @@
 
         </UI>
 
+        <!-- Generated from LICENSE.md; shared by both MSI editions. -->
+        <WixVariable Id='WixUILicenseRtf' Value='wix\License.rtf'/>
+
     </Product>
 
 </Wix>

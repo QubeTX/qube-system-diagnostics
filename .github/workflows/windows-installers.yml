@@ -185,6 +185,8 @@ jobs:
       - name: Build Global and Corporate MSI
         shell: pwsh
         run: |
+          node scripts/render-msi-license.mjs --check
+          if ($LASTEXITCODE -ne 0) { throw "MSI license differs from LICENSE.md" }
           $candle = "$env:WIX\bin\candle.exe"
           $light = "$env:WIX\bin\light.exe"
           if (-not (Test-Path $candle) -or -not (Test-Path $light)) { throw 'WiX 3 is unavailable' }
@@ -204,6 +206,7 @@ jobs:
               -out "target\native\sd300-windows-x64-$($definition.Stem).msi" `
               "target\native\$($definition.Stem).wixobj"
             if ($LASTEXITCODE -ne 0) { throw "light failed for $($definition.Stem)" }
+            scripts/check-msi-license.ps1 -MsiPath "target\native\sd300-windows-x64-$($definition.Stem).msi"
           }
 
       - name: Build Global and Corporate EXE
