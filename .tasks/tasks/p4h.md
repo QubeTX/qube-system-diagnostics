@@ -19,7 +19,7 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 ## Verification
 
 - [x] Reproduce failure on immutable public 4.0.0 and isolate both PowerShell hosts with direct launch-flag comparison
-- [x] Root suite: 231 library tests, eight CLI compatibility tests and three worker integration tests pass; child-only/native opt-in fixtures retain documented skips
+- [x] Root suite: 235 library tests, eight CLI compatibility tests and three worker integration tests pass; child-only/native opt-in fixtures retain documented skips
 - [x] Separate engine suite: 17 tests pass; formatting and clippy pass
 - [x] Real PowerShell 5.1/7 file and pipe capture, command execution and nonzero exits pass after correction
 - [ ] Hosted qualification of the correction
@@ -31,6 +31,14 @@ Real PowerShell commands execute with redirected handles, retain output/exit cod
 ACTIVE, owner Codex. Source correction prepared after public 4.0.0 verification. User's installed CLI/GUI/engine match public artifacts, the GUI launches, and settings are preserved. The correction is authorized and being qualified as 4.0.1. It is not installed locally or published yet; the actual public copy remains 4.0.0.
 
 ## Activity
+
+- 2026-09-23 — codex: musl attempt 2 PASSES (worst input p95 34.714 ms), leaving only GNU x86-64 input timing unresolved. Verified repeat reports by artifact ID 10786419374 (musl) and 10786918994 (GNU); downloading by shared artifact name can return the prior attempt. Both first and repeat results remain saved, and no third blind repeat is scheduled. Publication still awaits the specific gate decision or a demonstrated fix.
+
+- 2026-09-23 — codex: unchanged-candidate GNU repeat reproduces the input failure (875.864 ms wide Technician navigation; 450.717 ms compact navigation; 425.557 ms compact keyboard). Frame p95 stays at or below 18.361 ms, refresh at or below 8.464 ms, expected inputs complete and shutdown is clean. Saved the second report and stopped the retry loop. Requested the gate owner's explicit choice between holding for separate Linux GUI work and shipping this fully qualified Windows updater correction with the Linux failure documented. No exception is assumed and publication remains held; musl's existing repeat continues. Read-only follow-up is checking GTK frame scheduling and automation observation paths without modifying the pinned SDK cache.
+
+- 2026-09-23 — codex: Windows composite qualification 35944422700 PASSED in full, including immutable v2 transitions, legacy rollback/commit and managed completion. Both macOS architectures and Windows/GNU ARM64 native CI pass. First-pass GNU x86-64 input p95 is 117.463 ms; musl has one 198.642 ms navigation cohort, with other input cohorts at or below 31.215 ms, frame p95 at or below 20.374 ms, refresh maximum at or below 6.099 ms and clean shutdown. Both failed reports/logs are retained. Requested one fresh-runner repeat of only these two failed jobs on unchanged d8a6f87 (CI 35944427064 attempt 2). No release or product code change has been made to conceal their verdicts.
+
+- 2026-09-23 — codex: d8a6f87 local release GUI build, strict/native tests and live self-test pass (4.0.1, ABI/schema 2); real GitHub release transport also passes on hosted Windows. CI 35944427064 passes root Windows/macOS/Linux, security, dist plan, Windows GUI and GNU ARM64 GUI. GNU x86-64 retains a 117.463 ms navigation-input p95 failure at compact Technician size; frame work and refresh gates pass with clean shutdown. Saved its report and job log before any retry. Next falsifiable check is one unchanged-candidate fresh-runner repeat after the remaining native jobs finish; do not alter rendering or relax the accepted 100 ms gate. Windows lifecycle 35944422700 has passed initial installs and reached immutable-v2 transitions. Website PR #18 is validated and held for actual publication.
 
 - 2026-09-23 — codex: 4.0.1 passes 235 library tests, eight CLI tests, three real worker tests, 17 engine tests, formatting/clippy, release build, package dry-run, eight resource-policy and eleven interaction-policy fixtures. Live public release transport now returns v4.0.0 correctly. A stale local npm SDK copy failed the reviewed hash guard; restored it through locked npm ci, with no pin or cache edits, and restarted native tests. The preceding 161799b CI passes Windows/GNU/Apple Silicon but retains Intel and musl input-timing failures; preserve reports and use the new exact candidate as the next native oracle rather than changing unrelated rendering.
 

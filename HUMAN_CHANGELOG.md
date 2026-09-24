@@ -1,5 +1,7 @@
 # Human Changelog
 
+- Behind the scenes: preserve the update-fix test results, including the Linux response delays that still need a release decision. Passing Windows upgrade checks are kept separate from the remaining cross-platform performance issue.
+
 A plain-English companion to [CHANGELOG.md](./CHANGELOG.md). It explains what changed and why without requiring release-engineering or code knowledge.
 
 The newest section describes the monitoring update and the evidence behind it.

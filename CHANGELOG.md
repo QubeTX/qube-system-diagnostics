@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.1] - 2026-09-23
 
+- Retain corrective-release qualification: the complete Windows installer matrix and five native interaction targets pass. Preserve both GNU x86-64 input-timing failures and all eight first/repeat reports, without claiming publication or a waived gate. Document the public-install verification still required.
+
 - Fix Windows automatic release checks end to end: emit UTF-8, fail explicitly on HTTP errors, reject empty/malformed/unusable responses before transport selection, and retain bounded fallback diagnostics. Add a real public-API Windows CI check that cannot use the candidate-release override.
 - Replace vague lifecycle failure headings with the failed operation and recovery downloads while preserving lifecycle JSON schema and exit contracts. Release-check errors state that installation files are unchanged and suggest concrete next actions.
 - Validate a newly installed companion through its stable self-test envelope and its own engine contract, avoiding a repeat of the older-updater ABI rejection on future major upgrades. Retain exact same-version ABI checks and reject failed/wrong-product/wrong-version/unknown-envelope results.

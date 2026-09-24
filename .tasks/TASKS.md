@@ -15,7 +15,7 @@
 ## To-Do
 
 ## Active
-- [ ] **Correct silent Windows PowerShell helper exits** - operator-authorized 4.0.1 correction covers PowerShell launch, UTF-8, valid-response fallback, actionable errors and future engine upgrades; qualifying before publication and local installation (owner codex) #p4h
+- [ ] **Correct silent Windows PowerShell helper exits** - 4.0.1 source fix and complete Windows lifecycle pass; five native interaction targets pass, with repeated GNU x86-64 input delays awaiting the release-gate owner's decision before publication/local installation (owner codex) #p4h
 - [ ] **Implement and qualify SD-300 v4 monitoring** - PUBLIC 4.0.0 with screenshots and local installation verified; final automatic-update defect and corrective-release decision tracked in #p4h (ms #v4m) (owner codex) #v4a
   - [x] Correct measurement semantics, sampling metadata, and histories
   - [x] Isolate slow probes and bound cancellation, output, and shutdown
