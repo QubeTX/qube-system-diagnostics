@@ -17,15 +17,15 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "fae0ae9c7ead8bdb21275ae7506002ba160d902528b26d251bc7bbb4e779fc8e",
+  patchHash: "bda9fc7bcc880f90c483cfa345a3e7ee0666c6935bf6504dc9ed157b0ec58973",
 };
 
 const files = new Map([
-  ["src/runtime/frame_profile.zig", ["d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528", "d719316514e4976b0d48b8b7e8a2549ac6c606428815cb2a05585768f0e210f7"]],
-  ["src/runtime/flow.zig", ["e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78", "04846249519d3f8fd6cd5f8d0f17e64501247dadedc6a4e264d1eb0ba7051488"]],
-  ["src/runtime/gpu_surface_events.zig", ["9ed40fbfb87ec9ad5011815e9d5ab760b8aff270516a2f77eec32e2a66acc439", "f2d4aa53e0e7b9672b2a3d555c59845b09cf5cc93ba34bdb82614ce792da43af"]],
-  ["src/runtime/automation_snapshot.zig", ["5112c477f7032f19f3f2e0ee118215d394271d1fdb9780163ad599c7ee6be0e6", "848029310701f43626f5acbb34973f9d9439f0dde537c68a235e17405029727c"]],
-  ["src/automation/snapshot.zig", ["f1e5adaaa62857a7f1411184f9e57413eddb085f201497e37927fc4da0b98a24", "3f128e758dfcd6fad5cdc1fc929d0a3fdd8cbc7b413dcca3afcaf71eca948f53"]],
+  ["src/runtime/frame_profile.zig", ["d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528", "443d84663f01d03423eef9b645e748818a5531c07763add12b592fadc30d7252"]],
+  ["src/runtime/flow.zig", ["e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78", "b95268d2c7d2614e37701eebfe580c58f64141c673018b259b14756471cb1a09"]],
+  ["src/runtime/gpu_surface_events.zig", ["9ed40fbfb87ec9ad5011815e9d5ab760b8aff270516a2f77eec32e2a66acc439", "bd91e508a890abe9c8075a77f352f0dea0268b5682156270e1d4b5834c580230"]],
+  ["src/runtime/automation_snapshot.zig", ["5112c477f7032f19f3f2e0ee118215d394271d1fdb9780163ad599c7ee6be0e6", "5bf2342771107c2e47796b985bff04e558b0c377e1a85bb7edd36eca910d7cb3"]],
+  ["src/automation/snapshot.zig", ["f1e5adaaa62857a7f1411184f9e57413eddb085f201497e37927fc4da0b98a24", "8c2bc9a6432e09ab90d935f92d9e2474d6e6bb62e5ec7880182b242acfcc9852"]],
   ["src/primitives/canvas/tokens.zig", ["90820897f491d1fad04671ad3ffbfda8cbe0b2fc7804b55f28a21bfd03b6ddae", "128682905eee9f7d5e09093693dc1e832ecff9bc2c3a0f6c0e805425a3898af9"]],
   ["src/primitives/canvas/widget_metrics.zig", ["74adc55e86c5fb013a2a3020844eaeb852c17c1e8c0b54e87d1c6804151878a6", "f70376b84b9eebd5ac495151227be4f00fa64a1c421a7377923ba8b4382776af"]],
   ["src/primitives/canvas/widget_layout.zig", ["5a3df6ee21309651016c4f2d2a4c94e65640e4d6fed632b74f119d130df3fcaa", "ce71dca1ff8c294bcc784113abea8022d0a2c7200e776af7a86b610deeb1d560"]],

@@ -33,6 +33,16 @@ frame_profile input_latency_n=2 frame_work_n=4 present_n=3
     def test_missing_measurements_remain_absent(self):
         self.assertEqual(interaction.numeric_observation(""), {"focus": []})
 
+    def test_latency_splits_are_numeric_and_do_not_replace_end_to_end_latency(self):
+        result = interaction.numeric_observation(
+            'gpu_input_latency_ns=650000000 input_dispatch_latest_us=3000 '
+            'input_wait_latest_us=640000 automation_publish_latest_us=600000 '
+            'automation_publish_total_max_us=620000 private_detail="secret"')
+        self.assertEqual(result['gpu_input_latency_ns'], 650000000)
+        self.assertEqual(result['input_wait_latest_us'], 640000)
+        self.assertEqual(result['automation_publish_latest_us'], 600000)
+        self.assertNotIn('secret', str(result))
+
 
 class SnapshotReadTests(unittest.TestCase):
     valid = b"ready=true protocol=7 publisher_pid=27 runtime_uptime_ns=8000 dispatch_errors=0\n"

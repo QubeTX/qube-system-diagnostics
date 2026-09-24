@@ -56,7 +56,10 @@ def numeric_observation(snapshot):
     """Keep timing and control identity, never device/process/accessibility text."""
     fields = ("runtime_uptime_ns", "gpu_frame", "gpu_timestamp_ns",
               "gpu_input_timestamp_ns", "gpu_input_latency_ns",
-              "input_latency_n", "frame_work_n", "present_n")
+              "input_latency_n", "frame_work_n", "present_n",
+              "input_dispatch_latest_us", "input_wait_latest_us",
+              "automation_publish_latest_us", "automation_publish_total_max_us",
+              "frame_work_latest_us", "present_latest_us", "rebuild_latest_us")
     result = {}
     for key in fields:
         match = re.search(r"\b" + key + r"=(\d+)", snapshot)

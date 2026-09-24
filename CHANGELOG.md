@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.0.1] - 2026-09-23
 
+- Add profiling-only monotonic input-dispatch/frame-wait and automation-publication attribution with bounded latest-sample metadata. Preserve end-to-end latency, original/approved limits and failed results. The operator selected latency correction before publication; this diagnostic cycle does not claim a fix.
+
 - Retain final native shell discovery and six-target timing evidence for efbab9e. Linux passes 24 shell cases; macOS passes 23 with fish skipped. Preserve Intel/musl input-gate failures and bounded delayed-input trace data, while separating successful Windows lifecycle and all-target functional/shutdown checks. Hold publication and local installation pending the explicit gate-owner decision or an attributed GUI correction; do not restart unchanged qualification solely to save evidence.
 
 - Preserve pre-existing symlinked shell-configuration directories by recording their link identity. Reject new or retargeted links before completing profile integration, and skip rollback below changed links instead of touching a replacement target. Add native symlink fixtures for config/fish/conf.d targets and sibling preservation.

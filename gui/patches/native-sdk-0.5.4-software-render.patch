@@ -3265,62 +3265,62 @@ diff --git a/src/primitives/canvas/layout_audit.zig b/src/primitives/canvas/layo
          if (end >= widget.text.len) break;
          start = end;
 diff --git a/src/automation/snapshot.zig b/src/automation/snapshot.zig
-index e90764e..f58bf44 100644
 --- a/src/automation/snapshot.zig
 +++ b/src/automation/snapshot.zig
-@@ -52,6 +52,9 @@ pub const FrameProfileStage = struct {
+@@ -52,6 +52,10 @@
      name: []const u8 = "",
      p50_us: u64 = 0,
      p90_us: u64 = 0,
 +    p95_us: u64 = 0,
++    latest_us: u64 = 0,
 +    total_max_us: u64 = 0,
 +    window_len: usize = 0,
      max_us: u64 = 0,
      /// Lifetime samples recorded for this stage since enable.
      count: u64 = 0,
-@@ -291,10 +294,13 @@ pub fn writeText(input: Input, writer: anytype) !void {
+@@ -291,10 +295,14 @@
      if (input.frame_profile) |profile| {
          try writer.writeAll("frame_profile");
          for (profile.stages) |stage| {
 -            try writer.print(" {s}_p50_us={d} {s}_p90_us={d} {s}_max_us={d} {s}_n={d}", .{
-+            try writer.print(" {s}_p50_us={d} {s}_p90_us={d} {s}_p95_us={d} {s}_max_us={d} {s}_total_max_us={d} {s}_window_n={d} {s}_n={d}", .{
++            try writer.print(" {s}_p50_us={d} {s}_p90_us={d} {s}_p95_us={d} {s}_latest_us={d} {s}_max_us={d} {s}_total_max_us={d} {s}_window_n={d} {s}_n={d}", .{
                  stage.name, stage.p50_us,
                  stage.name, stage.p90_us,
 +                stage.name, stage.p95_us,
++                stage.name, stage.latest_us,
                  stage.name, stage.max_us,
 +                stage.name, stage.total_max_us,
 +                stage.name, stage.window_len,
                  stage.name, stage.count,
              });
          }
-@@ -832,7 +838,7 @@ test "snapshot emits the frame_profile line only while profiling" {
+@@ -832,7 +840,7 @@
          .frame_profile = .{ .stages = &stages },
      }, &writer);
      const text = writer.buffered();
 -    try std.testing.expect(std.mem.indexOf(u8, text, "\nframe_profile rebuild_p50_us=120 rebuild_p90_us=340 rebuild_max_us=900 rebuild_n=12 encode_p50_us=8 encode_p90_us=15 encode_max_us=22 encode_n=60\n") != null);
-+    try std.testing.expect(std.mem.indexOf(u8, text, "\nframe_profile rebuild_p50_us=120 rebuild_p90_us=340 rebuild_p95_us=0 rebuild_max_us=900 rebuild_total_max_us=0 rebuild_window_n=0 rebuild_n=12 encode_p50_us=8 encode_p90_us=15 encode_p95_us=0 encode_max_us=22 encode_total_max_us=0 encode_window_n=0 encode_n=60\n") != null);
++    try std.testing.expect(std.mem.indexOf(u8, text, "\nframe_profile rebuild_p50_us=120 rebuild_p90_us=340 rebuild_p95_us=0 rebuild_latest_us=0 rebuild_max_us=900 rebuild_total_max_us=0 rebuild_window_n=0 rebuild_n=12 encode_p50_us=8 encode_p90_us=15 encode_p95_us=0 encode_latest_us=0 encode_max_us=22 encode_total_max_us=0 encode_window_n=0 encode_n=60\n") != null);
  
      // Profiling off -> no frame_profile line.
      var off_buffer: [512]u8 = undefined;
 diff --git a/src/runtime/automation_snapshot.zig b/src/runtime/automation_snapshot.zig
-index 5de5195..a820aa8 100644
 --- a/src/runtime/automation_snapshot.zig
 +++ b/src/runtime/automation_snapshot.zig
-@@ -130,6 +130,9 @@ pub fn RuntimeAutomationSnapshot(comptime Runtime: type) type {
+@@ -130,6 +130,10 @@
                      .name = stage.name(),
                      .p50_us = stats.p50_us,
                      .p90_us = stats.p90_us,
 +                    .p95_us = stats.p95_us,
++                    .latest_us = stats.latest_us,
 +                    .total_max_us = stats.total_max_us,
 +                    .window_len = stats.window_len,
                      .max_us = stats.max_us,
                      .count = stats.total,
                  };
 diff --git a/src/runtime/flow.zig b/src/runtime/flow.zig
-index 2a38484..bacb38c 100644
 --- a/src/runtime/flow.zig
 +++ b/src/runtime/flow.zig
-@@ -195,6 +195,29 @@ pub fn RuntimeFlow(comptime Runtime: type) type {
+@@ -195,6 +195,29 @@
          }
  
          pub fn dispatchPlatformEvent(self: *Runtime, app: App, event_value: platform.Event) anyerror!void {
@@ -3350,11 +3350,19 @@ index 2a38484..bacb38c 100644
              // Session recording: stage the event on entry, commit it on
              // exit — so effect results drained DURING dispatch precede
              // the event record in the journal (replay feeds them before
+@@ -820,6 +843,8 @@
+ 
+         fn publishAutomation(self: *Runtime) anyerror!void {
+             const server = self.options.automation orelse return;
++            const begin_ns = self.frame_profile.begin();
++            defer self.frame_profile.end(.automation_publish, begin_ns);
+             try server.publish(automationSnapshot(self, server.title));
+         }
+ 
 diff --git a/src/runtime/frame_profile.zig b/src/runtime/frame_profile.zig
-index 0f0d744..8836600 100644
 --- a/src/runtime/frame_profile.zig
 +++ b/src/runtime/frame_profile.zig
-@@ -26,6 +26,12 @@ pub const max_frame_profile_samples: usize = 128;
+@@ -26,6 +26,16 @@
  
  /// The instrumented stage boundaries, in pipeline order.
  pub const FrameProfileStage = enum {
@@ -3364,27 +3372,46 @@ index 0f0d744..8836600 100644
 +    frame_work,
 +    /// Input receipt to responding present, from the existing host timestamps.
 +    input_latency,
++    /// Diagnostic splits; they do not change input-latency acceptance.
++    input_dispatch,
++    input_wait,
++    automation_publish,
      /// App build fn + tree finalize (`UiApp.rebuild`'s view build).
      rebuild,
      /// Widget tree layout (`layoutWidgetTreeWithTokens`).
-@@ -69,6 +75,8 @@ pub const frame_profile_stage_count = std.enums.values(FrameProfileStage).len;
+@@ -69,6 +79,9 @@
  pub const FrameProfileStageStats = struct {
      p50_us: u64 = 0,
      p90_us: u64 = 0,
 +    p95_us: u64 = 0,
++    latest_us: u64 = 0,
 +    total_max_us: u64 = 0,
      max_us: u64 = 0,
      /// Samples currently in the window (bounded by
      /// `max_frame_profile_samples`).
-@@ -89,6 +97,40 @@ pub const FrameProfile = struct {
+@@ -89,6 +102,54 @@
      totals: [frame_profile_stage_count]u64 = @splat(0),
      samples_us: [frame_profile_stage_count][max_frame_profile_samples]u32 = @splat(@splat(0)),
  
 +    total_max_us: [frame_profile_stage_count]u32 = @splat(0),
++    input_dispatch_end_ns: u64 = 0,
 +    work_depth: usize = 0,
++
 +    work_begin_ns: u64 = 0,
 +    pending_work_ns: u64 = 0,
 +    work_presented: bool = false,
++
++    pub fn endInputAt(self: *FrameProfile, begin_ns: u64, now: u64) void {
++        if (!self.enabled or begin_ns == 0) return;
++        self.recordNs(.input_dispatch, now -| begin_ns);
++        self.input_dispatch_end_ns = now;
++    }
++
++    pub fn inputFrameAt(self: *FrameProfile, now: u64) void {
++        if (!self.enabled or self.input_dispatch_end_ns == 0) return;
++        self.recordNs(.input_wait, now -| self.input_dispatch_end_ns);
++        self.input_dispatch_end_ns = 0;
++    }
 +
 +    pub fn beginWork(self: *FrameProfile) void {
 +        if (!self.enabled) return;
@@ -3417,7 +3444,7 @@ index 0f0d744..8836600 100644
      /// Monotonic stamp for a stage begin: 0 (never recorded) when
      /// profiling is off, so `end` costs one compare and nothing else.
      pub inline fn begin(self: *const FrameProfile) u64 {
-@@ -103,6 +145,7 @@ pub const FrameProfile = struct {
+@@ -103,6 +164,7 @@
          if (begin_ns == 0) return;
          const now = runtime_clock.monotonicNanoseconds();
          self.recordNs(stage, now -| begin_ns);
@@ -3425,7 +3452,7 @@ index 0f0d744..8836600 100644
      }
  
      /// Record an externally measured duration (host-stamped decode/draw
-@@ -116,6 +159,7 @@ pub const FrameProfile = struct {
+@@ -116,6 +178,7 @@
          self.heads[index] = @intCast((self.heads[index] + 1) % max_frame_profile_samples);
          if (self.lens[index] < max_frame_profile_samples) self.lens[index] += 1;
          self.totals[index] +%= 1;
@@ -3433,32 +3460,50 @@ index 0f0d744..8836600 100644
      }
  
      /// Drop every recorded sample (enable state is left alone).
-@@ -123,6 +167,11 @@ pub const FrameProfile = struct {
+@@ -123,6 +186,12 @@
          self.lens = @splat(0);
          self.heads = @splat(0);
          self.totals = @splat(0);
 +        self.total_max_us = @splat(0);
 +        self.work_depth = 0;
++        self.input_dispatch_end_ns = 0;
 +        self.work_begin_ns = 0;
 +        self.pending_work_ns = 0;
 +        self.work_presented = false;
      }
  
      /// True when any stage holds samples — the snapshot's "print the
-@@ -147,6 +196,8 @@ pub const FrameProfile = struct {
+@@ -147,6 +216,9 @@
          return .{
              .p50_us = sorted[nearestRank(len, 50)],
              .p90_us = sorted[nearestRank(len, 90)],
 +            .p95_us = sorted[nearestRank(len, 95)],
++            .latest_us = self.samples_us[index][(self.heads[index] + max_frame_profile_samples - 1) % max_frame_profile_samples],
 +            .total_max_us = self.total_max_us[index],
              .max_us = sorted[len - 1],
              .window_len = len,
              .total = self.totals[index],
 diff --git a/src/runtime/gpu_surface_events.zig b/src/runtime/gpu_surface_events.zig
-index f254d55..4cbf3b8 100644
 --- a/src/runtime/gpu_surface_events.zig
 +++ b/src/runtime/gpu_surface_events.zig
-@@ -149,6 +149,9 @@ pub fn RuntimeGpuSurfaceEvents(comptime Runtime: type) type {
+@@ -1,5 +1,6 @@
+ const std = @import("std");
+ const canvas = @import("canvas");
++const runtime_clock = @import("clock.zig");
+ const geometry = @import("geometry");
+ const platform = @import("../platform/root.zig");
+ const runtime_api = @import("api.zig");
+@@ -28,6 +29,9 @@
+             var had_pending_input = false;
+             if (runtimeFindViewIndex(self, frame_event.window_id, frame_event.label)) |index| {
+                 had_pending_input = self.views[index].gpu_pending_input_timestamp_ns != 0;
++                if (had_pending_input and self.frame_profile.enabled) {
++                    self.frame_profile.inputFrameAt(runtime_clock.monotonicNanoseconds());
++                }
+                 // The requested frame arrived: deferred accessibility
+                 // publishes flush after this event's present (below).
+                 self.views[index].gpu_canvas_frame_requested = false;
+@@ -149,6 +153,9 @@
                      self.views[index].recordGpuSurfaceInputLatencyForFrame(frame_event.timestamp_ns);
                  }
                  const input_latency_recorded = had_pending_input and self.views[index].gpu_pending_input_timestamp_ns == 0;
@@ -3468,3 +3513,12 @@ index f254d55..4cbf3b8 100644
                  if (input_latency_recorded) {
                      self.invalidateFor(.state, self.views[index].frame);
                  }
+@@ -175,6 +182,8 @@
+         }
+ 
+         pub fn dispatchGpuSurfaceInput(self: *Runtime, app: runtime_api.App(Runtime), input_event: platform.GpuSurfaceInputEvent) anyerror!void {
++            const input_begin = self.frame_profile.begin();
++            defer if (input_begin != 0) self.frame_profile.endInputAt(input_begin, runtime_clock.monotonicNanoseconds());
+             // Tell the host input landed BEFORE anything dispatches:
+             // hosts that throttle occluded/minimized frame completions
+             // to a heartbeat must let this input's responding frame fire

@@ -204,10 +204,11 @@ collector contention or runner load remains unproved. Do not label it runner
 noise, change the measurement interval, or run a third blind repetition.
 
 The earlier Mac-only exception question is superseded by the final Intel/musl
-measurements. An explicit owner decision is pending between publishing this
-installer/updater correction with documented GUI timing deferrals and holding
-publication for a separate GUI latency fix. Existing publication authorization
-does not waive the numeric gate. The production release and local installation
+measurements. The operator subsequently chose to fix latency first, aiming at
+the existing 100 ms ceiling. Publication stays held while profiling-only
+dispatch, frame-wait and automation-publication splits identify the next focused
+correction. Existing publication authorization does not waive the numeric gate.
+The production release and local installation
 remain immutable 4.0.0; website PR #18 remains held. The final evidence is saved on
 `codex/sd300-401-qualification-evidence` without starting another unchanged GUI CI
 run on product PR #11.

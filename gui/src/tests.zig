@@ -31,6 +31,29 @@ test "frame work counts nested events once and excludes queue wait" {
     try testing.expectEqual(@as(u64, 0), profile.stats(.frame_work).total);
 }
 
+test "input attribution separates dispatch from wait without hiding latency" {
+    var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
+    profile.endInputAt(100_000, 2_100_000);
+    profile.inputFrameAt(602_100_000);
+    profile.recordNs(.input_latency, 609_000_000);
+    try testing.expectEqual(@as(u64, 2000), profile.stats(.input_dispatch).latest_us);
+    try testing.expectEqual(@as(u64, 600000), profile.stats(.input_wait).latest_us);
+    try testing.expectEqual(@as(u64, 609000), profile.stats(.input_latency).latest_us);
+    profile.inputFrameAt(702_100_000);
+    try testing.expectEqual(@as(u64, 1), profile.stats(.input_wait).total);
+    // The latest sample stays distinct from the maximum, including ring wrap.
+    for (0..native_sdk.runtime.max_frame_profile_samples + 1) |_| profile.recordNs(.input_wait, 1_000);
+    try testing.expectEqual(@as(u64, 1), profile.stats(.input_wait).latest_us);
+    try testing.expectEqual(@as(u64, 600000), profile.stats(.input_wait).total_max_us);
+    profile.endInputAt(800_000_000, 801_000_000);
+    profile.reset();
+    profile.inputFrameAt(900_000_000);
+    try testing.expectEqual(@as(u64, 0), profile.stats(.input_wait).total);
+    profile.enabled = false;
+    profile.endInputAt(1, 1_000_000);
+    try testing.expectEqual(@as(u64, 0), profile.input_dispatch_end_ns);
+}
+
 test "profile keeps percentile coverage and lifetime stalls explicit" {
     var profile = native_sdk.runtime.FrameProfile{ .enabled = true };
     profile.recordNs(.frame_work, 101_000_000);

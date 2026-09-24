@@ -75,6 +75,16 @@ change monitoring, rendering or scheduling. Requalify the affected lifecycle
 paths on the resulting candidate. This extension does not waive the unresolved
 GNU x86-64 input gate or claim access to the work PC's endpoint-security evidence.
 
+On 2026-09-24 the operator chose to fix latency before publication, targeting
+the existing 100 ms ceiling. This extends the correction to attributed GUI
+latency work; it does not authorize a timing waiver. First separate input
+dispatch, waiting for a responding frame and automation publication with
+profiling-only monotonic measurements. Retain end-to-end input latency and all
+failed verdicts. Diagnostic instrumentation is not itself a latency fix. Any
+subsequent change to normal rendering or scheduling requires new affected native
+interaction and resource evidence; the earlier unchanged-monitoring rationale
+must not be used to claim a new product change has passed its resource checks.
+
 ## Verification
 
 Real PowerShell file/pipe capture proves execution, stdout, stderr and nonzero
