@@ -15,6 +15,10 @@
 ## To-Do
 
 ## Active
+- [ ] **Build a clear gamer-focused System overview** - approved six-card GUI dashboard; 4.1.0 release authorized after validation, visual revision and original performance gates pending (owner codex) #ov6
+  - [x] Wire overview collection and bounded summaries
+  - [x] Implement responsive cards, findings and navigation
+  - [ ] Verify native behavior, layouts and collection cost
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k
   - [x] Reconstruct the current artwork and Windows icon-delivery failure
     > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.

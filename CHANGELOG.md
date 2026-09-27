@@ -2,6 +2,11 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [4.1.0] - Unreleased
+
+- Replace the native overview with responsive GPU/CPU/memory and disk/network/thermal cards, a bounded process-consumer summary, and expandable findings/system evidence. Retain missing and delayed states, stable adapter identity, explicit storage/interface scope, and navigation to existing detail pages.
+- Subscribe Overview to Fast, Static, Slow, Activity and Health lanes without enabling connections, diagnostics or driver scans. Select top CPU/memory consumers before truncating the internal JSON projection and retain finding identity/severity without changing the fixed C ABI or public export schemas (ADR 0022).
+
 ## [4.0.2] - 2026-09-24
 
 - Verify production release abf55bd: all native producers and exact-merge CI pass under ADR 0021; final publication and public lifecycle run 36072546804 passes. Confirm 59 public assets, crates.io/latest identity, and the complete EULA in Global, Corporate and compatibility MSI downloads with matching ProductVersion, SHA-256 sidecars and attestations. Both latest MSI routes resolve to the verified bytes.

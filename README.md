@@ -196,7 +196,7 @@ Navigate between 9 sections using number keys:
 
 | # | Section | User Mode | Technician Mode |
 |---|---------|-----------|-----------------|
-| 1 | **Overview** | System health dashboard | Identity, gauges, top processes |
+| 1 | **Overview** | Resource cards in the app; system dashboard in the terminal | Identity, resource readings, top processes and findings |
 | 2 | **CPU** | Load status, sparkline | Per-core bars, frequency, process table |
 | 3 | **Memory** | Usage summary, top consumers | RAM/Swap sparklines, process table |
 | 4 | **Disk** | Drive health, space usage | Mount table, filesystem details |

@@ -115,7 +115,8 @@ pub const WarningRow = struct {
 };
 
 pub const FindingRow = struct {
-    id: u32 = 0,
+    id: u64 = 0,
+    severity_buffer: canvas.TextBuffer(16) = .init("info"),
     kind_buffer: canvas.TextBuffer(32) = .init("incomplete_observation"),
     title_buffer: canvas.TextBuffer(128) = .init(""),
     evidence_buffer: canvas.TextBuffer(256) = .init(""),
@@ -126,6 +127,7 @@ pub const FindingRow = struct {
     pub fn evidence(row: *const FindingRow) []const u8 { return row.evidence_buffer.text(); }
     pub fn nextStep(row: *const FindingRow) []const u8 { return row.next_buffer.text(); }
     pub fn source(row: *const FindingRow) []const u8 { return row.source_buffer.text(); }
+    pub fn severity(row: *const FindingRow) []const u8 { return row.severity_buffer.text(); }
 };
 
 pub const CapabilityRow = struct {
@@ -547,6 +549,12 @@ pub const Projection = struct {
     process_total_count: u32 = 0,
     process_total_threads: u32 = 0,
     process_observation: ObservationView = .{},
+    top_cpu: ProcessRow = .{},
+    top_memory: ProcessRow = .{},
+    top_cpu_available: bool = false,
+    top_memory_available: bool = false,
+    overview_disk: DiskRow = .{},
+    overview_disk_available: bool = false,
     process_samples_observed: u8 = 0,
     process_values_warmed: bool = false,
     cpu_temperature_celsius: f64 = 0,
@@ -1004,12 +1012,17 @@ pub const Projection = struct {
         self.finding_total_count = saturatedU32(data.findings.len);
         self.finding_row_count = @min(data.findings.len, self.finding_rows.len);
         for (data.findings[0..self.finding_row_count], 0..) |item, index| {
-            var row = FindingRow{ .id = @intCast(index) };
+            var row = FindingRow{ .id = std.hash.Wyhash.hash(0, item.id orelse item.title) };
+            row.severity_buffer.set(item.severity);
             row.kind_buffer.set(item.kind); row.title_buffer.set(item.title);
             row.evidence_buffer.set(item.evidence); row.next_buffer.set(item.next_step);
             row.source_buffer.set(item.source); self.finding_rows[index] = row;
         }
         self.fast_ready = true;
+        self.top_cpu_available = data.processes.top_cpu != null;
+        self.top_memory_available = data.processes.top_memory != null;
+        if (data.processes.top_cpu) |item| self.top_cpu = processRow(item);
+        if (data.processes.top_memory) |item| self.top_memory = processRow(item);
         if (data.activity_sample) |sample| {
             self.activity_captured_unix_ms = sample.captured_unix_ms;
             setObservation(&self.activity_observation, sample.observation);
@@ -1187,6 +1200,26 @@ pub const Projection = struct {
         const gib = 1024.0 * 1024.0 * 1024.0;
 
         self.disk_total_count = saturatedU32(data.disk.partitions.len);
+        self.overview_disk_available = false;
+        var selected: ?PartitionJson = null;
+        for (data.disk.partitions) |item| {
+            if (item.total_bytes == 0) continue;
+            if (selected) |current| {
+                if (!current.is_removable and item.is_removable) continue;
+                if (current.is_removable == item.is_removable) {
+                    const a = @as(f64, @floatFromInt(item.used_bytes)) / @as(f64, @floatFromInt(item.total_bytes));
+                    const b = @as(f64, @floatFromInt(current.used_bytes)) / @as(f64, @floatFromInt(current.total_bytes));
+                    if (a < b or (a == b and std.mem.order(u8, item.mount_point, current.mount_point) != .lt)) continue;
+                }
+            }
+            selected = item;
+        }
+        if (selected) |item| {
+            self.overview_disk_available = true;
+            self.overview_disk.mount_buffer.set(item.mount_point);
+            self.overview_disk.available_gib = @as(f64, @floatFromInt(item.available_bytes)) / gib;
+            self.overview_disk.total_gib = @as(f64, @floatFromInt(item.total_bytes)) / gib;
+        }
         self.disk_count = @min(data.disk.partitions.len, max_disks);
         for (data.disk.partitions[0..self.disk_count], 0..) |item, index| {
             var row = DiskRow{ .id = @intCast(index), .removable = item.is_removable };
@@ -1205,9 +1238,27 @@ pub const Projection = struct {
         setObservation(&self.gpu_telemetry_observation, data.gpu.telemetry_status);
         self.gpu_total_count = saturatedU32(data.gpu.adapters.len);
         self.gpu_count = @min(data.gpu.adapters.len, max_gpus);
-        for (data.gpu.adapters[0..self.gpu_count], 0..) |item, index| {
+        // Select a bounded stable identity prefix from the complete inventory.
+        // Enumeration order must not change which adapters the overview shows.
+        var gpu_indices: [max_gpus]usize = undefined;
+        var kept: usize = 0;
+        for (data.gpu.adapters, 0..) |candidate, candidate_index| {
+            var at: usize = 0;
+            while (at < kept) : (at += 1) {
+                const current = data.gpu.adapters[gpu_indices[at]];
+                const order = std.mem.order(u8, candidate.device_id, current.device_id);
+                if (order == .lt or (order == .eq and std.mem.lessThan(u8, candidate.name, current.name))) break;
+            }
+            if (at >= max_gpus) continue;
+            kept = @min(max_gpus, kept + 1);
+            var move = kept - 1;
+            while (move > at) : (move -= 1) gpu_indices[move] = gpu_indices[move - 1];
+            gpu_indices[at] = candidate_index;
+        }
+        for (gpu_indices[0..kept], 0..) |source_index, index| {
+            const item = data.gpu.adapters[source_index];
             var row = GpuRow{
-                .id = if (item.device_id.len > 0) std.hash.Wyhash.hash(0, item.device_id) else @intCast(index),
+                .id = std.hash.Wyhash.hash(0, if (item.device_id.len > 0) item.device_id else item.name),
                 .shared_limit_mib = item.shared_memory_mb orelse 0, .shared_limit_available = item.shared_memory_mb != null,
                 .dedicated_system_mib = item.dedicated_system_memory_mb orelse 0, .dedicated_system_available = item.dedicated_system_memory_mb != null,
                 .recommended_mib = item.recommended_working_set_mb orelse 0, .recommended_available = item.recommended_working_set_mb != null,
@@ -1641,13 +1692,15 @@ const ProcessJson = struct {
     status: []const u8 = "unknown",
 };
 const ProcessesJson = struct {
+    top_cpu: ?ProcessJson = null,
+    top_memory: ?ProcessJson = null,
     observation: ObservationJson = .{},
     list: []const ProcessJson = &.{},
     total_count: usize = 0,
     total_threads: usize = 0,
 };
 const FastDataJson = struct {
-    findings: []const struct { kind: []const u8, title: []const u8, evidence: []const u8, next_step: []const u8, source: []const u8 } = &.{},
+    findings: []const struct { id: ?[]const u8 = null, severity: []const u8 = "info", kind: []const u8, title: []const u8, evidence: []const u8, next_step: []const u8, source: []const u8 } = &.{},
     disk_activity: struct { devices: []const struct {
         read_bytes_per_sec: ?f64 = null, write_bytes_per_sec: ?f64 = null,
         read_latency_ms: ?f64 = null, write_latency_ms: ?f64 = null, queue_depth: ?u64 = null,

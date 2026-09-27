@@ -5,6 +5,7 @@ const runner = @import("runner");
 const native_sdk = @import("native_sdk");
 const engine = @import("engine.zig");
 const projection = @import("projection.zig");
+const overview_view = @import("overview.zig");
 const settings = @import("settings.zig");
 const settings_writer = @import("settings_writer.zig");
 const window_visibility = @import("platform/window_visibility.zig");
@@ -52,6 +53,11 @@ var external_open_pending = std.atomic.Value(bool).init(false);
 var startup_should_show = true;
 
 pub const Msg = union(enum) {
+    overview_columns: u32,
+    toggle_machine_details,
+    toggle_overview_findings,
+    toggle_collection_details,
+    open_overview_finding: u64,
     refresh_now,
     refresh_tick: native_sdk.EffectTimer,
     select_overview,
@@ -115,10 +121,15 @@ pub const Msg = union(enum) {
     open_window,
     quit_app,
 
-    pub const view_unbound = .{ "refresh_tick", "export_poll", "open_window", "quit_app" };
+    pub const view_unbound = .{ "refresh_tick", "export_poll", "open_window", "quit_app", "overview_columns" };
 };
 
 pub const Model = struct {
+    overview: overview_view.View = .{},
+    overview_columns: u32 = 3,
+    machine_details_open: bool = false,
+    overview_findings_open: bool = false,
+    collection_details_open: bool = false,
     engine_ready: bool = false,
     fast_summary_seen: bool = false,
     fast_summary_failed: bool = false,
@@ -208,6 +219,7 @@ pub const Model = struct {
     tray_tooltip_buffer: canvas.TextBuffer(192) = canvas.TextBuffer(192).init("SD-300 — hardware summary is starting"),
 
     pub const view_unbound = .{
+        "warning_count", "findings",
         "settings_requested", "settings_completed",
         "window_visible",
         "tray_session_active",
@@ -257,6 +269,11 @@ pub const Model = struct {
     pub fn status(model: *const Model) []const u8 {
         return model.status_buffer.text();
     }
+    pub fn overviewGpus(model: *const Model) []const overview_view.Adapter { return model.overview.gpus(); }
+    pub fn overviewFindings(model: *const Model) []const projection.FindingRow { return model.overview.findings(); }
+    pub fn overviewAllFindings(model: *const Model) []const projection.FindingRow { return model.overview.allFindings(); }
+    pub fn overviewCollectionFindings(model: *const Model) []const projection.FindingRow { return model.overview.collectionFindings(); }
+    pub fn overviewProcessColumns(model: *const Model) u32 { return @min(2, model.overview_columns); }
 
     pub fn cpuModel(model: *const Model) []const u8 {
         return model.detail.cpuModel();
@@ -586,7 +603,26 @@ pub const Model = struct {
 pub const Effects = native_sdk.Effects(Msg);
 
 pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
+    defer model.overview.prepare(model);
     switch (msg) {
+        .overview_columns => |count| model.overview_columns = count,
+        .toggle_machine_details => model.machine_details_open = !model.machine_details_open,
+        .toggle_overview_findings => model.overview_findings_open = !model.overview_findings_open,
+        .toggle_collection_details => model.collection_details_open = !model.collection_details_open,
+        .open_overview_finding => |id| {
+            for (model.detail.findings()) |finding| {
+                if (finding.id != id) continue;
+                if (std.mem.eql(u8, finding.kind(), "resource_pressure")) {
+                    selectSection(model, 6);
+                    setProcessSort(model, if (id == std.hash.Wyhash.hash(0, "memory-pressure")) .memory else .cpu);
+                } else if (std.mem.eql(u8, finding.kind(), "connectivity_observation")) {
+                    selectSection(model, 5);
+                } else {
+                    selectSection(model, if (std.mem.eql(u8, finding.source(), "health")) 3 else 7);
+                }
+                break;
+            }
+        },
         .refresh_now => sampleEngine(model),
         .refresh_tick => |timer| {
             if (timer.outcome == .fired) {
@@ -1191,6 +1227,7 @@ fn pollExport(model: *Model, fx: *Effects) void {
 }
 
 fn sampleEngine(model: *Model) void {
+    defer model.overview.prepare(model);
     pollSettings(model);
     defer projectHistories(model);
     const runtime = active_engine orelse {
@@ -1220,6 +1257,8 @@ fn sampleEngine(model: *Model) void {
         sampleProcessSummary(runtime, model);
     } else if (model.active_section == 0) {
         sampleTopic(runtime, model, std.heap.page_allocator, .fast);
+        sampleTopic(runtime, model, std.heap.page_allocator, .slow);
+        sampleTopic(runtime, model, std.heap.page_allocator, .health);
     } else {
         sampleDetailedTopics(runtime, model);
     }
@@ -1653,6 +1692,12 @@ pub fn warmCarbonChrome(model: *const Model, builder: *canvas.Builder, size: geo
 const app_features: native_sdk.UiAppFeatures = .{ .runtime_markup = builtin.mode == .Debug };
 pub const NativeApp = native_sdk.UiAppWithFeatures(Model, Msg, app_features);
 
+pub fn overviewFrame(model: *const Model, frame: native_sdk.platform.GpuFrame) ?Msg {
+    // Sidebar includes its horizontal padding; content has 20 points on each side.
+    const columns = overview_view.columnsForWidth(@max(0, frame.size.width - 236));
+    return if (columns != model.overview_columns) .{ .overview_columns = columns } else null;
+}
+
 const app_fonts = [_]NativeApp.FontRegistration{
     .{
         .id = gail_rock_font_id,
@@ -1885,6 +1930,7 @@ pub fn main(init: std.process.Init) !void {
         .update_fx = update,
         .init_fx = initEffects,
         .view = CompiledAppView.build,
+        .on_frame = overviewFrame,
         // Runtime markup and file watching are development facilities. Release
         // binaries use only the comptime-compiled view and cannot depend on a
         // source-tree path existing on the user's machine.

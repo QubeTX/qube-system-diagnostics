@@ -363,14 +363,15 @@ test "a fast summary updates the native overview projection" {
     try testing.expectEqualStrings("fast-summary", model.overview_topic_meta.topic());
     try testing.expectEqualStrings("SD-300 platform CPU and memory collectors", model.overview_topic_meta.provenance());
     try testing.expectEqual(@as(u64, 42), model.overview_topic_meta.sequence);
+    model.overview.prepare(&model);
 
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const tree = try buildTree(arena_state.allocator(), &model);
     _ = try expectByText(tree.root, .badge, "Live");
     _ = try expectByText(tree.root, .text, "18.3%");
-    _ = try expectByText(tree.root, .text, "16.0 GiB used of 32.0 GiB");
-    _ = try expectByText(tree.root, .badge, "0 FINDINGS");
+    _ = try expectByText(tree.root, .text, "16.0 / 32.0 GiB used");
+    try testing.expect(findByText(tree.root, .text, "Needs attention") == null);
 }
 
 test "re-reading one fast sequence does not invent another history sample" {
@@ -752,7 +753,7 @@ test "overview never interprets startup or interrupted measurements as current h
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const tree = try buildTree(arena.allocator(), &model);
-    _ = try expectByText(tree.root, .text, "Waiting for data");
+    _ = try expectByText(tree.root, .text, "Reading…");
     try testing.expect(findByText(tree.root, .text, "0.0%") == null);
     model.fast_summary_seen = true;
     model.fast_summary_failed = true;
@@ -2056,4 +2057,75 @@ test "process inventory denial remains distinct and recovery removes it" {
     model.detail.applyProcessSummary(summary_type{ .sequence = 2, .observation_status = 0 });
     try testing.expect(model.detail.process_observation.available);
     try testing.expectEqualStrings("available", model.detail.process_observation.status());
+}
+
+
+test "overview card navigation and responsive thresholds" {
+    const overview = @import("overview.zig");
+    var name = canvas.TextBuffer(192){};
+    overview.shortHardwareName(&name, "Intel(R) Arc(TM) Graphics");
+    try testing.expectEqualStrings("Intel Arc Graphics", name.text());
+    overview.shortHardwareName(&name, "NVIDIA GeForce RTX 4070 Laptop GPU");
+    try testing.expectEqualStrings("GeForce RTX 4070 Laptop", name.text());
+    try testing.expectEqual(@as(u32, 1), overview.columnsForWidth(559));
+    try testing.expectEqual(@as(u32, 2), overview.columnsForWidth(560));
+    try testing.expectEqual(@as(u32, 2), overview.columnsForWidth(839));
+    try testing.expectEqual(@as(u32, 3), overview.columnsForWidth(840));
+    var model = main.initialModel();
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    const messages = [_]main.Msg{ .select_gpu, .select_cpu, .select_memory, .select_disk, .select_network, .select_thermals };
+    for (messages, [_]u8{4, 1, 2, 3, 5, 7}) |message, section| {
+        main.update(&model, message, &fx);
+        try testing.expectEqual(section, model.active_section);
+    }
+    main.update(&model, .show_memory_processes, &fx);
+    try testing.expectEqual(@as(u8, 6), model.active_section);
+    try testing.expectEqual(main.ProcessSort.memory, model.process_sort);
+    main.update(&model, .toggle_machine_details, &fx);
+    try testing.expect(model.machine_details_open);
+}
+
+test "overview state preserves missing readings and marks delayed captures" {
+    const overview = @import("overview.zig");
+    const projection = @import("projection.zig");
+    var meta = projection.TopicMeta{};
+    try testing.expectEqualStrings("Reading…", overview.topicState(&meta, 10_000));
+    meta.ready = true; meta.captured_unix_ms = 9000; meta.expected_interval_ms = 1000;
+    meta.availability_buffer.set("available");
+    try testing.expectEqualStrings("", overview.topicState(&meta, 10_000));
+    try testing.expectEqualStrings("Reading delayed · previous values", overview.topicState(&meta, 13_000));
+    meta.availability_buffer.set("permission_denied");
+    try testing.expect(std.mem.startsWith(u8, overview.topicState(&meta, 10_000), "Not available"));
+    meta.availability_buffer.set("error");
+    try testing.expect(std.mem.startsWith(u8, overview.topicState(&meta, 10_000), "Couldn’t read"));
+}
+
+test "overview selects fixed storage and stable graphics with honest unified memory" {
+    var model = main.initialModel();
+    const fixture =
+        \\{"data":{"disk":{"partitions":[{"mount_point":"USB","is_removable":true,"total_bytes":1000,"used_bytes":999},{"mount_point":"Z:","total_bytes":1000,"used_bytes":900},{"mount_point":"C:","total_bytes":1000,"used_bytes":900,"available_bytes":100}]},"gpu":{"adapters":[{"device_id":"z","name":"Discrete","dedicated_memory_mb":8192},{"device_id":"a","name":"Integrated","unified_memory":true}]},"thermals":{}}}
+    ;
+    try model.detail.applySlowJson(testing.allocator, fixture);
+    model.overview.prepare(&model);
+    try testing.expectEqualStrings("C:", model.detail.overview_disk.mount());
+    try testing.expectEqualStrings("Integrated", model.overview.gpus()[0].name());
+    try testing.expectEqualStrings("Unified memory", model.overview.gpus()[0].memory());
+    try testing.expectEqualStrings("Not available", model.overview.gpus()[1].load());
+    try testing.expectEqualStrings("Not available", model.overview.thermals.value());
+}
+
+test "overview findings preserve severity and route by identity after copy changes" {
+    var model = main.initialModel();
+    try model.detail.applyFastJson(testing.allocator,
+        \\{"data":{"cpu":{},"memory":{},"network":{},"processes":{},"findings":[{"id":"memory-pressure","kind":"resource_pressure","severity":"warning","title":"Capacity is almost full","evidence":"fixture","next_step":"Inspect apps","source":"fast"}]}}
+    );
+    model.overview.prepare(&model);
+    const finding = model.overview.findings()[0];
+    try testing.expectEqualStrings("warning", finding.severity());
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    main.update(&model, .{ .open_overview_finding = finding.id }, &fx);
+    try testing.expectEqual(@as(u8, 6), model.active_section);
+    try testing.expectEqual(main.ProcessSort.memory, model.process_sort);
 }
