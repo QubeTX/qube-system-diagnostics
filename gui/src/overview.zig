@@ -98,7 +98,7 @@ pub const View = struct {
         const now: u64 = @intCast(@max(0, model.clock.wallMs()));
         const fast = topicState(d.topicMeta(1), now);
         const slow = topicState(d.topicMeta(3), now);
-        const summary_state = if (model.summaryFailed()) "Couldn’t read · previous values" else if (model.summaryStale()) "Reading delayed · previous values" else if (!model.fast_summary_seen) "Reading…" else "";
+        const summary_state = if (model.summaryFailed()) (if (model.fast_summary_seen) "Couldn’t read · previous values" else "Couldn’t read") else if (model.summaryStale()) "Reading delayed · previous values" else if (!model.fast_summary_seen) "Reading…" else "";
         self.cpu.state_buffer.set(summary_state);
         self.memory.state_buffer.set(summary_state);
         if (model.fast_summary_seen) {
@@ -107,8 +107,11 @@ pub const View = struct {
                 format(&self.memory.value_buffer, "{d:.1}%", .{model.memory_percent});
                 format(&self.memory.context_buffer, "{d:.1} / {d:.1} GiB used", .{model.memory_used_gib, model.memory_total_gib});
             } else self.memory.value_buffer.set("Not available");
+        } else if (model.summaryFailed()) {
+            self.cpu.value_buffer.set("Couldn’t read");
+            self.memory.value_buffer.set("Couldn’t read");
         }
-        shortHardwareName(&self.cpu.context_buffer, if (d.fast_ready) d.cpuModel() else "Processor");
+        shortHardwareName(&self.cpu.context_buffer, if (d.cpuModel().len > 0) d.cpuModel() else model.systemCpu());
         self.disk.state_buffer.set(if (model.diskIoAvailable()) "" else if (d.activity_captured_unix_ms == 0) "Reading…" else if (d.activity_observation.available) "Reading delayed · previous values" else "Couldn’t read");
         if (d.activity_captured_unix_ms > 0 and d.disk_io_available) {
             format(&self.disk.value_buffer, "{d:.1}", .{d.disk_read_mib_s});
@@ -149,7 +152,7 @@ pub const View = struct {
             if (gpu.temperature_available and gpu.temperature_observation.available) temperature(&row.temperature_buffer, gpu.temperature_celsius, fahrenheit) else row.temperature_buffer.set("Not available");
             self.gpu_rows[i] = row;
         }
-        if (d.gpu_total_count > 2) format(&self.gpu_more_buffer, "+{d} more in GPU details", .{d.gpu_total_count - 2}) else self.gpu_more_buffer.set("");
+        if (d.gpu_total_count > 2) format(&self.gpu_more_buffer, "+{d} more", .{d.gpu_total_count - 2}) else self.gpu_more_buffer.set("");
         self.thermals.state_buffer.set(slow);
         if (d.cpu_temperature_available and d.cpu_temperature_observation.available) temperature(&self.thermals.value_buffer, d.cpu_temperature_celsius, fahrenheit) else self.thermals.value_buffer.set(if (d.slow_ready) "Not available" else "Reading…");
         self.process_state_buffer.set(fast);

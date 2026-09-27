@@ -9,6 +9,8 @@ The newest section describes the monitoring update and the evidence behind it.
 - See graphics, processor and memory activity first, with storage, network traffic and temperatures directly below. Compact cards open the detailed pages, while a small process summary helps find apps using the most resources.
 - Keep collection problems beside the affected reading and expand findings or system details when needed. Missing readings remain visibly unavailable instead of looking like idle hardware.
 - Behind the scenes: collect the readings the overview displays and identify resource-heavy apps across the full running-app list. Keep monitoring bounded and preserve the existing installation and terminal behavior.
+- Behind the scenes: keep release checks aligned with the version being built instead of a manually copied version label.
+- Keep graphics readings readable when more adapters are present or readings are delayed. Avoid collecting processor detail that the overview does not display.
 
 ---
 

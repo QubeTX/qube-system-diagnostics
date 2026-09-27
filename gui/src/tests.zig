@@ -2129,3 +2129,39 @@ test "overview findings preserve severity and route by identity after copy chang
     try testing.expectEqual(@as(u8, 6), model.active_section);
     try testing.expectEqual(main.ProcessSort.memory, model.process_sort);
 }
+
+test "overview graphics card contains two adapters additional count and delayed state" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var model = main.initialModel();
+    model.detail.gpu_total_count = 3;
+    model.overview.gpu_count = 2;
+    model.overview.gpu_rows[0].name_buffer.set("Intel Arc Graphics");
+    model.overview.gpu_rows[1].name_buffer.set("GeForce RTX 4070 Laptop");
+    for (&model.overview.gpu_rows, 0..) |*gpu, i| {
+        gpu.id = i;
+        gpu.load_available = true;
+        gpu.load_buffer.set("100%");
+        gpu.memory_buffer.set("7.0 / 8.0 GiB video memory");
+    }
+    model.overview.gpu_more_buffer.set("+1 more");
+    model.overview.gpu_state_buffer.set("Reading delayed · previous values");
+    const tree = try buildTree(arena.allocator(), &model);
+    const nodes = try arena.allocator().alloc(canvas.WidgetLayoutNode, 512);
+    const layout = try canvas.layoutWidgetTreeWithTokens(tree.root,
+        native_sdk.geometry.RectF.init(0, 0, 1180, 760), main.qubeTokens(&model), nodes);
+    var card: ?canvas.WidgetLayoutNode = null;
+    for (layout.nodes) |node| {
+        if (std.mem.eql(u8, node.widget.semantics.label, "Open GPU details")) { card = node; continue; }
+        if (card) |parent| {
+            if (node.depth <= parent.depth) break;
+            if (node.widget.kind == .text and node.widget.text.len > 0) {
+                if (node.frame.y + node.frame.height > parent.frame.y + parent.frame.height) {
+                    std.debug.print("GPU card clips {s} at {d}, bottom {d}\n", .{node.widget.text, node.frame.y + node.frame.height, parent.frame.y + parent.frame.height});
+                    return error.OverviewCardOverflow;
+                }
+            }
+        }
+    }
+    try testing.expect(card != null);
+}

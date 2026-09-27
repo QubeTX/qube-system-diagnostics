@@ -374,8 +374,10 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
             let overview = profile == Profile::Overview as u8;
             let summary = profile == Profile::Summary as u8;
             let processes = profile == Profile::Processes as u8;
-            if full || overview {
+            if full {
                 snapshot.refresh_fast();
+            } else if overview {
+                snapshot.refresh_overview_gui();
             } else if processes {
                 let sort = match shared.sort.load(Ordering::Acquire) {
                     1 => ProcessSortKey::Memory,
