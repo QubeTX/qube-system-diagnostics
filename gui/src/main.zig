@@ -618,7 +618,7 @@ pub fn update(model: *Model, msg: Msg, fx: *Effects) void {
                 } else if (std.mem.eql(u8, finding.kind(), "connectivity_observation")) {
                     selectSection(model, 5);
                 } else {
-                    selectSection(model, if (std.mem.eql(u8, finding.source(), "health")) 3 else 7);
+                    selectSection(model, if (std.mem.eql(u8, finding.kind(), "hardware_fault")) 3 else 7);
                 }
                 break;
             }

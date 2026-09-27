@@ -11,6 +11,7 @@ The newest section describes the monitoring update and the evidence behind it.
 - Behind the scenes: collect the readings the overview displays and identify resource-heavy apps across the full running-app list. Keep monitoring bounded and preserve the existing installation and terminal behavior.
 - Behind the scenes: keep release checks aligned with the version being built instead of a manually copied version label.
 - Keep graphics readings readable when more adapters are present or readings are delayed. Avoid collecting processor detail that the overview does not display.
+- Storage warnings open the storage page. Behind the scenes: identify the remaining monitoring cost and keep this update unpublished until its performance and release checks pass.
 
 ---
 

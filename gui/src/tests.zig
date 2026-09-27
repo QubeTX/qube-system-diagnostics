@@ -2118,7 +2118,7 @@ test "overview selects fixed storage and stable graphics with honest unified mem
 test "overview findings preserve severity and route by identity after copy changes" {
     var model = main.initialModel();
     try model.detail.applyFastJson(testing.allocator,
-        \\{"data":{"cpu":{},"memory":{},"network":{},"processes":{},"findings":[{"id":"memory-pressure","kind":"resource_pressure","severity":"warning","title":"Capacity is almost full","evidence":"fixture","next_step":"Inspect apps","source":"fast"}]}}
+        \\{"data":{"cpu":{},"memory":{},"network":{},"processes":{},"findings":[{"id":"memory-pressure","kind":"resource_pressure","severity":"warning","title":"Capacity is almost full","evidence":"fixture","next_step":"Inspect apps","source":"fast"},{"id":"explicit-storage-read","kind":"hardware_fault","severity":"warning","title":"Read interrupted","evidence":"fixture","next_step":"Inspect storage","source":"explicit storage probe"}]}}
     );
     model.overview.prepare(&model);
     const finding = model.overview.findings()[0];
@@ -2128,6 +2128,8 @@ test "overview findings preserve severity and route by identity after copy chang
     main.update(&model, .{ .open_overview_finding = finding.id }, &fx);
     try testing.expectEqual(@as(u8, 6), model.active_section);
     try testing.expectEqual(main.ProcessSort.memory, model.process_sort);
+    main.update(&model, .{ .open_overview_finding = model.detail.findings()[1].id }, &fx);
+    try testing.expectEqual(@as(u8, 3), model.active_section);
 }
 
 test "overview graphics card contains two adapters additional count and delayed state" {
