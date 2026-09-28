@@ -6,6 +6,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## In development — A clearer system overview
 
+- Behind the scenes: accept the reviewed Windows monitoring overhead and investigate the remaining interface delays on Macs. Keep the measured failures visible and the update unpublished while those checks remain open.
+
 - See graphics, processor and memory activity first, with storage, network traffic and temperatures directly below. Compact cards open the detailed pages, while a small process summary helps find apps using the most resources.
 - Keep collection problems beside the affected reading and expand findings or system details when needed. Missing readings remain visibly unavailable instead of looking like idle hardware.
 - Behind the scenes: collect the readings the overview displays and identify resource-heavy apps across the full running-app list. Keep monitoring bounded and preserve the existing installation and terminal behavior.

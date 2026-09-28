@@ -290,7 +290,7 @@ jobs:
           fi
       - name: Attribute native macOS CPU independently of shutdown qualification
         if: ${{ always() && runner.os == 'macOS' }}
-        timeout-minutes: 3
+        timeout-minutes: 5
         shell: bash
         run: |
           set -uo pipefail
@@ -301,6 +301,12 @@ jobs:
           # both reports even if one diagnostic discovers a shutdown failure.
           result=0
           python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/hidden-stack-diagnostic.json" --revision '${{ github.sha }}' --seconds 20 --hidden --profile-cpu || result=1
+          # Attribute the visible refresh path separately: hidden sampling cannot
+          # explain layout/raster costs. These are observer-attached diagnostics,
+          # never timing or resource acceptance and never a waiver of those gates.
+          for section in Overview Processes; do
+            python scripts/measure-gui-unix.py "$bundle/sd300-gui" --output "$out/$section-stack-diagnostic.json" --revision '${{ github.sha }}' --seconds 20 --section "$section" --profile-cpu || result=1
+          done
           python scripts/measure-tui-unix.py target/release/sd300 --output "$out/tui-stack-diagnostic.json" --revision '${{ github.sha }}' --seconds 20 --profile-cpu || result=1
           exit "$result"
       - uses: actions/upload-artifact@v6

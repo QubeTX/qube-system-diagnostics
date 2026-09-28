@@ -15,7 +15,7 @@
 ## To-Do
 
 ## Active
-- [ ] **Build a clear gamer-focused System overview** - revised six-card dashboard verified locally; 4.1.0 release held by original CPU/frame gates and physical DPI acceptance, evidence in docs/qualification/overview-4.1.0.md (owner codex) #ov6
+- [ ] **Build a clear gamer-focused System overview** - revised dashboard verified locally; recorded Windows CPU overrun accepted in ADR 0023; investigate hosted frame/input failures and finish physical DPI acceptance (owner codex) #ov6
   - [x] Wire overview collection and bounded summaries
   - [x] Implement responsive cards, findings and navigation
   - [ ] Verify native behavior, layouts and collection cost

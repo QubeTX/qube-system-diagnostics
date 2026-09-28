@@ -1,6 +1,6 @@
 # Overview candidate qualification
 
-2026-09-27. Candidate branch: `codex/sd300-overview-cards`. This is an unpublished 4.1.0 candidate. Operator release authorization is conditional on confidence and qualification; no performance exception applies.
+2026-09-27. Candidate branch: `codex/sd300-overview-cards`. This is an unpublished 4.1.0 candidate. Operator release authorization is conditional on confidence and qualification. ADR 0023 accepts only the recorded Windows Overview CPU result; timing and other qualification requirements remain open.
 
 ## Functional and visual evidence
 
@@ -11,6 +11,8 @@
 - Multi-GPU/unified memory, missing and delayed observations, fixed-volume selection, complete-inventory process leaders and finding identity/severity have deterministic coverage. This is not a claim of a physical hardware matrix.
 
 ## Original resource gate remains failed
+
+Operator acceptance: on 2026-09-27 the operator answered "That's okay" for the measured Windows Overview 2.24% CPU result. ADR 0023 records that specific result as nonblocking without changing its original failed verdict or extending acceptance to other workloads or platforms.
 
 Production Windows artifact, observers and compilers closed, 15-second warmup followed by a 330-second Overview measurement using `scripts/measure-gui-windows.py`. CPU is percent of one logical core including owned descendants; RSS is the conservative process sum.
 

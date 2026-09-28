@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - Unreleased
 
+- Record operator acceptance of the specific Windows Overview CPU result (ADR 0023), preserving the original failed verdict. Extend separate macOS stack diagnostics to foreground Overview and Processes to attribute the remaining layout/raster timing failures; do not alter product behavior or release thresholds.
+
 - Replace the native overview with responsive GPU/CPU/memory and disk/network/thermal cards, a bounded process-consumer summary, and expandable findings/system evidence. Retain missing and delayed states, stable adapter identity, explicit storage/interface scope, and navigation to existing detail pages.
 - Subscribe Overview to Fast, Static, Slow, Activity and Health lanes without enabling connections, diagnostics or driver scans. Select top CPU/memory consumers before truncating the internal JSON projection and retain finding identity/severity without changing the fixed C ABI or public export schemas (ADR 0022).
 - Bind the internal topic-envelope version assertion to the package version so release bumps cannot leave a stale test expectation behind.
