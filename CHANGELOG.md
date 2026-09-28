@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - Unreleased
 
+- Add bounded, generation-aware native text-width reuse at the provider seam (ADR 0024). Preserve exact measured widths, provider identity, font/appearance invalidation and failure recovery; update the reviewed SDK patch and both build preparers together.
+
 - Remove decorative small-panel shadows from the Warm Carbon theme, retaining borders, surface contrast and separate floating-surface shadows. Qualify this isolated rendering change against the recorded native timing baseline.
 
 - Record operator acceptance of the specific Windows Overview CPU result (ADR 0023), preserving the original failed verdict. Extend separate macOS stack diagnostics to foreground Overview and Processes to attribute the remaining layout/raster timing failures; do not alter product behavior or release thresholds.

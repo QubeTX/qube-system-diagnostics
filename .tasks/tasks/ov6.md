@@ -16,6 +16,8 @@ GUI overview and its collection subscriptions; shared profile scheduling and int
 All cards populate from a fresh launch, route to details, distinguish missing/stale data, and remain readable at compact/default sizes. Operator owns the approved visual requirements; repository policy owns performance and release gates. Two cycles without new evidence trigger diagnosis rather than another unchanged run.
 
 ## Verification
+
+- 2026-09-27: bounded text-width reuse passes 81 native tests (2 skipped), strict bindings, coordinated versions and both patch preparers. Hosted native timing and release qualification remain open.
 - [x] Root and engine tests for sampling and summary correctness
 - [x] Native tests and strict bindings
 - [x] Fresh-launch live readings, card navigation and expansion
@@ -27,6 +29,8 @@ All cards populate from a fresh launch, route to details, distinguish missing/st
 Active: implementation and revised layout verified locally. Operator accepted the recorded Windows Overview CPU overrun in ADR 0023. ARM64/Mac diagnosis identifies navigation drawing cost, decorative shadow blur and repeated text measurement; optimization and qualification remain in #r16. Physical Windows display-scale acceptance remains unverified. Release authorization remains conditional on qualification.
 
 ## Activity
+
+- 2026-09-27 — codex: implement bounded native text-width reuse through the pinned SDK patch while the independent shadow-only run 36364119149 measures the first optimization. Preserve all release thresholds and exact-candidate checks; local cache regressions and native timing qualification remain pending.
 - 2026-09-27 — Operator explicitly authorizes the remaining optimizations and release. Begin with the measured shadow cost, then bounded text-measurement reuse; complete native qualification and composite release checks before publication. (agent: codex)
 - 2026-09-27 — Native foreground diagnosis complete on both Macs: Overview and Processes reach shadow-blur and repeated text-measurement paths; all four samples shut down cleanly. Evidence and exact artifact identities retained with #r16. Corrected a stale Windows harness fixture for Overview's Slow/Activity workers; five resource-harness and fifteen interaction-report tests pass. This cycle diagnoses remaining work, does not claim a renderer fix or publish. (agent: codex)
 - 2026-09-27 — Operator accepts the specific 2.24% Windows Overview CPU measurement; record ADR 0023, preserving original verdict and #r17. Exact-source 97d569f run 36349910900 completes: all six native targets fail frame p95, both Macs also fail input p95, but all interaction cohorts and shutdowns complete. Mac layout and combined raster/present dominate; add separate foreground Overview/Processes native stack sampling to attribute those costs. This diagnostic cycle changes no product code or thresholds. (agent: codex)

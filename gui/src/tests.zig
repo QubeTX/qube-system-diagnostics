@@ -11,6 +11,69 @@ test { _ = @import("settings_writer.zig"); }
 
 const AppMarkup = canvas.MarkupView(main.Model, main.Msg);
 
+test "native text widths reuse exact measurements and invalidate with fonts" {
+    const Probe = struct {
+        calls: usize = 0,
+        width: f32 = 37.5,
+        fn measure(raw: ?*anyopaque, _: canvas.FontId, _: f32, _: []const u8) f32 {
+            const self: *@This() = @ptrCast(@alignCast(raw.?));
+            self.calls += 1;
+            return self.width;
+        }
+    };
+    canvas.bumpTextMeasureGeneration();
+    var probe = Probe{};
+    var provider = canvas.TextMeasureProvider{ .context = &probe, .measure_fn = Probe.measure, .cache_widths = true };
+    var label = [_]u8{ 'G', 'P', 'U' };
+    try testing.expectEqual(@as(f32, 37.5), provider.measureWidth(64, 14, &label));
+    try testing.expectEqual(@as(f32, 37.5), provider.measureWidth(64, 14, &label));
+    try testing.expectEqual(@as(usize, 1), probe.calls);
+    label[0] = 'C';
+    _ = provider.measureWidth(64, 14, &label);
+    _ = provider.measureWidth(65, 14, &label);
+    _ = provider.measureWidth(65, 15, &label);
+    try testing.expectEqual(@as(usize, 4), probe.calls);
+    probe.width = 42;
+    canvas.bumpTextMeasureGeneration();
+    try testing.expectEqual(@as(f32, 42), provider.measureWidth(65, 15, &label));
+    try testing.expectEqual(@as(usize, 5), probe.calls);
+    var other = Probe{ .width = 61 };
+    provider.context = &other;
+    try testing.expectEqual(@as(f32, 61), provider.measureWidth(65, 15, &label));
+    try testing.expectEqual(@as(usize, 1), other.calls);
+    // Mutable, ad-hoc providers keep their original uncached contract.
+    provider.cache_widths = false;
+    other.width = 72;
+    try testing.expectEqual(@as(f32, 72), provider.measureWidth(65, 15, &label));
+}
+
+test "native text cache does not retain failures or truncate long text" {
+    const Probe = struct {
+        calls: usize = 0,
+        width: f32 = -1,
+        fn measure(raw: ?*anyopaque, _: canvas.FontId, _: f32, _: []const u8) f32 {
+            const self: *@This() = @ptrCast(@alignCast(raw.?));
+            self.calls += 1;
+            return self.width;
+        }
+    };
+    canvas.bumpTextMeasureGeneration();
+    var probe = Probe{};
+    const provider = canvas.TextMeasureProvider{ .context = &probe, .measure_fn = Probe.measure, .cache_widths = true };
+    _ = provider.measureWidth(1, 14, "Reading");
+    probe.width = std.math.nan(f32);
+    _ = provider.measureWidth(1, 14, "Reading");
+    probe.width = 47;
+    try testing.expectEqual(@as(f32, 47), provider.measureWidth(1, 14, "Reading"));
+    try testing.expectEqual(@as(usize, 3), probe.calls);
+    var long = [_]u8{'a'} ** 257;
+    _ = provider.measureWidth(1, 14, &long);
+    probe.width = 91;
+    long[256] = 'b';
+    try testing.expectEqual(@as(f32, 91), provider.measureWidth(1, 14, &long));
+    try testing.expectEqual(@as(usize, 5), probe.calls);
+}
+
 test "automation publication yields to input presentation and wakes afterward" {
     const harness = try native_sdk.runtime.TestHarness().create(testing.allocator, .{});
     defer harness.destroy(testing.allocator);

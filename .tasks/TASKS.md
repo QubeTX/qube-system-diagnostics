@@ -14,7 +14,7 @@
 ## To-Do
 
 ## Active
-- [ ] **Restore original responsiveness targets after v4** - operator requested ARM64/Mac timing investigation; separate navigation drawing from Mac layout costs with foreground native stack captures (owner codex) #r16
+- [ ] **Restore original responsiveness targets after v4** - attributed shadow and text-sizing costs; isolated shadow timing running, bounded native-width reuse locally verified and ready for its exact-source matrix (owner codex) #r16
 - [ ] **Build a clear gamer-focused System overview** - revised dashboard verified locally; recorded Windows CPU overrun accepted in ADR 0023; investigate hosted frame/input failures and finish physical DPI acceptance (owner codex) #ov6
   - [x] Wire overview collection and bounded summaries
   - [x] Implement responsive cards, findings and navigation

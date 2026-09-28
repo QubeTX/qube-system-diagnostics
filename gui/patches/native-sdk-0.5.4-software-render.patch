@@ -2916,7 +2916,15 @@ diff --git a/src/runtime/core.zig b/src/runtime/core.zig
      async_bridge_responses: [max_async_bridge_responses]AsyncBridgeResponseSlot = [_]AsyncBridgeResponseSlot{.{}} ** max_async_bridge_responses,
      automation_windows: [automation.snapshot.max_windows]automation.snapshot.Window = undefined,
      /// Snapshot-side storage for the frame profile's per-stage stats
-@@ -693,6 +697,7 @@
+@@ -447,6 +451,7 @@
+                 .context = options.platform.services.context,
+                 .measure_fn = measure_fn,
+                 .measure_advances_fn = options.platform.services.measure_text_advances_fn,
++                .cache_widths = true,
+             }
+         else
+             null;
+@@ -693,6 +698,7 @@
      pub const createTray = SystemServiceMethods.createTray;
      pub const updateTrayMenu = SystemServiceMethods.updateTrayMenu;
      pub const updateTrayTitle = SystemServiceMethods.updateTrayTitle;
@@ -3574,3 +3582,91 @@ diff --git a/src/runtime/gpu_surface_events.zig b/src/runtime/gpu_surface_events
              // Tell the host input landed BEFORE anything dispatches:
              // hosts that throttle occluded/minimized frame completions
              // to a heartbeat must let this input's responding frame fire
+diff --git a/src/primitives/canvas/text_metrics.zig b/src/primitives/canvas/text_metrics.zig
+--- a/src/primitives/canvas/text_metrics.zig
++++ b/src/primitives/canvas/text_metrics.zig
+@@ -29,9 +29,15 @@
+     /// with line breaks then derived from cumulative advances exactly as
+     /// the estimator path derives them.
+     measure_advances_fn: ?*const fn (context: ?*anyopaque, font_id: FontId, size: f32, text: []const u8, advances: []f32) bool = null,
++    /// Opt in only for providers whose changes invalidate the shared measured-
++    /// text generation. Ad-hoc mutable providers keep their uncached semantics.
++    cache_widths: bool = false,
+ 
+     pub fn measureWidth(self: TextMeasureProvider, font_id: FontId, size: f32, text: []const u8) f32 {
+         if (text.len == 0) return 0;
++        if (self.cache_widths and text.len <= width_cache_text_bytes) {
++            return cachedWidth(self, font_id, size, text);
++        }
+         const width = self.measure_fn(self.context, font_id, size, text);
+         if (!(width >= 0) or !isFiniteF32(width)) return estimateTextWidthForFont(font_id, text, size);
+         return width;
+@@ -49,6 +55,57 @@
+         return advances_fn(self.context, font_id, size, text, advances[0..text.len]);
+     }
+ };
++
++// Intrinsic layout revisits the same short labels many times in one tree walk.
++// Cache before crossing the native FFI (including the host's own cache-key
++// allocation). Fixed direct-mapped storage has bounded time and memory. Exact
++// bytes, provider identity, font, size and generation guard every cache hit.
++const width_cache_text_bytes = 256;
++const WidthEntry = struct {
++    generation: u64 = 0,
++    hash: u64 = 0,
++    context: ?*anyopaque = null,
++    measure_fn: ?*const fn (?*anyopaque, FontId, f32, []const u8) f32 = null,
++    font_id: FontId = 0,
++    size_bits: u32 = 0,
++    text_len: usize = 0,
++    width: f32 = 0,
++    text: [width_cache_text_bytes]u8 = undefined,
++};
++const WidthCache = struct {
++    entries: [256]WidthEntry = @splat(.{}),
++};
++const width_cache = @import("lazy_tls.zig").LazyTls(WidthCache);
++
++fn cachedWidth(provider: TextMeasureProvider, font_id: FontId, size: f32, text: []const u8) f32 {
++    const generation = @import("text_measure_cache.zig").textMeasureGeneration();
++    const size_bits: u32 = @bitCast(size);
++    const hash = std.hash.Wyhash.hash(font_id ^ @as(u64, size_bits), text);
++    const entry = &width_cache.get().entries[hash % 256];
++    if (entry.generation == generation and entry.hash == hash and
++        entry.context == provider.context and entry.measure_fn == provider.measure_fn and
++        entry.font_id == font_id and entry.size_bits == size_bits and
++        entry.text_len == text.len and std.mem.eql(u8, entry.text[0..text.len], text))
++    {
++        return entry.width;
++    }
++    const width = provider.measure_fn(provider.context, font_id, size, text);
++    // A failed provider may recover without a font change. Never retain its
++    // estimator fallback as if it were an authoritative native measurement.
++    if (!(width >= 0) or !isFiniteF32(width)) return estimateTextWidthForFont(font_id, text, size);
++    entry.* = .{
++        .generation = generation,
++        .hash = hash,
++        .context = provider.context,
++        .measure_fn = provider.measure_fn,
++        .font_id = font_id,
++        .size_bits = size_bits,
++        .text_len = text.len,
++        .width = width,
++    };
++    @memcpy(entry.text[0..text.len], text);
++    return width;
++}
+ 
+ /// Width of a text run: the provider when installed, the deterministic
+ /// estimator otherwise. This is the single measurement seam every layout
+diff --git a/src/runtime/canvas_fonts.zig b/src/runtime/canvas_fonts.zig
+--- a/src/runtime/canvas_fonts.zig
++++ b/src/runtime/canvas_fonts.zig
+@@ -222,6 +222,7 @@
+                     .context = self,
+                     .measure_fn = canvasFontMeasure,
+                     .measure_advances_fn = canvasFontMeasureAdvances,
++                    .cache_widths = true,
+                 };
+             }
+             noteCanvasFontsChanged(self);

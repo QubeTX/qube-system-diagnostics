@@ -6,6 +6,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## In development — A clearer system overview
 
+- Behind the scenes: reuse unchanged text measurements to reduce repeated layout work, while keeping labels accurate when fonts or their contents change.
+
 - Keep monitoring cards flat and clearly outlined, avoiding repeated shadow drawing as readings change.
 
 - Behind the scenes: accept the reviewed Windows monitoring overhead and investigate the remaining interface delays on Macs. Keep the measured failures visible and the update unpublished while those checks remain open.

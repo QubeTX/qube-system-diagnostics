@@ -17,7 +17,7 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "8888f02cae3a2154676fd2f1fab275459ab9d501942a30d24538532ae741b121",
+  patchHash: "348c6d65e3d3c9a412e1370b3910f96df784dae59d497c6bb74d081cca57a952",
 };
 
 const files = new Map([
@@ -48,11 +48,13 @@ const files = new Map([
   ["src/runtime/bridge_permission_tests.zig", ["d048b23298d75c225476e2708c695c4bb4feca26c09131648d13112067cce9c1", "e083b02a70108f669077306efcd564bd6b3de37c1f2d76feb4da01015275d9c4"]],
   ["src/runtime/canvas_frame.zig", ["d2eb5ff8c63a391a695a2a47bfef6c315ddafa98e7b35cd91253437eb066a0ce", "2678ff7cfb3d47c765d517d5b9c8eb1746985cb6b610e75da3bfd02c24eb0639"]],
   ["src/runtime/canvas_frame_patch_tests.zig", ["c24d345ae4c26b073b84442bad64b2378ab7a4f424813df0b0a7d3ffcbb96d79", "c83a1327674e9e7b8b36accdaf8ed2e63ca140ec00a81c1f81347b375c6cf462"]],
-  ["src/runtime/core.zig", ["47ec8939f1be3be8808360627f26a41135398a5cb52d36c8785414b9b195e193", "16541e30e483336dc542ff11796ca66deda217bb49479ea8603c6a03eb100f4a"]],
+  ["src/runtime/core.zig", ["47ec8939f1be3be8808360627f26a41135398a5cb52d36c8785414b9b195e193", "b74df291a5f40e0f045d893df7488b40c4957b78fdefd75e5d79b91d679efed7"]],
   ["src/runtime/system_services.zig", ["69ed09c968796645c03276f4fa6e7065350a63bf9926070c255d41ab8c09e46e", "0a519438bd416d01f9196e605d27d537fd1e9acd12443afa2cdd367954fd833c"]],
   ["src/runtime/ui_app.zig", ["eedba5eef9470959f75aa97574c1343466798a4e093476fff2fb5dd9ac465e26", "f1f5d5aef7eccd36af9ceec2a1e1df4d423a9975caa3742887806fa90804b301"]],
   ["src/runtime/ui_app_tests.zig", ["eaf4c33dfca9858e9070faedb3809be5ba330893bb71fad7c6fdc416b29570af", "7c27ef3b85fb927c4b7abe7e6ac93f95a73f7afeebb42aaf2fa00206009472d7"]],
   ["src/runtime/validation.zig", ["96790d675894fca8b1af1233ef81161433932d2ac00777f61809ff82a7bdef36", "41cf8fb540a20f1084551c93543f1f0d480d54d716a28145b3a9d021b5cb0a28"]],
+  ["src/primitives/canvas/text_metrics.zig", ["be496292b19ddaa8b53f286873b8f0cc708030c974921d38841e0854446b120e", "2e8890f187d529652ffdcca76fc9b8f4a4dffc1e8fb79b3e4bf239b2a91bb09a"]],
+  ["src/runtime/canvas_fonts.zig", ["1e7ae44e142d49d64c1d87f50d04488a8661af122e114eb3009adec32eef261c", "748e7212c0415a04d41632ee6959dd2d17de3fce455f6e4c53a37d202d258b86"]],
 ]);
 
 function fail(message) {
