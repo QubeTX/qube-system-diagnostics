@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - Unreleased
 
+- Use the existing compact monospace face for missing thermal readings in the fixed trailing column, preserving the complete status label after native inspection found proportional-font truncation.
+
 - Strengthen secondary overview hierarchy: prominent adaptive byte rates with adjacent units, separate fixed-volume free-space context, grouped network history/scope, and aligned temperature readings with quieter missing states. Add byte-unit/missing-data and secondary-card overlap checks.
 - Split the profiling-only software presentation interval into raster work and host pixel conversion/transfer, preserving the combined interval and all gates. Retain the latest native timing failures; Linux GNU ARM64 passes while other completed targets still need work.
 

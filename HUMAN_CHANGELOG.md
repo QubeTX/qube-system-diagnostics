@@ -6,6 +6,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## In development — A clearer system overview
 
+- Keep missing-temperature labels fully readable beside their sensor names.
+
 - Make disk activity, network traffic and temperatures easier to spot. Keep units close to their readings, separate free space from disk activity, and show large transfer rates in shorter, readable units.
 - Behind the scenes: distinguish drawing cost from sending the finished image to the window, so remaining interface delays can be investigated more precisely.
 

@@ -89,8 +89,8 @@
             <panel height="216" padding="16" background="surface" radius="lg" role="button" label="Open Thermals details" on-press="select_thermals">
               <column gap="8">
                 <row><text grow="1" foreground="text_muted">Thermals</text><text foreground="text_muted">›</text></row>
-                <row height="38" gap="12" cross="center"><text grow="1" size="sm" foreground="text_muted">CPU</text><if test="{overview.thermals.available}"><text width="116" size="heading" text-alignment="end">{overview.thermals.value}</text></if><else><text width="116" size="sm" text-alignment="end" foreground="text_muted">{overview.thermals.value}</text></else></row>
-                <for each="overviewGpus" as="gpu" key="id"><row height="38" gap="12" cross="center"><text grow="1" height="38" size="sm" wrap="true" overflow="ellipsis" foreground="text_muted">{gpu.name}</text><if test="{gpu.temperature_available}"><text width="116" size="heading" text-alignment="end">{gpu.temperature}</text></if><else><text width="116" size="sm" text-alignment="end" foreground="text_muted">{gpu.temperature}</text></else></row></for>
+                <row height="38" gap="12" cross="center"><text grow="1" size="sm" foreground="text_muted">CPU</text><if test="{overview.thermals.available}"><text width="116" size="heading" text-alignment="end">{overview.thermals.value}</text></if><else><text width="116" size="sm" text-alignment="end" foreground="text_muted"><span mono="true">{overview.thermals.value}</span></text></else></row>
+                <for each="overviewGpus" as="gpu" key="id"><row height="38" gap="12" cross="center"><text grow="1" height="38" size="sm" wrap="true" overflow="ellipsis" foreground="text_muted">{gpu.name}</text><if test="{gpu.temperature_available}"><text width="116" size="heading" text-alignment="end">{gpu.temperature}</text></if><else><text width="116" size="sm" text-alignment="end" foreground="text_muted"><span mono="true">{gpu.temperature}</span></text></else></row></for>
                 <text size="sm" foreground="text_muted">{overview.thermals.state}</text>
               </column>
             </panel>
