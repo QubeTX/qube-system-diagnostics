@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - Unreleased
 
+- Repair downstream renderer test fixtures: make nested-helper geometry compile-time constants and reconcile memo counters with the existing direct opaque-fill path while preserving byte-for-byte pixel comparisons. The full canvas/font-registry suites now pass (902 tests, 3 skipped).
+
 - Add bounded, generation-aware native text-width reuse at the provider seam (ADR 0024). Preserve exact measured widths, provider identity, font/appearance invalidation and failure recovery; update the reviewed SDK patch and both build preparers together.
 
 - Remove decorative small-panel shadows from the Warm Carbon theme, retaining borders, surface contrast and separate floating-surface shadows. Qualify this isolated rendering change against the recorded native timing baseline.

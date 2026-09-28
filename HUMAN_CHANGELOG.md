@@ -6,6 +6,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## In development — A clearer system overview
 
+- Behind the scenes: restore broader checks that compare rendered pixels and verify font changes, improving coverage of the interface optimizations.
+
 - Behind the scenes: reuse unchanged text measurements to reduce repeated layout work, while keeping labels accurate when fonts or their contents change.
 
 - Keep monitoring cards flat and clearly outlined, avoiding repeated shadow drawing as readings change.

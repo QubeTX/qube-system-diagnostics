@@ -2245,10 +2245,9 @@ index cca05e7..f3070d6 100644
      //
      // Scale-once pool for `draw_image`: at integer device alignment a
 diff --git a/src/primitives/canvas/reference_tests.zig b/src/primitives/canvas/reference_tests.zig
-index 1e4fb9a..1968c74 100644
 --- a/src/primitives/canvas/reference_tests.zig
 +++ b/src/primitives/canvas/reference_tests.zig
-@@ -489,6 +489,364 @@ test "reference renderer clears dirty rect on retained load" {
+@@ -489,6 +489,364 @@
      try expectPixelRgba8(.{ 0, 0, 255, 255 }, surface, 3, 3);
  }
  
@@ -2390,9 +2389,9 @@ index 1e4fb9a..1968c74 100644
 +test "static chrome prefix damage rendering stays byte equal and invalidates exactly" {
 +    const width = 24;
 +    const height = 16;
-+    const surface_bounds = geometry.RectF.init(0, 0, width, height);
-+    const panel_bounds = geometry.RectF.init(2, 2, 20, 12);
-+    const indicator_bounds = geometry.RectF.init(7, 6, 10, 4);
++    const surface_bounds = comptime geometry.RectF.init(0, 0, width, height);
++    const panel_bounds = comptime geometry.RectF.init(2, 2, 20, 12);
++    const indicator_bounds = comptime geometry.RectF.init(7, 6, 10, 4);
 +    const clear = Color.rgb8(1, 2, 3);
 +
 +    const Harness = struct {
@@ -2613,10 +2612,62 @@ index 1e4fb9a..1968c74 100644
  test "reference renderer captures Phase 2 primitive signature" {
      const stops = [_]GradientStop{
          .{ .offset = 0, .color = Color.rgb8(248, 250, 252) },
-@@ -1462,6 +1820,66 @@ test "reference renderer draws proxy text runs" {
-     try expectPixelRgba8(.{ 0, 0, 0, 255 }, surface, 1, 3);
+@@ -1335,7 +1693,8 @@
+     var memo = canvas.ReferenceRenderMemo.init(std.testing.allocator);
+     defer memo.deinit();
+     // The production threshold skips small rects; the test surface is
+-    // tiny, so memoize everything to exercise all four command kinds.
++    // tiny, so memoize eligible effects. Opaque solid fills deliberately
++    // bypass background-dependent memoization in the downstream renderer.
+     memo.min_pixels = 0;
+ 
+     var baseline: [8 * 8 * 4]u8 = undefined;
+@@ -1345,30 +1704,29 @@
+     const red = Color.rgb8(255, 0, 0);
+     try frame.render(red, &baseline, &scratch, null);
+ 
+-    // Cold memo: all five commands miss and compute — same bytes as
+-    // unmemoized.
++    // Cold memo: blur, translucent wash and shadow miss; the two opaque
++    // fills use their direct paths. All output stays equal to unmemoized.
+     try frame.render(red, &pixels, &scratch, &memo);
+     try std.testing.expectEqual(@as(u64, 0), memo.hits);
+-    try std.testing.expectEqual(@as(u64, 5), memo.misses);
++    try std.testing.expectEqual(@as(u64, 3), memo.misses);
+     try std.testing.expectEqualSlices(u8, &baseline, &pixels);
+ 
+-    // Warm memo: every command hits — replayed bytes must be identical
+-    // too.
++    // Warm memo: all three eligible effects hit, with identical bytes.
+     try frame.render(red, &pixels, &scratch, &memo);
+-    try std.testing.expectEqual(@as(u64, 5), memo.hits);
+-    try std.testing.expectEqual(@as(u64, 5), memo.misses);
++    try std.testing.expectEqual(@as(u64, 3), memo.hits);
++    try std.testing.expectEqual(@as(u64, 3), memo.misses);
+     try std.testing.expectEqualSlices(u8, &baseline, &pixels);
+ 
+     // Changed content at the bottom of the stack: every layer above it
+-    // reads different source bytes, so all five must MISS (stale pixels
++    // reads different source bytes, so all three effects must MISS (stale pixels
+     // would be wrong) and match the unmemoized render of the new
+     // content.
+     const green = Color.rgb8(0, 255, 0);
+     var changed_baseline: [8 * 8 * 4]u8 = undefined;
+     try frame.render(green, &changed_baseline, &scratch, null);
+     try frame.render(green, &pixels, &scratch, &memo);
+-    try std.testing.expectEqual(@as(u64, 5), memo.hits);
+-    try std.testing.expectEqual(@as(u64, 10), memo.misses);
++    try std.testing.expectEqual(@as(u64, 3), memo.hits);
++    try std.testing.expectEqual(@as(u64, 6), memo.misses);
+     try std.testing.expectEqualSlices(u8, &changed_baseline, &pixels);
  }
  
+@@ -1460,6 +1818,66 @@
+     try expectPixelRgba8(.{ 72, 0, 0, 255 }, surface, 3, 1);
+     try expectPixelRgba8(.{ 0, 0, 0, 255 }, surface, 4, 1);
+     try expectPixelRgba8(.{ 0, 0, 0, 255 }, surface, 1, 3);
++}
++
 +test "glyph coverage masks reuse raster across position color and background" {
 +    const width: usize = 128;
 +    const height: usize = 72;
@@ -2675,11 +2726,9 @@ index 1e4fb9a..1968c74 100644
 +    try std.testing.expectEqual(@as(u64, 2), memo.glyph_mask_misses);
 +    try blendSplitRenderPass(direct, fractional, changed_background, width, height);
 +    try std.testing.expectEqualSlices(u8, direct_pixels[0..], cached_pixels[0..]);
-+}
-+
+ }
+ 
  test "reference renderer advances proxy text by utf8 scalars" {
-     const commands = [_]CanvasCommand{.{ .draw_text = .{
-         .id = 1,
 diff --git a/src/runtime/bridge_permission_tests.zig b/src/runtime/bridge_permission_tests.zig
 index 76ba3e4..490866b 100644
 --- a/src/runtime/bridge_permission_tests.zig

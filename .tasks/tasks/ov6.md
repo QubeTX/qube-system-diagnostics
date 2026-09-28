@@ -30,6 +30,8 @@ Active: implementation and revised layout verified locally. Operator accepted th
 
 ## Activity
 
+- 2026-09-27 — codex: Windows production build/distribution check and cargo publish dry run pass on 395e243. Broad SDK verification passes 902 tests / 3 skipped after fixing stale test fixtures. Shadow-only Linux ARM64 timing passes; Linux x86-64 still fails frame p95. Windows installer run 36364695685 remains in progress; exact final candidate qualification is still required.
+
 - 2026-09-27 — codex: implement bounded native text-width reuse through the pinned SDK patch while the independent shadow-only run 36364119149 measures the first optimization. Preserve all release thresholds and exact-candidate checks; local cache regressions and native timing qualification remain pending.
 - 2026-09-27 — Operator explicitly authorizes the remaining optimizations and release. Begin with the measured shadow cost, then bounded text-measurement reuse; complete native qualification and composite release checks before publication. (agent: codex)
 - 2026-09-27 — Native foreground diagnosis complete on both Macs: Overview and Processes reach shadow-blur and repeated text-measurement paths; all four samples shut down cleanly. Evidence and exact artifact identities retained with #r16. Corrected a stale Windows harness fixture for Overview's Slow/Activity workers; five resource-harness and fifteen interaction-report tests pass. This cycle diagnoses remaining work, does not claim a renderer fix or publish. (agent: codex)

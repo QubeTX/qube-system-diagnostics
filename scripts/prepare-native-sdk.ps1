@@ -15,7 +15,7 @@ $requiredVersion = "0.5.4"
 $requiredTarball = "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz"
 $requiredIntegrity = "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA=="
 $requiredZigHash = "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb"
-$requiredPatchHash = "348c6d65e3d3c9a412e1370b3910f96df784dae59d497c6bb74d081cca57a952"
+$requiredPatchHash = "ee595b72a34d2edd692fbe01d7a930f0b960209e3ad6a47a25a8048da99e53b8"
 
 if (-not (Test-Path -LiteralPath $sdkRoot -PathType Container)) {
     throw "The project-local Native SDK is missing. Run npm ci in '$gui' first."
@@ -137,7 +137,7 @@ $files = [ordered]@{
     }
     "src/primitives/canvas/reference_tests.zig" = @{
         Pristine = "3accd42966c9465b28859cd73a33684619926d18082a32f7c6faac8b0f3b326a"
-        Patched = "55a3e981de470b10ff67821e978e476eecab6fd6f607cc3945b30a81a6014f60"
+        Patched = "12de22d15dd7466e55d3f5bb8d242db91b411240ad25a59db92845ef07269e1a"
     }
     "src/runtime/bridge_permission_tests.zig" = @{
         Pristine = "d048b23298d75c225476e2708c695c4bb4feca26c09131648d13112067cce9c1"
