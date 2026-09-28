@@ -17,11 +17,11 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "ee595b72a34d2edd692fbe01d7a930f0b960209e3ad6a47a25a8048da99e53b8",
+  patchHash: "26a6ddc8be5bfb75490a6a0358e4814195abc828324b851d9a2ee791dc069c41",
 };
 
 const files = new Map([
-  ["src/runtime/frame_profile.zig", ["d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528", "443d84663f01d03423eef9b645e748818a5531c07763add12b592fadc30d7252"]],
+  ["src/runtime/frame_profile.zig", ["d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528", "8ecfd3af2f5bd9400a43513916a34882c522ad8c9f75e5caaf3b5284834a7b31"]],
   ["src/runtime/flow.zig", ["e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78", "f584ddb37c6e42aaf466bccf821305497f6a66b58b099a01ad96ec4429002891"]],
   ["src/runtime/gpu_surface_events.zig", ["9ed40fbfb87ec9ad5011815e9d5ab760b8aff270516a2f77eec32e2a66acc439", "0a236f16201f7486be6db3e4fe216a2eecb9c4d14cb0c6e32ef6e3e75a998290"]],
   ["src/runtime/automation_snapshot.zig", ["5112c477f7032f19f3f2e0ee118215d394271d1fdb9780163ad599c7ee6be0e6", "5bf2342771107c2e47796b985bff04e558b0c377e1a85bb7edd36eca910d7cb3"]],
@@ -46,7 +46,7 @@ const files = new Map([
   ["src/primitives/canvas/reference.zig", ["56ef9cec4f76ee6cbff8a56dc5f579d3b9ee2daa79ad4cdb1f40073c3a053ecb", "0d913c9a0bfb1d2ead4ce07db2e93dd9089faf06443b7e1a2223f6c6551d8abd"]],
   ["src/primitives/canvas/reference_tests.zig", ["3accd42966c9465b28859cd73a33684619926d18082a32f7c6faac8b0f3b326a", "12de22d15dd7466e55d3f5bb8d242db91b411240ad25a59db92845ef07269e1a"]],
   ["src/runtime/bridge_permission_tests.zig", ["d048b23298d75c225476e2708c695c4bb4feca26c09131648d13112067cce9c1", "e083b02a70108f669077306efcd564bd6b3de37c1f2d76feb4da01015275d9c4"]],
-  ["src/runtime/canvas_frame.zig", ["d2eb5ff8c63a391a695a2a47bfef6c315ddafa98e7b35cd91253437eb066a0ce", "2678ff7cfb3d47c765d517d5b9c8eb1746985cb6b610e75da3bfd02c24eb0639"]],
+  ["src/runtime/canvas_frame.zig", ["d2eb5ff8c63a391a695a2a47bfef6c315ddafa98e7b35cd91253437eb066a0ce", "224604be9ca5311901aef5a5698341ae473af1941e331794d0353d5bff473b2e"]],
   ["src/runtime/canvas_frame_patch_tests.zig", ["c24d345ae4c26b073b84442bad64b2378ab7a4f424813df0b0a7d3ffcbb96d79", "c83a1327674e9e7b8b36accdaf8ed2e63ca140ec00a81c1f81347b375c6cf462"]],
   ["src/runtime/core.zig", ["47ec8939f1be3be8808360627f26a41135398a5cb52d36c8785414b9b195e193", "b74df291a5f40e0f045d893df7488b40c4957b78fdefd75e5d79b91d679efed7"]],
   ["src/runtime/system_services.zig", ["69ed09c968796645c03276f4fa6e7065350a63bf9926070c255d41ab8c09e46e", "0a519438bd416d01f9196e605d27d537fd1e9acd12443afa2cdd367954fd833c"]],

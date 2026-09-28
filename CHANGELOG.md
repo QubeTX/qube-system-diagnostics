@@ -4,6 +4,9 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - Unreleased
 
+- Strengthen secondary overview hierarchy: prominent adaptive byte rates with adjacent units, separate fixed-volume free-space context, grouped network history/scope, and aligned temperature readings with quieter missing states. Add byte-unit/missing-data and secondary-card overlap checks.
+- Split the profiling-only software presentation interval into raster work and host pixel conversion/transfer, preserving the combined interval and all gates. Retain the latest native timing failures; Linux GNU ARM64 passes while other completed targets still need work.
+
 - Increase separation below the Graphics heading and between adapter groups while preserving equal card dimensions and the default overview footprint. Recheck the loaded, multi-adapter and delayed-state layout bounds.
 
 - Verify the corrected multi-GPU layout in the actual Windows candidate at default and physical 150% display scaling; restore the original display setting. Retain the unverified 200% check separately because this monitor's standard scale menu ends at 175%.

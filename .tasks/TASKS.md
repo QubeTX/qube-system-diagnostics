@@ -14,8 +14,8 @@
 ## To-Do
 
 ## Active
-- [ ] **Restore original responsiveness targets after v4** - attributed shadow and text-sizing costs; isolated shadow timing running, bounded native-width reuse locally verified and ready for its exact-source matrix (owner codex) #r16
-- [ ] **Build a clear gamer-focused System overview** - multi-GPU overlap fixed and actual Windows layout inspected at 100/150%; 200% unavailable in this monitor's menu; exact-layout installer/timing/resource qualification running (owner codex) #ov6
+- [ ] **Restore original responsiveness targets after v4** - combined optimization passes GNU ARM64; remaining native timing failures retained; split raster/host diagnostics for the next attributed fix (owner codex) #r16
+- [ ] **Build a clear gamer-focused System overview** - graphics overlap/spacing corrected; refining secondary-card hierarchy from live feedback; installer qualification passes, original timing and full DPI qualification remain open (owner codex) #ov6
   - [x] Wire overview collection and bounded summaries
   - [x] Implement responsive cards, findings and navigation
   - [ ] Verify native behavior, layouts and collection cost

@@ -15,7 +15,7 @@ $requiredVersion = "0.5.4"
 $requiredTarball = "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz"
 $requiredIntegrity = "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA=="
 $requiredZigHash = "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb"
-$requiredPatchHash = "ee595b72a34d2edd692fbe01d7a930f0b960209e3ad6a47a25a8048da99e53b8"
+$requiredPatchHash = "26a6ddc8be5bfb75490a6a0358e4814195abc828324b851d9a2ee791dc069c41"
 
 if (-not (Test-Path -LiteralPath $sdkRoot -PathType Container)) {
     throw "The project-local Native SDK is missing. Run npm ci in '$gui' first."
@@ -45,7 +45,7 @@ if ($sdkPackage.version -ne $requiredVersion) {
 $files = [ordered]@{
     "src/runtime/frame_profile.zig" = @{
         Pristine = "d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528"
-        Patched = "443d84663f01d03423eef9b645e748818a5531c07763add12b592fadc30d7252"
+        Patched = "8ecfd3af2f5bd9400a43513916a34882c522ad8c9f75e5caaf3b5284834a7b31"
     }
     "src/runtime/flow.zig" = @{
         Pristine = "e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78"
@@ -145,7 +145,7 @@ $files = [ordered]@{
     }
     "src/runtime/canvas_frame.zig" = @{
         Pristine = "d2eb5ff8c63a391a695a2a47bfef6c315ddafa98e7b35cd91253437eb066a0ce"
-        Patched = "2678ff7cfb3d47c765d517d5b9c8eb1746985cb6b610e75da3bfd02c24eb0639"
+        Patched = "224604be9ca5311901aef5a5698341ae473af1941e331794d0353d5bff473b2e"
     }
     "src/runtime/canvas_frame_patch_tests.zig" = @{
         Pristine = "c24d345ae4c26b073b84442bad64b2378ab7a4f424813df0b0a7d3ffcbb96d79"

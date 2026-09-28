@@ -2744,14 +2744,22 @@ index 76ba3e4..490866b 100644
      try std.testing.expectEqual(@as(usize, 1), harness.null_platform.trayRemoveCount());
  }
 diff --git a/src/runtime/canvas_frame.zig b/src/runtime/canvas_frame.zig
-index ed90a45..58a846c 100644
 --- a/src/runtime/canvas_frame.zig
 +++ b/src/runtime/canvas_frame.zig
-@@ -401,7 +401,20 @@ pub fn RuntimeCanvasFrames(comptime Runtime: type) type {
+@@ -401,16 +401,37 @@
              // equivalent of the packet host's decode+draw).
              const present_begin = self.frame_profile.begin();
              defer self.frame_profile.end(.present, present_begin);
 -            try surface.renderPass(canvas_frame.renderPass(), clear_color);
+-            try self.options.platform.services.presentGpuSurfacePixels(.{
+-                .window_id = window_id,
+-                .label = label,
+-                .width = pixel_size.width,
+-                .height = pixel_size.height,
+-                .scale_factor = canvas_frame.scale,
+-                .dirty_bounds = canvas_frame.dirty_bounds,
+-                .rgba8 = surface.pixels,
+-            });
 +            // Retained pixel hosts still receive one bounding present below,
 +            // but sparse frames rasterize their canonical dirty fragments in
 +            // one command-major pass. The renderer falls back to the ordinary
@@ -2760,16 +2768,33 @@ index ed90a45..58a846c 100644
 +                self.views[index].canvas_widget_display_list_prefix_count
 +            else
 +                0;
-+            _ = try surface.renderPassDamageWithStaticPrefix(
-+                canvas_frame.renderPass(),
-+                clear_color,
-+                canvas_frame.dirtyRects(),
-+                prefix_command_count,
-+            );
-             try self.options.platform.services.presentGpuSurfacePixels(.{
-                 .window_id = window_id,
-                 .label = label,
-@@ -1391,38 +1404,64 @@ const CanvasPacketPatchDirty = struct {
++            {
++                const raster_begin = self.frame_profile.begin();
++                defer self.frame_profile.end(.raster, raster_begin);
++                _ = try surface.renderPassDamageWithStaticPrefix(
++                    canvas_frame.renderPass(),
++                    clear_color,
++                    canvas_frame.dirtyRects(),
++                    prefix_command_count,
++                );
++            }
++            {
++                const host_begin = self.frame_profile.begin();
++                defer self.frame_profile.end(.host_pixels, host_begin);
++                try self.options.platform.services.presentGpuSurfacePixels(.{
++                    .window_id = window_id,
++                    .label = label,
++                    .width = pixel_size.width,
++                    .height = pixel_size.height,
++                    .scale_factor = canvas_frame.scale,
++                    .dirty_bounds = canvas_frame.dirty_bounds,
++                    .rgba8 = surface.pixels,
++                });
++            }
+             if (runtimeFindViewIndex(self, window_id, label)) |index| {
+                 self.views[index].recordCanvasFramePresentationComplete(record_frame);
+                 // The platform present call succeeded: this frame painted
+@@ -1391,37 +1412,63 @@
      rects: [canvas.max_canvas_frame_dirty_rects]geometry.RectF = undefined,
      rect_count: usize = 0,
  
@@ -2788,23 +2813,8 @@ index ed90a45..58a846c 100644
 -            if (cluster.intersects(normalized)) {
 -                cluster.* = geometry.RectF.unionWith(cluster.*, normalized);
 -                return;
-+        var merged = normalized;
-+        self.absorbIntersecting(&merged);
-+        if (self.rect_count >= self.rects.len) {
-+            var best_index: usize = 0;
-+            var best_cost: f32 = std.math.floatMax(f32);
-+            for (self.rects[0..self.rect_count], 0..) |cluster, index| {
-+                const candidate = geometry.RectF.unionWith(cluster, merged);
-+                const cost = candidate.width * candidate.height - cluster.width * cluster.height;
-+                if (cost < best_cost) {
-+                    best_cost = cost;
-+                    best_index = index;
-+                }
-             }
-+            merged = geometry.RectF.unionWith(self.rects[best_index], merged);
-+            self.remove(best_index);
-+            self.absorbIntersecting(&merged);
-         }
+-            }
+-        }
 -        if (self.rect_count < self.rects.len) {
 -            self.rects[self.rect_count] = normalized;
 -            self.rect_count += 1;
@@ -2818,6 +2828,26 @@ index ed90a45..58a846c 100644
 -            if (cost < best_cost) {
 -                best_cost = cost;
 -                best_index = index;
+-            }
+-        }
+-        self.rects[best_index] = geometry.RectF.unionWith(self.rects[best_index], normalized);
++        var merged = normalized;
++        self.absorbIntersecting(&merged);
++        if (self.rect_count >= self.rects.len) {
++            var best_index: usize = 0;
++            var best_cost: f32 = std.math.floatMax(f32);
++            for (self.rects[0..self.rect_count], 0..) |cluster, index| {
++                const candidate = geometry.RectF.unionWith(cluster, merged);
++                const cost = candidate.width * candidate.height - cluster.width * cluster.height;
++                if (cost < best_cost) {
++                    best_cost = cost;
++                    best_index = index;
++                }
++            }
++            merged = geometry.RectF.unionWith(self.rects[best_index], merged);
++            self.remove(best_index);
++            self.absorbIntersecting(&merged);
++        }
 +        self.rects[self.rect_count] = merged;
 +        self.rect_count += 1;
 +        std.sort.pdq(geometry.RectF, self.rects[0..self.rect_count], {}, canvasPacketDirtyRectLessThan);
@@ -2829,13 +2859,12 @@ index ed90a45..58a846c 100644
 +            if (!self.rects[index].intersects(merged.*)) {
 +                index += 1;
 +                continue;
-             }
++            }
 +            merged.* = geometry.RectF.unionWith(self.rects[index], merged.*);
 +            self.remove(index);
 +            // The expanded union can now intersect a cluster already tested.
 +            index = 0;
-         }
--        self.rects[best_index] = geometry.RectF.unionWith(self.rects[best_index], normalized);
++        }
 +    }
 +
 +    fn remove(self: *CanvasPacketPatchDirty, index: usize) void {
@@ -2844,18 +2873,17 @@ index ed90a45..58a846c 100644
 +        self.rect_count -= 1;
      }
  };
- 
++
 +fn canvasPacketDirtyRectLessThan(_: void, a: geometry.RectF, b: geometry.RectF) bool {
 +    if (a.y != b.y) return a.y < b.y;
 +    if (a.x != b.x) return a.x < b.x;
 +    if (a.height != b.height) return a.height < b.height;
 +    return a.width < b.width;
 +}
-+
+ 
  fn canvasPacketPatchDirtyBounds(view: anytype, current: []const CanvasPacketCurrentCommand) ?CanvasPacketPatchDirty {
      const baseline_count = view.canvas_packet_baseline_count;
-     const baseline_keys = view.canvas_packet_baseline_keys[0..baseline_count];
-@@ -1768,3 +1807,17 @@ fn canvasRotationCircumscribedBounds(rect: geometry.RectF, center: geometry.Poin
+@@ -1768,3 +1815,17 @@
      }
      return geometry.RectF.init(center.x - radius, center.y - radius, radius * 2, radius * 2);
  }
@@ -3478,7 +3506,18 @@ diff --git a/src/runtime/frame_profile.zig b/src/runtime/frame_profile.zig
      /// App build fn + tree finalize (`UiApp.rebuild`'s view build).
      rebuild,
      /// Widget tree layout (`layoutWidgetTreeWithTokens`).
-@@ -69,6 +79,9 @@
+@@ -46,6 +56,10 @@
+     /// The synchronous host present call (host-side decode + draw ride
+     /// inside it on macOS; the split below attributes them).
+     present,
++    /// CPU pixel-path rendering, nested inside present; excludes host transfer.
++    raster,
++    /// CPU pixel-path host conversion/transfer, nested inside present.
++    host_pixels,
+     /// Host-side packet decode (macOS packet path, host-stamped).
+     host_decode,
+     /// Host-side packet draw (macOS packet path, host-stamped).
+@@ -69,6 +83,9 @@
  pub const FrameProfileStageStats = struct {
      p50_us: u64 = 0,
      p90_us: u64 = 0,
@@ -3488,7 +3527,7 @@ diff --git a/src/runtime/frame_profile.zig b/src/runtime/frame_profile.zig
      max_us: u64 = 0,
      /// Samples currently in the window (bounded by
      /// `max_frame_profile_samples`).
-@@ -89,6 +102,54 @@
+@@ -89,6 +106,54 @@
      totals: [frame_profile_stage_count]u64 = @splat(0),
      samples_us: [frame_profile_stage_count][max_frame_profile_samples]u32 = @splat(@splat(0)),
  
@@ -3543,7 +3582,7 @@ diff --git a/src/runtime/frame_profile.zig b/src/runtime/frame_profile.zig
      /// Monotonic stamp for a stage begin: 0 (never recorded) when
      /// profiling is off, so `end` costs one compare and nothing else.
      pub inline fn begin(self: *const FrameProfile) u64 {
-@@ -103,6 +164,7 @@
+@@ -103,6 +168,7 @@
          if (begin_ns == 0) return;
          const now = runtime_clock.monotonicNanoseconds();
          self.recordNs(stage, now -| begin_ns);
@@ -3551,7 +3590,7 @@ diff --git a/src/runtime/frame_profile.zig b/src/runtime/frame_profile.zig
      }
  
      /// Record an externally measured duration (host-stamped decode/draw
-@@ -116,6 +178,7 @@
+@@ -116,6 +182,7 @@
          self.heads[index] = @intCast((self.heads[index] + 1) % max_frame_profile_samples);
          if (self.lens[index] < max_frame_profile_samples) self.lens[index] += 1;
          self.totals[index] +%= 1;
@@ -3559,7 +3598,7 @@ diff --git a/src/runtime/frame_profile.zig b/src/runtime/frame_profile.zig
      }
  
      /// Drop every recorded sample (enable state is left alone).
-@@ -123,6 +186,12 @@
+@@ -123,6 +190,12 @@
          self.lens = @splat(0);
          self.heads = @splat(0);
          self.totals = @splat(0);
@@ -3572,7 +3611,7 @@ diff --git a/src/runtime/frame_profile.zig b/src/runtime/frame_profile.zig
      }
  
      /// True when any stage holds samples — the snapshot's "print the
-@@ -147,6 +216,9 @@
+@@ -147,6 +220,9 @@
          return .{
              .p50_us = sorted[nearestRank(len, 50)],
              .p90_us = sorted[nearestRank(len, 90)],

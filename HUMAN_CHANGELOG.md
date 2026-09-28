@@ -6,6 +6,9 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## In development — A clearer system overview
 
+- Make disk activity, network traffic and temperatures easier to spot. Keep units close to their readings, separate free space from disk activity, and show large transfer rates in shorter, readable units.
+- Behind the scenes: distinguish drawing cost from sending the finished image to the window, so remaining interface delays can be investigated more precisely.
+
 - Add breathing room between graphics adapters so each name, usage and memory group is easier to scan.
 
 - Behind the scenes: inspect the graphics layout in the running Windows app with enlarged display scaling, and keep the remaining display checks visible before release.

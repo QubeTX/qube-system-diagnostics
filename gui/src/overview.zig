@@ -5,19 +5,27 @@ const projection = @import("projection.zig");
 const Text = canvas.TextBuffer(192);
 
 pub const Reading = struct {
+    available: bool = false,
     value_buffer: Text = .init("Reading…"),
     context_buffer: Text = .{},
     state_buffer: Text = .{},
     secondary_buffer: Text = .init("Reading…"),
+    unit_buffer: Text = .{},
+    secondary_unit_buffer: Text = .{},
+    context_label_buffer: Text = .{},
     pub fn value(self: *const Reading) []const u8 { return self.value_buffer.text(); }
     pub fn context(self: *const Reading) []const u8 { return self.context_buffer.text(); }
     pub fn state(self: *const Reading) []const u8 { return self.state_buffer.text(); }
     pub fn secondary(self: *const Reading) []const u8 { return self.secondary_buffer.text(); }
+    pub fn unit(self: *const Reading) []const u8 { return self.unit_buffer.text(); }
+    pub fn secondaryUnit(self: *const Reading) []const u8 { return self.secondary_unit_buffer.text(); }
+    pub fn contextLabel(self: *const Reading) []const u8 { return self.context_label_buffer.text(); }
 };
 
 pub const Adapter = struct {
     id: u64 = 0,
     load_available: bool = false,
+    temperature_available: bool = false,
     name_buffer: Text = .{},
     load_buffer: Text = .{},
     memory_label_buffer: Text = .init("Video memory"),
@@ -64,6 +72,13 @@ pub fn topicState(meta: *const projection.TopicMeta, now: u64) []const u8 {
 
 fn temperature(buffer: *Text, value: f64, fahrenheit: bool) void {
     format(buffer, "{d:.0} °{s}", .{ if (fahrenheit) value * 9 / 5 + 32 else value, if (fahrenheit) "F" else "C" });
+}
+
+fn transferRate(value: *Text, unit: *Text, kib_s: f64) void {
+    const divisor: f64 = if (kib_s >= 1024 * 1024) 1024 * 1024 else if (kib_s >= 1024) 1024 else 1;
+    const amount = kib_s / divisor;
+    if (amount >= 100) format(value, "{d:.0}", .{amount}) else format(value, "{d:.1}", .{amount});
+    unit.set(if (divisor == 1024 * 1024) "GiB/s" else if (divisor == 1024) "MiB/s" else "KiB/s");
 }
 
 pub const View = struct {
@@ -115,18 +130,29 @@ pub const View = struct {
         }
         shortHardwareName(&self.cpu.context_buffer, if (d.cpuModel().len > 0) d.cpuModel() else model.systemCpu());
         self.disk.state_buffer.set(if (model.diskIoAvailable()) "" else if (d.activity_captured_unix_ms == 0) "Reading…" else if (d.activity_observation.available) "Reading delayed · previous values" else "Couldn’t read");
+        self.disk.available = d.activity_captured_unix_ms > 0 and d.disk_io_available;
         if (d.activity_captured_unix_ms > 0 and d.disk_io_available) {
-            format(&self.disk.value_buffer, "{d:.1}", .{d.disk_read_mib_s});
-            format(&self.disk.secondary_buffer, "{d:.1}", .{d.disk_write_mib_s});
+            transferRate(&self.disk.value_buffer, &self.disk.unit_buffer, d.disk_read_mib_s * 1024);
+            transferRate(&self.disk.secondary_buffer, &self.disk.secondary_unit_buffer, d.disk_write_mib_s * 1024);
         } else { self.disk.value_buffer.set(if (d.fast_ready) "Not available" else "Reading…"); self.disk.secondary_buffer.set(self.disk.value()); }
         if (d.overview_disk_available) {
-            format(&self.disk.context_buffer, "{s} · {d:.1} GiB free{s}", .{d.overview_disk.mount(), d.overview_disk.available_gib, if (slow.len > 0) " · previous" else ""});
-        } else self.disk.context_buffer.set("Storage capacity not available");
+            format(&self.disk.context_label_buffer, "Free space · {s}", .{d.overview_disk.mount()});
+            format(&self.disk.context_buffer, "{d:.1} GiB{s}", .{d.overview_disk.available_gib, if (slow.len > 0) " · previous reading" else ""});
+        } else {
+            self.disk.context_label_buffer.set("Free space");
+            self.disk.context_buffer.set("Not available");
+        }
         self.network.state_buffer.set(fast);
+        self.network.available = d.network_rate_available;
         if (d.network_rate_available) {
-            format(&self.network.value_buffer, "{d:.1}", .{d.total_download_kib_s});
-            format(&self.network.secondary_buffer, "{d:.1}", .{d.total_upload_kib_s});
-        } else { self.network.value_buffer.set(if (d.fast_ready) "Not available" else "Reading…"); self.network.secondary_buffer.set(self.network.value()); }
+            transferRate(&self.network.value_buffer, &self.network.unit_buffer, d.total_download_kib_s);
+            transferRate(&self.network.secondary_buffer, &self.network.secondary_unit_buffer, d.total_upload_kib_s);
+        } else {
+            self.network.value_buffer.set(if (d.fast_ready) "Not available" else "Reading…");
+            self.network.secondary_buffer.set(self.network.value());
+            self.network.unit_buffer.set("");
+            self.network.secondary_unit_buffer.set("");
+        }
         self.network.context_buffer.set("Download / Upload · KiB/s");
         self.gpu_state_buffer.set(slow);
         self.gpu_count = @min(2, d.gpu_count);
@@ -154,11 +180,13 @@ pub const View = struct {
             } else if (gpu.memory_used_available and gpu.memory_total_available and gpu.memory_observation.available) {
                 format(&row.memory_buffer, "{d:.1} / {d:.1} GiB", .{gpu.memory_used_mib / 1024, gpu.memory_total_mib / 1024});
             } else row.memory_buffer.set("Not reported");
-            if (gpu.temperature_available and gpu.temperature_observation.available) temperature(&row.temperature_buffer, gpu.temperature_celsius, fahrenheit) else row.temperature_buffer.set("Not available");
+            row.temperature_available = gpu.temperature_available and gpu.temperature_observation.available;
+            if (row.temperature_available) temperature(&row.temperature_buffer, gpu.temperature_celsius, fahrenheit) else row.temperature_buffer.set("Not available");
             self.gpu_rows[i] = row;
         }
         if (d.gpu_total_count > 2) format(&self.gpu_more_buffer, "+{d} more", .{d.gpu_total_count - 2}) else self.gpu_more_buffer.set("");
         self.thermals.state_buffer.set(slow);
+        self.thermals.available = d.cpu_temperature_available and d.cpu_temperature_observation.available;
         if (d.cpu_temperature_available and d.cpu_temperature_observation.available) temperature(&self.thermals.value_buffer, d.cpu_temperature_celsius, fahrenheit) else self.thermals.value_buffer.set(if (d.slow_ready) "Not available" else "Reading…");
         self.process_state_buffer.set(fast);
         if (d.fast_ready and d.process_observation.available) format(&self.process_buffer, "{d} processes", .{d.process_total_count}) else self.process_buffer.set(if (d.fast_ready) "Processes not available" else "Reading processes…");

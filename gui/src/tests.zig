@@ -2240,3 +2240,83 @@ test "overview graphics card contains two adapters additional count and delayed 
         try testing.expect(card != null);
     }
 }
+
+test "overview transfer units retain missing data and scale actual byte rates" {
+    var model = main.initialModel();
+    model.detail.network_rate_available = true;
+    model.detail.total_download_kib_s = 6654.7;
+    model.detail.total_upload_kib_s = 277.9;
+    model.detail.activity_captured_unix_ms = 1;
+    model.detail.disk_io_available = true;
+    model.detail.disk_read_mib_s = 0.125;
+    model.detail.disk_write_mib_s = 2048;
+    model.overview.prepare(&model);
+    try testing.expectEqualStrings("6.5", model.overview.network.value());
+    try testing.expectEqualStrings("MiB/s", model.overview.network.unit());
+    try testing.expectEqualStrings("278", model.overview.network.secondary());
+    try testing.expectEqualStrings("KiB/s", model.overview.network.secondaryUnit());
+    try testing.expectEqualStrings("128", model.overview.disk.value());
+    try testing.expectEqualStrings("KiB/s", model.overview.disk.unit());
+    try testing.expectEqualStrings("2.0", model.overview.disk.secondary());
+    try testing.expectEqualStrings("GiB/s", model.overview.disk.secondaryUnit());
+    model.detail.network_rate_available = false;
+    model.overview.prepare(&model);
+    try testing.expect(!model.overview.network.available);
+    try testing.expectEqualStrings("", model.overview.network.unit());
+    try testing.expect(!std.mem.eql(u8, "0", model.overview.network.value()));
+}
+
+test "secondary overview cards keep rates sensors and delayed notices separated" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var model = main.initialModel();
+    model.overview.gpu_count = 2;
+    model.overview.gpu_rows[0].name_buffer.set("Intel Arc Graphics");
+    model.overview.gpu_rows[1].name_buffer.set("GeForce RTX 4070 Laptop");
+    for (&model.overview.gpu_rows, 0..) |*gpu, i| {
+        gpu.id = i;
+        gpu.temperature_available = true;
+        gpu.temperature_buffer.set("212 °F");
+    }
+    model.overview.thermals.available = true;
+    model.overview.thermals.value_buffer.set("212 °F");
+    model.overview.thermals.state_buffer.set("Reading delayed · previous values");
+    model.overview.disk.available = true;
+    model.overview.disk.value_buffer.set("1024");
+    model.overview.disk.secondary_buffer.set("1024");
+    model.overview.disk.unit_buffer.set("MiB/s");
+    model.overview.disk.secondary_unit_buffer.set("MiB/s");
+    model.overview.disk.context_label_buffer.set("Free space · C:\\");
+    model.overview.disk.context_buffer.set("77.3 GiB · previous reading");
+    model.overview.disk.state_buffer.set("Reading delayed · previous values");
+    model.overview.network = model.overview.disk;
+    const labels = [_][]const u8{ "Open Disk details", "Open Network details", "Open Thermals details" };
+    for ([_]f32{ 1088, 1180, 950, 760 }) |width| {
+        model.overview_columns = @import("overview.zig").columnsForWidth(width - 248);
+        const tree = try buildTree(arena.allocator(), &model);
+        const nodes = try arena.allocator().alloc(canvas.WidgetLayoutNode, 512);
+        const layout = try canvas.layoutWidgetTreeWithTokens(tree.root,
+            native_sdk.geometry.RectF.init(0, 0, width, 760), main.qubeTokens(&model), nodes);
+        for (labels) |label| {
+            var card: ?canvas.WidgetLayoutNode = null;
+            var texts: [32]native_sdk.geometry.RectF = undefined;
+            var count: usize = 0;
+            for (layout.nodes) |node| {
+                if (std.mem.eql(u8, node.widget.semantics.label, label)) { card = node; continue; }
+                if (card) |parent| {
+                    if (node.depth <= parent.depth) break;
+                    if (node.widget.kind != .text or node.widget.text.len == 0) continue;
+                    if (node.frame.y + node.frame.height > parent.frame.y + parent.frame.height or
+                        node.frame.x + node.frame.width > parent.frame.x + parent.frame.width) {
+                        std.debug.print("{s} clips {s} at width {d}\n", .{label, node.widget.text, width});
+                        return error.OverviewCardOverflow;
+                    }
+                    for (texts[0..count]) |prior| try testing.expect(native_sdk.geometry.RectF.intersection(prior, node.frame).isEmpty());
+                    texts[count] = node.frame;
+                    count += 1;
+                }
+            }
+            try testing.expect(card != null);
+        }
+    }
+}

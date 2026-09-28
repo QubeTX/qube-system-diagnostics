@@ -2,6 +2,25 @@
 
 2026-09-27. Candidate branch: `codex/sd300-overview-cards`. This is an unpublished 4.1.0 candidate. Operator release authorization is conditional on confidence and qualification. ADR 0023 accepts only the recorded Windows Overview CPU result; timing and other qualification requirements remain open.
 
+## Latest combined optimization, b19ee7a
+
+All six native interaction reports from [CI 36366744715](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36366744715) complete their twelve cohorts and clean shutdowns. Original thresholds are unchanged. Full compact results and report/binary identities are retained in [overview-timing-b19ee7a.json](overview-timing-b19ee7a.json).
+
+| Target | Worst frame p95 | Worst input p95 | Timing result |
+|---|---:|---:|---|
+| Linux GNU ARM64 | 16.141 ms | 22.783 ms | Pass |
+| Linux GNU x86-64 | 21.297 ms | 33.910 ms | Frame fails |
+| Linux musl x86-64 | 20.855 ms | 33.997 ms | Frame fails |
+| Apple Silicon | 25.323 ms | 63.752 ms | Frame and input fail |
+| Intel Mac | 18.434 ms | 21.974 ms | Frame fails |
+| Windows | 17.810 ms | 49.084 ms | Frame fails |
+
+All ordinary-refresh maximum checks pass. Intel's result is substantially lower than the shadow-only report, but separate hosted sessions are not a controlled benchmark. Windows' earlier shadow-only pass and this failure also show run variation; preserve both. Linux x86-64 remains dominated by the combined pixel-render/host-present interval (19.538 ms GNU, 19.613 ms musl p95). Add nested `raster` and `host_pixels` profiling to distinguish those paths without changing the existing combined interval or gates.
+
+The composite Windows installer qualification [36366898012](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36366898012) passes on b19ee7a. Later graphics spacing and secondary-card hierarchy changes still require exact-source qualification before publication. The old-layout local resource sample was interrupted after the operator's next visual correction and is not qualification evidence.
+
+After all six timing artifacts were retained, the remaining old-source resource job and superseded spacing-only PR CI were canceled to qualify the revised hierarchy/diagnostic source. No incomplete resource window is counted as acceptance. The revised hierarchy passes 83 native tests (2 expected skips), strict bindings and its Windows build; actual window inspection confirms the default footprint and clearer readings. A final trailing-column adjustment for unavailable temperatures is validated by tests and awaits the refreshed native preview.
+
 ## Functional and visual evidence
 
 - Root tests, separate engine tests, native tests, strict model bindings, product-version reconciliation and pinned Windows builds pass for the implementation.
