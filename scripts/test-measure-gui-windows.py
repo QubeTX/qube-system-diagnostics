@@ -15,7 +15,7 @@ PYTHON = sys._base_executable  # Avoid the Windows venv launcher's extra process
 
 class OwnedMeasurementTests(unittest.TestCase):
     def test_worker_expectations_match_frontend_subscriptions(self):
-        self.assertEqual(measure.required_topics("Overview", False), set())
+        self.assertEqual(measure.required_topics("Overview", False), {"slow", "activity"})
         self.assertEqual(measure.required_topics("Processes", False), set())
         self.assertEqual(measure.required_topics("Overview", True), {"slow"})
         self.assertEqual(measure.required_topics("Thermals", False), {"slow", "activity", "connections", "diagnostics"})

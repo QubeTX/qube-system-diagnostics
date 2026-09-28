@@ -31,6 +31,42 @@ The opt-in `profile-monitor 30 --overview` diagnostic splits CPU, memory, full p
 
 - Linux GNU ARM64: default User navigation frame p95 18.336 ms exceeds 16.7 ms. Its present p95 alone is 16.810 ms. Input and refresh maxima pass in the retained report.
 - Apple Silicon: frame p95 reaches 40.317 ms across the tested cohorts, exceeding 16.7 ms. Input p95 and ordinary-refresh maxima pass in that report.
-- Native reports are retained as the run's `sd300-gui-interaction-*` artifacts. Remaining platform jobs must be evaluated as they finish; their presence does not imply success.
+- Native reports are retained as the run's `sd300-gui-interaction-*` artifacts.
+
+The later exact-source [97d569f matrix](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36349910900) is complete. All six targets fail original frame p95; both Macs also fail input p95. Every report contains all twelve cohorts and a clean shutdown, with no functional exception. A compact projection with source report and binary hashes is retained in [overview-timing-97d569f.json](overview-timing-97d569f.json).
+
+| Target | Worst cohort frame p95 | Worst cohort input p95 |
+|---|---:|---:|
+| Linux GNU ARM64 | 20.308 ms | 28.534 ms |
+| Linux GNU x86-64 | 24.802 ms | 37.088 ms |
+| Linux musl x86-64 | 22.739 ms | 35.081 ms |
+| Apple Silicon | 41.339 ms | 52.536 ms |
+| Intel Mac | 41.621 ms | 87.852 ms |
+| Windows x86-64 | 23.838 ms | 46.801 ms |
+
+Limits remain frame p95 16.7 ms and input p95 50 ms. Ordinary-refresh maxima pass on every target. On ARM64, keyboard and refresh cohorts pass the frame target; default-window navigation is dominated by the combined software-raster/host-present stage (18.696 ms present p95 versus 20.308 ms frame p95). On Apple Silicon, layout alone reaches 18.756 ms p95 in a navigation cohort; drawing/presentation is another substantial cost. Stage percentiles describe separate sample distributions and must not be added or used as the decomposition of one individual frame.
+
+This is not evidence of a new overview-only regression. The retained v4 `native-interaction-latency-08b7fe5.json` already records original frame failures on ARM64 and both Macs. Different runner sessions and workloads prevent treating those old numbers as a controlled before/after benchmark.
+
+The existing Mac native stack diagnostic observed a hidden window, so it could not explain visible layout or drawing. The follow-up diagnostic adds separate foreground Overview and Processes stack captures on each Mac architecture, using production binaries without automation. Attached samples are attribution evidence only, never resource or timing acceptance.
+
+## Foreground attribution, 5f96a8d
+
+[Diagnostic run 36362469153](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36362469153) changes CI diagnostics and acceptance documentation, not product runtime code.
+
+Apple Silicon's production Overview and Processes captures both complete and shut down cleanly. Their normal, non-automation GUI SHA-256 is `8c6cb9788a86a74a6823a6f027d482bca02aa19d6ef25bf8c8c80b7d7a32b43a`. The `sd300-gui-resource-smoke-macos-arm64` artifact contains the full reports, including native stack text and separate live-thread counters.
+
+Intel's production Overview and Processes captures also complete and shut down cleanly, and show the same shadow-blur and repeated measurement paths. Its GUI SHA-256 is `1c63c85c05baf5d5344f39e95e4eba48493df37f5bb9a6d15a4167dc04d23311`; raw reports are in `sd300-gui-resource-smoke-macos-x86_64`. Selected stack lines and full-report hashes for all four captures are retained in [overview-mac-stacks-5f96a8d.json](overview-mac-stacks-5f96a8d.json).
+
+Observed main-thread paths on both pages:
+
+- Packet presentation reaches `NativeSdkPacketDrawEffect`, `NSBezierPath fill`, Core Graphics shadow rendering, `RIPLayerGaussianBlur` and `RIPLayerSymmetricConvolve`. Source inspection connects this to inherited small-panel shadow tokens: `emitPanelWidgetChrome` emits an opaque panel shadow and AppKit draws it with `NSShadow`.
+- Recursive `widget_layout` intrinsic sizing reaches `native_sdk_appkit_measure_text` and, on Processes, `native_sdk_appkit_measure_text_advances`. The width path includes Core Foundation string formatting. The host already caches measured widths, but a lookup still resolves the registered font and constructs formatted NSString keys before checking that cache.
+
+These are demonstrated production hot paths, not proof that either alone explains every slow frame. The five-second stack sample contains waits and measures ordinary refresh, not a synchronized capture of the qualification run's worst navigation event. Do not sum recursive sample counts or turn sample frequency into CPU percentages.
+
+The separate Apple Silicon timing repeat still fails frame p95 at 24.486 ms, while input p95 now passes at 24.665 ms and refresh/shutdown checks pass. The prior 41.339/52.536 ms failures remain recorded. There is no runtime change to credit for that improvement; runner/run variation is established, its cause is not.
+
+The next focused experiments are (1) isolate the cost of decorative small-panel shadows while preserving the card geometry, borders and palette, then (2) reduce duplicate native text measurement with bounded, correctly invalidated reuse. Any SDK change must go through the canonical patch and all distribution pins. Neither experiment is claimed implemented or qualified by this diagnostic evidence.
 
 Responsiveness work remains owned by #r16, resources by #r17, and overview/release acceptance by #ov6. Complete physical DPI and composite installer qualification, exact-candidate CI, original performance gates and public-byte verification before describing this as released or deployed. Do not merge to main to trigger publication while these requirements remain open.
