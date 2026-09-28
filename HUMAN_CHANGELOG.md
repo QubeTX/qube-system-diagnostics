@@ -6,6 +6,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## In development — A clearer system overview
 
+- Keep graphics-card names, usage and memory readings on clearly separated lines, including laptops with two graphics adapters. Give temperature labels the same breathing room.
+
 - Behind the scenes: restore broader checks that compare rendered pixels and verify font changes, improving coverage of the interface optimizations.
 
 - Behind the scenes: reuse unchanged text measurements to reduce repeated layout work, while keeping labels accurate when fonts or their contents change.

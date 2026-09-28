@@ -2207,26 +2207,36 @@ test "overview graphics card contains two adapters additional count and delayed 
         gpu.id = i;
         gpu.load_available = true;
         gpu.load_buffer.set("100%");
-        gpu.memory_buffer.set("7.0 / 8.0 GiB video memory");
+        gpu.memory_buffer.set("7.0 / 8.0 GiB");
     }
     model.overview.gpu_more_buffer.set("+1 more");
     model.overview.gpu_state_buffer.set("Reading delayed · previous values");
-    const tree = try buildTree(arena.allocator(), &model);
-    const nodes = try arena.allocator().alloc(canvas.WidgetLayoutNode, 512);
-    const layout = try canvas.layoutWidgetTreeWithTokens(tree.root,
-        native_sdk.geometry.RectF.init(0, 0, 1180, 760), main.qubeTokens(&model), nodes);
-    var card: ?canvas.WidgetLayoutNode = null;
-    for (layout.nodes) |node| {
-        if (std.mem.eql(u8, node.widget.semantics.label, "Open GPU details")) { card = node; continue; }
-        if (card) |parent| {
-            if (node.depth <= parent.depth) break;
-            if (node.widget.kind == .text and node.widget.text.len > 0) {
-                if (node.frame.y + node.frame.height > parent.frame.y + parent.frame.height) {
-                    std.debug.print("GPU card clips {s} at {d}, bottom {d}\n", .{node.widget.text, node.frame.y + node.frame.height, parent.frame.y + parent.frame.height});
-                    return error.OverviewCardOverflow;
+    for ([_]f32{ 1180, 950, 760 }) |width| {
+        model.overview_columns = @import("overview.zig").columnsForWidth(width - 248);
+        const tree = try buildTree(arena.allocator(), &model);
+        const nodes = try arena.allocator().alloc(canvas.WidgetLayoutNode, 512);
+        const layout = try canvas.layoutWidgetTreeWithTokens(tree.root,
+            native_sdk.geometry.RectF.init(0, 0, width, 760), main.qubeTokens(&model), nodes);
+        var card: ?canvas.WidgetLayoutNode = null;
+        var text_frames: [24]native_sdk.geometry.RectF = undefined;
+        var text_count: usize = 0;
+        for (layout.nodes) |node| {
+            if (std.mem.eql(u8, node.widget.semantics.label, "Open GPU details")) { card = node; continue; }
+            if (card) |parent| {
+                if (node.depth <= parent.depth) break;
+                if (node.widget.kind == .text and node.widget.text.len > 0) {
+                    if (node.frame.y + node.frame.height > parent.frame.y + parent.frame.height) {
+                        std.debug.print("GPU card clips {s} at {d}, bottom {d}\n", .{node.widget.text, node.frame.y + node.frame.height, parent.frame.y + parent.frame.height});
+                        return error.OverviewCardOverflow;
+                    }
+                    for (text_frames[0..text_count]) |previous| {
+                        try testing.expect(native_sdk.geometry.RectF.intersection(previous, node.frame).isEmpty());
+                    }
+                    text_frames[text_count] = node.frame;
+                    text_count += 1;
                 }
             }
         }
+        try testing.expect(card != null);
     }
-    try testing.expect(card != null);
 }

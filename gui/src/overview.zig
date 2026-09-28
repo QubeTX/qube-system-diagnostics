@@ -20,11 +20,13 @@ pub const Adapter = struct {
     load_available: bool = false,
     name_buffer: Text = .{},
     load_buffer: Text = .{},
+    memory_label_buffer: Text = .init("Video memory"),
     memory_buffer: Text = .{},
     temperature_buffer: Text = .{},
     pub fn name(self: *const Adapter) []const u8 { return self.name_buffer.text(); }
     pub fn load(self: *const Adapter) []const u8 { return self.load_buffer.text(); }
     pub fn memory(self: *const Adapter) []const u8 { return self.memory_buffer.text(); }
+    pub fn memoryLabel(self: *const Adapter) []const u8 { return self.memory_label_buffer.text(); }
     pub fn temperature(self: *const Adapter) []const u8 { return self.temperature_buffer.text(); }
 };
 
@@ -146,9 +148,12 @@ pub const View = struct {
             shortHardwareName(&row.name_buffer, gpu.name());
             row.load_available = gpu.utilization_available and gpu.utilization_observation.available;
             if (row.load_available) format(&row.load_buffer, "{d:.0}%", .{gpu.utilization_percent}) else row.load_buffer.set("Not available");
-            if (gpu.unified) row.memory_buffer.set("Unified memory") else if (gpu.memory_used_available and gpu.memory_total_available and gpu.memory_observation.available) {
-                format(&row.memory_buffer, "{d:.1} / {d:.1} GiB video memory", .{gpu.memory_used_mib / 1024, gpu.memory_total_mib / 1024});
-            } else row.memory_buffer.set("Video memory not reported");
+            if (gpu.unified) {
+                row.memory_label_buffer.set("Memory");
+                row.memory_buffer.set("Unified memory");
+            } else if (gpu.memory_used_available and gpu.memory_total_available and gpu.memory_observation.available) {
+                format(&row.memory_buffer, "{d:.1} / {d:.1} GiB", .{gpu.memory_used_mib / 1024, gpu.memory_total_mib / 1024});
+            } else row.memory_buffer.set("Not reported");
             if (gpu.temperature_available and gpu.temperature_observation.available) temperature(&row.temperature_buffer, gpu.temperature_celsius, fahrenheit) else row.temperature_buffer.set("Not available");
             self.gpu_rows[i] = row;
         }

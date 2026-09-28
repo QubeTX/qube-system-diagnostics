@@ -15,7 +15,7 @@
 
 ## Active
 - [ ] **Restore original responsiveness targets after v4** - attributed shadow and text-sizing costs; isolated shadow timing running, bounded native-width reuse locally verified and ready for its exact-source matrix (owner codex) #r16
-- [ ] **Build a clear gamer-focused System overview** - revised dashboard verified locally; recorded Windows CPU overrun accepted in ADR 0023; investigate hosted frame/input failures and finish physical DPI acceptance (owner codex) #ov6
+- [ ] **Build a clear gamer-focused System overview** - live multi-GPU overlap fixed and native default window inspected; installer qualification passes; finish exact-layout timing/resource and physical DPI qualification (owner codex) #ov6
   - [x] Wire overview collection and bounded summaries
   - [x] Implement responsive cards, findings and navigation
   - [ ] Verify native behavior, layouts and collection cost

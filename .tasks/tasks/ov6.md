@@ -26,9 +26,13 @@ All cards populate from a fresh launch, route to details, distinguish missing/st
 - [ ] Exact-candidate hosted CI
 
 ## Status
-Active: implementation and revised layout verified locally. Operator accepted the recorded Windows Overview CPU overrun in ADR 0023. ARM64/Mac diagnosis identifies navigation drawing cost, decorative shadow blur and repeated text measurement; optimization and qualification remain in #r16. Physical Windows display-scale acceptance remains unverified. Release authorization remains conditional on qualification.
+Active: live Windows multi-GPU overlap corrected and inspected in the actual candidate window at the default size; six equal cards and Processes remain visible. Responsive containment/overlap tests pass. Operator accepted only the recorded earlier Windows CPU result in ADR 0023; the latest sample and hosted timing still need qualification. Physical display-scale acceptance remains unverified. Release authorization remains conditional on qualification.
 
 ## Activity
+
+- 2026-09-27 — codex: operator's live Windows capture reveals the second GPU name wrapping into memory text; prior reference capture and containment-only test missed the overlap. Move names to full-width single lines, use a separate usage/memory row, and separate thermal names from temperatures. All cards remain equal at 216 logical pixels. Pairwise text-bound checks pass at 1180/950/760 widths (81 native tests, 2 skips). Actual candidate window (PID 7776, build path ending windows-x86_64-automation/app/zig-out/bin) inspected via native Windows capture: names/readings are separated, six cards plus Processes fit at 1180x760. Internal 950-wide viewport also renders without overlaps; this is not physical OS-DPI acceptance.
+
+- 2026-09-27 — codex: unpublished Windows installer run 36364695685 passes on 395e243. New 330-second local sample of that production build records CPU 2.807% (FAIL), RSS 132.54 MiB and private 260.71 MiB (PASS), clean shutdown. Operator captured the UI during this window, so this was not a quarantined repeat; preserve the measurement without extending ADR 0023. Replace older candidate qualification with the visually corrected source.
 
 - 2026-09-27 — codex: Windows production build/distribution check and cargo publish dry run pass on 395e243. Broad SDK verification passes 902 tests / 3 skipped after fixing stale test fixtures. Shadow-only Linux ARM64 timing passes; Linux x86-64 still fails frame p95. Windows installer run 36364695685 remains in progress; exact final candidate qualification is still required.
 
