@@ -1535,6 +1535,10 @@ pub fn qubeTokens(model: *const Model) canvas.DesignTokens {
     tokens.typography.heading_size = 30;
     tokens.typography.display_size = 50;
     tokens.radius = .{ .sm = 0, .md = 2, .lg = 2, .xl = 4 };
+    // Monitoring panels already separate by border and surface contrast.
+    // Avoid re-blurring decorative small shadows on each data/navigation frame;
+    // floating dialogs and menus retain their separate medium shadow treatment.
+    tokens.shadow.sm = .{ .y = 0, .blur = 0, .spread = 0 };
     tokens.controls.list_item = .{
         .background = canvas.Color.rgba8(255, 255, 255, 0),
         .hover_background = canvas.Color.rgba8(255, 255, 255, 10),

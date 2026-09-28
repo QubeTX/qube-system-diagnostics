@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - Unreleased
 
+- Remove decorative small-panel shadows from the Warm Carbon theme, retaining borders, surface contrast and separate floating-surface shadows. Qualify this isolated rendering change against the recorded native timing baseline.
+
 - Record operator acceptance of the specific Windows Overview CPU result (ADR 0023), preserving the original failed verdict. Extend separate macOS stack diagnostics to foreground Overview and Processes to attribute the remaining layout/raster timing failures; do not alter product behavior or release thresholds.
 - Retain the complete-platform overview timing summary and correct the Windows resource-harness fixture to require the newly subscribed Overview workers.
 - Attribute production macOS UI work to panel shadow blur and repeated native text measurement on Intel and Apple Silicon. Preserve stack excerpts, artifact hashes, run variation and unresolved frame verdicts for the focused optimization work.
