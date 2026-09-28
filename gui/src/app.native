@@ -52,9 +52,9 @@
           </row>
           <grid columns="{overview_columns}" gap="12">
             <panel height="216" padding="16" background="surface_subtle" radius="lg" role="button" label="Open GPU details" on-press="select_gpu">
-              <column gap="6">
+              <column gap="10">
                 <row gap="8"><if test="{userMode}"><text grow="1" foreground="text_muted">Graphics</text></if><else><text grow="1" foreground="text_muted">GPU</text></else><if test="{detail.gpu_total_count > 2}"><text size="sm" foreground="text_muted">{overview.gpuMore}</text></if><text foreground="text_muted">›</text></row>
-                <for each="overviewGpus" as="gpu" key="id"><column gap="4"><text size="sm" overflow="ellipsis">{gpu.name}</text><row height="38" gap="12" cross="center"><if test="{gpu.load_available}"><text width="80" size="heading">{gpu.load}</text></if><else><text width="80" size="sm" wrap="true" foreground="text_muted">{gpu.load}</text></else><column grow="1" gap="2"><text size="sm" foreground="text_muted">{gpu.memoryLabel}</text><text size="sm">{gpu.memory}</text></column></row></column></for>
+                <column gap="16"><for each="overviewGpus" as="gpu" key="id"><column gap="4"><text size="sm" overflow="ellipsis">{gpu.name}</text><row height="38" gap="12" cross="center"><if test="{gpu.load_available}"><text width="80" size="heading">{gpu.load}</text></if><else><text width="80" size="sm" wrap="true" foreground="text_muted">{gpu.load}</text></else><column grow="1" gap="2"><text size="sm" foreground="text_muted">{gpu.memoryLabel}</text><text size="sm">{gpu.memory}</text></column></row></column></for></column>
                 <text size="sm" foreground="text_muted">{overview.gpuState}</text>
               </column>
             </panel>

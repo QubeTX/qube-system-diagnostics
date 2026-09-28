@@ -4,6 +4,10 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - Unreleased
 
+- Increase separation below the Graphics heading and between adapter groups while preserving equal card dimensions and the default overview footprint. Recheck the loaded, multi-adapter and delayed-state layout bounds.
+
+- Verify the corrected multi-GPU layout in the actual Windows candidate at default and physical 150% display scaling; restore the original display setting. Retain the unverified 200% check separately because this monitor's standard scale menu ends at 175%.
+
 - Fix overlapping multi-GPU overview text reported from the live Windows build. Give adapter names a full-width line, separate utilization from labelled video-memory values, and give thermal adapter names their own rows. Keep all resource cards equally sized and add pairwise text-bound checks at three widths.
 
 - Repair downstream renderer test fixtures: make nested-helper geometry compile-time constants and reconcile memo counters with the existing direct opaque-fill path while preserving byte-for-byte pixel comparisons. The full canvas/font-registry suites now pass (902 tests, 3 skipped).

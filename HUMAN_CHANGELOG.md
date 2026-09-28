@@ -6,6 +6,10 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## In development — A clearer system overview
 
+- Add breathing room between graphics adapters so each name, usage and memory group is easier to scan.
+
+- Behind the scenes: inspect the graphics layout in the running Windows app with enlarged display scaling, and keep the remaining display checks visible before release.
+
 - Keep graphics-card names, usage and memory readings on clearly separated lines, including laptops with two graphics adapters. Give temperature labels the same breathing room.
 
 - Behind the scenes: restore broader checks that compare rendered pixels and verify font changes, improving coverage of the interface optimizations.

@@ -7,7 +7,7 @@
 - Root tests, separate engine tests, native tests, strict model bindings, product-version reconciliation and pinned Windows builds pass for the implementation.
 - Windows automation confirms fresh-launch readings, six card destinations, two process-sort destinations, expansion, mode switching and keyboard input.
 - Live retained-scene reference captures show three/two/one columns at window widths 1180/950/760. Six cards and Processes fit at 1180 by 760. The revised graphics card uses compact model names and separate memory lines; a regression covers two adapters plus an additional count and delayed notice.
-- Reference raster captures at scales 1, 1.5 and 2 are not physical Windows display-DPI acceptance. Actual 100/150/200% display scaling remains unverified.
+- Reference raster captures at scales 1, 1.5 and 2 are not physical Windows display-DPI acceptance. The actual b19ee7a native candidate was subsequently inspected at 100% and physical 150% Windows scaling: adapter names occupy their own lines and do not overlap usage/memory. The default window fits all cards and Processes; the shorter scaled viewport uses vertical scrolling. The active 1920x1080 monitor's standard scale menu stops at 175%, leaving physical 200% acceptance unverified. Original 100% (Recommended) was restored and read back; the isolated preview shut down cleanly.
 - Multi-GPU/unified memory, missing and delayed observations, fixed-volume selection, complete-inventory process leaders and finding identity/severity have deterministic coverage. This is not a claim of a physical hardware matrix.
 
 ## Original resource gate remains failed
