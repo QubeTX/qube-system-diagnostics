@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - Unreleased
 
+- Verify the final status labels in the production Windows app and retain its 330-second resource sample: CPU remains over target; RSS/private memory and shutdown pass. Keep publication held pending the gate-owner decision and exact-source qualification.
+
 - Use the existing compact monospace face for missing thermal readings in the fixed trailing column, preserving the complete status label after native inspection found proportional-font truncation.
 
 - Strengthen secondary overview hierarchy: prominent adaptive byte rates with adjacent units, separate fixed-volume free-space context, grouped network history/scope, and aligned temperature readings with quieter missing states. Add byte-unit/missing-data and secondary-card overlap checks.

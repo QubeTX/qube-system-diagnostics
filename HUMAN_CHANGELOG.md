@@ -6,6 +6,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## In development — A clearer system overview
 
+- Behind the scenes: verify the finished cards in the production app and measure their monitoring cost. Memory and shutdown checks pass; the remaining processor-use result stays visible before release.
+
 - Keep missing-temperature labels fully readable beside their sensor names.
 
 - Make disk activity, network traffic and temperatures easier to spot. Keep units close to their readings, separate free space from disk activity, and show large transfer rates in shorter, readable units.

@@ -22,13 +22,15 @@ All cards populate from a fresh launch, route to details, distinguish missing/st
 - [x] Native tests and strict bindings
 - [x] Fresh-launch live readings, card navigation and expansion
 - [ ] Default/narrow layout and display-scale inspection
-- [ ] Observer-free overview resource measurement
+- [x] Observer-free overview resource measurement — ce6b42e: CPU fails; RSS/private memory pass
 - [ ] Exact-candidate hosted CI
 
 ## Status
-Active: graphics overlap and spacing corrected; secondary cards now emphasize rates/temperatures and separate their supporting context. Actual Windows hierarchy preview keeps six equal cards and Processes visible. Final missing-temperature alignment passes 83 native tests and strict bindings; its final preview build is running. Earlier physical 150% inspection passed, with original 100% restored; physical 200% remains unverified because this monitor's menu stops at 175%. Operator accepted only the recorded earlier CPU result in ADR 0023. Publication remains conditional on exact-source functional, timing and resource qualification.
+Active: cards and final status labels verified in the actual production Windows window; six cards plus Processes fit. Final 83 native tests (2 skipped) and strict bindings pass. Observer-free ce6b42e sample: CPU 2.528% fails, RSS 132.51/private 260.41 MiB pass, clean shutdown. Earlier physical 150% inspection passed, with original 100% restored; physical 200% remains unavailable on this monitor. Asked the operator whether to retain remaining gates or record a version-specific exception; no answer/exception yet. Exact-source functional/installer qualification continues. No publication.
 
 ## Activity
+
+- 2026-09-27 — codex: production ce6b42e window 9708162 confirms complete status labels and default-size fit. Visual capture completed during a 60-second warmup; no further app interaction/observers or local builds during the following 330.047-second sample. CPU 2.528049% of one core (FAIL), RSS 132.5078125 MiB/private 260.40625 MiB (PASS), clean shutdown. GUI SHA-256 7d729862ab52960c41c0ee72aecbc7e5b1b9c55d6345c38da58d7818a3530270. Ask the gate owner about a dated exception versus continued blocking; preserve ADR 0023's narrow scope until answered. Raw local report: target/overview-resources-ce6b42e.json.
 
 - 2026-09-27 — codex: actual final-hierarchy window reveals proportional-font shortening of the missing-sensor label even in the fixed column. Use the existing compact monospace status face; 83 native tests (2 skipped) and strict bindings pass. Verify the production build's actual status text before its observer-free resource window. Exact diagnostic-source CI 36369688990 and Windows installer qualification 36369836717 are running; no publication.
 

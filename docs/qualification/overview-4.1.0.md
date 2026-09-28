@@ -21,6 +21,8 @@ The composite Windows installer qualification [36366898012](https://github.com/Q
 
 After all six timing artifacts were retained, the remaining old-source resource job and superseded spacing-only PR CI were canceled to qualify the revised hierarchy/diagnostic source. No incomplete resource window is counted as acceptance. The revised hierarchy passes 83 native tests (2 expected skips), strict bindings and its Windows build; actual window inspection confirms the default footprint and clearer readings. A final trailing-column adjustment for unavailable temperatures is validated by tests and awaits the refreshed native preview.
 
+The refreshed production ce6b42e window confirms complete missing-sensor labels using the existing compact status font. All six cards and Processes remain visible at default size. Diagnostic 4ea5278 CI 36369688990 passes GNU ARM64 (15.617 ms frame p95) and musl (13.946 ms); GNU x86-64 remains failed at 22.444 ms. The added split attributes its dominant cost to rasterization (up to 21.281 ms p95 versus host transfer up to 3.836 ms, separate distributions). The largest navigation present samples align with Drivers in the test's authored navigation sequence. Other native jobs and Windows installer qualification 36369836717 remain running at this checkpoint. A gate-owner choice between continued blocking and a documented version-specific exception is pending; no exception or publication is inferred.
+
 ## Functional and visual evidence
 
 - Root tests, separate engine tests, native tests, strict model bindings, product-version reconciliation and pinned Windows builds pass for the implementation.
@@ -39,8 +41,11 @@ Production Windows artifact, observers and compilers closed, 15-second warmup fo
 |---|---:|---:|---:|---|
 | 29bb41d | 2.258% | 125.16 | 259.58 | CPU fails |
 | 0b1e53d | 2.239% | 124.95 | 259.48 | CPU fails |
+| ce6b42e | 2.528% | 132.51 | 260.41 | CPU fails |
 
-Original limits are CPU 2%, RSS 150 MiB and private 300 MiB. Both runs shut down cleanly. Avoiding unused per-core collection did not materially resolve the cost. Retained local reports: `target/overview-resources-final.json` and `target/overview-resources-optimized.json`.
+Original limits are CPU 2%, RSS 150 MiB and private 300 MiB. All three runs shut down cleanly. Avoiding unused per-core collection did not materially resolve the cost. Retained local reports: `target/overview-resources-final.json` and `target/overview-resources-optimized.json`.
+
+The final hierarchy/status-font production ce6b42e sample uses a 60-second warmup, with its one visual inspection completed during warmup, followed by 330.047 seconds without further app interaction/active observers or local builds. It shuts down cleanly. GUI SHA-256 is `7d729862ab52960c41c0ee72aecbc7e5b1b9c55d6345c38da58d7818a3530270`; engine SHA-256 is `e2fdbcb71626784bc5c1cf5f7a97028f43d275a44c149afe72e19b5ec77ca277`. Raw report: `target/overview-resources-ce6b42e.json`. The operator's earlier acceptance does not automatically cover this sample; the gate-owner decision is pending.
 
 The opt-in `profile-monitor 30 --overview` diagnostic splits CPU, memory, full process inventory and network. On this machine the process stage averaged 8.76 ms (p95 10.03 ms), versus CPU 0.25 ms, memory 0.32 ms and network 1.17 ms. These sequential timings use quantized process counters, omit child/service work and are not a replacement for the whole-product gate. They identify the next investigation, not an established kernel-call root cause. Preserve complete-inventory process leaders and existing lane cadence.
 

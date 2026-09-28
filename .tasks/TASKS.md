@@ -14,8 +14,8 @@
 ## To-Do
 
 ## Active
-- [ ] **Restore original responsiveness targets after v4** - combined optimization passes GNU ARM64; remaining native timing failures retained; split raster/host diagnostics for the next attributed fix (owner codex) #r16
-- [ ] **Build a clear gamer-focused System overview** - graphics overlap/spacing corrected; refining secondary-card hierarchy from live feedback; installer qualification passes, original timing and full DPI qualification remain open (owner codex) #ov6
+- [ ] **Restore original responsiveness targets after v4** - GNU ARM64/musl pass latest diagnostics; GNU x86-64 software drawing remains over target; gate-owner policy choice pending (owner codex) #r16
+- [ ] **Build a clear gamer-focused System overview** - revised cards/status labels verified in production; CPU 2.528% fails, memory passes; final CI/installer checks running and gate-owner policy choice pending (owner codex) #ov6
   - [x] Wire overview collection and bounded summaries
   - [x] Implement responsive cards, findings and navigation
   - [ ] Verify native behavior, layouts and collection cost
