@@ -27,9 +27,11 @@ All cards populate from a fresh launch, route to details, distinguish missing/st
 
 ## Status
 
-Active: production source 4f2f253 passes exact CI and Windows/Linux installer qualification. Mac Intel package lifecycle passes; Apple Silicon stops before the updater because the synthetic prior executable is killed after in-place overwrite. Diagnostic 36635433166 pinpoints exit 137; unchanged retry reproduces it. Atomic fixture replacement is being qualified against the same signed package in 36635969196. No publication; recover the stopped draft chain only after this native proof.
+Active: production source 4f2f253 passes exact CI and Windows/Linux installer qualification. Mac Intel package lifecycle passes; Apple Silicon stops before the updater because the synthetic prior executable is killed after in-place overwrite. Diagnostic 36635433166 pinpoints exit 137; unchanged retry reproduces it. Atomic fixture replacement passes the complete lifecycle on both architectures in 36635969196. Recover the stopped unpublished draft chain with the minimal harness fix; retain exact-source CI and all production gates.
 
 ## Activity
+
+- 2026-09-29 - codex: corrected native diagnostic 36635969196 passes Apple Silicon and Intel trust/install/launch/update/uninstall against the unchanged signed 4f2f253 package. Apple Silicon now executes synthetic 1.9.9 and updates to 4.1.0 successfully. All production jobs have stopped; verify no 4.1.0 tag/publication, discard only its unpublished draft, then merge PR 16 and rebuild the complete candidate from one corrected source.
 
 - 2026-09-29 - codex: PR 15 merged as 4f2f253 after candidate CI 36628600345 and Windows installers 36628604881 passed. Production CI 36632095352, Windows 36632821407 and Linux 36632821393 pass. Mac 36632821384 fails twice only on Apple Silicon synthetic fixture execution; diagnostic 36635433166 proves exit 137 before update. Qualify fresh-inode fixture setup in diagnostic 36635969196; then restart the unpublished chain with the minimal harness correction. Preserve original failures and source identities.
 
