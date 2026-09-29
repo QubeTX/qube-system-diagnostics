@@ -131,9 +131,10 @@ def collector_topics(job, cli):
 def required_topics(section, hidden):
     if hidden:
         return {"slow"}
-    # Overview and Processes deliberately use only the in-process fast lane
-    # and a short-lived static worker. Detailed pages enable all probe lanes.
-    return set() if section in ("Overview", "Processes") else {"slow", "activity", "connections", "diagnostics"}
+    # Static/health are transient; require the persistent overview workers.
+    if section == "Overview":
+        return {"slow", "activity"}
+    return set() if section == "Processes" else {"slow", "activity", "connections", "diagnostics"}
 
 
 def ensure_no_existing_gui():

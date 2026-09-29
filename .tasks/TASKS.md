@@ -2,7 +2,6 @@
 
 ## Backlog
 - [ ] **Restore original CPU and memory budgets after v4** - all original goals are preserved in docs/next-version-targets.md; the 4/3 percent CPU and 200 MiB RSS ceilings expire after the corrective 4.0.1 patch under ADRs 0017/0018 (owner codex) #r17
-- [ ] **Restore original responsiveness targets after v4** - use retained native frame/input reports to qualify focused improvements; the operator's all-platform 100 ms release limit expires after the corrective 4.0.1 patch under ADRs 0016/0018 (owner codex) #r16
 - [ ] **Explore formal verification in a future version** - consider a small model of collector cancellation, shutdown and latest-value delivery; operator explicitly deferred this exploration beyond v4 on 2026-09-23 #frm
 - [ ] **Run the released-bytes two-hour soak and capture frame/input percentiles** - TASK FOR CODEX; unattended, machine-quarantined two-hour Processes soak plus formal frame-p95/input-p95 evidence on the public v3 bytes, with exit-attribution awareness; replaces the pre-release soak gate the operator waived on 2026-07-22 (needs #qv3) (ms #v3n) #sok
 - [ ] **Run the extensive post-release testing and performance sweep** - TASK FOR CODEX; everything waived from the v3.0.0 release under the operator's functional-bar directive: exhaustive GUI automation across all sections/modes/keyboard/scaling/exports/unavailable states, published-v2 PTY replay on hosted targets, physical interaction regression sweep (scroll granularity, tray and minimize lifecycle), formal foreground/hidden budget re-proof, and varied-load performance regression checks; feeds patch releases (needs #qv3) (ms #v3n) #ext
@@ -15,6 +14,11 @@
 ## To-Do
 
 ## Active
+- [ ] **Restore original frame and input targets after v4** - renderer optimizations and native attribution implemented; remaining timing failures retained under the 4.1.0-only ADR 0025 release exception; owner Codex #r16
+- [ ] **Build a clear gamer-focused system overview** - operator authorizes production release under ADR 0025; preserve performance failures, require final-source functional CI/installers and public-byte verification #ov6
+  - [x] Wire overview collection and bounded summaries
+  - [x] Implement responsive cards, findings and navigation
+  - [ ] Verify native behavior, layouts and collection cost
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k
   - [x] Reconstruct the current artwork and Windows icon-delivery failure
     > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.

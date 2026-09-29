@@ -172,7 +172,7 @@ def main():
             root = psutil.Process(process.pid)
             attribution = FamilyAttribution(process.pid)
             samples = []
-            required = set() if args.legacy_in_process else {"slow"} if args.hidden else set() if args.section in ("Overview", "Processes") else {"slow", "activity", "connections", "diagnostics"}
+            required = set() if args.legacy_in_process else {"slow"} if args.hidden else {"slow", "activity"} if args.section == "Overview" else set() if args.section == "Processes" else {"slow", "activity", "connections", "diagnostics"}
             checked = False
             while time.monotonic() - begin < args.seconds:
                 pid, status, usage = os.wait4(process.pid, os.WNOHANG)

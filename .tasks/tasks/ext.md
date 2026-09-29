@@ -28,4 +28,6 @@ Every waiver recorded in `gux`/`nsp` verification on 2026-07-22 is either re-pro
 Backlog. Blocked on #qv3. Context: the waivers live in `.tasks/tasks/gux.md` and `.tasks/tasks/nsp.md` (dated 2026-07-22), ADRs 0001-0003 in `docs/adr/`, and the Codex post-mortem in `docs/agents/`.
 
 ## Activity
+
+- 2026-09-29 — codex: ADR 0025 defers physical 200% overview display inspection and remaining full resource evidence for exactly 4.1.0. Codex owns follow-up; retain actual default/150% native Windows proof separately from reference raster tests.
 - 2026-07-22 05:20 — created at operator request as the consolidated home for all functional-bar testing waivers plus performance regression work; assigned to Codex post-release (agent: fable)

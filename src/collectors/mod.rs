@@ -338,6 +338,23 @@ impl SystemSnapshot {
         self.network.adapter_status = adapter_status;
     }
 
+    /// Overview needs aggregate CPU/memory, process leaders and interface rates.
+    /// Reuse the bounded native process sampler without polling per-core clocks
+    /// that are displayed only by the processor detail page.
+    pub fn refresh_overview_gui(&mut self) {
+        self.refresh_processes_gui(crate::types::ProcessSortKey::Cpu);
+        if self.cpu.cpu_model.is_empty() {
+            self.cpu = cpu::collect(&self.sys);
+        }
+        self.cpu.per_core_usage.clear();
+        self.cpu.per_core_frequency.clear();
+        let adapters = std::mem::take(&mut self.network.adapters);
+        let adapter_status = self.network.adapter_status.clone();
+        self.network = self.network_sampler.collect(&mut self.networks);
+        self.network.adapters = adapters;
+        self.network.adapter_status = adapter_status;
+    }
+
     /// Refresh the one-second process projection only while its GUI page is
     /// subscribed. Aggregate CPU uses the same provider as every other page;
     /// per-process CPU uses capture intervals. Memory is refreshed so

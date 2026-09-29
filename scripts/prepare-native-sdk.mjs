@@ -17,11 +17,11 @@ const required = {
   tarball: "https://registry.npmjs.org/@native-sdk/cli/-/cli-0.5.4.tgz",
   integrity: "sha512-8ixE8TjN2zQ+9rnnpjOnmHDeloyvKBc9CKXVUdYxge63fSKn6AH3rodRcdE6EYQiAIDYzQiJSr8AKT1qdFcABA==",
   zigHash: "native_sdk-0.1.0-hzDzQo8l5gCK6W8hPyRC4voBqyQU8bhy6ktUDXKIqWlb",
-  patchHash: "8888f02cae3a2154676fd2f1fab275459ab9d501942a30d24538532ae741b121",
+  patchHash: "26a6ddc8be5bfb75490a6a0358e4814195abc828324b851d9a2ee791dc069c41",
 };
 
 const files = new Map([
-  ["src/runtime/frame_profile.zig", ["d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528", "443d84663f01d03423eef9b645e748818a5531c07763add12b592fadc30d7252"]],
+  ["src/runtime/frame_profile.zig", ["d1778f5d91066a77fedd47bb8979afd3ec4b3d4101709104edb90177b34e0528", "8ecfd3af2f5bd9400a43513916a34882c522ad8c9f75e5caaf3b5284834a7b31"]],
   ["src/runtime/flow.zig", ["e7bf9baa57457d0835129272a8cb6c9f07ad5a1d77978acc32babf9f85cfad78", "f584ddb37c6e42aaf466bccf821305497f6a66b58b099a01ad96ec4429002891"]],
   ["src/runtime/gpu_surface_events.zig", ["9ed40fbfb87ec9ad5011815e9d5ab760b8aff270516a2f77eec32e2a66acc439", "0a236f16201f7486be6db3e4fe216a2eecb9c4d14cb0c6e32ef6e3e75a998290"]],
   ["src/runtime/automation_snapshot.zig", ["5112c477f7032f19f3f2e0ee118215d394271d1fdb9780163ad599c7ee6be0e6", "5bf2342771107c2e47796b985bff04e558b0c377e1a85bb7edd36eca910d7cb3"]],
@@ -44,15 +44,17 @@ const files = new Map([
   ["src/platform/windows/webview2_host.cpp", ["93d9843a411de4364310bbd4f87be19381c085828152b1c975249064d0c6e8a3", "acb9d381ed51d307dff9aa1430e8e0e0a07f4e6c93f088185afdbce901a2ddc7"]],
   ["src/primitives/canvas/reference_memo.zig", ["ebb7d49035d993b11b30c784e362f9cb12ed625a5e6ce19a44059bb20b34d592", "ea69ec3d6f4024062f4ac8aad88b4482258c8c0f4328dae7dcc33b89621b8196"]],
   ["src/primitives/canvas/reference.zig", ["56ef9cec4f76ee6cbff8a56dc5f579d3b9ee2daa79ad4cdb1f40073c3a053ecb", "0d913c9a0bfb1d2ead4ce07db2e93dd9089faf06443b7e1a2223f6c6551d8abd"]],
-  ["src/primitives/canvas/reference_tests.zig", ["3accd42966c9465b28859cd73a33684619926d18082a32f7c6faac8b0f3b326a", "55a3e981de470b10ff67821e978e476eecab6fd6f607cc3945b30a81a6014f60"]],
+  ["src/primitives/canvas/reference_tests.zig", ["3accd42966c9465b28859cd73a33684619926d18082a32f7c6faac8b0f3b326a", "12de22d15dd7466e55d3f5bb8d242db91b411240ad25a59db92845ef07269e1a"]],
   ["src/runtime/bridge_permission_tests.zig", ["d048b23298d75c225476e2708c695c4bb4feca26c09131648d13112067cce9c1", "e083b02a70108f669077306efcd564bd6b3de37c1f2d76feb4da01015275d9c4"]],
-  ["src/runtime/canvas_frame.zig", ["d2eb5ff8c63a391a695a2a47bfef6c315ddafa98e7b35cd91253437eb066a0ce", "2678ff7cfb3d47c765d517d5b9c8eb1746985cb6b610e75da3bfd02c24eb0639"]],
+  ["src/runtime/canvas_frame.zig", ["d2eb5ff8c63a391a695a2a47bfef6c315ddafa98e7b35cd91253437eb066a0ce", "224604be9ca5311901aef5a5698341ae473af1941e331794d0353d5bff473b2e"]],
   ["src/runtime/canvas_frame_patch_tests.zig", ["c24d345ae4c26b073b84442bad64b2378ab7a4f424813df0b0a7d3ffcbb96d79", "c83a1327674e9e7b8b36accdaf8ed2e63ca140ec00a81c1f81347b375c6cf462"]],
-  ["src/runtime/core.zig", ["47ec8939f1be3be8808360627f26a41135398a5cb52d36c8785414b9b195e193", "16541e30e483336dc542ff11796ca66deda217bb49479ea8603c6a03eb100f4a"]],
+  ["src/runtime/core.zig", ["47ec8939f1be3be8808360627f26a41135398a5cb52d36c8785414b9b195e193", "b74df291a5f40e0f045d893df7488b40c4957b78fdefd75e5d79b91d679efed7"]],
   ["src/runtime/system_services.zig", ["69ed09c968796645c03276f4fa6e7065350a63bf9926070c255d41ab8c09e46e", "0a519438bd416d01f9196e605d27d537fd1e9acd12443afa2cdd367954fd833c"]],
   ["src/runtime/ui_app.zig", ["eedba5eef9470959f75aa97574c1343466798a4e093476fff2fb5dd9ac465e26", "f1f5d5aef7eccd36af9ceec2a1e1df4d423a9975caa3742887806fa90804b301"]],
   ["src/runtime/ui_app_tests.zig", ["eaf4c33dfca9858e9070faedb3809be5ba330893bb71fad7c6fdc416b29570af", "7c27ef3b85fb927c4b7abe7e6ac93f95a73f7afeebb42aaf2fa00206009472d7"]],
   ["src/runtime/validation.zig", ["96790d675894fca8b1af1233ef81161433932d2ac00777f61809ff82a7bdef36", "41cf8fb540a20f1084551c93543f1f0d480d54d716a28145b3a9d021b5cb0a28"]],
+  ["src/primitives/canvas/text_metrics.zig", ["be496292b19ddaa8b53f286873b8f0cc708030c974921d38841e0854446b120e", "2e8890f187d529652ffdcca76fc9b8f4a4dffc1e8fb79b3e4bf239b2a91bb09a"]],
+  ["src/runtime/canvas_fonts.zig", ["1e7ae44e142d49d64c1d87f50d04488a8661af122e114eb3009adec32eef261c", "748e7212c0415a04d41632ee6959dd2d17de3fce455f6e4c53a37d202d258b86"]],
 ]);
 
 function fail(message) {

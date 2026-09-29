@@ -11,6 +11,69 @@ test { _ = @import("settings_writer.zig"); }
 
 const AppMarkup = canvas.MarkupView(main.Model, main.Msg);
 
+test "native text widths reuse exact measurements and invalidate with fonts" {
+    const Probe = struct {
+        calls: usize = 0,
+        width: f32 = 37.5,
+        fn measure(raw: ?*anyopaque, _: canvas.FontId, _: f32, _: []const u8) f32 {
+            const self: *@This() = @ptrCast(@alignCast(raw.?));
+            self.calls += 1;
+            return self.width;
+        }
+    };
+    canvas.bumpTextMeasureGeneration();
+    var probe = Probe{};
+    var provider = canvas.TextMeasureProvider{ .context = &probe, .measure_fn = Probe.measure, .cache_widths = true };
+    var label = [_]u8{ 'G', 'P', 'U' };
+    try testing.expectEqual(@as(f32, 37.5), provider.measureWidth(64, 14, &label));
+    try testing.expectEqual(@as(f32, 37.5), provider.measureWidth(64, 14, &label));
+    try testing.expectEqual(@as(usize, 1), probe.calls);
+    label[0] = 'C';
+    _ = provider.measureWidth(64, 14, &label);
+    _ = provider.measureWidth(65, 14, &label);
+    _ = provider.measureWidth(65, 15, &label);
+    try testing.expectEqual(@as(usize, 4), probe.calls);
+    probe.width = 42;
+    canvas.bumpTextMeasureGeneration();
+    try testing.expectEqual(@as(f32, 42), provider.measureWidth(65, 15, &label));
+    try testing.expectEqual(@as(usize, 5), probe.calls);
+    var other = Probe{ .width = 61 };
+    provider.context = &other;
+    try testing.expectEqual(@as(f32, 61), provider.measureWidth(65, 15, &label));
+    try testing.expectEqual(@as(usize, 1), other.calls);
+    // Mutable, ad-hoc providers keep their original uncached contract.
+    provider.cache_widths = false;
+    other.width = 72;
+    try testing.expectEqual(@as(f32, 72), provider.measureWidth(65, 15, &label));
+}
+
+test "native text cache does not retain failures or truncate long text" {
+    const Probe = struct {
+        calls: usize = 0,
+        width: f32 = -1,
+        fn measure(raw: ?*anyopaque, _: canvas.FontId, _: f32, _: []const u8) f32 {
+            const self: *@This() = @ptrCast(@alignCast(raw.?));
+            self.calls += 1;
+            return self.width;
+        }
+    };
+    canvas.bumpTextMeasureGeneration();
+    var probe = Probe{};
+    const provider = canvas.TextMeasureProvider{ .context = &probe, .measure_fn = Probe.measure, .cache_widths = true };
+    _ = provider.measureWidth(1, 14, "Reading");
+    probe.width = std.math.nan(f32);
+    _ = provider.measureWidth(1, 14, "Reading");
+    probe.width = 47;
+    try testing.expectEqual(@as(f32, 47), provider.measureWidth(1, 14, "Reading"));
+    try testing.expectEqual(@as(usize, 3), probe.calls);
+    var long = [_]u8{'a'} ** 257;
+    _ = provider.measureWidth(1, 14, &long);
+    probe.width = 91;
+    long[256] = 'b';
+    try testing.expectEqual(@as(f32, 91), provider.measureWidth(1, 14, &long));
+    try testing.expectEqual(@as(usize, 5), probe.calls);
+}
+
 test "automation publication yields to input presentation and wakes afterward" {
     const harness = try native_sdk.runtime.TestHarness().create(testing.allocator, .{});
     defer harness.destroy(testing.allocator);
@@ -363,14 +426,15 @@ test "a fast summary updates the native overview projection" {
     try testing.expectEqualStrings("fast-summary", model.overview_topic_meta.topic());
     try testing.expectEqualStrings("SD-300 platform CPU and memory collectors", model.overview_topic_meta.provenance());
     try testing.expectEqual(@as(u64, 42), model.overview_topic_meta.sequence);
+    model.overview.prepare(&model);
 
     var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena_state.deinit();
     const tree = try buildTree(arena_state.allocator(), &model);
     _ = try expectByText(tree.root, .badge, "Live");
     _ = try expectByText(tree.root, .text, "18.3%");
-    _ = try expectByText(tree.root, .text, "16.0 GiB used of 32.0 GiB");
-    _ = try expectByText(tree.root, .badge, "0 FINDINGS");
+    _ = try expectByText(tree.root, .text, "16.0 / 32.0 GiB used");
+    try testing.expect(findByText(tree.root, .text, "Needs attention") == null);
 }
 
 test "re-reading one fast sequence does not invent another history sample" {
@@ -752,7 +816,7 @@ test "overview never interprets startup or interrupted measurements as current h
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const tree = try buildTree(arena.allocator(), &model);
-    _ = try expectByText(tree.root, .text, "Waiting for data");
+    _ = try expectByText(tree.root, .text, "Reading…");
     try testing.expect(findByText(tree.root, .text, "0.0%") == null);
     model.fast_summary_seen = true;
     model.fast_summary_failed = true;
@@ -2056,4 +2120,203 @@ test "process inventory denial remains distinct and recovery removes it" {
     model.detail.applyProcessSummary(summary_type{ .sequence = 2, .observation_status = 0 });
     try testing.expect(model.detail.process_observation.available);
     try testing.expectEqualStrings("available", model.detail.process_observation.status());
+}
+
+
+test "overview card navigation and responsive thresholds" {
+    const overview = @import("overview.zig");
+    var name = canvas.TextBuffer(192){};
+    overview.shortHardwareName(&name, "Intel(R) Arc(TM) Graphics");
+    try testing.expectEqualStrings("Intel Arc Graphics", name.text());
+    overview.shortHardwareName(&name, "NVIDIA GeForce RTX 4070 Laptop GPU");
+    try testing.expectEqualStrings("GeForce RTX 4070 Laptop", name.text());
+    try testing.expectEqual(@as(u32, 1), overview.columnsForWidth(559));
+    try testing.expectEqual(@as(u32, 2), overview.columnsForWidth(560));
+    try testing.expectEqual(@as(u32, 2), overview.columnsForWidth(839));
+    try testing.expectEqual(@as(u32, 3), overview.columnsForWidth(840));
+    var model = main.initialModel();
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    const messages = [_]main.Msg{ .select_gpu, .select_cpu, .select_memory, .select_disk, .select_network, .select_thermals };
+    for (messages, [_]u8{4, 1, 2, 3, 5, 7}) |message, section| {
+        main.update(&model, message, &fx);
+        try testing.expectEqual(section, model.active_section);
+    }
+    main.update(&model, .show_memory_processes, &fx);
+    try testing.expectEqual(@as(u8, 6), model.active_section);
+    try testing.expectEqual(main.ProcessSort.memory, model.process_sort);
+    main.update(&model, .toggle_machine_details, &fx);
+    try testing.expect(model.machine_details_open);
+}
+
+test "overview state preserves missing readings and marks delayed captures" {
+    const overview = @import("overview.zig");
+    const projection = @import("projection.zig");
+    var meta = projection.TopicMeta{};
+    try testing.expectEqualStrings("Reading…", overview.topicState(&meta, 10_000));
+    meta.ready = true; meta.captured_unix_ms = 9000; meta.expected_interval_ms = 1000;
+    meta.availability_buffer.set("available");
+    try testing.expectEqualStrings("", overview.topicState(&meta, 10_000));
+    try testing.expectEqualStrings("Reading delayed · previous values", overview.topicState(&meta, 13_000));
+    meta.availability_buffer.set("permission_denied");
+    try testing.expect(std.mem.startsWith(u8, overview.topicState(&meta, 10_000), "Not available"));
+    meta.availability_buffer.set("error");
+    try testing.expect(std.mem.startsWith(u8, overview.topicState(&meta, 10_000), "Couldn’t read"));
+}
+
+test "overview selects fixed storage and stable graphics with honest unified memory" {
+    var model = main.initialModel();
+    const fixture =
+        \\{"data":{"disk":{"partitions":[{"mount_point":"USB","is_removable":true,"total_bytes":1000,"used_bytes":999},{"mount_point":"Z:","total_bytes":1000,"used_bytes":900},{"mount_point":"C:","total_bytes":1000,"used_bytes":900,"available_bytes":100}]},"gpu":{"adapters":[{"device_id":"z","name":"Discrete","dedicated_memory_mb":8192},{"device_id":"a","name":"Integrated","unified_memory":true}]},"thermals":{}}}
+    ;
+    try model.detail.applySlowJson(testing.allocator, fixture);
+    model.overview.prepare(&model);
+    try testing.expectEqualStrings("C:", model.detail.overview_disk.mount());
+    try testing.expectEqualStrings("Integrated", model.overview.gpus()[0].name());
+    try testing.expectEqualStrings("Unified memory", model.overview.gpus()[0].memory());
+    try testing.expectEqualStrings("Not available", model.overview.gpus()[1].load());
+    try testing.expectEqualStrings("Not available", model.overview.thermals.value());
+}
+
+test "overview findings preserve severity and route by identity after copy changes" {
+    var model = main.initialModel();
+    try model.detail.applyFastJson(testing.allocator,
+        \\{"data":{"cpu":{},"memory":{},"network":{},"processes":{},"findings":[{"id":"memory-pressure","kind":"resource_pressure","severity":"warning","title":"Capacity is almost full","evidence":"fixture","next_step":"Inspect apps","source":"fast"},{"id":"explicit-storage-read","kind":"hardware_fault","severity":"warning","title":"Read interrupted","evidence":"fixture","next_step":"Inspect storage","source":"explicit storage probe"}]}}
+    );
+    model.overview.prepare(&model);
+    const finding = model.overview.findings()[0];
+    try testing.expectEqualStrings("warning", finding.severity());
+    var fx = main.Effects.init(testing.allocator);
+    defer fx.deinit();
+    main.update(&model, .{ .open_overview_finding = finding.id }, &fx);
+    try testing.expectEqual(@as(u8, 6), model.active_section);
+    try testing.expectEqual(main.ProcessSort.memory, model.process_sort);
+    main.update(&model, .{ .open_overview_finding = model.detail.findings()[1].id }, &fx);
+    try testing.expectEqual(@as(u8, 3), model.active_section);
+}
+
+test "overview graphics card contains two adapters additional count and delayed state" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var model = main.initialModel();
+    model.detail.gpu_total_count = 3;
+    model.overview.gpu_count = 2;
+    model.overview.gpu_rows[0].name_buffer.set("Intel Arc Graphics");
+    model.overview.gpu_rows[1].name_buffer.set("GeForce RTX 4070 Laptop");
+    for (&model.overview.gpu_rows, 0..) |*gpu, i| {
+        gpu.id = i;
+        gpu.load_available = true;
+        gpu.load_buffer.set("100%");
+        gpu.memory_buffer.set("7.0 / 8.0 GiB");
+    }
+    model.overview.gpu_more_buffer.set("+1 more");
+    model.overview.gpu_state_buffer.set("Reading delayed · previous values");
+    for ([_]f32{ 1180, 950, 760 }) |width| {
+        model.overview_columns = @import("overview.zig").columnsForWidth(width - 248);
+        const tree = try buildTree(arena.allocator(), &model);
+        const nodes = try arena.allocator().alloc(canvas.WidgetLayoutNode, 512);
+        const layout = try canvas.layoutWidgetTreeWithTokens(tree.root,
+            native_sdk.geometry.RectF.init(0, 0, width, 760), main.qubeTokens(&model), nodes);
+        var card: ?canvas.WidgetLayoutNode = null;
+        var text_frames: [24]native_sdk.geometry.RectF = undefined;
+        var text_count: usize = 0;
+        for (layout.nodes) |node| {
+            if (std.mem.eql(u8, node.widget.semantics.label, "Open GPU details")) { card = node; continue; }
+            if (card) |parent| {
+                if (node.depth <= parent.depth) break;
+                if (node.widget.kind == .text and node.widget.text.len > 0) {
+                    if (node.frame.y + node.frame.height > parent.frame.y + parent.frame.height) {
+                        std.debug.print("GPU card clips {s} at {d}, bottom {d}\n", .{node.widget.text, node.frame.y + node.frame.height, parent.frame.y + parent.frame.height});
+                        return error.OverviewCardOverflow;
+                    }
+                    for (text_frames[0..text_count]) |previous| {
+                        try testing.expect(native_sdk.geometry.RectF.intersection(previous, node.frame).isEmpty());
+                    }
+                    text_frames[text_count] = node.frame;
+                    text_count += 1;
+                }
+            }
+        }
+        try testing.expect(card != null);
+    }
+}
+
+test "overview transfer units retain missing data and scale actual byte rates" {
+    var model = main.initialModel();
+    model.detail.network_rate_available = true;
+    model.detail.total_download_kib_s = 6654.7;
+    model.detail.total_upload_kib_s = 277.9;
+    model.detail.activity_captured_unix_ms = 1;
+    model.detail.disk_io_available = true;
+    model.detail.disk_read_mib_s = 0.125;
+    model.detail.disk_write_mib_s = 2048;
+    model.overview.prepare(&model);
+    try testing.expectEqualStrings("6.5", model.overview.network.value());
+    try testing.expectEqualStrings("MiB/s", model.overview.network.unit());
+    try testing.expectEqualStrings("278", model.overview.network.secondary());
+    try testing.expectEqualStrings("KiB/s", model.overview.network.secondaryUnit());
+    try testing.expectEqualStrings("128", model.overview.disk.value());
+    try testing.expectEqualStrings("KiB/s", model.overview.disk.unit());
+    try testing.expectEqualStrings("2.0", model.overview.disk.secondary());
+    try testing.expectEqualStrings("GiB/s", model.overview.disk.secondaryUnit());
+    model.detail.network_rate_available = false;
+    model.overview.prepare(&model);
+    try testing.expect(!model.overview.network.available);
+    try testing.expectEqualStrings("", model.overview.network.unit());
+    try testing.expect(!std.mem.eql(u8, "0", model.overview.network.value()));
+}
+
+test "secondary overview cards keep rates sensors and delayed notices separated" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var model = main.initialModel();
+    model.overview.gpu_count = 2;
+    model.overview.gpu_rows[0].name_buffer.set("Intel Arc Graphics");
+    model.overview.gpu_rows[1].name_buffer.set("GeForce RTX 4070 Laptop");
+    for (&model.overview.gpu_rows, 0..) |*gpu, i| {
+        gpu.id = i;
+        gpu.temperature_available = true;
+        gpu.temperature_buffer.set("212 °F");
+    }
+    model.overview.thermals.available = true;
+    model.overview.thermals.value_buffer.set("212 °F");
+    model.overview.thermals.state_buffer.set("Reading delayed · previous values");
+    model.overview.disk.available = true;
+    model.overview.disk.value_buffer.set("1024");
+    model.overview.disk.secondary_buffer.set("1024");
+    model.overview.disk.unit_buffer.set("MiB/s");
+    model.overview.disk.secondary_unit_buffer.set("MiB/s");
+    model.overview.disk.context_label_buffer.set("Free space · C:\\");
+    model.overview.disk.context_buffer.set("77.3 GiB · previous reading");
+    model.overview.disk.state_buffer.set("Reading delayed · previous values");
+    model.overview.network = model.overview.disk;
+    const labels = [_][]const u8{ "Open Disk details", "Open Network details", "Open Thermals details" };
+    for ([_]f32{ 1088, 1180, 950, 760 }) |width| {
+        model.overview_columns = @import("overview.zig").columnsForWidth(width - 248);
+        const tree = try buildTree(arena.allocator(), &model);
+        const nodes = try arena.allocator().alloc(canvas.WidgetLayoutNode, 512);
+        const layout = try canvas.layoutWidgetTreeWithTokens(tree.root,
+            native_sdk.geometry.RectF.init(0, 0, width, 760), main.qubeTokens(&model), nodes);
+        for (labels) |label| {
+            var card: ?canvas.WidgetLayoutNode = null;
+            var texts: [32]native_sdk.geometry.RectF = undefined;
+            var count: usize = 0;
+            for (layout.nodes) |node| {
+                if (std.mem.eql(u8, node.widget.semantics.label, label)) { card = node; continue; }
+                if (card) |parent| {
+                    if (node.depth <= parent.depth) break;
+                    if (node.widget.kind != .text or node.widget.text.len == 0) continue;
+                    if (node.frame.y + node.frame.height > parent.frame.y + parent.frame.height or
+                        node.frame.x + node.frame.width > parent.frame.x + parent.frame.width) {
+                        std.debug.print("{s} clips {s} at width {d}\n", .{label, node.widget.text, width});
+                        return error.OverviewCardOverflow;
+                    }
+                    for (texts[0..count]) |prior| try testing.expect(native_sdk.geometry.RectF.intersection(prior, node.frame).isEmpty());
+                    texts[count] = node.frame;
+                    count += 1;
+                }
+            }
+            try testing.expect(card != null);
+        }
+    }
 }

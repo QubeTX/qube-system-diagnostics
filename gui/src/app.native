@@ -44,77 +44,75 @@
 
     <scroll grow="1" value="{scroll_top}" on-scroll="content_scrolled">
       <column gap="16" padding="20">
-        <if test="{active_section != 9}"><if test="{collectorNoticeVisible}"><column gap="4"><row gap="12"><text>{collectorState}</text><if test="{technicianMode}"><if test="{collectorAgeAvailable}"><text wrap="true" foreground="text_muted">Captured {collectorAgeSeconds}s ago · sample {collectorSequence}</text></if></if></row><if test="{technicianMode}"><text wrap="true" foreground="text_muted">{collectorSource}</text></if></column></if></if>
+        <if test="{active_section != 9 and active_section != 0}"><if test="{collectorNoticeVisible}"><column gap="4"><row gap="12"><text>{collectorState}</text><if test="{technicianMode}"><if test="{collectorAgeAvailable}"><text wrap="true" foreground="text_muted">Captured {collectorAgeSeconds}s ago · sample {collectorSequence}</text></if></if></row><if test="{technicianMode}"><text wrap="true" foreground="text_muted">{collectorSource}</text></if></column></if></if>
         <if test="{active_section == 0}">
-        <column gap="4">
-          <text size="heading">System overview</text>
-          <if test="{technicianMode}"><text wrap="true" foreground="text_muted">Live readings, collection status, and the evidence behind each finding.</text></if>
-          <else><text wrap="true" foreground="text_muted">See what is busy, what needs attention, and where to look next.</text></else>
-        </column>
-
-        <row gap="16">
-          <panel padding="20" grow="1" background="surface" radius="lg">
-            <column gap="14">
-              <row cross="center">
-                <text grow="1" foreground="text_muted"><span mono="true">CPU LOAD</span></text>
-                <if test="{fast_summary_seen}"><badge variant="secondary">{logical_processors} LOGICAL</badge></if>
-              </row>
-              <if test="{fast_summary_seen}"><text size="display">{fixed(cpu_percent, 1)}%</text></if><else><text size="heading">Waiting for data</text></else>
-              <if test="{fast_summary_seen}"><progress value="{cpu_percent / 100}" label="CPU utilization" /></if>
-              <text foreground="text_muted"><span mono="true">Across all logical processors</span></text>
-            </column>
-          </panel>
-
-          <panel padding="20" grow="1" background="surface" radius="lg">
-            <column gap="14">
-              <row cross="center">
-                <text grow="1" foreground="text_muted"><span mono="true">MEMORY LOAD</span></text>
-                <badge variant="secondary">PHYSICAL</badge>
-              </row>
-              <if test="{fast_summary_seen}"><text size="display">{fixed(memory_percent, 1)}%</text></if><else><text size="heading">Waiting for data</text></else>
-              <if test="{fast_summary_seen}"><progress value="{memory_percent / 100}" label="Memory utilization" /></if>
-              <if test="{fast_summary_seen}"><text foreground="text_muted"><span mono="true">{fixed(memory_used_gib, 1)} GiB used of {fixed(memory_total_gib, 1)} GiB</span></text></if>
-            </column>
-          </panel>
-        </row>
-
-        <panel padding="16" background="surface" radius="lg"><column gap="8"><text>Activity over the last minute</text><chart height="72" y-min="0" y-max="100" grid-lines="3" baseline="true" stroke-width="1" label="CPU and memory use over the last minute"><series kind="bar" values="{cpu_history}" color="accent" label="CPU percent" /><series kind="line" values="{memory_history}" color="warning" label="Memory percent" /></chart><text foreground="text_muted">CPU · orange   Memory · amber   Scale · 0–100%</text></column></panel>
-
-
-        <panel padding="20" background="surface" radius="lg">
-          <column gap="12">
-            <row cross="center">
-              <column gap="3" grow="1">
-                <text>Findings and next steps</text>
-                <text wrap="true" foreground="text_muted">Resource pressure, hardware reports, and gaps in what can be observed.</text>
+          <row cross="center" gap="12">
+            <column gap="3" grow="1"><text size="heading">System overview</text><text foreground="text_muted">{systemModel} · Up {fixed(uptimeHours, 1)} hours</text></column>
+            <button variant="ghost" on-press="toggle_machine_details">System details</button>
+          </row>
+          <grid columns="{overview_columns}" gap="12">
+            <panel height="216" padding="16" background="surface_subtle" radius="lg" role="button" label="Open GPU details" on-press="select_gpu">
+              <column gap="10">
+                <row gap="8"><if test="{userMode}"><text grow="1" foreground="text_muted">Graphics</text></if><else><text grow="1" foreground="text_muted">GPU</text></else><if test="{detail.gpu_total_count > 2}"><text size="sm" foreground="text_muted">{overview.gpuMore}</text></if><text foreground="text_muted">›</text></row>
+                <column gap="16"><for each="overviewGpus" as="gpu" key="id"><column gap="4"><text size="sm" overflow="ellipsis">{gpu.name}</text><row height="38" gap="12" cross="center"><if test="{gpu.load_available}"><text width="80" size="heading">{gpu.load}</text></if><else><text width="80" size="sm" wrap="true" foreground="text_muted">{gpu.load}</text></else><column grow="1" gap="2"><text size="sm" foreground="text_muted">{gpu.memoryLabel}</text><text size="sm">{gpu.memory}</text></column></row></column></for></column>
+                <text size="sm" foreground="text_muted">{overview.gpuState}</text>
               </column>
-              <badge variant="outline">{detail.finding_total_count} FINDINGS</badge>
-            </row>
-            <if test="{detail.warnings_ready}"><if test="{detail.finding_total_count == 0}"><text wrap="true">No findings in the current observations. Check each section for measurement availability.</text></if></if><else><text>Checking the available observations…</text></else>
-            <for each="findings" as="finding" key="id"><column gap="4"><text wrap="true">{finding.title}</text><if test="{technicianMode}"><text foreground="text_muted">{finding.kind} · {finding.source}</text></if><text wrap="true" foreground="text_muted">{finding.evidence}</text><text wrap="true">{finding.nextStep}</text></column></for>
-            <if test="{technicianMode}"><text>Provider warnings · {warning_count}</text><if test="{detail.warnings_ready}"><for each="warnings" as="warning" key="id"><row gap="12" cross="center"><badge variant="outline">{upper(warning.severity)}</badge><text width="100">{warning.source}</text><text grow="1" wrap="true">{warning.message}</text></row></for></if></if>
-          </column>
-        </panel>
-        <if test="{userMode}">
-          <panel padding="20" background="surface" radius="lg">
-            <column gap="10"><text>What the current load means</text><text wrap="true">{cpuAssessment}</text><text wrap="true">{memoryAssessment}</text><row gap="8"><button variant="outline" on-press="show_cpu_processes">Check CPU consumers</button><button variant="outline" on-press="show_memory_processes">Check memory consumers</button></row><text wrap="true" foreground="text_muted">One sample is a signal, not a diagnosis. Sustained history and the Processes page provide the useful context.</text></column>
-          </panel>
-        </if>
-        <if test="{detail.static_ready}">
-          <panel padding="20" background="surface" radius="lg">
-            <column gap="10">
-              <row cross="center"><column gap="3" grow="1"><text size="heading">{manufacturer} {systemModel}</text><text foreground="text_muted">{osName} {osVersion} · {architecture}</text></column><badge variant="outline">UP {fixed(uptimeHours, 1)} HOURS</badge></row>
-              <text><span mono="true">PROCESSOR · {systemCpu}</span></text>
-              <if test="{technicianMode}"><row gap="16"><text grow="1" foreground="text_muted"><span mono="true">HOST · {hostname}</span></text><text grow="1" foreground="text_muted"><span mono="true">KERNEL · {kernel}</span></text><text grow="1" foreground="text_muted"><span mono="true">FIRMWARE · {bios}</span></text><text grow="1" foreground="text_muted"><span mono="true">HYPERVISOR · {upper(hypervisorState)}</span></text></row></if>
-            </column>
-          </panel>
-        </if>
-
+            </panel>
+            <panel height="216" padding="16" background="surface_subtle" radius="lg" role="button" label="Open CPU details" on-press="select_cpu">
+              <column gap="4"><row><text grow="1" foreground="text_muted">CPU</text><text foreground="text_muted">›</text></row><if test="{fast_summary_seen}"><text size="display">{overview.cpu.value}</text></if><else><text size="heading">{overview.cpu.value}</text></else><text size="sm" foreground="text_muted">{overview.cpu.context}</text><chart height="26" y-min="0" y-max="100" stroke-width="1" label="CPU activity over the last minute"><series kind="line" values="{cpu_history}" color="accent" label="CPU percent" /></chart><text size="sm" foreground="text_muted">Usage · last minute</text><text size="sm" foreground="text_muted">{overview.cpu.state}</text></column>
+            </panel>
+            <panel height="216" padding="16" background="surface_subtle" radius="lg" role="button" label="Open Memory details" on-press="select_memory">
+              <column gap="8"><row><text grow="1" foreground="text_muted">Memory</text><text foreground="text_muted">›</text></row><if test="{memory_total_gib > 0}"><text size="display">{overview.memory.value}</text></if><else><text size="heading">{overview.memory.value}</text></else><text size="sm" foreground="text_muted">{overview.memory.context}</text><if test="{memory_total_gib > 0}"><progress value="{memory_percent / 100}" label="Physical memory used" /></if><text size="sm" foreground="text_muted">{overview.memory.state}</text></column>
+            </panel>
+            <panel height="216" padding="16" background="surface" radius="lg" role="button" label="Open Disk details" on-press="select_disk">
+              <column gap="12">
+                <row><text grow="1" foreground="text_muted">Disk</text><text foreground="text_muted">›</text></row>
+                <grid columns="2" gap="8">
+                  <column gap="4"><text size="sm" foreground="text_muted">Read</text><if test="{overview.disk.available}"><row gap="5" cross="end"><text size="heading">{overview.disk.value}</text><text size="sm" foreground="text_muted">{overview.disk.unit}</text></row></if><else><text size="sm" foreground="text_muted">{overview.disk.value}</text></else></column>
+                  <column gap="4"><text size="sm" foreground="text_muted">Write</text><if test="{overview.disk.available}"><row gap="5" cross="end"><text size="heading">{overview.disk.secondary}</text><text size="sm" foreground="text_muted">{overview.disk.secondaryUnit}</text></row></if><else><text size="sm" foreground="text_muted">{overview.disk.secondary}</text></else></column>
+                </grid>
+                <column gap="4"><text size="sm" foreground="text_muted">{overview.disk.contextLabel}</text><text>{overview.disk.context}</text></column>
+                <text size="sm" foreground="text_muted">{overview.disk.state}</text>
+              </column>
+            </panel>
+            <panel height="216" padding="16" background="surface" radius="lg" role="button" label="Open Network details" on-press="select_network">
+              <column gap="10">
+                <row><text grow="1" foreground="text_muted">Network</text><text foreground="text_muted">›</text></row>
+                <grid columns="2" gap="8">
+                  <column gap="4"><text size="sm" foreground="text_muted">Download</text><if test="{overview.network.available}"><row gap="5" cross="end"><text size="heading">{overview.network.value}</text><text size="sm" foreground="text_muted">{overview.network.unit}</text></row></if><else><text size="sm" foreground="text_muted">{overview.network.value}</text></else></column>
+                  <column gap="4"><text size="sm" foreground="text_muted">Upload</text><if test="{overview.network.available}"><row gap="5" cross="end"><text size="heading">{overview.network.secondary}</text><text size="sm" foreground="text_muted">{overview.network.secondaryUnit}</text></row></if><else><text size="sm" foreground="text_muted">{overview.network.secondary}</text></else></column>
+                </grid>
+                <column gap="3"><chart height="24" y-min="0" stroke-width="1" label="Combined network traffic over the last minute in KiB per second"><series kind="line" values="{network_download_history}" color="accent" label="Download KiB/s" /><series kind="line" values="{network_upload_history}" color="warning" label="Upload KiB/s" /></chart><text size="sm" foreground="text_muted">Last minute · KiB/s</text></column>
+                <column gap="3"><text size="sm" foreground="text_muted">Combined included interfaces</text><text size="sm" foreground="text_muted">{overview.network.state}</text></column>
+              </column>
+            </panel>
+            <panel height="216" padding="16" background="surface" radius="lg" role="button" label="Open Thermals details" on-press="select_thermals">
+              <column gap="8">
+                <row><text grow="1" foreground="text_muted">Thermals</text><text foreground="text_muted">›</text></row>
+                <row height="38" gap="12" cross="center"><text grow="1" size="sm" foreground="text_muted">CPU</text><if test="{overview.thermals.available}"><text width="116" size="heading" text-alignment="end">{overview.thermals.value}</text></if><else><text width="116" size="sm" text-alignment="end" foreground="text_muted"><span mono="true">{overview.thermals.value}</span></text></else></row>
+                <for each="overviewGpus" as="gpu" key="id"><row height="38" gap="12" cross="center"><text grow="1" height="38" size="sm" wrap="true" overflow="ellipsis" foreground="text_muted">{gpu.name}</text><if test="{gpu.temperature_available}"><text width="116" size="heading" text-alignment="end">{gpu.temperature}</text></if><else><text width="116" size="sm" text-alignment="end" foreground="text_muted"><span mono="true">{gpu.temperature}</span></text></else></row></for>
+                <text size="sm" foreground="text_muted">{overview.thermals.state}</text>
+              </column>
+            </panel>
+          </grid>
+          <panel padding="12" background="surface" radius="lg"><column gap="6">
+            <row cross="center"><text grow="1">{overview.processes}</text><text size="sm" foreground="text_muted">{overview.processState}</text><button variant="ghost" on-press="select_processes">Processes ›</button></row>
+            <grid columns="{overviewProcessColumns}" gap="12">
+              <list-item on-press="show_cpu_processes" label="Open largest CPU consumers"><column gap="2"><text size="sm" foreground="text_muted">Most CPU</text><text>{overview.processCpu}</text></column></list-item>
+              <list-item on-press="show_memory_processes" label="Open largest memory consumers"><column gap="2"><text size="sm" foreground="text_muted">Most memory</text><text>{overview.processMemory}</text></column></list-item>
+            </grid>
+          </column></panel>
+          <if test="{overview.finding_count > 0}"><column gap="8"><row cross="center"><text grow="1">Needs attention</text><button variant="ghost" on-press="toggle_overview_findings">Findings and evidence ({overview.finding_count})</button></row>
+            <if test="{overview_findings_open}"><for each="overviewAllFindings" as="finding" key="id"><column gap="4"><text wrap="true">{finding.title} · {finding.severity}</text><text wrap="true" foreground="text_muted">{finding.evidence}</text><text wrap="true">{finding.nextStep}</text></column></for></if>
+            <else><for each="overviewFindings" as="finding" key="id"><list-item on-press="open_overview_finding:{finding.id}" label="{finding.title}"><text wrap="true">{finding.title} · {finding.severity} ›</text></list-item></for></else>
+          </column></if>
+          <if test="{overview.collection_count > 0}"><button variant="ghost" on-press="toggle_collection_details">Some readings need attention ({overview.collection_count})</button><if test="{collection_details_open}"><for each="overviewCollectionFindings" as="finding" key="id"><column gap="4"><text wrap="true">{finding.title}</text><text wrap="true" foreground="text_muted">{finding.evidence}</text><text wrap="true">{finding.nextStep}</text></column></for></if></if>
+          <if test="{machine_details_open}"><panel padding="16" background="surface" radius="lg"><column gap="8"><text wrap="true">{manufacturer} {systemModel}</text><text wrap="true">{osName} {osVersion} · {architecture}</text><text wrap="true">{systemCpu}</text><if test="{technicianMode}"><text wrap="true">Host · {hostname}</text><text wrap="true">Kernel · {kernel}</text><text wrap="true">Firmware · {bios}</text><text wrap="true">Hypervisor · {hypervisorState}</text><for each="warnings" as="warning" key="id"><text wrap="true">{warning.source} · {warning.message}</text></for></if></column></panel></if>
         </if>
 
         <if test="{active_section == 1}">
           <column gap="4">
-            <text size="heading">Processor</text>
+            <text size="heading">Processor</text><text wrap="true" foreground="text_muted">{cpuAssessment}</text>
             <text wrap="true" foreground="text_muted">Processor activity over time and the apps using it.</text>
           </column>
           <row gap="16">
@@ -167,7 +165,7 @@
 
         <if test="{active_section == 2}">
           <column gap="4">
-            <text size="heading">Memory</text>
+            <text size="heading">Memory</text><text wrap="true" foreground="text_muted">{memoryAssessment}</text>
             <text wrap="true" foreground="text_muted">Memory in use, available capacity, and swap activity.</text>
           </column>
           <row gap="16">

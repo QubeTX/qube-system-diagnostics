@@ -91,6 +91,42 @@ fn main() {
         .clamp(5, 120);
     let mut timings = Timings::default();
     let slow = std::env::args().any(|arg| arg == "--slow");
+    if std::env::args().any(|arg| arg == "--overview") {
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let mut snapshot = collectors::SystemSnapshot::default();
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        let (mut system, mut processes) = (
+            sysinfo::System::new(),
+            collectors::processes::GuiProcessSampler::default(),
+        );
+        let mut networks = sysinfo::Networks::new();
+        let mut sampler = collectors::network::NetworkSampler::default();
+        for index in 0..count + 2 {
+            let start = Instant::now();
+            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+            timings.measure("overview.cpu_memory_processes", || {
+                snapshot.refresh_processes_gui(ProcessSortKey::Cpu);
+            });
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
+            {
+                timings.measure("overview.cpu", || system.refresh_cpu_usage());
+                timings.measure("overview.memory", || system.refresh_memory());
+                timings.measure("overview.processes", || {
+                    processes.collect(system.total_memory(), usize::MAX, ProcessSortKey::Cpu)
+                });
+            }
+            timings.measure("overview.network", || sampler.collect(&mut networks));
+            if index < 2 {
+                timings.0.clear();
+            }
+            std::thread::sleep(Duration::from_secs(1).saturating_sub(start.elapsed()));
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&timings.report()).unwrap()
+        );
+        return;
+    }
     if std::env::args().any(|arg| arg == "--providers") {
         let mut snapshot = collectors::SystemSnapshot::default();
         timings.measure("static.refresh", || snapshot.refresh_static());

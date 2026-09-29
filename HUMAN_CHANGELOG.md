@@ -4,6 +4,42 @@ A plain-English companion to [CHANGELOG.md](./CHANGELOG.md). It explains what ch
 
 The newest section describes the monitoring update and the evidence behind it.
 
+## A clearer system overview
+
+- Behind the scenes: preserve the final interface-check results so remaining performance work can be traced to the build that was tested.
+
+- Behind the scenes: approve this update with the remaining performance and enlarged-display limitations documented. Keep those improvements on the follow-up list while still requiring working interactions, clean shutdown and verified installation.
+
+- Behind the scenes: verify the finished cards in the production app and measure their monitoring cost. Memory and shutdown checks pass; the remaining processor-use result stays visible before release.
+
+- Keep missing-temperature labels fully readable beside their sensor names.
+
+- Make disk activity, network traffic and temperatures easier to spot. Keep units close to their readings, separate free space from disk activity, and show large transfer rates in shorter, readable units.
+- Behind the scenes: distinguish drawing cost from sending the finished image to the window, so remaining interface delays can be investigated more precisely.
+
+- Add breathing room between graphics adapters so each name, usage and memory group is easier to scan.
+
+- Behind the scenes: inspect the graphics layout in the running Windows app with enlarged display scaling, and keep the remaining display checks visible before release.
+
+- Keep graphics-card names, usage and memory readings on clearly separated lines, including laptops with two graphics adapters. Give temperature labels the same breathing room.
+
+- Behind the scenes: restore broader checks that compare rendered pixels and verify font changes, improving coverage of the interface optimizations.
+
+- Behind the scenes: reuse unchanged text measurements to reduce repeated layout work, while keeping labels accurate when fonts or their contents change.
+
+- Keep monitoring cards flat and clearly outlined, avoiding repeated shadow drawing as readings change.
+
+- Behind the scenes: accept the reviewed Windows monitoring overhead and investigate the remaining interface delays on Macs. Keep the measured failures visible for follow-up under the approved release decision.
+- Behind the scenes: preserve the results across supported systems and ensure monitoring checks expect the readings now shown on the overview.
+- Behind the scenes: trace Mac drawing costs to blurred panel shadows and repeated text sizing, giving the remaining responsiveness work specific targets.
+
+- See graphics, processor and memory activity first, with storage, network traffic and temperatures directly below. Compact cards open the detailed pages, while a small process summary helps find apps using the most resources.
+- Keep collection problems beside the affected reading and expand findings or system details when needed. Missing readings remain visibly unavailable instead of looking like idle hardware.
+- Behind the scenes: collect the readings the overview displays and identify resource-heavy apps across the full running-app list. Keep monitoring bounded and preserve the existing installation and terminal behavior.
+- Behind the scenes: keep release checks aligned with the version being built instead of a manually copied version label.
+- Keep graphics readings readable when more adapters are present or readings are delayed. Avoid collecting processor detail that the overview does not display.
+- Storage warnings open the storage page. Behind the scenes: identify the remaining monitoring cost and keep this update unpublished until its performance and release checks pass.
+
 ---
 
 ## September 24, 2026 — Correct Windows installer license

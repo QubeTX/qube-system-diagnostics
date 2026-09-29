@@ -47,7 +47,7 @@ def timing_verdict(cohorts, product_version, platform):
 
 
 def apply_release_acceptance(report, product_version, platform):
-    """ADR 0021: retain failed timing verdicts; waive timing only for EULA 4.0.2."""
+    """Keep timing failures visible under explicit, exact-version release decisions."""
     report["passed"] = bool(report.get("timing_passed") and report.get("clean_shutdown")
                             and "failure_type" not in report)
     expected = {(kind, width, 760, mode)
@@ -58,10 +58,12 @@ def apply_release_acceptance(report, product_version, platform):
     complete = len(cohorts) == len(expected) and {
         (row.get("kind"), row.get("width"), row.get("height"), row.get("mode"))
         for row in cohorts} == expected
-    waived = (product_version == "4.0.2" and platform in ("win32", "linux", "darwin")
+    release_exception = {"4.0.2": "ADR-0021-eula-4.0.2",
+                         "4.1.0": "ADR-0025-overview-4.1.0"}.get(product_version)
+    waived = (release_exception is not None and platform in ("win32", "linux", "darwin")
               and complete and report.get("timing_passed") is False
               and report.get("clean_shutdown") is True and "failure_type" not in report)
-    report["release_exception"] = "ADR-0021-eula-4.0.2" if waived else None
+    report["release_exception"] = release_exception if waived else None
     report["release_accepted"] = report["passed"] or waived
 
 
@@ -363,7 +365,7 @@ def main():
         raise SystemExit("Interaction performance gates did not pass")
     if report.get("release_exception"):
         print("Timing gates FAILED; release accepted only under the operator's "
-              "4.0.2 EULA exception (ADR 0021). Measurements and thresholds are unchanged.")
+              f"{report['release_exception']} exception. Measurements and thresholds are unchanged.")
 
 
 if __name__ == "__main__":

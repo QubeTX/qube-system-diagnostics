@@ -104,7 +104,7 @@ class TimingPolicyTests(unittest.TestCase):
             interaction.timing_verdict([{"kind": "navigation"}], "4.0.0", "linux")
 
 
-class EulaReleaseAcceptanceTests(unittest.TestCase):
+class ReleaseAcceptanceTests(unittest.TestCase):
     def report(self):
         return {"timing_passed": False, "clean_shutdown": True, "frame_gate": False,
                 "cohorts": [{"kind": kind, "width": width, "height": 760, "mode": mode}
@@ -136,15 +136,31 @@ class EulaReleaseAcceptanceTests(unittest.TestCase):
         report = self.report()
         report["cohorts"][-1] = report["cohorts"][0]
         cases.append(report)
-        for report in cases:
-            interaction.apply_release_acceptance(report, "4.0.2", "win32")
-            self.assertFalse(report["release_accepted"])
-            self.assertIsNone(report["release_exception"])
+        for version in ("4.0.2", "4.1.0"):
+            for case in cases:
+                report = copy.deepcopy(case)
+                interaction.apply_release_acceptance(report, version, "win32")
+                self.assertFalse(report["release_accepted"])
+                self.assertIsNone(report["release_exception"])
+
+    def test_overview_exception_retains_failed_original_targets(self):
+        for platform in ("win32", "linux", "darwin"):
+            report = self.report()
+            report.update(interaction.timing_verdict(TimingPolicyTests().cohorts(), "4.1.0", platform))
+            original = copy.deepcopy(report)
+            interaction.apply_release_acceptance(report, "4.1.0", platform)
+            self.assertTrue(report["release_accepted"])
+            self.assertFalse(report["passed"])
+            self.assertEqual(report["release_exception"], "ADR-0025-overview-4.1.0")
+            self.assertEqual(report["timing_limits_us"], {"frame_p95": 16700, "input_p95": 50000, "refresh_max": 100000})
+            for key, value in original.items():
+                self.assertEqual(report[key], value)
 
     def test_other_versions_and_platforms_still_fail(self):
         for version, platform in (("4.0.1", "darwin"), ("4.0.3", "win32"),
-                                  ("4.1.0", "linux"), ("4.0.2-rc.1", "linux"),
-                                  ("4.0.2", "unknown")):
+                                  ("4.1.1", "linux"), ("4.0.2-rc.1", "linux"),
+                                  ("4.1.0-rc.1", "darwin"), ("4.2.0", "win32"),
+                                  ("4.0.2", "unknown"), ("4.1.0", "unknown")):
             report = self.report()
             interaction.apply_release_acceptance(report, version, platform)
             self.assertFalse(report["release_accepted"])

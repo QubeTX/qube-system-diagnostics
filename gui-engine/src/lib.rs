@@ -345,6 +345,8 @@ struct FastProjection<'a> {
 
 #[derive(Serialize)]
 struct ProcessProjection<'a> {
+    top_cpu: Option<&'a collectors::processes::ProcessInfo>,
+    top_memory: Option<&'a collectors::processes::ProcessInfo>,
     observation: &'a sd_300::observation::Observation,
     list: &'a [collectors::processes::ProcessInfo],
     total_count: usize,
@@ -482,6 +484,65 @@ fn publish_sample<T: Serialize>(
     }
 }
 
+// Select from the complete capture, before the page projection is bounded.
+fn top_consumer(
+    data: &collectors::processes::ProcessData,
+    memory: bool,
+) -> Option<&collectors::processes::ProcessInfo> {
+    if !data.observation.is_available() {
+        return None;
+    }
+    data.list
+        .iter()
+        .filter(|p| {
+            if memory {
+                p.memory_observation.is_available()
+            } else {
+                p.cpu_observation.is_available() && p.cpu_percent.is_finite()
+            }
+        })
+        .max_by(|a, b| {
+            let order = if memory {
+                a.memory_bytes.cmp(&b.memory_bytes)
+            } else {
+                a.cpu_percent.total_cmp(&b.cpu_percent)
+            };
+            order.then_with(|| b.pid.cmp(&a.pid))
+        })
+}
+
+#[cfg(test)]
+mod overview_summary_tests {
+    use super::*;
+    use sd_300::observation::Observation;
+
+    #[test]
+    fn consumer_selection_uses_full_inventory_and_field_availability() {
+        let mut data = collectors::processes::ProcessData {
+            observation: Observation::available("fixture"),
+            ..Default::default()
+        };
+        for pid in 1..=40 {
+            data.list.push(collectors::processes::ProcessInfo {
+                pid,
+                cpu_percent: (41 - pid) as f32,
+                memory_bytes: u64::from(pid) * 1024,
+                cpu_observation: Observation::available("fixture"),
+                memory_observation: Observation::available("fixture"),
+                ..Default::default()
+            });
+        }
+        assert_eq!(top_consumer(&data, false).unwrap().pid, 1);
+        assert_eq!(top_consumer(&data, true).unwrap().pid, 40);
+        data.list[39].memory_observation = Observation::permission_denied("fixture", "denied");
+        data.list[0].cpu_percent = f32::NAN;
+        assert_eq!(top_consumer(&data, true).unwrap().pid, 39);
+        assert_eq!(top_consumer(&data, false).unwrap().pid, 2);
+        data.observation = Observation::error("fixture", "interrupted");
+        assert!(top_consumer(&data, true).is_none());
+    }
+}
+
 fn publish_fast(shared: &Shared, snapshot: &SystemSnapshot) {
     publish_sample(
         shared,
@@ -494,6 +555,8 @@ fn publish_fast(shared: &Shared, snapshot: &SystemSnapshot) {
             memory: &snapshot.memory,
             network: &snapshot.network,
             processes: ProcessProjection {
+                top_cpu: top_consumer(&snapshot.processes, false),
+                top_memory: top_consumer(&snapshot.processes, true),
                 observation: &snapshot.processes.observation,
                 list: &snapshot.processes.list
                     [..snapshot.processes.list.len().min(PROCESS_SUMMARY_ROWS)],
@@ -1606,7 +1669,7 @@ mod tests {
             serde_json::from_slice(&buffer[..required - 1]).expect("valid metadata JSON");
         assert_eq!(metadata["abi_version"], ABI_VERSION);
         assert_eq!(metadata["schema_version"], SCHEMA_VERSION);
-        assert_eq!(metadata["product_version"], "4.0.2");
+        assert_eq!(metadata["product_version"], "4.1.0");
     }
 
     #[test]
@@ -1661,7 +1724,7 @@ mod tests {
         let envelope: serde_json::Value =
             serde_json::from_slice(&state.json).expect("valid topic JSON");
         assert_eq!(envelope["schema_version"], SCHEMA_VERSION);
-        assert_eq!(envelope["product_version"], "4.0.2");
+        assert_eq!(envelope["product_version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(envelope["target"], target_label());
         assert_eq!(envelope["topic"], "warnings");
         assert_eq!(envelope["sequence"], 1);
@@ -1683,7 +1746,8 @@ mod tests {
         };
         publish_sample(&shared, Topic::Fast, &42, &[], Some(&sample));
         let topics = shared.topics.lock().unwrap();
-        let envelope: serde_json::Value = serde_json::from_slice(&topics[Topic::Fast as usize].json).unwrap();
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&topics[Topic::Fast as usize].json).unwrap();
         assert_eq!(envelope["schema_version"], 2);
         assert!(envelope["freshness_ms"].is_null());
         assert_eq!(envelope["freshness"], "clock_changed");
@@ -1801,7 +1865,8 @@ mod tests {
     fn process_inventory_failure_and_recovery_cross_the_fixed_summary() {
         let shared = Shared::default();
         let mut snapshot = SystemSnapshot::default();
-        snapshot.processes.observation = sd_300::observation::Observation::permission_denied("fixture", "Denied");
+        snapshot.processes.observation =
+            sd_300::observation::Observation::permission_denied("fixture", "Denied");
         update_process_summary(&shared, &snapshot);
         assert_eq!(shared.process_summary.lock().unwrap().observation_status, 3);
         snapshot.processes.observation = sd_300::observation::Observation::available("fixture");

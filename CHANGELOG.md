@@ -2,6 +2,41 @@
 
 All notable changes to SD-300 will be documented in this file.
 
+## [4.1.0] - 2026-09-29
+
+- Retain compact final pre-exception native timing evidence with its actual PR merge-ref identities, distinct from exact-head release acceptance.
+
+- Record the operator-authorized 4.1.0-only release exception (ADR 0025) for documented timing/CPU overruns and deferred resource/display evidence. Preserve failed performance verdicts and original targets; require complete functional cohorts, clean shutdown, final-source CI and installer qualification.
+
+- Verify the final status labels in the production Windows app and retain its 330-second resource sample: CPU remains over target; RSS/private memory and shutdown pass. ADR 0025 now records the operator's release decision; exact-source qualification remains required.
+
+- Use the existing compact monospace face for missing thermal readings in the fixed trailing column, preserving the complete status label after native inspection found proportional-font truncation.
+
+- Strengthen secondary overview hierarchy: prominent adaptive byte rates with adjacent units, separate fixed-volume free-space context, grouped network history/scope, and aligned temperature readings with quieter missing states. Add byte-unit/missing-data and secondary-card overlap checks.
+- Split the profiling-only software presentation interval into raster work and host pixel conversion/transfer, preserving the combined interval and all gates. Retain the latest native timing failures; Linux GNU ARM64 passes while other completed targets still need work.
+
+- Increase separation below the Graphics heading and between adapter groups while preserving equal card dimensions and the default overview footprint. Recheck the loaded, multi-adapter and delayed-state layout bounds.
+
+- Verify the corrected multi-GPU layout in the actual Windows candidate at default and physical 150% display scaling; restore the original display setting. Retain the unverified 200% check separately because this monitor's standard scale menu ends at 175%.
+
+- Fix overlapping multi-GPU overview text reported from the live Windows build. Give adapter names a full-width line, separate utilization from labelled video-memory values, and give thermal adapter names their own rows. Keep all resource cards equally sized and add pairwise text-bound checks at three widths.
+
+- Repair downstream renderer test fixtures: make nested-helper geometry compile-time constants and reconcile memo counters with the existing direct opaque-fill path while preserving byte-for-byte pixel comparisons. The full canvas/font-registry suites now pass (902 tests, 3 skipped).
+
+- Add bounded, generation-aware native text-width reuse at the provider seam (ADR 0024). Preserve exact measured widths, provider identity, font/appearance invalidation and failure recovery; update the reviewed SDK patch and both build preparers together.
+
+- Remove decorative small-panel shadows from the Warm Carbon theme, retaining borders, surface contrast and separate floating-surface shadows. Qualify this isolated rendering change against the recorded native timing baseline.
+
+- Record operator acceptance of the specific Windows Overview CPU result (ADR 0023), preserving the original failed verdict. Extend separate macOS stack diagnostics to foreground Overview and Processes to attribute the remaining layout/raster timing failures; do not alter product behavior or release thresholds.
+- Retain the complete-platform overview timing summary and correct the Windows resource-harness fixture to require the newly subscribed Overview workers.
+- Attribute production macOS UI work to panel shadow blur and repeated native text measurement on Intel and Apple Silicon. Preserve stack excerpts, artifact hashes, run variation and unresolved frame verdicts for the focused optimization work.
+
+- Replace the native overview with responsive GPU/CPU/memory and disk/network/thermal cards, a bounded process-consumer summary, and expandable findings/system evidence. Retain missing and delayed states, stable adapter identity, explicit storage/interface scope, and navigation to existing detail pages.
+- Subscribe Overview to Fast, Static, Slow, Activity and Health lanes without enabling connections, diagnostics or driver scans. Select top CPU/memory consumers before truncating the internal JSON projection and retain finding identity/severity without changing the fixed C ABI or public export schemas (ADR 0022).
+- Bind the internal topic-envelope version assertion to the package version so release bumps cannot leave a stale test expectation behind.
+- Keep additional GPU counts in the card header so delayed-reading notices fit alongside two adapters. Restrict Overview fast CPU collection to aggregate usage and cached identity; leave per-core clocks to detailed subscriptions while preserving process and network cadence.
+- Route explicit storage hardware findings to Disk by finding kind. Add an opt-in overview stage profiler and retain the failed resource/timing qualification in `docs/qualification/overview-4.1.0.md`; original numeric thresholds remain unchanged.
+
 ## [4.0.2] - 2026-09-24
 
 - Verify production release abf55bd: all native producers and exact-merge CI pass under ADR 0021; final publication and public lifecycle run 36072546804 passes. Confirm 59 public assets, crates.io/latest identity, and the complete EULA in Global, Corporate and compatibility MSI downloads with matching ProductVersion, SHA-256 sidecars and attestations. Both latest MSI routes resolve to the verified bytes.

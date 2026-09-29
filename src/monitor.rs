@@ -87,6 +87,15 @@ impl Lane {
     }
 }
 
+fn profile_enables(profile: u8, lane: Lane) -> bool {
+    matches!(lane, Lane::Fast | Lane::Static)
+        || (profile == Profile::Overview as u8
+            && matches!(lane, Lane::Slow | Lane::Activity | Lane::Health))
+        || profile == Profile::Full as u8
+        || profile == Profile::Summary as u8
+        || (profile == Profile::Hidden as u8 && matches!(lane, Lane::Slow | Lane::Health))
+}
+
 struct FastData {
     cpu: collectors::cpu::CpuData,
     memory: collectors::memory::MemoryData,
@@ -314,10 +323,7 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
     let mut sequence = 0u64;
     while !shared.stop.load(Ordering::Acquire) {
         let profile = shared.profile.load(Ordering::Acquire);
-        let enabled = matches!(lane, Lane::Fast | Lane::Static)
-            || profile == Profile::Full as u8
-            || profile == Profile::Summary as u8
-            || (profile == Profile::Hidden as u8 && matches!(lane, Lane::Slow | Lane::Health));
+        let enabled = profile_enables(profile, lane);
         let requested = shared.retry[lane as usize].swap(false, Ordering::AcqRel);
         let now = Instant::now();
         if !enabled || (!requested && now < next) {
@@ -365,10 +371,13 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
                 );
             }
             let full = profile == Profile::Full as u8;
+            let overview = profile == Profile::Overview as u8;
             let summary = profile == Profile::Summary as u8;
             let processes = profile == Profile::Processes as u8;
             if full {
                 snapshot.refresh_fast();
+            } else if overview {
+                snapshot.refresh_overview_gui();
             } else if processes {
                 let sort = match shared.sort.load(Ordering::Acquire) {
                     1 => ProcessSortKey::Memory,
@@ -391,8 +400,8 @@ fn run_lane(shared: Arc<Shared>, lane: Lane) {
                 Data::Fast(Box::new(FastData {
                     cpu: snapshot.cpu.clone(),
                     memory: snapshot.memory.clone(),
-                    network: (full || summary).then(|| snapshot.network.clone()),
-                    processes: (full || processes).then(|| snapshot.processes.clone()),
+                    network: (full || overview || summary).then(|| snapshot.network.clone()),
+                    processes: (full || overview || processes).then(|| snapshot.processes.clone()),
                 })),
                 collectors::sampling::unix_ms(),
                 interval,
@@ -564,5 +573,26 @@ mod tests {
             worker.thread().unpark();
             worker.join().unwrap();
         });
+    }
+}
+
+#[cfg(test)]
+mod overview_profile_tests {
+    use super::*;
+    #[test]
+    fn overview_collects_visible_resources_without_unrelated_scans() {
+        for lane in Lane::ALL {
+            assert_eq!(
+                profile_enables(Profile::Overview as u8, lane),
+                matches!(
+                    lane,
+                    Lane::Fast | Lane::Static | Lane::Slow | Lane::Activity | Lane::Health
+                )
+            );
+            assert_eq!(
+                profile_enables(Profile::Hidden as u8, lane),
+                matches!(lane, Lane::Fast | Lane::Static | Lane::Slow | Lane::Health)
+            );
+        }
     }
 }
