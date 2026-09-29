@@ -25,7 +25,7 @@ The newest section describes the monitoring update and the evidence behind it.
 
 - Keep monitoring cards flat and clearly outlined, avoiding repeated shadow drawing as readings change.
 
-- Behind the scenes: accept the reviewed Windows monitoring overhead and investigate the remaining interface delays on Macs. Keep the measured failures visible and the update unpublished while those checks remain open.
+- Behind the scenes: accept the reviewed Windows monitoring overhead and investigate the remaining interface delays on Macs. Keep the measured failures visible for follow-up under the approved release decision.
 - Behind the scenes: preserve the results across supported systems and ensure monitoring checks expect the readings now shown on the overview.
 - Behind the scenes: trace Mac drawing costs to blurred panel shadows and repeated text sizing, giving the remaining responsiveness work specific targets.
 

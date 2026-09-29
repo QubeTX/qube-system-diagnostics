@@ -4,7 +4,7 @@ TT;DR: Make the app overview easy to scan with graphics, CPU, memory, disk, netw
 The operator approved a compact dashboard aimed at gamers in User mode, with equal cards and stronger emphasis on graphics, CPU and memory.
 
 ## Scope
-Implement the approved overview plan on codex/sd300-overview-cards. Preserve collector truth, missing readings, bounded histories, settings, TUI and public interfaces. On 2026-09-27 the operator additionally authorized a new version and deployment once validated and confident. Existing release gates remain unchanged.
+Implement the approved overview plan on codex/sd300-overview-cards. Preserve collector truth, missing readings, bounded histories, settings, TUI and public interfaces. On 2026-09-27 the operator additionally authorized a new version and deployment once validated and confident. The operator authorizes a 4.1.0-specific performance/display exception on 2026-09-29; functional and exact-source release checks remain mandatory (ADR 0025).
 
 ## Plan
 Wire the Overview profile and complete-inventory summaries; prepare bounded presentation; replace the overview layout; test and inspect the native candidate.
@@ -26,9 +26,12 @@ All cards populate from a fresh launch, route to details, distinguish missing/st
 - [ ] Exact-candidate hosted CI
 
 ## Status
-Active: cards and final status labels verified in the actual production Windows window; six cards plus Processes fit. Final 83 native tests (2 skipped) and strict bindings pass. Observer-free ce6b42e sample: CPU 2.528% fails, RSS 132.51/private 260.41 MiB pass, clean shutdown. Earlier physical 150% inspection passed, with original 100% restored; physical 200% remains unavailable on this monitor. Asked the operator whether to retain remaining gates or record a version-specific exception; no answer/exception yet. Exact-source functional/installer qualification continues. No publication.
+
+Active: operator authorizes production release on 2026-09-29. ADR 0025 records the exact-version performance/display exception; original failed verdicts remain. Final-source functional CI and composite Windows installers are required before merge, followed by the full publication chain and public-byte verification.
 
 ## Activity
+
+- 2026-09-29 — codex: Operator explicitly requests production deployment after the gate-owner choice. Record ADR 0025, preserve timing/CPU failures and defer remaining resource/physical-display evidence. Prior installer 36369836717 passes; all six final pre-exception interaction reports complete with clean shutdown. Next: final-source CI and installer oracle.
 
 - 2026-09-27 â€” codex: production ce6b42e window 9708162 confirms complete status labels and default-size fit. Visual capture completed during a 60-second warmup; no further app interaction/observers or local builds during the following 330.047-second sample. CPU 2.528049% of one core (FAIL), RSS 132.5078125 MiB/private 260.40625 MiB (PASS), clean shutdown. GUI SHA-256 7d729862ab52960c41c0ee72aecbc7e5b1b9c55d6345c38da58d7818a3530270. Ask the gate owner about a dated exception versus continued blocking; preserve ADR 0023's narrow scope until answered. Raw local report: target/overview-resources-ce6b42e.json.
 

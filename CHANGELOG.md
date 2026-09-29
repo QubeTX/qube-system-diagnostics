@@ -2,9 +2,11 @@
 
 All notable changes to SD-300 will be documented in this file.
 
-## [4.1.0] - Unreleased
+## [4.1.0] - 2026-09-29
 
-- Verify the final status labels in the production Windows app and retain its 330-second resource sample: CPU remains over target; RSS/private memory and shutdown pass. Keep publication held pending the gate-owner decision and exact-source qualification.
+- Record the operator-authorized 4.1.0-only release exception (ADR 0025) for documented timing/CPU overruns and deferred resource/display evidence. Preserve failed performance verdicts and original targets; require complete functional cohorts, clean shutdown, final-source CI and installer qualification.
+
+- Verify the final status labels in the production Windows app and retain its 330-second resource sample: CPU remains over target; RSS/private memory and shutdown pass. ADR 0025 now records the operator's release decision; exact-source qualification remains required.
 
 - Use the existing compact monospace face for missing thermal readings in the fixed trailing column, preserving the complete status label after native inspection found proportional-font truncation.
 
@@ -31,7 +33,7 @@ All notable changes to SD-300 will be documented in this file.
 - Subscribe Overview to Fast, Static, Slow, Activity and Health lanes without enabling connections, diagnostics or driver scans. Select top CPU/memory consumers before truncating the internal JSON projection and retain finding identity/severity without changing the fixed C ABI or public export schemas (ADR 0022).
 - Bind the internal topic-envelope version assertion to the package version so release bumps cannot leave a stale test expectation behind.
 - Keep additional GPU counts in the card header so delayed-reading notices fit alongside two adapters. Restrict Overview fast CPU collection to aggregate usage and cached identity; leave per-core clocks to detailed subscriptions while preserving process and network cadence.
-- Route explicit storage hardware findings to Disk by finding kind. Add an opt-in overview stage profiler and retain the failed resource/timing qualification in `docs/qualification/overview-4.1.0.md`; no release threshold is waived.
+- Route explicit storage hardware findings to Disk by finding kind. Add an opt-in overview stage profiler and retain the failed resource/timing qualification in `docs/qualification/overview-4.1.0.md`; original numeric thresholds remain unchanged.
 
 ## [4.0.2] - 2026-09-24
 

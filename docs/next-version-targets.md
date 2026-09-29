@@ -10,6 +10,8 @@ claim that every target has already been achieved.
 
 ADR 0021 separately authorizes nonblocking performance evidence for the EULA-only 4.0.2 release. Numeric targets and failed benchmark verdicts stay unchanged; the exception expires after exactly 4.0.2. Codex retains #r16/#r17 as the owned follow-up.
 
+ADR 0025 separately permits the overview release 4.1.0 with documented performance overruns and deferred full resource/physical 200% display evidence. Original goals and failed verdicts remain unchanged. This exception expires after exactly 4.1.0; Codex owns the remaining work in #r16/#r17/#ext.
+
 ## Performance acceptance
 
 | Measurement | Original target, restored after 4.0.1 | Temporary 4.0.0 / 4.0.1 ceiling |
