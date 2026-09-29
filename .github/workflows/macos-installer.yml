@@ -333,8 +333,12 @@ jobs:
 
           /usr/local/bin/sd300 snapshot --json > snapshot.json
           jq -e '.target_os == "macos" and (.capabilities | length) >= 10' snapshot.json
-          sudo cp target/prior-build/release/sd300 /usr/local/bin/sd300
-          sudo chmod 755 /usr/local/bin/sd300
+          # Use a new inode for the synthetic fixture while installed workers may
+          # still map the signed executable. In-place replacement was killed on ARM64.
+          prior_stage=$(sudo mktemp /usr/local/bin/sd300-prior.XXXXXX)
+          sudo cp target/prior-build/release/sd300 "$prior_stage"
+          sudo chmod 755 "$prior_stage"
+          sudo mv -f "$prior_stage" /usr/local/bin/sd300
           prior_version=$(/usr/local/bin/sd300 --version)
           printf 'Synthetic prior version: %s\n' "$prior_version"
           test "$prior_version" = 'sd300 1.9.9'

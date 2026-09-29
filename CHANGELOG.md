@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - 2026-09-29
 
+- Stage the synthetic macOS prior-version fixture in a fresh file and atomically rename it into place, avoiding the reproduced Apple Silicon exit-137 failure after overwriting the installed executable in place.
+
 - Diagnose a silent macOS synthetic-updater qualification failure against the unchanged signed 4.1.0 artifact on isolated native runners; print failing command identity and updater results without relaxing lifecycle gates.
 
 - Retain compact final pre-exception native timing evidence with its actual PR merge-ref identities, distinct from exact-head release acceptance.

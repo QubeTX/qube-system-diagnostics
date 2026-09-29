@@ -31,6 +31,8 @@ Active: operator authorizes production release on 2026-09-29. ADR 0025 records t
 
 ## Activity
 
+- 2026-09-29 - codex: diagnostic 36635433166 localizes Apple Silicon failure to executing the synthetic prior fixture after in-place copy (exit 137), before update runs. Original production retry reproduces the failure. Replace the test fixture through a fresh file plus atomic rename; requalify the identical signed artifact before correcting the production harness. Original source CI 36632095352 is green.
+
 - 2026-09-29 - codex: candidate af91416 CI 36628600345 and Windows installer 36628604881 pass; PR 15 merged as 4f2f253. Production macOS 36632821384 fails silently after successful trust/install/launch/snapshot checks in Apple Silicon validation. Keep main and signed artifacts frozen; run diagnostic-only native validation with failing-command/updater output on a separate branch. Publication remains blocked.
 
 - 2026-09-29 — codex: Operator explicitly requests production deployment after the gate-owner choice. Record ADR 0025, preserve timing/CPU failures and defer remaining resource/physical-display evidence. Prior installer 36369836717 passes; all six final pre-exception interaction reports complete with clean shutdown. Next: final-source CI and installer oracle.
