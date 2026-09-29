@@ -4,7 +4,11 @@ A plain-English companion to [CHANGELOG.md](./CHANGELOG.md). It explains what ch
 
 The newest section describes the monitoring update and the evidence behind it.
 
-## In development — A clearer system overview
+## A clearer system overview
+
+- Behind the scenes: preserve the final interface-check results so remaining performance work can be traced to the build that was tested.
+
+- Behind the scenes: approve this update with the remaining performance and enlarged-display limitations documented. Keep those improvements on the follow-up list while still requiring working interactions, clean shutdown and verified installation.
 
 - Behind the scenes: verify the finished cards in the production app and measure their monitoring cost. Memory and shutdown checks pass; the remaining processor-use result stays visible before release.
 

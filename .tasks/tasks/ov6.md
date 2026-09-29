@@ -31,7 +31,7 @@ Active: operator authorizes production release on 2026-09-29. ADR 0025 records t
 
 ## Activity
 
-- 2026-09-29 � codex: Operator explicitly requests production deployment after the gate-owner choice. Record ADR 0025, preserve timing/CPU failures and defer remaining resource/physical-display evidence. Prior installer 36369836717 passes; all six final pre-exception interaction reports complete with clean shutdown. Next: final-source CI and installer oracle.
+- 2026-09-29 — codex: Operator explicitly requests production deployment after the gate-owner choice. Record ADR 0025, preserve timing/CPU failures and defer remaining resource/physical-display evidence. Prior installer 36369836717 passes; all six final pre-exception interaction reports complete with clean shutdown. Next: final-source CI and installer oracle.
 
 - 2026-09-27 — codex: production ce6b42e window 9708162 confirms complete status labels and default-size fit. Visual capture completed during a 60-second warmup; no further app interaction/observers or local builds during the following 330.047-second sample. CPU 2.528049% of one core (FAIL), RSS 132.5078125 MiB/private 260.40625 MiB (PASS), clean shutdown. GUI SHA-256 7d729862ab52960c41c0ee72aecbc7e5b1b9c55d6345c38da58d7818a3530270. Ask the gate owner about a dated exception versus continued blocking; preserve ADR 0023's narrow scope until answered. Raw local report: target/overview-resources-ce6b42e.json.
 
