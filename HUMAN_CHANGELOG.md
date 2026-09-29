@@ -6,6 +6,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## A clearer system overview
 
+- Release the clearer overview and verify the public downloads, installation and update paths. Confirm the updated Windows app shows live cards, opens detail pages, and keeps existing preferences. Remaining performance and enlarged-display checks stay on the follow-up list.
+
 - Behind the scenes: confirm the corrected Mac update checks on both kinds of Mac before rebuilding the release.
 
 - Behind the scenes: fix how the Mac update check prepares an older installation, and make failures explain where they stopped. This lets the release checks verify the actual update path.
