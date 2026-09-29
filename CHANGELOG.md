@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - 2026-09-29
 
+- Diagnose a silent macOS synthetic-updater qualification failure against the unchanged signed 4.1.0 artifact on isolated native runners; print failing command identity and updater results without relaxing lifecycle gates.
+
 - Retain compact final pre-exception native timing evidence with its actual PR merge-ref identities, distinct from exact-head release acceptance.
 
 - Record the operator-authorized 4.1.0-only release exception (ADR 0025) for documented timing/CPU overruns and deferred resource/display evidence. Preserve failed performance verdicts and original targets; require complete functional cohorts, clean shutdown, final-source CI and installer qualification.

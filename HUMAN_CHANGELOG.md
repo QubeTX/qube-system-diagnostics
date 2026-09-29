@@ -6,6 +6,8 @@ The newest section describes the monitoring update and the evidence behind it.
 
 ## A clearer system overview
 
+- Behind the scenes: make a Mac update-check failure explain where it stopped so the release can be verified before publication.
+
 - Behind the scenes: preserve the final interface-check results so remaining performance work can be traced to the build that was tested.
 
 - Behind the scenes: approve this update with the remaining performance and enlarged-display limitations documented. Keep those improvements on the follow-up list while still requiring working interactions, clean shutdown and verified installation.
