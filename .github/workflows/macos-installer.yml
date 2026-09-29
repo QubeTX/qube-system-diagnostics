@@ -6,7 +6,8 @@ on:
         required: true
         type: string
 permissions:
-  contents: read
+  # GitHub requires write scope to read an unpublished release draft.
+  contents: write
   actions: read
 jobs:
   validate:
