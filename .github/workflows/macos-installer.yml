@@ -532,7 +532,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          trap 'result=$?; printf "Failed line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$result" >&2' ERR
           pkg="$PWD/artifact/sd300-macos-universal.pkg"
           (cd artifact && shasum -a 256 -c sd300-macos-universal.pkg.sha256)
           (cd artifact && shasum -a 256 -c sd300-gui-macos-universal.zip.sha256)
@@ -619,13 +620,25 @@ jobs:
 
           /usr/local/bin/sd300 snapshot --json > snapshot.json
           jq -e '.target_os == "macos" and (.capabilities | length) >= 10' snapshot.json
-          sudo cp target/prior-build/release/sd300 /usr/local/bin/sd300
-          sudo chmod 755 /usr/local/bin/sd300
-          test "$(/usr/local/bin/sd300 --version)" = 'sd300 1.9.9'
+          # Installed workers may still map this signed executable. Give the
+          # synthetic fixture a fresh inode rather than overwrite those bytes.
+          prior_stage=$(sudo mktemp /usr/local/bin/sd300-prior.XXXXXX)
+          sudo cp target/prior-build/release/sd300 "$prior_stage"
+          sudo chmod 755 "$prior_stage"
+          sudo mv -f "$prior_stage" /usr/local/bin/sd300
+          prior_version=$(/usr/local/bin/sd300 --version)
+          printf 'Synthetic prior version: %s\n' "$prior_version"
+          test "$prior_version" = 'sd300 1.9.9'
           export SD300_CI_RELEASE_TAG='${{ needs.build.outputs.tag }}'
           export SD300_CI_RELEASE_ASSET_DIR="$PWD/artifact"
           export SD300_CI_NONINTERACTIVE_PKG=1
-          update=$(/usr/local/bin/sd300 update --json)
+          if update=$(/usr/local/bin/sd300 update --json); then
+            printf 'Updater result: %s\n' "$update"
+          else
+            result=$?
+            printf 'Updater failed (exit %s): %s\n' "$result" "$update" >&2
+            exit "$result"
+          fi
           test "$(printf '%s\n' "$update" | wc -l | tr -d ' ')" -eq 1
           jq -e --arg version '${{ needs.build.outputs.version }}' '
             .success == true and .install_channel == "mac-pkg" and .target_version == $version

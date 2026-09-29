@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - 2026-09-29
 
+- Fix macOS release qualification by atomically replacing the synthetic prior-version executable. Apple Silicon killed the in-place replacement before the updater ran; retain explicit failing-command and updater-result diagnostics. Product binaries and acceptance gates are unchanged.
+
 - Retain compact final pre-exception native timing evidence with its actual PR merge-ref identities, distinct from exact-head release acceptance.
 
 - Record the operator-authorized 4.1.0-only release exception (ADR 0025) for documented timing/CPU overruns and deferred resource/display evidence. Preserve failed performance verdicts and original targets; require complete functional cohorts, clean shutdown, final-source CI and installer qualification.

@@ -27,9 +27,11 @@ All cards populate from a fresh launch, route to details, distinguish missing/st
 
 ## Status
 
-Active: operator authorizes production release on 2026-09-29. ADR 0025 records the exact-version performance/display exception; original failed verdicts remain. Final-source functional CI and composite Windows installers are required before merge, followed by the full publication chain and public-byte verification.
+Active: production source 4f2f253 passes exact CI and Windows/Linux installer qualification. Mac Intel package lifecycle passes; Apple Silicon stops before the updater because the synthetic prior executable is killed after in-place overwrite. Diagnostic 36635433166 pinpoints exit 137; unchanged retry reproduces it. Atomic fixture replacement is being qualified against the same signed package in 36635969196. No publication; recover the stopped draft chain only after this native proof.
 
 ## Activity
+
+- 2026-09-29 - codex: PR 15 merged as 4f2f253 after candidate CI 36628600345 and Windows installers 36628604881 passed. Production CI 36632095352, Windows 36632821407 and Linux 36632821393 pass. Mac 36632821384 fails twice only on Apple Silicon synthetic fixture execution; diagnostic 36635433166 proves exit 137 before update. Qualify fresh-inode fixture setup in diagnostic 36635969196; then restart the unpublished chain with the minimal harness correction. Preserve original failures and source identities.
 
 - 2026-09-29 — codex: Operator explicitly requests production deployment after the gate-owner choice. Record ADR 0025, preserve timing/CPU failures and defer remaining resource/physical-display evidence. Prior installer 36369836717 passes; all six final pre-exception interaction reports complete with clean shutdown. Next: final-source CI and installer oracle.
 
