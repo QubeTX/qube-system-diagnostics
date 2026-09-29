@@ -15,7 +15,7 @@
 
 ## Active
 - [ ] **Restore original frame and input targets after v4** - renderer optimizations and native attribution implemented; remaining timing failures retained under the 4.1.0-only ADR 0025 release exception; owner Codex #r16
-- [ ] **Build a clear gamer-focused system overview** - operator authorizes production release under ADR 0025; preserve performance failures, require final-source functional CI/installers and public-byte verification #ov6
+- [ ] **Build a clear gamer-focused system overview** - production CI and Windows/Linux installers pass; correct the reproduced Mac test-fixture failure before recovering the unpublished release (ADR 0025 performance exception retained) #ov6
   - [x] Wire overview collection and bounded summaries
   - [x] Implement responsive cards, findings and navigation
   - [ ] Verify native behavior, layouts and collection cost
