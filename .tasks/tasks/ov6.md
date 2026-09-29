@@ -21,15 +21,17 @@ All cards populate from a fresh launch, route to details, distinguish missing/st
 - [x] Root and engine tests for sampling and summary correctness
 - [x] Native tests and strict bindings
 - [x] Fresh-launch live readings, card navigation and expansion
-- [ ] Default/narrow layout and display-scale inspection
+- [x] Default/narrow layout and physical 150% inspected; physical 200% explicitly deferred by ADR 0025
 - [x] Observer-free overview resource measurement — ce6b42e: CPU fails; RSS/private memory pass
-- [ ] Exact-candidate hosted CI
+- [x] Exact-candidate hosted CI and complete production/public lifecycle qualification
 
 ## Status
 
-Active: production source 4f2f253 passes exact CI and Windows/Linux installer qualification. Mac Intel package lifecycle passes; Apple Silicon stops before the updater because the synthetic prior executable is killed after in-place overwrite. Diagnostic 36635433166 pinpoints exit 137; unchanged retry reproduces it. Atomic fixture replacement passes the complete lifecycle on both architectures in 36635969196. Recover the stopped unpublished draft chain with the minimal harness fix; retain exact-source CI and all production gates.
+DONE - SD-300 4.1.0 is public from 1d66a461b3e499e067b6c15658b04a8cde89671d (2026-09-29 22:28 UTC), with 59 assets and a non-yanked crate. Exact-source CI, every native package producer and final publication/public-lifecycle qualification pass under ADR 0025. The installed Windows CLI/GUI now report 4.1.0; the managed channel and settings are preserved. Live installed overview and Disk-card round trip are verified. Original timing/resource targets remain open in #r16/#r17; full resource and physical 200% evidence remain deferred in #ext. This does not claim those performance/display checks passed.
 
 ## Activity
+
+- 2026-09-29 - codex: 4.1.0 PUBLIC from 1d66a46. CI 36636717270, Windows 36637465702, macOS 36637465949, Linux 36637465808 and final Qualify/Publish 36639459256 all pass. Public latest/tag/source, 59 assets, crate, selected public hashes/attestations and stable wrappers verified. Managed local update 4.0.1 -> 4.1.0 succeeds without channel change; settings hash unchanged immediately after update; installed GUI self-test and all ten payload hashes pass. Actual window 41425418 shows all six cards and Processes, changing live readings and working Disk/Overview navigation. Preserve original failed performance verdicts and deferred display evidence under ADR 0025; remaining work belongs to #r16/#r17/#ext.
 
 - 2026-09-29 - codex: corrected native diagnostic 36635969196 passes Apple Silicon and Intel trust/install/launch/update/uninstall against the unchanged signed 4f2f253 package. Apple Silicon now executes synthetic 1.9.9 and updates to 4.1.0 successfully. All production jobs have stopped; verify no 4.1.0 tag/publication, discard only its unpublished draft, then merge PR 16 and rebuild the complete candidate from one corrected source.
 

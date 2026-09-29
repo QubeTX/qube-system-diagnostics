@@ -1,0 +1,34 @@
+{
+  "version": "4.1.0",
+  "tag": "v4.1.0",
+  "source_sha": "1d66a461b3e499e067b6c15658b04a8cde89671d",
+  "assets": 59,
+  "targets": [
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl"
+  ],
+  "verified": [
+    {
+      "name": "sd300-gui-windows-x86_64.zip",
+      "sha256": "2c0abdd7bde2ed31fcaadd425633024fcc20f68addc5ad62fe04574dcfade82d"
+    },
+    {
+      "name": "tr300-tui-x86_64-pc-windows-msvc.zip",
+      "sha256": "d932356627d76d2822a924c3d8e8baa6751133d08a3da81639210abf994cd348"
+    },
+    {
+      "name": "sd300-cli-installer.ps1",
+      "sha256": "e94b9180605a0732edbb60ca6504c8bf0b0452bcb5807c6315f212afbc91dbf4"
+    },
+    {
+      "name": "sd300-cli-installer.sh",
+      "sha256": "e57e9c543b80699de2f619697a73b45a33c218a8da3dac39c88cf9ea25064112"
+    }
+  ],
+  "crate_yanked": false,
+  "verified_at": "2026-09-29T22:29:07.2157830Z"
+}

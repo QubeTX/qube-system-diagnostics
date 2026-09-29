@@ -15,10 +15,6 @@
 
 ## Active
 - [ ] **Restore original frame and input targets after v4** - renderer optimizations and native attribution implemented; remaining timing failures retained under the 4.1.0-only ADR 0025 release exception; owner Codex #r16
-- [ ] **Build a clear gamer-focused system overview** - production CI and Windows/Linux installers pass; correct the reproduced Mac test-fixture failure before recovering the unpublished release (ADR 0025 performance exception retained) #ov6
-  - [x] Wire overview collection and bounded summaries
-  - [x] Implement responsive cards, findings and navigation
-  - [ ] Verify native behavior, layouts and collection cost
 - [ ] **Replace SD-300 app/tray identity and fix Windows icon delivery** - PUBLIC in v3.1.3 with selected artwork, embedded Win32 identity, cross-platform packages, and update/uninstall proof; only the operator-visible Windows taskbar/Alt+Tab/tray appearance check remains (ms #v3n) (owner codex) #n7k
   - [x] Reconstruct the current artwork and Windows icon-delivery failure
     > Confirmed the managed updater installed icon.png; the executable resource and IMAGE_ICON runtime paths are the failures.
@@ -35,6 +31,11 @@
   - [ ] Qualify toggle, close, reopen, tooltip, update, and tray Quit behavior
 
 ## Done
+
+- [x] **Build a clear gamer-focused system overview** - PUBLIC 4.1.0 from 1d66a46; all native/install/public checks pass under ADR 0025, local managed update and installed UI verified; original performance/display follow-up retained in r16/r17/ext (done 2026-09-29) #ov6
+  - [x] Wire overview collection and bounded summaries
+  - [x] Implement responsive cards, findings and navigation
+  - [x] Verify native behavior/layout and record collection cost with accepted evidence deferrals
 - [x] **Replace the Windows MSI placeholder license and release the correction** - Public 4.0.2 verified: both MSI license pages, checksums, attestations and latest links; final publication/lifecycle passed, ADR 0021 preserves the authorized performance exception (done 2026-09-24) (owner codex) #eul
 - [x] **Correct Windows update and installer discovery failures** - Public/local 4.0.1, updater/discovery and website verified; Intel refresh explicitly accepted in ADR 0020; CI HTTP correction merged in #13/f36eeeb (done 2026-09-24) (owner codex) #p4h
 - [x] **Implement and qualify SD-300 v4 monitoring** - Public 4.0.0 plus authorized 4.0.1 correction, screenshots, install guidance and local installation verified; original future goals retained in #r16/#r17 (done 2026-09-24) (ms #v4m) (owner codex) #v4a

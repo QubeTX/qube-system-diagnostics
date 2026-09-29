@@ -100,3 +100,19 @@ Responsiveness work remains owned by #r16, resources by #r17, and overview/relea
 The operator explicitly authorizes production release after the remaining gates were presented. [ADR 0025](../adr/0025-overview-release-acceptance.md) accepts performance overruns and defers the full resource matrix/physical 200% display check for exactly 4.1.0. All earlier failures above remain historical evidence; they are not relabelled as passes. Functional checks, installer qualification and exact-source CI remain blocking.
 
 Latest pre-exception CI [36371183045](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36371183045) completes all twelve cohorts and clean shutdown on all six targets. Retained compact evidence: [overview-timing-0f424c6.json](overview-timing-0f424c6.json). Final-source qualification follows the policy commit.
+
+## Public release closure, 2026-09-29
+
+Release [4.1.0](https://github.com/QubeTX/qube-system-diagnostics/releases/tag/v4.1.0) is public from `1d66a461b3e499e067b6c15658b04a8cde89671d`, published at 22:28:17 UTC with 59 assets and a non-yanked `tr300-tui` crate.
+
+- Exact-source CI: [36636717270](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36636717270).
+- Windows installers: [36637465702](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36637465702).
+- Signed/notarized macOS package and both native lifecycles: [36637465949](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36637465949).
+- Linux packages and isolated managed lifecycles: [36637465808](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36637465808).
+- Publication and public-byte migration/install/update/uninstall proof: [36639459256](https://github.com/QubeTX/qube-system-diagnostics/actions/runs/36639459256).
+
+All runs pass under the explicit ADR 0025 release acceptance policy. Original timing verdicts remain in the native interaction artifacts; no performance target was raised. Full resource and physical 200% evidence remain deferred and owned by #r16/#r17/#ext.
+
+The first draft from `4f2f253` never became public. Apple Silicon's synthetic prior fixture was killed during `--version` after an in-place executable overwrite (exit 137), before the updater ran. Diagnostic 36635433166 localized the failure. A fresh file plus atomic rename passed the complete same-package lifecycle on both Macs in 36635969196; PR 16 put that minimal harness correction into the production workflow. The stopped draft had no tag and was discarded before rebuilding from the new source. Product code did not change in this correction.
+
+Local public-download verification confirms the Windows GUI/CLI archives and stable PowerShell/shell wrappers match their sidecars and source-bound release manifest; GitHub attestations verify. The installed PowerShell-owned CLI and GUI updated from 4.0.1 to 4.1.0 without changing channel. Settings remained byte-identical immediately after update. GUI self-test reports product 4.1.0/ABI 2, and all ten installed payload hashes match the manifest. Actual installed window 41425418 shows all six cards plus Processes with changing CPU/GPU/network readings; Disk-card navigation and return to Overview succeed. The app is left on Overview.

@@ -4,6 +4,8 @@ All notable changes to SD-300 will be documented in this file.
 
 ## [4.1.0] - 2026-09-29
 
+- Publish 4.1.0 from 1d66a46 after exact-source CI, all native installer producers and public-byte lifecycle checks pass. Verify the live crate, 59 assets, checksums/attestations and stable routes; update the local managed CLI/GUI with settings preserved and verify the installed overview. Original performance/display limitations remain under ADR 0025.
+
 - Verify the atomic macOS prior-fixture correction on Apple Silicon and Intel against the same signed package; retain the original exit-137 failures and restart the unpublished release from the corrected harness source.
 
 - Fix macOS release qualification by atomically replacing the synthetic prior-version executable. Apple Silicon killed the in-place replacement before the updater ran; retain explicit failing-command and updater-result diagnostics. Product binaries and acceptance gates are unchanged.
